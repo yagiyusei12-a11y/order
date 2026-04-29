@@ -19,6 +19,7 @@ model Store {
   tables           Table[]
   courses          Course[]
   menuCategories   MenuCategory[]
+  optionGroups     OptionGroup[]
   kitchenStations  KitchenStation[]
   sessions         DiningSession[]
   createdAt        DateTime             @default(now())
@@ -141,14 +142,18 @@ model CourseMenuItem {
 model MenuCategory {
   id               String     @id @default(cuid())
   storeId          String
+  parentId         String?
   name             String
   sortOrder        Int        @default(0)
   /// false のカテゴリはゲストメニューに出さない（厨房・スタッフ用）
   visibleToGuest   Boolean    @default(true)
   store            Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  parent           MenuCategory? @relation("MenuCategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children         MenuCategory[] @relation("MenuCategoryHierarchy")
   items            MenuItem[]
 
   @@index([storeId])
+  @@index([parentId])
 }
 
 model MenuItem {
@@ -156,17 +161,63 @@ model MenuItem {
   categoryId        String
   name              String
   description       String?
+  imageUrl          String?
   price             Int
   sortOrder         Int             @default(0)
   isAvailable       Boolean         @default(true)
+  /// null = 在庫管理しない（注文で減らない）
+  stockQty          Int?
+  /// 在庫管理時、残数がこの値以下なら「在庫少」（null ならしきい値アラートなし）
+  stockLowThreshold Int?
   kitchenStationId  String?
   category          MenuCategory    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   kitchenStation    KitchenStation? @relation(fields: [kitchenStationId], references: [id], onDelete: SetNull)
   orderLines        OrderLine[]
   courseLinks       CourseMenuItem[]
+  optionLinks       MenuItemOptionGroup[]
 
   @@index([categoryId])
   @@index([kitchenStationId])
+}
+
+/// 商品オプショングループ（例: トッピング、サイズ）
+model OptionGroup {
+  id         String                @id @default(cuid())
+  storeId    String
+  name       String
+  minSelect  Int                   @default(0)
+  maxSelect  Int                   @default(1)
+  sortOrder  Int                   @default(0)
+  active     Boolean               @default(true)
+  store      Store                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  items      OptionItem[]
+  menuLinks  MenuItemOptionGroup[]
+
+  @@index([storeId])
+}
+
+model OptionItem {
+  id          String      @id @default(cuid())
+  groupId     String
+  name        String
+  priceDelta  Int         @default(0)
+  sortOrder   Int         @default(0)
+  active      Boolean     @default(true)
+  group       OptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId])
+}
+
+/// 商品に紐づくオプショングループ（複数可）
+model MenuItemOptionGroup {
+  menuItemId    String
+  optionGroupId String
+  sortOrder     Int         @default(0)
+  menuItem      MenuItem    @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  optionGroup   OptionGroup @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
+
+  @@id([menuItemId, optionGroupId])
+  @@index([optionGroupId])
 }
 
 /// 1組の滞在（卓・人数・コース・ゲスト用トークン）

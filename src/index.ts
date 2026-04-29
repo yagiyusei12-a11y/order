@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import jwt from "@fastify/jwt";
+import multipart from "@fastify/multipart";
 import Fastify from "fastify";
 import { STAFF_JWT_COOKIE_NAME, jwtSecret } from "./config.js";
 import { registerAuth } from "./routes/auth.js";
@@ -22,6 +23,9 @@ async function main(): Promise<void> {
   await app.register(helmet, {
     global: true,
     contentSecurityPolicy: false,
+  });
+  await app.register(multipart, {
+    limits: { fileSize: 5 * 1024 * 1024, files: 1 },
   });
 
   app.get("/health", async () => ({ ok: true }));

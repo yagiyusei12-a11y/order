@@ -16,14 +16,24 @@
       display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
       padding: 0.85rem 1rem; border-bottom: 1px solid var(--line); background: var(--surface);
     }
+    .item .left { display: flex; gap: 0.7rem; align-items: center; min-width: 0; }
+    .item .thumb {
+      width: 56px; height: 56px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line);
+      background: #0f141c; flex-shrink: 0;
+    }
+    .item .text { min-width: 0; }
     .item .name { font-weight: 600; font-size: 0.95rem; }
     .item .meta { font-size: 0.8rem; color: var(--muted); margin-top: 0.15rem; }
+    .item .badges { margin-top: 0.2rem; display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+    .item .badge-low { font-size: 0.68rem; font-weight: 700; color: #92400e; background: #fef3c7; padding: 0.12rem 0.4rem; border-radius: 4px; }
+    .item .badge-sold { font-size: 0.68rem; font-weight: 700; color: #fecaca; background: #450a0a; padding: 0.12rem 0.4rem; border-radius: 4px; }
     .item .price { font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 600; }
     .item button {
       flex-shrink: 0; min-width: 2.75rem; height: 2.75rem; border-radius: 8px; border: 1px solid var(--line);
       background: #222a35; color: var(--text); font-size: 1.1rem; font-weight: 700; cursor: pointer;
     }
     .item button:active { transform: scale(0.96); }
+    .item button:disabled { opacity: 0.4; cursor: not-allowed; }
     .toast { position: fixed; bottom: 5.5rem; left: 50%; transform: translateX(-50%); background: #2a3340; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.85rem; opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 20; }
     .toast.show { opacity: 1; }
     footer.cart {
@@ -70,7 +80,7 @@
       return j;
     });
 
-    /** @type {Record<string, { id: string, name: string, price: number, qty: number }>} */
+    /** @type {Record<string, { id: string, name: string, unitPrice: number, qty: number }>} */
     const cart = {};
     let guestShowMenuPrices = true;
 
@@ -101,13 +111,36 @@
     }
 
     function addLine(item) {
+      if (item.stockQty != null && item.stockQty <= 0) {
+        toast("売り切れです");
+        return;
+      }
       const cur = cart[item.id] || { id: item.id, name: item.name, unitPrice: item.price, qty: 0 };
       cur.unitPrice = item.price;
       cur.name = item.name;
-      cur.qty = (cur.qty || 0) + 1;
+      const next = (cur.qty || 0) + 1;
+      if (item.stockQty != null && next > item.stockQty) {
+        toast("これ以上は在庫がありません");
+        return;
+      }
+      cur.qty = next;
       cart[item.id] = cur;
       renderCart();
       toast(item.name + " を追加");
+    }
+
+    function clampCartToStock(categories) {
+      const maxById = new Map();
+      for (const c of categories || []) {
+        for (const it of c.items || []) {
+          if (it.stockQty != null) maxById.set(it.id, it.stockQty);
+        }
+      }
+      for (const k of Object.keys(cart)) {
+        const m = maxById.get(k);
+        if (m != null && cart[k].qty > m) cart[k].qty = m;
+        if (!cart[k].qty || cart[k].qty <= 0) delete cart[k];
+      }
     }
 
     async function loadMenu() {
@@ -123,23 +156,50 @@
       }
       document.getElementById("hdr").textContent = hdr;
 
+      const cats = data.categories || [];
+      clampCartToStock(cats);
+      renderCart();
+      const catNameById = new Map(cats.map((c) => [c.id, c.name]));
+
       const root = document.getElementById("menu");
       root.innerHTML = "";
-      for (const c of data.categories || []) {
+      for (const c of cats) {
         const d = document.createElement("div");
         d.className = "cat";
-        d.textContent = c.name;
+        d.textContent = c.parentId && catNameById.has(c.parentId) ? catNameById.get(c.parentId) + " > " + c.name : c.name;
         root.appendChild(d);
         for (const it of c.items || []) {
           const row = document.createElement("div");
           row.className = "item";
           row.innerHTML =
-            "<div><div class=\"name\"></div><div class=\"meta\"></div></div>" +
+            "<div class=\"left\"><img class=\"thumb\" alt=\"\"><div class=\"text\"><div class=\"name\"></div><div class=\"meta\"></div><div class=\"badges\"></div></div></div>" +
             "<div class=\"price\"></div><button type=\"button\" aria-label=\"追加\">+</button>";
+          const thumb = row.querySelector(".thumb");
+          if (it.imageUrl) {
+            thumb.src = it.imageUrl;
+            thumb.alt = it.name;
+          } else {
+            thumb.style.display = "none";
+          }
           row.querySelector(".name").textContent = it.name;
           row.querySelector(".meta").textContent = it.description || "";
+          const sold = it.stockQty != null && it.stockQty <= 0;
+          const badges = row.querySelector(".badges");
+          if (sold) {
+            const b = document.createElement("span");
+            b.className = "badge-sold";
+            b.textContent = "売り切れ";
+            badges.appendChild(b);
+          } else if (it.lowStock) {
+            const b = document.createElement("span");
+            b.className = "badge-low";
+            b.textContent = "残りわずか";
+            badges.appendChild(b);
+          }
           row.querySelector(".price").textContent = fmtMoney(it.price);
-          row.querySelector("button").onclick = () => addLine(it);
+          const btn = row.querySelector("button");
+          btn.disabled = sold;
+          btn.onclick = () => addLine(it);
           root.appendChild(row);
         }
       }
@@ -176,6 +236,7 @@
         renderCart();
         toast("注文を送信しました");
         await loadOrders();
+        await loadMenu();
       } catch (e) {
         document.getElementById("err").style.display = "block";
         document.getElementById("err").textContent = String(e.message || e);

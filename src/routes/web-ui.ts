@@ -1,5 +1,6 @@
-import { readFileSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync } from "node:fs";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { join } from "node:path";
 import { templatePath } from "../lib/paths.js";
 
 function loadTemplate(name: string): string {
@@ -52,6 +53,22 @@ async function assertStaffStore(
 
 export async function registerWebUi(app: FastifyInstance): Promise<void> {
   const html = (name: string) => loadTemplate(name);
+
+  app.get<{ Params: { name: string } }>("/uploads/menu-items/:name", async (req, reply) => {
+    const raw = req.params.name;
+    if (!/^[a-zA-Z0-9._-]+$/.test(raw)) return reply.code(400).send({ error: "bad file name" });
+    const p = join(process.cwd(), "uploads", "menu-items", raw);
+    if (!existsSync(p)) return reply.code(404).send({ error: "file not found" });
+    const lc = raw.toLowerCase();
+    const ct = lc.endsWith(".png")
+      ? "image/png"
+      : lc.endsWith(".webp")
+        ? "image/webp"
+        : lc.endsWith(".gif")
+          ? "image/gif"
+          : "image/jpeg";
+    return reply.type(ct).header("Cache-Control", "public, max-age=86400").send(createReadStream(p));
+  });
 
   app.get("/", async (_req, reply) => {
     return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(html("home.html"));

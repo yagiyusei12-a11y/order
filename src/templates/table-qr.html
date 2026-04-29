@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>卓 — __PUBLIC_CODE_HTML__</title>
+  <style>
+    :root { --bg: #0f1419; --text: #e8eef4; --muted: #8b9aab; --accent: #c9a227; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem; text-align: center; }
+    p { color: var(--muted); max-width: 22rem; line-height: 1.5; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div>
+    <p id="msg">読み込み中…</p>
+  </div>
+  <script>
+    const code = __PUBLIC_CODE_JS__;
+    (async () => {
+      const msg = document.getElementById("msg");
+      try {
+        const r = await fetch("/public/tables/" + encodeURIComponent(code));
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || r.statusText);
+        if (j.session && j.session.guestToken) {
+          location.replace("/guest-app/" + encodeURIComponent(j.session.guestToken));
+          return;
+        }
+        msg.innerHTML = "いまこの卓に開いているセッションがありません。<br>スタッフに声をかけてください。";
+      } catch (e) {
+        msg.textContent = "卓情報を取得できませんでした。";
+      }
+    })();
+  </script>
+</body>
+</html>

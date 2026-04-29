@@ -1,0 +1,26 @@
+<main>
+  <h2 class="page-title">メニュー管理</h2>
+  <p class="muted" style="margin-top:-0.35rem;margin-bottom:1rem">カテゴリ・商品の追加、価格・販売可否の変更。カテゴリの「ゲストに表示」をオフにすると<strong>厨房・スタッフ向け</strong>のみに出ます。調理場はキッチン絞り込み用マスタです。</p>
+  <div class="row" style="margin-bottom:0.75rem;justify-content:space-between">
+    <button type="button" class="btn-ghost" id="btnRefMenu">再読込</button>
+  </div>
+  <div class="card">
+    <strong style="font-size:0.88rem">カテゴリを追加</strong>
+    <label style="margin-top:0.65rem">名前</label>
+    <input id="newCatName" type="text" placeholder="例: ドリンク" />
+    <label class="row" style="margin-top:0.5rem;align-items:center;gap:0.4rem;font-size:0.82rem">
+      <input type="checkbox" id="newCatGuest" checked /> ゲストに表示する
+    </label>
+    <button type="button" class="btn-primary" id="btnAddCat">追加</button>
+  </div>
+  <div id="menuTree" class="card" style="margin-top:1rem;padding:0;overflow:hidden"></div>
+  <div class="card" style="margin-top:1rem">
+    <strong style="font-size:0.88rem">調理場マスタ</strong>
+    <p class="muted" style="font-size:0.78rem;margin:0.35rem 0 0.75rem">ゲスト画面には出ません。商品に割り当てるとキッチン画面で調理場別に絞り込めます。</p>
+    <div id="kitStationsList" style="padding:0"></div>
+    <label style="margin-top:0.65rem">調理場を追加</label>
+    <input id="newKitStName" type="text" placeholder="例: 揚場" />
+    <button type="button" class="btn-primary" id="btnAddKitSt">追加</button>
+  </div>
+  <div id="log"></div>
+</main>

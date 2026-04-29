@@ -1,0 +1,21 @@
+<main>
+  <div class="top-tabs" role="tablist" aria-label="席マスタ（タブは今後拡張）">
+    <button type="button" class="is-on">一覧</button>
+    <button type="button">カテゴリ</button>
+    <button type="button">インポート</button>
+  </div>
+  <div class="row" style="margin-bottom:0.75rem;justify-content:space-between">
+    <button type="button" class="btn-ghost" id="btnRefTables">一覧を再読込</button>
+    <span class="muted" style="font-size:0.78rem">卓QRのURLは固定コードごとに不変</span>
+  </div>
+  <div id="tablesMaster" class="card" style="padding:0;overflow:hidden"></div>
+  <div class="card" style="margin-top:1rem">
+    <strong style="font-size:0.88rem">席を追加</strong>
+    <label style="margin-top:0.65rem">席名</label>
+    <input id="newTableName" type="text" placeholder="例: カウンター3" />
+    <label>固定コード（空なら自動）</label>
+    <input id="newTableCode" type="text" placeholder="例: counter-3" autocomplete="off" />
+    <button type="button" class="btn-primary" id="btnAddTable">席を追加</button>
+  </div>
+  <div id="log"></div>
+</main>

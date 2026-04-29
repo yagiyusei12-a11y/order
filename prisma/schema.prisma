@@ -1,0 +1,218 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+/// 店舗
+model Store {
+  id               String               @id @default(cuid())
+  name             String
+  /// 店舗オプション（キッチン更新間隔・ゲスト表示など JSON）
+  settings         Json                 @default("{}")
+  staffUsers       StaffUser[]
+  methods          StorePaymentMethod[]
+  bills            Bill[]
+  tables           Table[]
+  courses          Course[]
+  menuCategories   MenuCategory[]
+  kitchenStations  KitchenStation[]
+  sessions         DiningSession[]
+  createdAt        DateTime             @default(now())
+}
+
+/// 調理場（キッチン絞り込み用。ゲスト画面には出さないマスタ）
+model KitchenStation {
+  id        String     @id @default(cuid())
+  storeId   String
+  name      String
+  sortOrder Int        @default(0)
+  active    Boolean    @default(true)
+  store     Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  menuItems MenuItem[]
+
+  @@index([storeId])
+}
+
+/// 店舗スタッフ（店舗コンソール・店舗API用）
+model StaffUser {
+  id           String   @id @default(cuid())
+  storeId      String
+  email        String
+  passwordHash String
+  name         String?
+  createdAt    DateTime @default(now())
+  store        Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, email])
+  @@index([storeId])
+}
+
+/// 決済手段の定義（全店共通マスタ。店ごとに有効/無効・並びを上書き）
+model PaymentMethodDefinition {
+  id        String               @id @default(cuid())
+  code      String               @unique
+  labelJa   String
+  sortOrder Int                  @default(0)
+  stores    StorePaymentMethod[]
+}
+
+model StorePaymentMethod {
+  id           String                  @id @default(cuid())
+  storeId      String
+  definitionId String
+  enabled      Boolean                 @default(true)
+  sortOrder    Int                     @default(0)
+  store        Store                   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  definition   PaymentMethodDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, definitionId])
+}
+
+/// 会計（任意で来店セッションに紐づけ）
+model Bill {
+  id          String    @id @default(cuid())
+  storeId     String
+  sessionId   String?   @unique
+  label       String?
+  totalAmount Int
+  status      String    @default("open")
+  payments    Payment[]
+  createdAt   DateTime  @default(now())
+  settledAt   DateTime?
+  store       Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  session     DiningSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+}
+
+model Payment {
+  id         String   @id @default(cuid())
+  billId     String
+  methodCode String
+  amount     Int
+  note       String?
+  createdAt  DateTime @default(now())
+  bill       Bill     @relation(fields: [billId], references: [id], onDelete: Cascade)
+}
+
+/// 卓（固定QRは publicCode で表現可能）
+model Table {
+  id         String            @id @default(cuid())
+  storeId    String
+  name       String
+  publicCode String            @unique
+  sortOrder  Int               @default(0)
+  active     Boolean           @default(true)
+  store      Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  sessions   DiningSession[]
+
+  @@index([storeId])
+}
+
+/// 食べ放題・飲み放題・食べ飲み放題コース
+model Course {
+  id               String            @id @default(cuid())
+  storeId          String
+  name             String
+  kind             String
+  durationMinutes  Int
+  pricePerPerson   Int
+  active           Boolean           @default(true)
+  store            Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  sessions         DiningSession[]
+  includedItems    CourseMenuItem[]
+
+  @@index([storeId])
+}
+
+/// コースで注文可能なメニュー商品（未設定のコースは店舗メニュー全品）
+model CourseMenuItem {
+  courseId   String
+  menuItemId String
+  course     Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  @@id([courseId, menuItemId])
+  @@index([menuItemId])
+}
+
+model MenuCategory {
+  id               String     @id @default(cuid())
+  storeId          String
+  name             String
+  sortOrder        Int        @default(0)
+  /// false のカテゴリはゲストメニューに出さない（厨房・スタッフ用）
+  visibleToGuest   Boolean    @default(true)
+  store            Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  items            MenuItem[]
+
+  @@index([storeId])
+}
+
+model MenuItem {
+  id                String          @id @default(cuid())
+  categoryId        String
+  name              String
+  description       String?
+  price             Int
+  sortOrder         Int             @default(0)
+  isAvailable       Boolean         @default(true)
+  kitchenStationId  String?
+  category          MenuCategory    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  kitchenStation    KitchenStation? @relation(fields: [kitchenStationId], references: [id], onDelete: SetNull)
+  orderLines        OrderLine[]
+  courseLinks       CourseMenuItem[]
+
+  @@index([categoryId])
+  @@index([kitchenStationId])
+}
+
+/// 1組の滞在（卓・人数・コース・ゲスト用トークン）
+model DiningSession {
+  id         String       @id @default(cuid())
+  storeId    String
+  tableId    String
+  guestToken String       @unique
+  courseId   String?
+  guestCount Int
+  status     String       @default("open")
+  openedAt   DateTime     @default(now())
+  closedAt   DateTime?
+  store      Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  table      Table        @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  course     Course?      @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  orders     SalesOrder[]
+  bill       Bill?
+
+  @@index([storeId])
+  @@index([tableId])
+}
+
+model SalesOrder {
+  id        String      @id @default(cuid())
+  sessionId String
+  status    String      @default("submitted")
+  note      String?
+  createdAt DateTime    @default(now())
+  session   DiningSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  lines     OrderLine[]
+
+  @@index([sessionId])
+}
+
+model OrderLine {
+  id           String     @id @default(cuid())
+  orderId      String
+  menuItemId   String?
+  nameSnapshot String
+  unitPrice    Int
+  qty          Int
+  note         String?
+  status       String     @default("queued")
+  order        SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem     MenuItem?  @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+}

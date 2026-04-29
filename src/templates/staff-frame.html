@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>__PAGE_TITLE__ — __STORE_ID_HTML__</title>
+  <style>
+    :root {
+      --bg: #eef0f4;
+      --surface: #ffffff;
+      --sidebar: #f6f7f9;
+      --border: #e2e5eb;
+      --text: #1a1d24;
+      --muted: #6b7280;
+      --accent: #f97316;
+      --accent-soft: #fff7ed;
+      --green: #16a34a;
+      --shadow: 0 1px 3px rgba(0,0,0,.08);
+      --radius: 12px;
+      --sidebar-w: 72px;
+      --topbar-h: 52px;
+      --footer-h: 44px;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+    .app {
+      display: flex;
+      height: 100vh;
+      height: 100dvh;
+    }
+    .sidebar {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      background: var(--sidebar);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 0.5rem 0;
+      gap: 0.35rem;
+    }
+    .snav {
+      width: 48px;
+      height: 48px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      color: var(--muted);
+      border: 1px solid transparent;
+      transition: background .15s, color .15s, border-color .15s;
+    }
+    .snav:hover { background: #fff; color: var(--accent); border-color: var(--border); }
+    .snav.nav-active {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: #fed7aa;
+      font-weight: 700;
+    }
+    .snav svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .snav-spacer { flex: 1; }
+    .col {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+    }
+    .topbar {
+      height: var(--topbar-h);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1rem 0 0.75rem;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+    .topbar .brand { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+    .topbar .brand strong { font-size: 0.95rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60vw; }
+    .topbar .brand span { font-size: 0.72rem; color: var(--muted); }
+    .topbar .actions { display: flex; align-items: center; gap: 0.5rem; }
+    .topbar .pill {
+      font-size: 0.72rem;
+      padding: 0.25rem 0.55rem;
+      border-radius: 999px;
+      background: #f3f4f6;
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    .topbar a.logout { font-size: 0.8rem; color: var(--accent); text-decoration: none; font-weight: 600; }
+    .scroll-main {
+      flex: 1;
+      overflow: auto;
+      padding: 1rem;
+      padding-bottom: calc(var(--footer-h) + 1rem);
+    }
+    .app-footer {
+      position: fixed;
+      bottom: 0;
+      left: var(--sidebar-w);
+      right: 0;
+      height: var(--footer-h);
+      background: var(--green);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      z-index: 20;
+    }
+    .app-footer small { opacity: 0.9; font-weight: 500; }
+
+    /* 共通コンポーネント（各ページ） */
+    .page-title { font-size: 1.05rem; font-weight: 800; color: var(--accent); margin: 0 0 0.75rem; letter-spacing: 0.02em; }
+    .muted { color: var(--muted); font-size: 0.82rem; }
+    .card { background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow); padding: 1rem; margin-bottom: 1rem; }
+    .top-tabs { display: flex; gap: 0.25rem; flex-wrap: wrap; border-bottom: 1px solid var(--border); margin: -0.25rem 0 1rem; padding-bottom: 0.5rem; }
+    .top-tabs button {
+      background: transparent;
+      border: none;
+      padding: 0.45rem 0.85rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+      cursor: default;
+      border-radius: 8px 8px 0 0;
+      font-family: inherit;
+    }
+    .top-tabs button.is-on { color: var(--accent); font-weight: 700; box-shadow: inset 0 -2px 0 var(--accent); }
+    label { display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 0.25rem; }
+    select, input[type="text"], input[type="number"] {
+      width: 100%;
+      padding: 0.5rem 0.65rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #fafafa;
+      font-size: 0.9rem;
+      margin-bottom: 0.6rem;
+    }
+    button.btn-primary {
+      width: 100%;
+      padding: 0.65rem;
+      border: none;
+      border-radius: 10px;
+      background: linear-gradient(180deg, #fb923c, var(--accent));
+      color: #fff;
+      font-weight: 800;
+      font-size: 0.9rem;
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(249,115,22,.35);
+    }
+    button.btn-primary:active { transform: scale(0.99); }
+    button.btn-ghost {
+      padding: 0.4rem 0.75rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      font-size: 0.8rem;
+      cursor: pointer;
+      color: var(--text);
+    }
+    button.btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+    .row { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+    .linkbox { word-break: break-all; font-size: 0.78rem; background: #f9fafb; padding: 0.6rem; border-radius: 8px; border: 1px solid var(--border); }
+    .badge { display: inline-block; padding: 0.12rem 0.45rem; border-radius: 6px; background: #f3f4f6; font-size: 0.72rem; color: var(--muted); }
+    #log { white-space: pre-wrap; font-size: 0.78rem; color: #dc2626; margin-top: 0.5rem; min-height: 1.1rem; }
+
+    /* ダッシュボード */
+    .dash-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.75rem; }
+    @media (min-width: 700px) { .dash-grid { grid-template-columns: repeat(3, 1fr); } }
+    .dash-card {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.35rem;
+      padding: 1rem;
+      border-radius: var(--radius);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      text-decoration: none;
+      color: inherit;
+      min-height: 110px;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .dash-card:hover { border-color: #fdba74; box-shadow: 0 4px 14px rgba(249,115,22,.15); }
+    .dash-card strong { font-size: 0.92rem; }
+    .dash-card small { font-size: 0.75rem; color: var(--muted); line-height: 1.35; }
+    .dash-card-lg { grid-column: span 1; min-height: 120px; }
+    @media (min-width: 700px) { .dash-card-lg { grid-column: span 1; } }
+    .dash-card-muted { opacity: 0.5; pointer-events: none; cursor: default; }
+    .dash-icon { font-size: 1.4rem; line-height: 1; }
+
+    /* 卓グリッド */
+    .ops-split { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+    @media (min-width: 900px) { .ops-split { grid-template-columns: 1.15fr 0.85fr; } }
+    .table-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 0.5rem; }
+    .table-cell {
+      aspect-ratio: 1.1;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      padding: 0.35rem;
+      transition: border-color .12s, box-shadow .12s;
+    }
+    .table-cell:hover { border-color: #fdba74; }
+    .table-cell.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(249,115,22,.25); }
+    .table-cell .code { font-size: 0.72rem; color: var(--muted); }
+    .table-cell .name { font-weight: 700; font-size: 0.88rem; text-align: center; line-height: 1.2; }
+    .table-cell .st { font-size: 0.7rem; margin-top: 0.25rem; color: var(--muted); }
+    .table-cell.busy .st { color: var(--accent); font-weight: 700; }
+    .detail-placeholder { color: var(--muted); font-size: 0.88rem; line-height: 1.55; padding: 1.5rem 0.5rem; text-align: center; }
+    .detail-panel { background: #f3f4f6; border-radius: var(--radius); border: 1px solid var(--border); padding: 1rem; min-height: 200px; }
+
+    /* 席マスタ行 */
+    .pm-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: flex-start;
+      padding: 0.75rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .pm-row .pm-mid { flex: 1.2; min-width: 140px; }
+    .pm-row .pm-actions { flex: 1; min-width: 200px; }
+    .pm-row:last-child { border-bottom: none; }
+    .pm-thumb { flex-shrink: 0; width: 48px; height: 48px; border-radius: 8px; background: linear-gradient(135deg, #e5e7eb, #f3f4f6); border: 1px solid var(--border); }
+    .pm-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; justify-content: flex-end; }
+
+    /* キッチン */
+    .kit-empty { text-align: center; padding: 2.5rem 1rem; color: var(--muted); }
+    .kit-empty .ico { font-size: 2.5rem; margin-bottom: 0.5rem; opacity: 0.35; }
+    .chip-bar { display: flex; gap: 0.35rem; overflow-x: auto; padding: 0.5rem 0; margin-top: 0.5rem; }
+    .chip { flex-shrink: 0; padding: 0.35rem 0.55rem; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); font-size: 0.72rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" aria-label="メインメニュー">
+      <a href="/staff-app/__STORE_PATH__" class="snav" id="nav-home" title="ホーム">
+        <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+      </a>
+      <a href="/staff-app/__STORE_PATH__/ops" class="snav" id="nav-ops" title="卓・会計">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      </a>
+      <a href="/staff-app/__STORE_PATH__/tables" class="snav" id="nav-tables" title="席マスタ">
+        <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h16"/></svg>
+      </a>
+      <a href="/staff-app/__STORE_PATH__/kitchen" class="snav" id="nav-kitchen" title="キッチン">
+        <svg viewBox="0 0 24 24"><path d="M12 2C8 6 6 9 6 12a6 6 0 0012 0c0-3-2-6-6-10z"/></svg>
+      </a>
+      <a href="/staff-app/__STORE_PATH__/menu" class="snav" id="nav-menu" title="メニュー">
+        <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      </a>
+      <a href="/staff-app/__STORE_PATH__/billing" class="snav" id="nav-billing" title="会計・レジ">
+        <svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+      </a>
+      <a href="/staff-app/__STORE_PATH__/reports" class="snav" id="nav-reports" title="レポート">
+        <svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16"/><path d="M8 17V9M12 17v-5M16 17v-8"/></svg>
+      </a>
+      <a href="/staff-app/__STORE_PATH__/courses" class="snav" id="nav-courses" title="コース">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      </a>
+      <a href="/staff-app/__STORE_PATH__/settings" class="snav" id="nav-settings" title="設定">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      </a>
+      <div class="snav-spacer"></div>
+    </aside>
+    <div class="col">
+      <header class="topbar">
+        <div class="brand">
+          <strong id="sid">—</strong>
+          <span>店舗コンソール</span>
+        </div>
+        <div class="actions">
+          <span class="pill">order v0.1</span>
+          <a href="#" class="logout" id="logout">ログアウト</a>
+        </div>
+      </header>
+      <div class="scroll-main">
+        __BODY__
+      </div>
+    </div>
+  </div>
+  <footer class="app-footer">
+    <span>営業中</span>
+    <small>機能は順次ここから増やせます</small>
+  </footer>
+
+  <script>
+    const STORE = __STORE_ID_JS__;
+    document.getElementById("sid").textContent = STORE;
+
+    const api = (path, opt = {}) =>
+      fetch(path, { ...opt, credentials: "include" }).then(async (r) => {
+        if (r.status === 401) {
+          location.assign("/staff-app/login?next=" + encodeURIComponent(location.pathname));
+          throw new Error("unauthorized");
+        }
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || r.statusText || String(r.status));
+        return j;
+      });
+
+    document.getElementById("logout").onclick = async (e) => {
+      e.preventDefault();
+      await fetch("/auth/logout", { method: "POST", credentials: "include" });
+      location.assign("/staff-app/login");
+    };
+
+    function log(t) {
+      const el = document.getElementById("log");
+      if (el) el.textContent = t || "";
+    }
+
+    (function navActive() {
+      const p = location.pathname;
+      const segs = p.split("/").filter(Boolean);
+      let id = "nav-home";
+      if (p.includes("/ops")) id = "nav-ops";
+      else if (p.includes("/tables")) id = "nav-tables";
+      else if (p.includes("/kitchen")) id = "nav-kitchen";
+      else if (p.includes("/menu")) id = "nav-menu";
+      else if (p.includes("/billing")) id = "nav-billing";
+      else if (p.includes("/reports")) id = "nav-reports";
+      else if (p.includes("/courses")) id = "nav-courses";
+      else if (p.includes("/settings")) id = "nav-settings";
+      else if (segs.length >= 2 && segs[0] === "staff-app" && !segs[2]) id = "nav-home";
+      const n = document.getElementById(id);
+      if (n) n.classList.add("nav-active");
+    })();
+
+    __PAGE_SCRIPT__
+  </script>
+</body>
+</html>

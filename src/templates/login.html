@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>店舗ログイン</title>
+  <style>
+    :root { --bg: #0f1218; --card: #181f2a; --line: #2a3344; --text: #e8edf4; --muted: #8b97a8; --gold: #d4a84b; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+    .card { width: 100%; max-width: 22rem; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 1.25rem; }
+    h1 { font-size: 1.1rem; margin: 0 0 0.35rem; }
+    p { color: var(--muted); font-size: 0.85rem; margin: 0 0 1rem; line-height: 1.45; }
+    label { display: block; font-size: 0.78rem; color: var(--muted); margin-bottom: 0.25rem; }
+    input { width: 100%; padding: 0.55rem 0.65rem; border-radius: 8px; border: 1px solid var(--line); background: #0f141c; color: var(--text); margin-bottom: 0.75rem; }
+    button { width: 100%; padding: 0.65rem; border: none; border-radius: 10px; background: var(--gold); color: #1a1408; font-weight: 800; cursor: pointer; margin-top: 0.25rem; }
+    #err { color: #ff8a8a; font-size: 0.85rem; margin-top: 0.75rem; display: none; }
+    .hint { font-size: 0.75rem; color: var(--muted); margin-top: 1rem; }
+    code { background: #0f141c; padding: 0.1rem 0.35rem; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>店舗ログイン</h1>
+    <p>HTTPS 利用時は <code>COOKIE_SECURE=1</code> を推奨（Cookie の Secure フラグ）。</p>
+    <label>店舗ID</label>
+    <input id="storeId" type="text" autocomplete="organization" value="seed-store-1" />
+    <label>メール</label>
+    <input id="email" type="email" autocomplete="username" value="admin@seed.local" />
+    <label>パスワード</label>
+    <input id="password" type="password" autocomplete="current-password" />
+    <button type="button" id="go">ログイン</button>
+    <div id="err"></div>
+    <p class="hint">初回シードのパスワードは環境変数 <code>SEED_STAFF_PASSWORD</code> または既定 <code>changeme</code> です。</p>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const next = params.get("next") || "";
+
+    document.getElementById("go").onclick = async () => {
+      const err = document.getElementById("err");
+      err.style.display = "none";
+      const storeId = document.getElementById("storeId").value.trim();
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+      try {
+        const r = await fetch("/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ storeId, email, password }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || r.statusText);
+        const sid = encodeURIComponent(storeId);
+        const defaultHome = "/staff-app/" + sid;
+        let dest = defaultHome;
+        if (next && next.startsWith("/staff-app/" + sid)) dest = next;
+        location.assign(dest);
+      } catch (e) {
+        err.style.display = "block";
+        err.textContent = String(e.message || e);
+      }
+    };
+  </script>
+</body>
+</html>

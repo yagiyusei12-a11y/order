@@ -1,0 +1,53 @@
+<main>
+  <h2 class="page-title">管理メニュー</h2>
+  <p class="muted" style="margin-top:-0.35rem;margin-bottom:0.75rem">よく使う機能へ。下段はライブ指標（再読込で更新）。</p>
+  <div class="row" style="margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
+    <span class="badge" id="statOpen">開店セッション —</span>
+    <span class="badge" id="statKit">キッチン待ち —</span>
+    <span class="badge" id="statTables">有効卓 —</span>
+    <button type="button" class="btn-ghost" id="btnDashRef" style="width:auto">指標を更新</button>
+  </div>
+  <div class="dash-grid">
+    <a class="dash-card dash-card-lg" href="/staff-app/__STORE_PATH__/ops">
+      <span class="dash-icon">▣</span>
+      <strong>卓・会計</strong>
+      <small>テーブル・伝票管理<br>セッション開始・ゲストURL</small>
+    </a>
+    <a class="dash-card dash-card-lg" href="/staff-app/__STORE_PATH__/kitchen">
+      <span class="dash-icon">◎</span>
+      <strong>キッチン</strong>
+      <small>進行中の注文<br>提供状況の更新</small>
+    </a>
+    <a class="dash-card dash-card-lg" href="/staff-app/__STORE_PATH__/tables">
+      <span class="dash-icon">≡</span>
+      <strong>席マスタ</strong>
+      <small>卓の追加・名前・固定QR用URL</small>
+    </a>
+    <a class="dash-card dash-card-lg" href="/staff-app/__STORE_PATH__/menu">
+      <span class="dash-icon">≣</span>
+      <strong>メニュー</strong>
+      <small>カテゴリ・商品・販売可否</small>
+    </a>
+    <a class="dash-card dash-card-lg" href="/staff-app/__STORE_PATH__/courses">
+      <span class="dash-icon">◇</span>
+      <strong>コース</strong>
+      <small>食べ放題などのマスタ</small>
+    </a>
+    <a class="dash-card dash-card-lg" href="/staff-app/__STORE_PATH__/reports">
+      <span class="dash-icon">◆</span>
+      <strong>日次レポート</strong>
+      <small>決済手段別の集計</small>
+    </a>
+    <a class="dash-card dash-card-lg" href="/staff-app/__STORE_PATH__/billing">
+      <span class="dash-icon">¥</span>
+      <strong>会計</strong>
+      <small>伝票一覧・入金記録</small>
+    </a>
+    <a class="dash-card dash-card-lg" href="/staff-app/__STORE_PATH__/settings">
+      <span class="dash-icon">⚙</span>
+      <strong>設定</strong>
+      <small>店舗名・決済手段・表示オプション</small>
+    </a>
+  </div>
+  <div id="log"></div>
+</main>

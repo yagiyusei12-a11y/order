@@ -1,0 +1,129 @@
+import { readFileSync } from "node:fs";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { templatePath } from "../lib/paths.js";
+
+function loadTemplate(name: string): string {
+  return readFileSync(templatePath(name), "utf8");
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function assembleStaffPage(storeId: string, pageTitle: string, bodyFile: string, scriptFile: string): string {
+  const pathEnc = encodeURIComponent(storeId);
+  const body = loadTemplate(bodyFile).replace(/__STORE_PATH__/g, pathEnc);
+  const script = loadTemplate(scriptFile);
+  return loadTemplate("staff-frame.html")
+    .replace(/__PAGE_TITLE__/g, escapeHtml(pageTitle))
+    .replace(/__STORE_ID_HTML__/g, escapeHtml(storeId))
+    .replace(/__STORE_ID_JS__/g, JSON.stringify(storeId))
+    .replace(/__STORE_PATH__/g, pathEnc)
+    .replace("__BODY__", body)
+    .replace("__PAGE_SCRIPT__", script);
+}
+
+async function assertStaffStore(
+  req: FastifyRequest<{ Params: { storeId: string } }>,
+  reply: FastifyReply
+): Promise<boolean> {
+  const storeId = req.params.storeId;
+  if (storeId === "login") {
+    reply.redirect("/staff-app/login");
+    return false;
+  }
+  try {
+    await req.jwtVerify();
+  } catch {
+    reply.redirect("/staff-app/login?next=" + encodeURIComponent(req.url));
+    return false;
+  }
+  const u = req.user as { storeId: string };
+  if (u.storeId !== storeId) {
+    reply.code(403).type("text/plain; charset=utf-8").send("この店舗へのアクセス権がありません");
+    return false;
+  }
+  return true;
+}
+
+export async function registerWebUi(app: FastifyInstance): Promise<void> {
+  const html = (name: string) => loadTemplate(name);
+
+  app.get("/", async (_req, reply) => {
+    return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(html("home.html"));
+  });
+
+  app.get("/staff-app/login", async (_req, reply) => {
+    return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(html("login.html"));
+  });
+
+  app.get<{ Params: { token: string } }>("/guest-app/:token", async (req, reply) => {
+    const token = req.params.token;
+    const jsToken = JSON.stringify(token);
+    const body = html("guest.html").replace("__TOKEN_JS__", jsToken);
+    return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(body);
+  });
+
+  const staffHtml = (reply: FastifyReply, storeId: string, title: string, bodyFile: string, scriptFile: string) =>
+    reply
+      .type("text/html; charset=utf-8")
+      .header("Cache-Control", "no-store")
+      .send(assembleStaffPage(storeId, title, bodyFile, scriptFile));
+
+  app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/ops", async (req, reply) => {
+    if (!(await assertStaffStore(req, reply))) return;
+    return staffHtml(reply, req.params.storeId, "オペレーション", "staff-body-ops.html", "staff-script-ops.js");
+  });
+
+  app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/tables", async (req, reply) => {
+    if (!(await assertStaffStore(req, reply))) return;
+    return staffHtml(reply, req.params.storeId, "席マスタ", "staff-body-tables.html", "staff-script-tables.js");
+  });
+
+  app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/kitchen", async (req, reply) => {
+    if (!(await assertStaffStore(req, reply))) return;
+    return staffHtml(reply, req.params.storeId, "キッチン", "staff-body-kitchen.html", "staff-script-kitchen.js");
+  });
+
+  app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/menu", async (req, reply) => {
+    if (!(await assertStaffStore(req, reply))) return;
+    return staffHtml(reply, req.params.storeId, "メニュー", "staff-body-menu.html", "staff-script-menu.js");
+  });
+
+  app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/courses", async (req, reply) => {
+    if (!(await assertStaffStore(req, reply))) return;
+    return staffHtml(reply, req.params.storeId, "コース", "staff-body-courses.html", "staff-script-courses.js");
+  });
+
+  app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/reports", async (req, reply) => {
+    if (!(await assertStaffStore(req, reply))) return;
+    return staffHtml(reply, req.params.storeId, "レポート", "staff-body-reports.html", "staff-script-reports.js");
+  });
+
+  app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/billing", async (req, reply) => {
+    if (!(await assertStaffStore(req, reply))) return;
+    return staffHtml(reply, req.params.storeId, "会計・レジ", "staff-body-billing.html", "staff-script-billing.js");
+  });
+
+  app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/settings", async (req, reply) => {
+    if (!(await assertStaffStore(req, reply))) return;
+    return staffHtml(reply, req.params.storeId, "設定", "staff-body-settings.html", "staff-script-settings.js");
+  });
+
+  app.get<{ Params: { storeId: string } }>("/staff-app/:storeId", async (req, reply) => {
+    if (!(await assertStaffStore(req, reply))) return;
+    return staffHtml(reply, req.params.storeId, "ホーム", "staff-body-dashboard.html", "staff-script-dashboard.js");
+  });
+
+  app.get<{ Params: { publicCode: string } }>("/table-app/:publicCode", async (req, reply) => {
+    const code = escapeHtml(req.params.publicCode);
+    const body = html("table-qr.html")
+      .replace("__PUBLIC_CODE_HTML__", code)
+      .replace("__PUBLIC_CODE_JS__", JSON.stringify(req.params.publicCode));
+    return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(body);
+  });
+}

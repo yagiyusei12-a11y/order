@@ -1,0 +1,49 @@
+<main>
+  <h2 class="page-title">設定</h2>
+  <p class="muted" style="margin-top:-0.35rem;margin-bottom:1rem">店舗の基本情報・会計まわり・ゲスト画面の表示をまとめて変更できます。</p>
+
+  <div class="card">
+    <strong style="font-size:0.9rem">店舗</strong>
+    <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">画面上部の店舗IDとは別に、表示用の店舗名を更新できます。</p>
+    <label>店舗名</label>
+    <input id="stName" type="text" />
+    <label class="muted" style="font-size:0.72rem">内部ID（参照用）</label>
+    <input id="stId" type="text" readonly style="opacity:0.85" />
+    <button type="button" class="btn-primary" id="btnSaveStore">店舗名を保存</button>
+  </div>
+
+  <div class="card" style="margin-top:1rem">
+    <strong style="font-size:0.9rem">画面・動作</strong>
+    <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">キッチンの自動更新間隔（秒）と、ゲスト注文画面の価格表示です。</p>
+    <label>キッチン自動更新（秒）5〜300</label>
+    <input id="stKitSec" type="number" min="5" max="300" step="1" />
+    <label class="row" style="margin-top:0.5rem;align-items:center;gap:0.4rem;font-size:0.82rem">
+      <input type="checkbox" id="stGuestPrice" /> ゲストにメニュー金額を表示する
+    </label>
+    <button type="button" class="btn-primary" id="btnSaveUi">表示設定を保存</button>
+  </div>
+
+  <div class="card" style="margin-top:1rem">
+    <strong style="font-size:0.9rem">決済手段（会計画面）</strong>
+    <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">有効にした手段だけが会計の入金記録に出ます。並びは数字が小さいほど上に表示されます。</p>
+    <div id="payMethods" style="padding:0"></div>
+  </div>
+
+  <div class="card" style="margin-top:1rem">
+    <strong style="font-size:0.9rem">スタッフアカウント</strong>
+    <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">ログイン可能なアカウント一覧（パスワード変更は今後拡張）。</p>
+    <div id="staffList" style="font-size:0.82rem"></div>
+  </div>
+
+  <div class="card" style="margin-top:1rem">
+    <strong style="font-size:0.9rem">クイックリンク</strong>
+    <div class="row" style="margin-top:0.5rem;flex-wrap:wrap;gap:0.35rem">
+      <a class="btn-ghost" href="/staff-app/__STORE_PATH__/menu" style="text-decoration:none;display:inline-block">メニュー</a>
+      <a class="btn-ghost" href="/staff-app/__STORE_PATH__/tables" style="text-decoration:none;display:inline-block">席マスタ</a>
+      <a class="btn-ghost" href="/staff-app/__STORE_PATH__/courses" style="text-decoration:none;display:inline-block">コース</a>
+      <a class="btn-ghost" href="/staff-app/__STORE_PATH__/billing" style="text-decoration:none;display:inline-block">会計</a>
+    </div>
+  </div>
+
+  <div id="log"></div>
+</main>

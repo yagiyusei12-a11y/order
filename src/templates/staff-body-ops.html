@@ -1,0 +1,27 @@
+<main>
+  <div class="top-tabs" role="tablist" aria-label="会計まわり（表示のみ）">
+    <button type="button" class="is-on">会計管理</button>
+    <button type="button">レシートボックス</button>
+    <button type="button">精算</button>
+  </div>
+  <div class="ops-split">
+    <div>
+      <h2 class="page-title">テーブル・伝票管理</h2>
+      <div class="row" style="margin-bottom:0.5rem">
+        <button type="button" class="btn-ghost" id="btnRefFloor">一覧を更新</button>
+      </div>
+      <div id="tableGrid" class="table-grid"></div>
+      <div class="card" style="margin-top:1rem;padding:0.75rem">
+        <strong style="font-size:0.82rem;color:var(--muted)">開いているセッション</strong>
+        <div id="openSessionsMini" style="margin-top:0.5rem;font-size:0.85rem"></div>
+      </div>
+    </div>
+    <div>
+      <h2 class="page-title" style="font-size:0.95rem">詳細</h2>
+      <div id="detailPanel" class="detail-panel">
+        <div class="detail-placeholder">左の卓一覧からテーブルをお選びください</div>
+      </div>
+    </div>
+  </div>
+  <div id="log"></div>
+</main>

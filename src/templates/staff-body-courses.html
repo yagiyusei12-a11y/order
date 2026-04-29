@@ -1,0 +1,21 @@
+<main>
+  <h2 class="page-title">コース</h2>
+  <p class="muted" style="margin-top:-0.35rem;margin-bottom:1rem">食べ飲み放題などは<strong>制限時間（分）</strong>と、<strong>メニューマスタから対象商品を複数選択</strong>してください。対象を1件以上にするとゲスト画面はその商品のみ注文できます。未選択のコースは店舗メニュー全品が注文可能です。</p>
+  <div class="row" style="margin-bottom:0.75rem">
+    <button type="button" class="btn-ghost" id="btnRefCourses">再読込</button>
+  </div>
+  <div id="coursesList" class="card" style="padding:0;overflow:hidden"></div>
+  <div class="card" style="margin-top:1rem">
+    <strong style="font-size:0.88rem">コースを追加</strong>
+    <label style="margin-top:0.65rem">名前</label>
+    <input id="cName" type="text" placeholder="例: スタンダード食べ放題" />
+    <label>種別（任意ラベル）</label>
+    <input id="cKind" type="text" placeholder="例: tabehodai" />
+    <label>制限時間（分）</label>
+    <input id="cMin" type="number" min="1" step="1" value="90" />
+    <label>一人あたり価格（円）</label>
+    <input id="cPrice" type="number" min="0" step="1" value="2980" />
+    <button type="button" class="btn-primary" id="btnAddCourse">追加</button>
+  </div>
+  <div id="log"></div>
+</main>

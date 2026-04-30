@@ -98,14 +98,32 @@ function render() {
     const nm = document.createElement("input");
     nm.type = "text";
     nm.value = c.name;
+    nm.title = "コースの正式名称";
     const pr = document.createElement("input");
     pr.type = "number";
     pr.min = "0";
     pr.value = String(c.pricePerPerson);
+    pr.title = "一人あたりのコース料金（円）";
     const dm = document.createElement("input");
     dm.type = "number";
     dm.min = "1";
     dm.value = String(c.durationMinutes);
+    dm.title = "食べ放題などの制限時間（分）";
+    const labName = document.createElement("div");
+    labName.className = "muted";
+    labName.style.fontSize = "0.72rem";
+    labName.textContent = "コース名（ゲスト・会計表示）";
+    const labPrice = document.createElement("div");
+    labPrice.className = "muted";
+    labPrice.style.fontSize = "0.72rem";
+    labPrice.style.marginTop = "0.35rem";
+    labPrice.textContent = "一人あたり料金（円）";
+    const labDur = document.createElement("div");
+    labDur.className = "muted";
+    labDur.style.fontSize = "0.72rem";
+    labDur.style.marginTop = "0.35rem";
+    labDur.textContent = "制限時間（分）";
+
     const tog = document.createElement("button");
     tog.type = "button";
     tog.className = "btn-ghost";
@@ -132,6 +150,8 @@ function render() {
     save.textContent = "基本情報を保存";
     save.onclick = async () => {
       log("");
+      const courseName = nm.value.trim();
+      if (!courseName) return log("コース名を入力してください");
       const durationMinutes = Number(dm.value);
       const pricePerPerson = Number(pr.value);
       if (!Number.isInteger(durationMinutes) || durationMinutes <= 0) return log("制限時間は正の整数で");
@@ -143,7 +163,7 @@ function render() {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              name: nm.value.trim(),
+              name: courseName,
               durationMinutes,
               pricePerPerson,
             }),
@@ -155,8 +175,11 @@ function render() {
         log(String(e.message || e));
       }
     };
+    actions.appendChild(labName);
     actions.appendChild(nm);
+    actions.appendChild(labPrice);
     actions.appendChild(pr);
+    actions.appendChild(labDur);
     actions.appendChild(dm);
     const rb = document.createElement("div");
     rb.className = "row";
@@ -266,6 +289,7 @@ document.getElementById("btnAddCourse").onclick = async () => {
       body: JSON.stringify({ name, kind, durationMinutes, pricePerPerson }),
     });
     document.getElementById("cName").value = "";
+    log("コースを追加しました");
     await loadAll();
   } catch (e) {
     log(String(e.message || e));

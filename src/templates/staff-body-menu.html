@@ -8,17 +8,24 @@
     <button type="button" id="tab-kitchens">調理場</button>
   </div>
   <div class="card" style="padding:0.75rem">
-    <div class="row" style="justify-content:space-between;gap:0.5rem">
-      <div class="row" style="gap:0.35rem">
+    <p class="muted" style="font-size:0.72rem;margin:0 0 0.5rem">左：カテゴリの一括追加。右：ゲストメニューにそのカテゴリを出すか。</p>
+    <div class="row" style="justify-content:space-between;gap:0.5rem;align-items:flex-end;flex-wrap:wrap">
+      <div class="row" style="gap:0.5rem;flex-wrap:wrap;align-items:flex-end">
         <button type="button" class="btn-ghost" id="btnRefMenu">再読込</button>
-        <input id="newCatName" type="text" placeholder="カテゴリ追加" style="margin:0;max-width:180px" />
-        <select id="newCatParentId" style="margin:0;max-width:180px">
-          <option value="">親カテゴリなし</option>
-        </select>
-        <button type="button" class="btn-ghost" id="btnAddCat">追加</button>
+        <div style="display:flex;flex-direction:column;gap:0.2rem">
+          <label for="newCatName" style="font-size:0.72rem;color:var(--muted);margin:0">新規カテゴリ名</label>
+          <input id="newCatName" type="text" placeholder="例: 季節限定" style="margin:0;max-width:200px" />
+        </div>
+        <div style="display:flex;flex-direction:column;gap:0.2rem">
+          <label for="newCatParentId" style="font-size:0.72rem;color:var(--muted);margin:0">親カテゴリ</label>
+          <select id="newCatParentId" style="margin:0;max-width:200px" title="空欄は最上位カテゴリ">
+            <option value="">親なし（最上位）</option>
+          </select>
+        </div>
+        <button type="button" class="btn-ghost" id="btnAddCat">カテゴリ追加</button>
       </div>
-      <label class="row" style="align-items:center;gap:0.35rem;font-size:0.78rem">
-        <input type="checkbox" id="newCatGuest" checked /> ゲスト表示
+      <label class="row" style="align-items:center;gap:0.35rem;font-size:0.78rem;max-width:12rem">
+        <input type="checkbox" id="newCatGuest" checked /> ゲスト注文画面にこのカテゴリを表示する
       </label>
     </div>
   </div>

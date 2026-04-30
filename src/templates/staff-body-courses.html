@@ -7,13 +7,15 @@
   <div id="coursesList" class="card" style="padding:0;overflow:hidden"></div>
   <div class="card" style="margin-top:1rem">
     <strong style="font-size:0.88rem">コースを追加</strong>
-    <label style="margin-top:0.65rem">名前</label>
+    <p class="muted" style="font-size:0.72rem;margin:0.35rem 0 0.5rem">食べ放題・飲み放題などのプラン名と料金。保存後、一覧で対象メニューを指定できます。</p>
+    <label for="cName" style="margin-top:0.65rem">コース名（ゲスト・伝票に表示）</label>
     <input id="cName" type="text" placeholder="例: スタンダード食べ放題" />
-    <label>種別（任意ラベル）</label>
-    <input id="cKind" type="text" placeholder="例: tabehodai" />
-    <label>制限時間（分）</label>
+    <label for="cKind">種別コード（内部・一覧用・任意）</label>
+    <p class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.35rem">識別用の短い文字列。画面には補助的に表示されます。</p>
+    <input id="cKind" type="text" placeholder="例: eat_drink_all, tabehodai" />
+    <label for="cMin">制限時間（分）</label>
     <input id="cMin" type="number" min="1" step="1" value="90" />
-    <label>一人あたり価格（円）</label>
+    <label for="cPrice">一人あたり料金（円・税込想定）</label>
     <input id="cPrice" type="number" min="0" step="1" value="2980" />
     <button type="button" class="btn-primary" id="btnAddCourse">追加</button>
   </div>

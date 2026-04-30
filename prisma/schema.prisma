@@ -170,6 +170,10 @@ model MenuItem {
   /// 在庫管理時、残数がこの値以下なら「在庫少」（null ならしきい値アラートなし）
   stockLowThreshold Int?
   kitchenStationId  String?
+  /// キッチンまとめ表示の調理タイマー（秒）。null / 0 = 未使用
+  cookTimerSec      Int?
+  /// 同一商品の2つ目の調理タイマー（秒）。null / 0 = 未使用
+  cookTimerSec2     Int?
   category          MenuCategory    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   kitchenStation    KitchenStation? @relation(fields: [kitchenStationId], references: [id], onDelete: SetNull)
   orderLines        OrderLine[]

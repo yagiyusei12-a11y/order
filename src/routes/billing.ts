@@ -5,7 +5,7 @@ type SessionForPreview = {
   guestCount: number;
   courseId: string | null;
   course: { pricePerPerson: number } | null;
-  orders: { lines: { unitPrice: number; qty: number }[] }[];
+  orders: { lines: { unitPrice: number; qty: number; status: string }[] }[];
 };
 
 function sessionPreviewFromSession(session: SessionForPreview): {
@@ -18,6 +18,7 @@ function sessionPreviewFromSession(session: SessionForPreview): {
   let ordersTotal = 0;
   for (const o of session.orders) {
     for (const l of o.lines) {
+      if (l.status === "cancelled") continue;
       ordersTotal += l.unitPrice * l.qty;
     }
   }
@@ -177,7 +178,15 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       courseName: string | null;
     } | null = null;
     let courseLine: { name: string; lineTotal: number } | null = null;
-    const orderLines: { nameSnapshot: string; qty: number; unitPrice: number; lineTotal: number }[] = [];
+    const orderLines: {
+      id: string;
+      nameSnapshot: string;
+      qty: number;
+      unitPrice: number;
+      lineTotal: number;
+      status: string;
+      menuItemId: string | null;
+    }[] = [];
     if (bill.session) {
       preview = sessionPreviewFromSession(bill.session as SessionForPreview);
       sessionSummary = {
@@ -196,10 +205,13 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       for (const o of bill.session.orders) {
         for (const l of o.lines) {
           orderLines.push({
+            id: l.id,
             nameSnapshot: l.nameSnapshot,
             qty: l.qty,
             unitPrice: l.unitPrice,
             lineTotal: l.unitPrice * l.qty,
+            status: l.status,
+            menuItemId: l.menuItemId,
           });
         }
       }
@@ -222,6 +234,59 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       courseLine,
       orderLines,
     };
+  });
+
+  app.post<{
+    Params: { storeId: string; billId: string; lineId: string };
+    Body: { setStockZero?: boolean };
+  }>("/stores/:storeId/bills/:billId/order-lines/:lineId/cancel", async (req, reply) => {
+    const bill = await prisma.bill.findFirst({
+      where: { id: req.params.billId, storeId: req.params.storeId },
+      include: { session: true },
+    });
+    if (!bill) return reply.code(404).send({ error: "bill not found" });
+    if (!bill.sessionId || !bill.session) return reply.code(400).send({ error: "bill is not linked to session" });
+    if (bill.status !== "open") return reply.code(400).send({ error: "only open bill can cancel order lines" });
+
+    const line = await prisma.orderLine.findFirst({
+      where: {
+        id: req.params.lineId,
+        order: { sessionId: bill.sessionId },
+      },
+      include: { menuItem: true },
+    });
+    if (!line) return reply.code(404).send({ error: "order line not found for this bill" });
+    if (line.status === "cancelled") return reply.code(400).send({ error: "order line already cancelled" });
+
+    const setStockZero = req.body?.setStockZero === true;
+    const updated = await prisma.$transaction(async (tx) => {
+      const next = await tx.orderLine.update({
+        where: { id: line.id },
+        data: {
+          status: "cancelled",
+          note: line.note ? `${line.note} / 在庫切れキャンセル` : "在庫切れキャンセル",
+        },
+      });
+
+      if (line.menuItemId) {
+        const item = await tx.menuItem.findUnique({ where: { id: line.menuItemId } });
+        if (item && item.stockQty !== null) {
+          await tx.menuItem.update({
+            where: { id: item.id },
+            data: { stockQty: { increment: line.qty } },
+          });
+        }
+        if (setStockZero) {
+          await tx.menuItem.update({
+            where: { id: line.menuItemId },
+            data: { stockQty: 0, isAvailable: false },
+          });
+        }
+      }
+
+      return next;
+    });
+    return { ok: true, line: updated };
   });
 
   app.patch<{

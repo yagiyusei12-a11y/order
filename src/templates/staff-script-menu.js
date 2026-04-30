@@ -8,7 +8,10 @@ function escapeHtml(s) {
 
 function log(t) {
   const el = document.getElementById("log");
-  if (el) el.textContent = t || "";
+  if (el) {
+    el.textContent = t || "";
+    if (t) el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
 }
 
 let categoriesCache = [];
@@ -106,7 +109,7 @@ function syncSelection() {
 function refreshNewCategoryParentOptions() {
   const sel = document.getElementById("newCatParentId");
   if (!sel) return;
-  let h = "<option value=\"\">親カテゴリなし</option>";
+  let h = "<option value=\"\">親なし（最上位）</option>";
   for (const c of categoriesCache) {
     h += "<option value=\"" + escapeHtml(c.id) + "\">" + escapeHtml(categoryLabel(c)) + "</option>";
   }
@@ -183,7 +186,20 @@ function renderItemsTab(layout) {
     return;
   }
   const items = cat.items || [];
-  let mh = "<div style=\"padding:0.7rem;border-bottom:1px solid var(--border)\"><div class=\"row\" style=\"gap:.35rem\"><input id=\"newItemName\" type=\"text\" placeholder=\"商品名\" style=\"margin:0;flex:1;min-width:130px\" /><input id=\"newItemPrice\" type=\"number\" min=\"0\" step=\"1\" placeholder=\"価格\" style=\"margin:0;width:90px\" /><button type=\"button\" class=\"btn-ghost\" id=\"btnAddItem\">商品追加</button></div></div>";
+  let mh =
+    "<div style=\"padding:0.7rem;border-bottom:1px solid var(--border)\">" +
+    "<div class=\"muted\" style=\"font-size:0.72rem;margin-bottom:0.45rem\">選択中カテゴリに<strong>新しい商品</strong>を追加します（税込単価）。</div>" +
+    "<div class=\"row\" style=\"gap:.5rem;align-items:flex-end;flex-wrap:wrap\">" +
+    "<div style=\"display:flex;flex-direction:column;gap:0.2rem;flex:1;min-width:130px\">" +
+    "<span style=\"font-size:0.72rem;color:var(--muted)\">商品名（メニュー表示）</span>" +
+    "<input id=\"newItemName\" type=\"text\" placeholder=\"例: おつまみ盛り合わせ\" style=\"margin:0\" />" +
+    "</div>" +
+    "<div style=\"display:flex;flex-direction:column;gap:0.2rem;width:100px\">" +
+    "<span style=\"font-size:0.72rem;color:var(--muted)\">価格（円）</span>" +
+    "<input id=\"newItemPrice\" type=\"number\" min=\"0\" step=\"1\" placeholder=\"0\" style=\"margin:0\" title=\"税込の販売価格\" />" +
+    "</div>" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"btnAddItem\" style=\"margin-bottom:0.05rem\">商品追加</button>" +
+    "</div></div>";
   if (!items.length) mh += "<div style=\"padding:1rem;color:var(--muted)\">商品がありません</div>";
   for (const it of items) {
     const active = it.id === selectedItemId;
@@ -195,13 +211,22 @@ function renderItemsTab(layout) {
   const addBtn = document.getElementById("btnAddItem");
   if (addBtn) {
     addBtn.onclick = async () => {
+      log("");
       const name = document.getElementById("newItemName").value.trim();
       const price = Number(document.getElementById("newItemPrice").value);
       if (!name) return log("商品名を入力してください");
       if (!Number.isInteger(price) || price < 0) return log("価格は0以上の整数で");
-      await api("/stores/" + encodeURIComponent(STORE) + "/menu/items", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ categoryId: cat.id, name, price }) });
-      log("商品を追加しました");
-      await loadAll();
+      try {
+        await api("/stores/" + encodeURIComponent(STORE) + "/menu/items", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ categoryId: cat.id, name, price }),
+        });
+        log("商品を追加しました");
+        await loadAll();
+      } catch (e) {
+        log(String(e.message || e));
+      }
     };
   }
   mid.querySelectorAll(".mi-row").forEach((el) => {
@@ -220,24 +245,60 @@ function renderItemDetail(right) {
   right.innerHTML =
     "<div style=\"padding:.8rem;border-bottom:1px solid var(--border);font-weight:800\">商品詳細</div><div style=\"padding:.8rem\">" +
     (item.imageUrl ? "<img src=\"" + escapeHtml(item.imageUrl) + "\" style=\"width:96px;height:96px;object-fit:cover;border-radius:10px;border:1px solid var(--border);margin-bottom:.5rem\" />" : "") +
-    "<label>商品名</label><input id=\"dName\" type=\"text\" value=\"" + escapeHtml(item.name) + "\" />" +
-    "<label>価格</label><input id=\"dPrice\" type=\"number\" min=\"0\" step=\"1\" value=\"" + escapeHtml(String(item.price)) + "\" />" +
-    "<label>画像URL</label><input id=\"dImageUrl\" type=\"text\" value=\"" + escapeHtml(item.imageUrl || "") + "\" />" +
-    "<label>在庫</label><input id=\"dStock\" type=\"number\" min=\"0\" step=\"1\" value=\"" + escapeHtml(item.stockQty == null ? "" : String(item.stockQty)) + "\" />" +
-    "<label>しきい値</label><input id=\"dStockTh\" type=\"number\" min=\"0\" step=\"1\" value=\"" + escapeHtml(item.stockLowThreshold == null ? "" : String(item.stockLowThreshold)) + "\" />" +
-    "<label>カテゴリ</label><select id=\"dCat\">" + categoriesCache.map((c) => "<option value=\"" + escapeHtml(c.id) + "\"" + (c.id === item.categoryId ? " selected" : "") + ">" + escapeHtml(categoryLabel(c)) + "</option>").join("") + "</select>" +
-    "<label>調理場</label><select id=\"dStation\">" + stationOptionsHtml(item.kitchenStationId || "") + "</select>" +
-    "<label>オプション（複数選択）</label><div id=\"dOptGroups\" style=\"max-height:120px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:.35rem .5rem;background:#fff\">" +
+    "<label>商品名（メニュー・キッチンに表示）</label><input id=\"dName\" type=\"text\" value=\"" + escapeHtml(item.name) + "\" />" +
+    "<label>販売価格（円・税込想定）</label><input id=\"dPrice\" type=\"number\" min=\"0\" step=\"1\" value=\"" + escapeHtml(String(item.price)) + "\" />" +
+    "<label>画像URL（任意・手入力または下でアップロード）</label><input id=\"dImageUrl\" type=\"text\" value=\"" + escapeHtml(item.imageUrl || "") + "\" placeholder=\"/uploads/... または外部URL\" />" +
+    "<label>在庫数（空欄＝在庫管理しない）</label><input id=\"dStock\" type=\"number\" min=\"0\" step=\"1\" value=\"" + escapeHtml(item.stockQty == null ? "" : String(item.stockQty)) + "\" />" +
+    "<label>残りわずかアラートのしきい値（在庫管理時のみ）</label><input id=\"dStockTh\" type=\"number\" min=\"0\" step=\"1\" value=\"" + escapeHtml(item.stockLowThreshold == null ? "" : String(item.stockLowThreshold)) + "\" />" +
+    "<label>所属カテゴリ</label><select id=\"dCat\">" + categoriesCache.map((c) => "<option value=\"" + escapeHtml(c.id) + "\"" + (c.id === item.categoryId ? " selected" : "") + ">" + escapeHtml(categoryLabel(c)) + "</option>").join("") + "</select>" +
+    "<label>調理場（キッチン絞り込し・振り分け用）</label><select id=\"dStation\">" + stationOptionsHtml(item.kitchenStationId || "") + "</select>" +
+    "<label>キッチン調理タイマー1（秒・空欄＝なし）</label><input id=\"dCookSec\" type=\"number\" min=\"1\" max=\"86400\" step=\"1\" value=\"" +
+    escapeHtml(item.cookTimerSec != null && item.cookTimerSec > 0 ? String(item.cookTimerSec) : "") +
+    "\" placeholder=\"例: 30\" title=\"1〜86400秒\" />" +
+    "<label>キッチン調理タイマー2（秒・空欄＝なし・同一商品で別工程用）</label><input id=\"dCookSec2\" type=\"number\" min=\"1\" max=\"86400\" step=\"1\" value=\"" +
+    escapeHtml(item.cookTimerSec2 != null && item.cookTimerSec2 > 0 ? String(item.cookTimerSec2) : "") +
+    "\" placeholder=\"例: 60\" title=\"1〜86400秒\" />" +
+    "<label>この商品に付けるオプショングループ（複数可）</label><div id=\"dOptGroups\" style=\"max-height:120px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:.35rem .5rem;background:#fff\">" +
     optionGroupsCache.map((g) => "<label class=\"row\" style=\"font-size:.78rem;gap:.35rem;margin:.2rem 0\"><input type=\"checkbox\" class=\"dOptChk\" value=\"" + escapeHtml(g.id) + "\"" + (linked.has(g.id) ? " checked" : "") + " /> " + escapeHtml(g.name) + "</label>").join("") +
     "</div>" +
-    "<div class=\"row\" style=\"margin-top:.35rem;justify-content:space-between\"><button type=\"button\" class=\"btn-ghost\" id=\"dToggle\">" + (item.isAvailable ? "販売停止にする" : "販売再開する") + "</button><button type=\"button\" class=\"btn-ghost\" id=\"dSave\">保存</button></div>" +
-    "<div class=\"row\" style=\"margin-top:.5rem\"><input id=\"dFile\" type=\"file\" accept=\"image/*\" style=\"margin:0;max-width:170px\" /><button type=\"button\" class=\"btn-ghost\" id=\"dUpload\">画像アップ</button><button type=\"button\" class=\"btn-ghost\" id=\"dDeleteImage\">画像削除</button></div></div>";
+    "<div class=\"row\" style=\"margin-top:.35rem;justify-content:space-between\"><button type=\"button\" class=\"btn-ghost\" id=\"dToggle\">" + (item.isAvailable ? "販売停止にする" : "販売再開する") + "</button><button type=\"button\" class=\"btn-primary\" id=\"dSave\">保存</button></div>" +
+    "<div class=\"row\" style=\"margin-top:.35rem;gap:.35rem;justify-content:space-between\">" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"dCopy\" title=\"同じ設定で商品を複製\">商品をコピー</button>" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"dDelete\" style=\"color:#b91c1c\" title=\"商品を完全に削除\">商品を削除</button>" +
+    "</div>" +
+    "<label style=\"margin-top:.5rem\">商品画像ファイル（JPEG/PNG など）</label>" +
+    "<div class=\"row\" style=\"margin-top:.25rem\"><input id=\"dFile\" type=\"file\" accept=\"image/*\" style=\"margin:0;max-width:170px\" title=\"端末から画像を選ぶとサーバーに保存しURLを設定\" /><button type=\"button\" class=\"btn-ghost\" id=\"dUpload\">画像アップ</button><button type=\"button\" class=\"btn-ghost\" id=\"dDeleteImage\">画像削除</button></div></div>";
 
-  document.getElementById("dSave").onclick = async () => {
-    const price = Number(document.getElementById("dPrice").value);
-    if (!Number.isInteger(price) || price < 0) return log("価格は0以上の整数で");
-    const rs = document.getElementById("dStock").value.trim();
-    const rt = document.getElementById("dStockTh").value.trim();
+  const $ = (id) => right.querySelector("#" + id);
+  const btnSave = $("dSave");
+  const btnToggle = $("dToggle");
+  const btnCopy = $("dCopy");
+  const btnDel = $("dDelete");
+  const btnUp = $("dUpload");
+  const btnImgDel = $("dDeleteImage");
+  if (!btnSave || !btnToggle || !btnCopy || !btnDel || !btnUp || !btnImgDel) {
+    log("商品フォームの初期化に失敗しました。再読込してください。");
+    return;
+  }
+
+  btnSave.onclick = async () => {
+    log("");
+    const elName = $("dName");
+    const elPrice = $("dPrice");
+    const elImg = $("dImageUrl");
+    const elCat = $("dCat");
+    const elSt = $("dStation");
+    const elCook = $("dCookSec");
+    const elCook2 = $("dCookSec2");
+    if (!elName || !elPrice || !elImg || !elCat || !elSt) return log("入力欄が見つかりません。再読込してください。");
+    const itemName = elName.value.trim();
+    if (!itemName) return log("商品名を入力してください");
+    const priceRaw = elPrice.value.trim();
+    if (priceRaw === "") return log("価格を入力してください");
+    const price = Number(priceRaw);
+    if (!Number.isFinite(price) || !Number.isInteger(price) || price < 0) return log("価格は0以上の整数で入力してください");
+    const rs = $("dStock") ? $("dStock").value.trim() : "";
+    const rt = $("dStockTh") ? $("dStockTh").value.trim() : "";
     let stockQty = null;
     if (rs !== "") {
       stockQty = Number(rs);
@@ -248,50 +309,151 @@ function renderItemDetail(right) {
       stockLowThreshold = Number(rt);
       if (!Number.isInteger(stockLowThreshold) || stockLowThreshold < 0) return log("しきい値は空か0以上の整数");
     }
+    const ct = elCook ? elCook.value.trim() : "";
+    let cookTimerSec = null;
+    if (ct !== "") {
+      const n = Number(ct);
+      if (!Number.isInteger(n) || n < 1 || n > 86400) return log("調理タイマー1は1〜86400の整数か空欄");
+      cookTimerSec = n;
+    }
+    const ct2 = elCook2 ? elCook2.value.trim() : "";
+    let cookTimerSec2 = null;
+    if (ct2 !== "") {
+      const n2 = Number(ct2);
+      if (!Number.isInteger(n2) || n2 < 1 || n2 > 86400) return log("調理タイマー2は1〜86400の整数か空欄");
+      cookTimerSec2 = n2;
+    }
     const optionGroupIds = [...right.querySelectorAll(".dOptChk:checked")].map((x) => x.value);
-    await api("/stores/" + encodeURIComponent(STORE) + "/menu/items/" + encodeURIComponent(item.id), {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: document.getElementById("dName").value,
-        price,
-        imageUrl: document.getElementById("dImageUrl").value.trim() || null,
-        categoryId: document.getElementById("dCat").value,
-        kitchenStationId: document.getElementById("dStation").value || null,
-        stockQty: rs === "" ? null : stockQty,
-        stockLowThreshold: rt === "" ? null : stockLowThreshold,
-      }),
-    });
-    await api("/stores/" + encodeURIComponent(STORE) + "/menu/items/" + encodeURIComponent(item.id) + "/options", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ optionGroupIds }),
-    });
-    log("保存しました");
-    await loadAll();
+    btnSave.disabled = true;
+    const prevLabel = btnSave.textContent;
+    btnSave.textContent = "保存中…";
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/menu/items/" + encodeURIComponent(item.id), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: itemName,
+          price,
+          imageUrl: elImg.value.trim() || null,
+          categoryId: elCat.value,
+          kitchenStationId: elSt.value || null,
+          stockQty: rs === "" ? null : stockQty,
+          stockLowThreshold: rt === "" ? null : stockLowThreshold,
+          cookTimerSec,
+          cookTimerSec2,
+        }),
+      });
+      await api("/stores/" + encodeURIComponent(STORE) + "/menu/items/" + encodeURIComponent(item.id) + "/options", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ optionGroupIds }),
+      });
+      log("保存しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    } finally {
+      btnSave.disabled = false;
+      btnSave.textContent = prevLabel;
+    }
   };
-  document.getElementById("dToggle").onclick = async () => {
-    await api("/stores/" + encodeURIComponent(STORE) + "/menu/items/" + encodeURIComponent(item.id), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isAvailable: !item.isAvailable }) });
-    await loadAll();
+  btnToggle.onclick = async () => {
+    log("");
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/menu/items/" + encodeURIComponent(item.id), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isAvailable: !item.isAvailable }),
+      });
+      log(item.isAvailable ? "販売停止にしました" : "販売再開しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
   };
-  document.getElementById("dUpload").onclick = async () => {
-    const f = document.getElementById("dFile").files && document.getElementById("dFile").files[0];
+  btnCopy.onclick = async () => {
+    try {
+      const copied = await api("/stores/" + encodeURIComponent(STORE) + "/menu/items/" + encodeURIComponent(item.id) + "/copy", {
+        method: "POST",
+      });
+      log("商品をコピーしました");
+      await loadAll();
+      if (copied && copied.id) {
+        selectedItemId = copied.id;
+        render();
+      }
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+  btnDel.onclick = async () => {
+    const ok = window.confirm("この商品を削除しますか？\n注文履歴の表示名は残りますが、商品マスタからは消えます。");
+    if (!ok) return;
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/menu/items/" + encodeURIComponent(item.id), {
+        method: "DELETE",
+      });
+      selectedItemId = "";
+      log("商品を削除しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+  btnUp.onclick = async () => {
+    log("");
+    const dFile = $("dFile");
+    const f = dFile && dFile.files && dFile.files[0];
     if (!f) return log("画像ファイルを選択してください");
-    const cf = await compressImageFile(f, 1280, 0.82);
-    const fd = new FormData();
-    fd.append("image", cf);
-    const r = await fetch("/stores/" + encodeURIComponent(STORE) + "/menu/items/" + encodeURIComponent(item.id) + "/image", { method: "POST", body: fd, credentials: "include" });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.error || r.statusText);
-    log("画像をアップロードしました");
-    await loadAll();
+    try {
+      const cf = await compressImageFile(f, 1280, 0.82);
+      const fd = new FormData();
+      fd.append("image", cf);
+      const r = await fetch("/stores/" + encodeURIComponent(STORE) + "/menu/items/" + encodeURIComponent(item.id) + "/image", {
+        method: "POST",
+        body: fd,
+        credentials: "include",
+      });
+      const raw = await r.text();
+      let msg = "";
+      try {
+        const j = raw ? JSON.parse(raw) : {};
+        msg = j && j.error ? String(j.error) : "";
+      } catch (_) {}
+      if (r.status === 401) {
+        location.assign("/staff-app/login?next=" + encodeURIComponent(location.pathname));
+        return log("ログインの有効期限が切れました");
+      }
+      if (!r.ok) throw new Error(msg || raw.trim().slice(0, 300) || r.statusText);
+      log("画像をアップロードしました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
   };
-  document.getElementById("dDeleteImage").onclick = async () => {
-    const r = await fetch("/stores/" + encodeURIComponent(STORE) + "/menu/items/" + encodeURIComponent(item.id) + "/image", { method: "DELETE", credentials: "include" });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.error || r.statusText);
-    log("画像を削除しました");
-    await loadAll();
+  btnImgDel.onclick = async () => {
+    log("");
+    try {
+      const r = await fetch("/stores/" + encodeURIComponent(STORE) + "/menu/items/" + encodeURIComponent(item.id) + "/image", {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const raw = await r.text();
+      let msg = "";
+      try {
+        const j = raw ? JSON.parse(raw) : {};
+        msg = j && j.error ? String(j.error) : "";
+      } catch (_) {}
+      if (r.status === 401) {
+        location.assign("/staff-app/login?next=" + encodeURIComponent(location.pathname));
+        return log("ログインの有効期限が切れました");
+      }
+      if (!r.ok) throw new Error(msg || raw.trim().slice(0, 300) || r.statusText);
+      log("画像を削除しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
   };
 }
 
@@ -304,24 +466,42 @@ function renderCategoriesTab(layout) {
   right.innerHTML = "";
   left.innerHTML = "<div style=\"padding:.8rem;border-bottom:1px solid var(--border);font-weight:800\">カテゴリー編集</div>";
   for (const cat of categoriesCache) {
-    let parentOpts = "<option value=\"\">親カテゴリなし</option>";
+    let parentOpts = "<option value=\"\">親なし（最上位）</option>";
     for (const c of categoriesCache) {
       if (c.id === cat.id) continue; // 自分自身は親にできない
       parentOpts += "<option value=\"" + escapeHtml(c.id) + "\">" + escapeHtml(categoryLabel(c)) + "</option>";
     }
     const row = document.createElement("div");
     row.className = "pm-row";
-    row.innerHTML = "<div class=\"pm-mid\"><input type=\"text\" value=\"" + escapeHtml(cat.name) + "\" data-k=\"name\" /><select data-k=\"parent\" style=\"margin-bottom:0\">" + parentOpts + "</select></div><div class=\"pm-actions\"><label class=\"row\" style=\"font-size:.78rem\"><input type=\"checkbox\" data-k=\"guest\"" + (cat.visibleToGuest !== false ? " checked" : "") + " /> ゲスト表示</label><button type=\"button\" class=\"btn-ghost\" data-save=\"" + escapeHtml(cat.id) + "\">保存</button></div>";
+    row.innerHTML =
+      "<div class=\"pm-mid\" style=\"display:flex;flex-direction:column;gap:0.35rem\">" +
+      "<div><span class=\"muted\" style=\"font-size:0.7rem\">カテゴリ名</span><input type=\"text\" value=\"" +
+      escapeHtml(cat.name) +
+      "\" data-k=\"name\" style=\"margin-top:0.15rem\" /></div>" +
+      "<div><span class=\"muted\" style=\"font-size:0.7rem\">親カテゴリ（階層）</span><select data-k=\"parent\" style=\"margin-bottom:0;margin-top:0.15rem\">" +
+      parentOpts +
+      "</select></div></div>" +
+      "<div class=\"pm-actions\"><label class=\"row\" style=\"font-size:.78rem\"><input type=\"checkbox\" data-k=\"guest\"" +
+      (cat.visibleToGuest !== false ? " checked" : "") +
+      " /> ゲスト注文画面に表示</label><div class=\"row\" style=\"gap:.35rem;flex-wrap:wrap;justify-content:flex-end\"><button type=\"button\" class=\"btn-ghost\" data-copy-cat=\"" +
+      escapeHtml(cat.id) +
+      "\">コピー</button><button type=\"button\" class=\"btn-ghost\" data-delete-cat=\"" +
+      escapeHtml(cat.id) +
+      "\" style=\"color:#b91c1c\">削除</button><button type=\"button\" class=\"btn-ghost\" data-save=\"" +
+      escapeHtml(cat.id) +
+      "\">保存</button></div></div>";
     const sel = row.querySelector("select[data-k='parent']");
     if (cat.parentId) sel.value = cat.parentId;
     left.appendChild(row);
   }
   left.querySelectorAll("button[data-save]").forEach((b) => {
     b.onclick = async () => {
+      log("");
       try {
         const id = b.getAttribute("data-save");
         const row = b.closest(".pm-row");
-        const name = row.querySelector("input[data-k='name']").value;
+        const name = row.querySelector("input[data-k='name']").value.trim();
+        if (!name) return log("カテゴリ名を入力してください");
         const visibleToGuest = row.querySelector("input[data-k='guest']").checked;
         const parentIdRaw = row.querySelector("select[data-k='parent']").value;
         await api("/stores/" + encodeURIComponent(STORE) + "/menu/categories/" + encodeURIComponent(id), {
@@ -336,6 +516,48 @@ function renderCategoriesTab(layout) {
       }
     };
   });
+  left.querySelectorAll("button[data-copy-cat]").forEach((b) => {
+    b.onclick = async () => {
+      try {
+        const id = b.getAttribute("data-copy-cat");
+        const copied = await api("/stores/" + encodeURIComponent(STORE) + "/menu/categories/" + encodeURIComponent(id) + "/copy", {
+          method: "POST",
+        });
+        log("カテゴリをコピーしました");
+        await loadAll();
+        if (copied && copied.id) {
+          selectedCategoryId = copied.id;
+          selectedItemId = "";
+          activeTab = "categories";
+          render();
+        }
+      } catch (e) {
+        log(String(e.message || e));
+      }
+    };
+  });
+  left.querySelectorAll("button[data-delete-cat]").forEach((b) => {
+    b.onclick = async () => {
+      const id = b.getAttribute("data-delete-cat");
+      const row = b.closest(".pm-row");
+      const name = row?.querySelector("input[data-k='name']")?.value?.trim() || "このカテゴリ";
+      const ok = window.confirm("カテゴリ「" + name + "」を削除しますか？\n配下の商品も削除されます。");
+      if (!ok) return;
+      try {
+        await api("/stores/" + encodeURIComponent(STORE) + "/menu/categories/" + encodeURIComponent(id), {
+          method: "DELETE",
+        });
+        log("カテゴリを削除しました");
+        if (selectedCategoryId === id) {
+          selectedCategoryId = "";
+          selectedItemId = "";
+        }
+        await loadAll();
+      } catch (e) {
+        log(String(e.message || e));
+      }
+    };
+  });
 }
 
 function renderOptionsTab(layout) {
@@ -343,7 +565,14 @@ function renderOptionsTab(layout) {
   const left = document.getElementById("menuCategoryPane");
   const mid = document.getElementById("menuItemPane");
   const right = document.getElementById("menuDetailPane");
-  left.innerHTML = "<div style=\"padding:.7rem;border-bottom:1px solid var(--border)\"><div class=\"row\"><input id=\"newOptGroupName\" type=\"text\" placeholder=\"グループ名（例: トッピング）\" style=\"margin:0;flex:1\" /><button type=\"button\" class=\"btn-ghost\" id=\"btnAddOptGroup\">追加</button></div></div>";
+  left.innerHTML =
+    "<div style=\"padding:.7rem;border-bottom:1px solid var(--border)\">" +
+    "<div class=\"muted\" style=\"font-size:0.72rem;margin-bottom:0.4rem\">サイズ・トッピングなど、商品に後から付ける選択肢の<strong>グループ</strong>を追加します。</div>" +
+    "<div class=\"row\" style=\"align-items:flex-end;gap:0.35rem\">" +
+    "<div style=\"flex:1;display:flex;flex-direction:column;gap:0.2rem\">" +
+    "<span style=\"font-size:0.72rem;color:var(--muted)\">新規グループ名</span>" +
+    "<input id=\"newOptGroupName\" type=\"text\" placeholder=\"例: トッピング、サイズ\" style=\"margin:0\" />" +
+    "</div><button type=\"button\" class=\"btn-ghost\" id=\"btnAddOptGroup\">追加</button></div></div>";
   for (const g of optionGroupsCache) {
     const b = document.createElement("button");
     b.type = "button";
@@ -358,11 +587,20 @@ function renderOptionsTab(layout) {
   const addG = document.getElementById("btnAddOptGroup");
   if (addG) {
     addG.onclick = async () => {
+      log("");
       const name = document.getElementById("newOptGroupName").value.trim();
       if (!name) return log("グループ名を入力してください");
-      await api("/stores/" + encodeURIComponent(STORE) + "/options/groups", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, minSelect: 0, maxSelect: 1 }) });
-      log("オプショングループを追加しました");
-      await loadAll();
+      try {
+        await api("/stores/" + encodeURIComponent(STORE) + "/options/groups", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, minSelect: 0, maxSelect: 1 }),
+        });
+        log("オプショングループを追加しました");
+        await loadAll();
+      } catch (e) {
+        log(String(e.message || e));
+      }
     };
   }
   const g = optionGroupsCache.find((x) => x.id === selectedOptionGroupId);
@@ -372,45 +610,120 @@ function renderOptionsTab(layout) {
     return;
   }
   mid.innerHTML =
-    "<div style=\"padding:.8rem;border-bottom:1px solid var(--border)\"><label>グループ名</label><input id=\"ogName\" type=\"text\" value=\"" + escapeHtml(g.name) + "\" /><div class=\"row\"><input id=\"ogMin\" type=\"number\" min=\"0\" value=\"" + g.minSelect + "\" style=\"margin:0;width:90px\" /><input id=\"ogMax\" type=\"number\" min=\"0\" value=\"" + g.maxSelect + "\" style=\"margin:0;width:90px\" /><button type=\"button\" class=\"btn-ghost\" id=\"btnSaveGroup\">保存</button></div></div>" +
-    "<div style=\"padding:.8rem;border-bottom:1px solid var(--border)\"><div class=\"row\"><input id=\"newOptItemName\" type=\"text\" placeholder=\"選択肢名\" style=\"margin:0;flex:1\" /><input id=\"newOptItemPrice\" type=\"number\" step=\"1\" value=\"0\" style=\"margin:0;width:90px\" /><button type=\"button\" class=\"btn-ghost\" id=\"btnAddOptItem\">追加</button></div></div>" +
+    "<div style=\"padding:.8rem;border-bottom:1px solid var(--border)\"><label>オプショングループ名</label><input id=\"ogName\" type=\"text\" value=\"" + escapeHtml(g.name) + "\" /><div class=\"row\" style=\"align-items:flex-end;gap:0.35rem;flex-wrap:wrap;margin-top:0.35rem\">" +
+    "<div style=\"display:flex;flex-direction:column;gap:0.2rem\"><span class=\"muted\" style=\"font-size:0.72rem\">最低選択数</span><input id=\"ogMin\" type=\"number\" min=\"0\" value=\"" + g.minSelect + "\" style=\"margin:0;width:90px\" title=\"必須で選ばせる個数\" /></div>" +
+    "<div style=\"display:flex;flex-direction:column;gap:0.2rem\"><span class=\"muted\" style=\"font-size:0.72rem\">最大選択数</span><input id=\"ogMax\" type=\"number\" min=\"0\" value=\"" + g.maxSelect + "\" style=\"margin:0;width:90px\" title=\"1注文で選べる上限\" /></div>" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"btnSaveGroup\" style=\"margin-bottom:0.05rem\">保存</button></div></div>" +
+    "<div style=\"padding:.8rem;border-bottom:1px solid var(--border)\"><div class=\"muted\" style=\"font-size:0.72rem;margin-bottom:0.4rem\">このグループに含める<strong>選択肢</strong>を追加（価格は商品単価への加算）</div><div class=\"row\" style=\"align-items:flex-end;gap:0.35rem;flex-wrap:wrap\">" +
+    "<div style=\"flex:1;display:flex;flex-direction:column;gap:0.2rem;min-width:120px\"><span class=\"muted\" style=\"font-size:0.72rem\">選択肢名</span><input id=\"newOptItemName\" type=\"text\" placeholder=\"例: チーズ\" style=\"margin:0\" /></div>" +
+    "<div style=\"display:flex;flex-direction:column;gap:0.2rem;width:100px\"><span class=\"muted\" style=\"font-size:0.72rem\">加算（円）</span><input id=\"newOptItemPrice\" type=\"number\" step=\"1\" value=\"0\" style=\"margin:0\" title=\"商品価格に足す金額\" /></div>" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"btnAddOptItem\" style=\"margin-bottom:0.05rem\">追加</button></div></div>" +
     "<div id=\"optItemsList\"></div>";
   const list = mid.querySelector("#optItemsList");
   for (const oi of g.items || []) {
     const row = document.createElement("div");
     row.className = "pm-row";
-    row.innerHTML = "<div class=\"pm-mid\"><input type=\"text\" value=\"" + escapeHtml(oi.name) + "\" data-k=\"name\" /></div><div class=\"pm-actions\"><input type=\"number\" step=\"1\" value=\"" + oi.priceDelta + "\" data-k=\"price\" style=\"margin:0;width:92px\" /><button type=\"button\" class=\"btn-ghost\" data-save-oi=\"" + escapeHtml(oi.id) + "\">保存</button></div>";
+    row.innerHTML =
+      "<div class=\"pm-mid\" style=\"display:flex;flex-direction:column;gap:0.25rem\">" +
+      "<span class=\"muted\" style=\"font-size:0.7rem\">選択肢の表示名</span>" +
+      "<input type=\"text\" value=\"" +
+      escapeHtml(oi.name) +
+      "\" data-k=\"name\" />" +
+      "</div><div class=\"pm-actions\" style=\"flex-direction:column;align-items:stretch;gap:0.25rem\">" +
+      "<span class=\"muted\" style=\"font-size:0.7rem\">価格加算（円）</span>" +
+      "<input type=\"number\" step=\"1\" value=\"" +
+      oi.priceDelta +
+      "\" data-k=\"price\" style=\"margin:0;width:92px\" title=\"本体価格に足す金額\" />" +
+      "<button type=\"button\" class=\"btn-ghost\" data-save-oi=\"" +
+      escapeHtml(oi.id) +
+      "\">保存</button></div>";
     list.appendChild(row);
   }
   document.getElementById("btnSaveGroup").onclick = async () => {
+    log("");
     const name = document.getElementById("ogName").value.trim();
+    if (!name) return log("グループ名を入力してください");
     const minSelect = Number(document.getElementById("ogMin").value);
     const maxSelect = Number(document.getElementById("ogMax").value);
-    await api("/stores/" + encodeURIComponent(STORE) + "/options/groups/" + encodeURIComponent(g.id), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, minSelect, maxSelect }) });
-    log("グループを保存しました");
-    await loadAll();
+    if (!Number.isInteger(minSelect) || minSelect < 0) return log("最低選択数は0以上の整数で");
+    if (!Number.isInteger(maxSelect) || maxSelect < 0) return log("最大選択数は0以上の整数で");
+    if (maxSelect < minSelect) return log("最大選択数は最低選択数以上にしてください");
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/options/groups/" + encodeURIComponent(g.id), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, minSelect, maxSelect }),
+      });
+      log("グループを保存しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
   };
   document.getElementById("btnAddOptItem").onclick = async () => {
+    log("");
     const name = document.getElementById("newOptItemName").value.trim();
     const priceDelta = Number(document.getElementById("newOptItemPrice").value);
     if (!name) return log("選択肢名を入力してください");
     if (!Number.isInteger(priceDelta)) return log("価格差分は整数で入力してください");
-    await api("/stores/" + encodeURIComponent(STORE) + "/options/groups/" + encodeURIComponent(g.id) + "/items", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, priceDelta }) });
-    log("選択肢を追加しました");
-    await loadAll();
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/options/groups/" + encodeURIComponent(g.id) + "/items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, priceDelta }),
+      });
+      log("選択肢を追加しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
   };
   mid.querySelectorAll("button[data-save-oi]").forEach((b) => {
     b.onclick = async () => {
-      const id = b.getAttribute("data-save-oi");
-      const row = b.closest(".pm-row");
-      const name = row.querySelector("input[data-k='name']").value;
-      const priceDelta = Number(row.querySelector("input[data-k='price']").value);
-      await api("/stores/" + encodeURIComponent(STORE) + "/options/groups/" + encodeURIComponent(g.id) + "/items/" + encodeURIComponent(id), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, priceDelta }) });
-      log("選択肢を保存しました");
-      await loadAll();
+      log("");
+      try {
+        const id = b.getAttribute("data-save-oi");
+        const row = b.closest(".pm-row");
+        const name = row.querySelector("input[data-k='name']").value.trim();
+        if (!name) return log("選択肢名を入力してください");
+        const priceDelta = Number(row.querySelector("input[data-k='price']").value);
+        if (!Number.isInteger(priceDelta)) return log("価格加算は整数で入力してください");
+        await api("/stores/" + encodeURIComponent(STORE) + "/options/groups/" + encodeURIComponent(g.id) + "/items/" + encodeURIComponent(id), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, priceDelta }),
+        });
+        log("選択肢を保存しました");
+        await loadAll();
+      } catch (e) {
+        log(String(e.message || e));
+      }
     };
   });
   right.innerHTML = "<div style=\"padding:1rem;color:var(--muted)\">このタブでオプション（トッピング/サイズ）のマスタを作成します。商品への紐付けは「商品管理」タブ右ペインの「オプション（複数選択）」で設定できます。</div>";
+}
+
+function renderKitStations() {
+  const box = document.getElementById("kitStationsList");
+  if (!box) return;
+  if (!stationsCache.length) {
+    box.innerHTML = "<p class=\"muted\" style=\"font-size:0.78rem;margin:0\">まだ調理場がありません。下の「新しい調理場の名前」から追加してください。</p>";
+    return;
+  }
+  let html = "";
+  for (const st of stationsCache) {
+    html +=
+      "<div class=\"pm-row\" style=\"padding:0.45rem 0;border-bottom:1px solid var(--border);align-items:flex-start;opacity:" +
+      (st.active ? "1" : "0.7") +
+      "\"><div class=\"pm-mid\"><strong style=\"font-size:0.82rem\">" +
+      escapeHtml(st.name) +
+      "</strong><div class=\"muted\" style=\"font-size:0.72rem;margin-top:0.15rem\">" +
+      (st.active ? "有効" : "無効") +
+      " · 並び " +
+      String(st.sortOrder ?? 0) +
+      "</div></div></div>";
+  }
+  box.innerHTML = html;
 }
 
 function renderKitchensTab(layout) {
@@ -421,29 +734,47 @@ function renderKitchensTab(layout) {
   mid.innerHTML = "";
   right.innerHTML = "";
   left.innerHTML =
-    "<div style=\"padding:.8rem;border-bottom:1px solid var(--border)\"><strong style=\"font-size:.88rem\">調理場マスタ</strong><p class=\"muted\" style=\"font-size:.78rem;margin:.35rem 0 .75rem\">商品に割り当てる調理場です</p><div id=\"kitStationsList\"></div><label style=\"margin-top:.65rem\">調理場を追加</label><input id=\"newKitStName\" type=\"text\" placeholder=\"例: 揚場\" /><button type=\"button\" class=\"btn-primary\" id=\"btnAddKitSt\">追加</button></div>";
+    "<div style=\"padding:.8rem;border-bottom:1px solid var(--border)\"><strong style=\"font-size:.88rem\">調理場マスタ</strong><p class=\"muted\" style=\"font-size:.78rem;margin:.35rem 0 .75rem\">キッチン画面の絞り込み・商品への割り当てに使います。</p><div id=\"kitStationsList\"></div><label style=\"margin-top:.65rem\">新しい調理場の名前</label><input id=\"newKitStName\" type=\"text\" placeholder=\"例: 揚場・パスタ場\" title=\"厨房エリアの呼び名\" /><button type=\"button\" class=\"btn-primary\" id=\"btnAddKitSt\">追加</button></div>";
   renderKitStations();
   document.getElementById("btnAddKitSt").onclick = async () => {
+    log("");
     const name = document.getElementById("newKitStName").value.trim();
     if (!name) return log("名前を入力してください");
-    await api("/stores/" + encodeURIComponent(STORE) + "/kitchen-stations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
-    log("調理場を追加しました");
-    await loadAll();
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/kitchen-stations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      log("調理場を追加しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
   };
 }
 
 document.getElementById("btnRefMenu").onclick = () => loadAll().catch((e) => log(String(e.message || e)));
 document.getElementById("btnAddCat").onclick = async () => {
+  log("");
   const name = document.getElementById("newCatName").value.trim();
   const visibleToGuest = document.getElementById("newCatGuest").checked;
   const parentId = document.getElementById("newCatParentId").value || null;
   if (!name) return log("カテゴリ名を入力してください");
-  await api("/stores/" + encodeURIComponent(STORE) + "/menu/categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, visibleToGuest, parentId }) });
-  document.getElementById("newCatName").value = "";
-  document.getElementById("newCatParentId").value = "";
-  document.getElementById("newCatGuest").checked = true;
-  log("カテゴリを追加しました");
-  await loadAll();
+  try {
+    await api("/stores/" + encodeURIComponent(STORE) + "/menu/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, visibleToGuest, parentId }),
+    });
+    document.getElementById("newCatName").value = "";
+    document.getElementById("newCatParentId").value = "";
+    document.getElementById("newCatGuest").checked = true;
+    log("カテゴリを追加しました");
+    await loadAll();
+  } catch (e) {
+    log(String(e.message || e));
+  }
 };
 document.getElementById("tab-items").onclick = () => {
   activeTab = "items";

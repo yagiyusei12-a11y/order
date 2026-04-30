@@ -108,6 +108,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       let ordersTotal = 0;
       for (const o of session.orders) {
         for (const l of o.lines) {
+          if (l.status === "cancelled") continue;
           ordersTotal += l.unitPrice * l.qty;
         }
       }

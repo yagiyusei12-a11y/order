@@ -2,7 +2,8 @@
   <h2 class="page-title">日次レポート</h2>
   <p class="muted" style="margin-top:-0.35rem;margin-bottom:1rem">決済記録の集計（端末連携なし・記録のみ）。店舗の日付は JST 基準です。</p>
   <div class="card">
-    <label>日付</label>
+    <label for="repDate">集計する日付（店舗基準・JST）</label>
+    <p class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.5rem">その日0時〜翌日0時までに計上された入金を、決済手段別に集計します。</p>
     <input id="repDate" type="date" />
     <button type="button" class="btn-primary" id="btnLoadRep">集計</button>
   </div>

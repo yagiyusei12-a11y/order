@@ -16,7 +16,7 @@ async function refreshStats() {
     const klines = (kit.lines && kit.lines.length) || 0;
     const tables = (tbl.tables && tbl.tables.filter((t) => t.active).length) || 0;
     document.getElementById("statOpen").textContent = "開店セッション " + open;
-    document.getElementById("statKit").textContent = "キッチン待ち行 " + klines;
+    document.getElementById("statKit").textContent = "キッチン明細（提供前） " + klines;
     document.getElementById("statTables").textContent = "有効卓 " + tables;
   } catch (e) {
     log(String(e.message || e));

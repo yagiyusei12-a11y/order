@@ -56,16 +56,22 @@ async function renderTablesMaster(list) {
     mid.appendChild(sub);
     mid.appendChild(urlEl);
 
+    const nameLab = document.createElement("div");
+    nameLab.className = "muted";
+    nameLab.style.fontSize = "0.72rem";
+    nameLab.textContent = "席名（表示・キッチン卓名）";
     const inp = document.createElement("input");
     inp.type = "text";
     inp.value = t.name;
     inp.style.marginBottom = "0.35rem";
     inp.setAttribute("aria-label", "席名");
+    inp.title = "この卓の呼び名を変更";
 
     const actions = document.createElement("div");
     actions.className = "pm-actions";
     actions.style.flexDirection = "column";
     actions.style.alignItems = "stretch";
+    actions.appendChild(nameLab);
     actions.appendChild(inp);
     const rowBtns = document.createElement("div");
     rowBtns.className = "row";

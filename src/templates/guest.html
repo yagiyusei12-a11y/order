@@ -52,6 +52,34 @@
     #orders { padding: 0 1rem 1rem; }
     #orders h2 { font-size: 0.85rem; color: var(--muted); margin: 1rem 0 0.5rem; }
     .order-card { background: var(--surface); border-radius: 10px; padding: 0.65rem 0.85rem; margin-bottom: 0.5rem; border: 1px solid var(--line); font-size: 0.85rem; }
+    .badge-alcohol { font-size: 0.68rem; font-weight: 700; color: #7c2d12; background: #ffedd5; padding: 0.12rem 0.4rem; border-radius: 4px; }
+    .agegate {
+      position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, 0.65);
+      display: flex; align-items: center; justify-content: center; padding: 1rem;
+    }
+    .agegate-card {
+      width: 100%; max-width: 30rem; background: #101722; border: 1px solid #314156;
+      border-radius: 12px; padding: 1rem;
+    }
+    .agegate-card h2 { margin: 0 0 0.45rem; font-size: 1rem; }
+    .agegate-card p { margin: 0 0 0.8rem; color: var(--muted); font-size: 0.82rem; line-height: 1.45; }
+    .age-q { margin-bottom: 0.75rem; }
+    .age-q strong { display: block; font-size: 0.85rem; margin-bottom: 0.35rem; }
+    .age-q .row { display: flex; gap: 0.4rem; }
+    .age-q button {
+      border: 1px solid var(--line); background: #1e293b; color: var(--text);
+      border-radius: 8px; padding: 0.45rem 0.7rem; cursor: pointer; font-size: 0.82rem;
+    }
+    .age-q button.on { border-color: var(--accent); color: var(--accent); background: #2b3442; }
+    .agegate-card .primary {
+      width: 100%; border: none; border-radius: 9px; padding: 0.65rem;
+      font-weight: 800; background: var(--accent); color: #1a1408; cursor: pointer;
+    }
+    .agegate-card .primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .safety-note {
+      margin: 0.5rem 1rem 0.2rem; padding: 0.5rem 0.65rem; border-radius: 8px;
+      border: 1px solid #7f1d1d; background: #3f1616; color: #fecaca; font-size: 0.78rem;
+    }
   </style>
 </head>
 <body>
@@ -60,6 +88,7 @@
     <div class="sub" id="hdr">読み込み中…</div>
   </header>
   <div id="err"></div>
+  <div id="safetyNote" class="safety-note" style="display:none"></div>
   <div id="menu"></div>
   <div id="orders"></div>
 
@@ -71,6 +100,27 @@
     <button class="submit" id="submit" disabled type="button">注文する</button>
   </footer>
   <div class="toast" id="toast"></div>
+  <div class="agegate" id="ageGate" style="display:none">
+    <div class="agegate-card">
+      <h2>ご注文前の確認</h2>
+      <p>飲酒運転防止・未成年者飲酒防止のため、酒類注文前に確認が必要です。</p>
+      <div class="age-q" id="qDrive">
+        <strong>本日、車・バイク・自転車を運転する予定はありますか？</strong>
+        <div class="row">
+          <button type="button" data-v="yes">はい（予定あり）</button>
+          <button type="button" data-v="no">いいえ（予定なし）</button>
+        </div>
+      </div>
+      <div class="age-q" id="qAge">
+        <strong>20歳以上ですか？</strong>
+        <div class="row">
+          <button type="button" data-v="yes">はい（20歳以上）</button>
+          <button type="button" data-v="no">いいえ（20歳未満）</button>
+        </div>
+      </div>
+      <button type="button" class="primary" id="ageGateOk" disabled>確認して進む</button>
+    </div>
+  </div>
 
   <script>
     const TOKEN = __TOKEN_JS__;
@@ -83,10 +133,17 @@
     /** @type {Record<string, { id: string, name: string, unitPrice: number, qty: number }>} */
     const cart = {};
     let guestShowMenuPrices = true;
+    let alcoholRestricted = false;
+    const alcoholById = new Map();
 
     function fmtMoney(n) {
       if (!guestShowMenuPrices) return "—";
       return "¥" + n.toLocaleString("ja-JP");
+    }
+
+    function isAlcoholItem(item, categoryName) {
+      const text = ((item.name || "") + " " + (item.description || "") + " " + (categoryName || "")).toLowerCase();
+      return /ビール|ワイン|焼酎|日本酒|ウイスキー|ハイボール|サワー|酎ハイ|カクテル|梅酒|酒|beer|wine|whisky|whiskey|cocktail|alcohol/.test(text);
     }
 
     function cartSumLabel(n) {
@@ -111,6 +168,10 @@
     }
 
     function addLine(item) {
+      if (alcoholRestricted && alcoholById.get(item.id)) {
+        toast("酒類はご注文いただけません");
+        return;
+      }
       if (item.stockQty != null && item.stockQty <= 0) {
         toast("売り切れです");
         return;
@@ -154,9 +215,18 @@
           hdr += " · コース対象メニューのみ注文可";
         }
       }
+      if (alcoholRestricted) hdr += " · 酒類注文は制限中";
       document.getElementById("hdr").textContent = hdr;
+      const sn = document.getElementById("safetyNote");
+      if (sn) {
+        sn.style.display = alcoholRestricted ? "block" : "none";
+        sn.textContent = alcoholRestricted
+          ? "安全確認により、酒類の注文を制限しています。スタッフへご相談ください。"
+          : "";
+      }
 
       const cats = data.categories || [];
+      alcoholById.clear();
       clampCartToStock(cats);
       renderCart();
       const catNameById = new Map(cats.map((c) => [c.id, c.name]));
@@ -169,6 +239,8 @@
         d.textContent = c.parentId && catNameById.has(c.parentId) ? catNameById.get(c.parentId) + " > " + c.name : c.name;
         root.appendChild(d);
         for (const it of c.items || []) {
+          const isAlcohol = isAlcoholItem(it, c.name);
+          alcoholById.set(it.id, isAlcohol);
           const row = document.createElement("div");
           row.className = "item";
           row.innerHTML =
@@ -196,9 +268,21 @@
             b.textContent = "残りわずか";
             badges.appendChild(b);
           }
+          if (isAlcohol) {
+            const b = document.createElement("span");
+            b.className = "badge-alcohol";
+            b.textContent = "酒類";
+            badges.appendChild(b);
+          }
+          if (isAlcohol && alcoholRestricted) {
+            const b = document.createElement("span");
+            b.className = "badge-sold";
+            b.textContent = "注文不可";
+            badges.appendChild(b);
+          }
           row.querySelector(".price").textContent = fmtMoney(it.price);
           const btn = row.querySelector("button");
-          btn.disabled = sold;
+          btn.disabled = sold || (isAlcohol && alcoholRestricted);
           btn.onclick = () => addLine(it);
           root.appendChild(row);
         }
@@ -224,6 +308,13 @@
     document.getElementById("submit").onclick = async () => {
       const lines = Object.values(cart).filter((x) => x.qty > 0).map((x) => ({ menuItemId: x.id, qty: x.qty }));
       if (lines.length === 0) return;
+      if (alcoholRestricted) {
+        const alcoholLine = lines.find((l) => alcoholById.get(l.menuItemId));
+        if (alcoholLine) {
+          toast("酒類が含まれているため送信できません");
+          return;
+        }
+      }
       const btn = document.getElementById("submit");
       btn.disabled = true;
       try {
@@ -245,8 +336,57 @@
       }
     };
 
+    async function ensureSafetyGate() {
+      const key = "guest-safety:" + TOKEN;
+      try {
+        const raw = sessionStorage.getItem(key);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          alcoholRestricted = parsed && parsed.allowAlcohol === false;
+          return;
+        }
+      } catch (_) {}
+      const gate = document.getElementById("ageGate");
+      const qDrive = document.getElementById("qDrive");
+      const qAge = document.getElementById("qAge");
+      const okBtn = document.getElementById("ageGateOk");
+      if (!gate || !qDrive || !qAge || !okBtn) return;
+      gate.style.display = "flex";
+      let drive = "";
+      let age = "";
+      function refreshBtn() {
+        okBtn.disabled = !(drive && age);
+      }
+      qDrive.querySelectorAll("button").forEach((b) => {
+        b.onclick = () => {
+          drive = b.getAttribute("data-v") || "";
+          qDrive.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+          refreshBtn();
+        };
+      });
+      qAge.querySelectorAll("button").forEach((b) => {
+        b.onclick = () => {
+          age = b.getAttribute("data-v") || "";
+          qAge.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+          refreshBtn();
+        };
+      });
+      await new Promise((resolve) => {
+        okBtn.onclick = () => {
+          const allowAlcohol = drive === "no" && age === "yes";
+          alcoholRestricted = !allowAlcohol;
+          try {
+            sessionStorage.setItem(key, JSON.stringify({ allowAlcohol, at: Date.now() }));
+          } catch (_) {}
+          gate.style.display = "none";
+          resolve();
+        };
+      });
+    }
+
     (async () => {
       try {
+        await ensureSafetyGate();
         await loadMenu();
         await loadOrders();
       } catch (e) {

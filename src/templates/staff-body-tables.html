@@ -11,9 +11,11 @@
   <div id="tablesMaster" class="card" style="padding:0;overflow:hidden"></div>
   <div class="card" style="margin-top:1rem">
     <strong style="font-size:0.88rem">席を追加</strong>
-    <label style="margin-top:0.65rem">席名</label>
+    <p class="muted" style="font-size:0.72rem;margin:0.35rem 0 0.5rem">卓の呼び名と、QR用URLに使う固定コードを登録します。</p>
+    <label for="newTableName" style="margin-top:0.65rem">席名（店内表示・キッチン卓名）</label>
     <input id="newTableName" type="text" placeholder="例: カウンター3" />
-    <label>固定コード（空なら自動）</label>
+    <label for="newTableCode">卓QR用コード（空欄なら自動発行）</label>
+    <p class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.35rem"><code>/table-app/コード</code> の末尾。英数字・ハイフン推奨。変更するとQRのURLも変わります。</p>
     <input id="newTableCode" type="text" placeholder="例: counter-3" autocomplete="off" />
     <button type="button" class="btn-primary" id="btnAddTable">席を追加</button>
   </div>

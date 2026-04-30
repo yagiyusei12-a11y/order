@@ -150,10 +150,11 @@ async function renderDetail() {
     "<p><span class=\"badge\">" +
     escapeHtml(table.name) +
     "</span> · <span class=\"muted\">空席 — セッションを開始</span></p>" +
-    "<label style=\"margin-top:0.75rem\">人数</label>" +
-    "<input id=\"gc\" type=\"number\" min=\"1\" value=\"2\" />" +
-    "<label>コース（任意）</label>" +
-    "<select id=\"crs\">" +
+    "<p class=\"muted\" style=\"font-size:0.72rem;margin:0.35rem 0 0.6rem\">この卓の来店を開始し、ゲスト用の注文URLを発行します。</p>" +
+    "<label style=\"margin-top:0.75rem\">来店人数（会計・コース料金の人数にも使います）</label>" +
+    "<input id=\"gc\" type=\"number\" min=\"1\" value=\"2\" title=\"ゲストの人数\" />" +
+    "<label>適用するコース（任意・未選択は単品のみ）</label>" +
+    "<select id=\"crs\" title=\"コースを付けると時間制や対象メニュー制限が有効になります\">" +
     opts +
     "</select>" +
     "<button type=\"button\" class=\"btn-primary\" id=\"btnStart\">ゲストURLを発行</button>";
@@ -168,6 +169,7 @@ async function renderDetail() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tableId: table.id, guestCount, courseId }),
       });
+      log("ゲスト用の注文URLを発行しました");
       await loadAll();
       selectedTableId = table.id;
       renderGrid();

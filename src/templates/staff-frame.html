@@ -248,6 +248,80 @@
     .kit-empty .ico { font-size: 2.5rem; margin-bottom: 0.5rem; opacity: 0.35; }
     .chip-bar { display: flex; gap: 0.35rem; overflow-x: auto; padding: 0.5rem 0; margin-top: 0.5rem; }
     .chip { flex-shrink: 0; padding: 0.35rem 0.55rem; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); font-size: 0.72rem; color: var(--muted); }
+    .kit-timer-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      margin-bottom: 0.55rem;
+      min-height: 0;
+    }
+    .kit-timer-strip:empty { display: none; }
+    .kit-timer-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.42rem 0.72rem;
+      border-radius: 999px;
+      background: #fef9c3;
+      border: 1px solid #eab308;
+      font-size: 0.82rem;
+      font-weight: 800;
+      color: #854d0e;
+    }
+    .kit-timer-toast {
+      position: fixed;
+      top: calc(var(--topbar-h) + 10px);
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 200;
+      max-width: min(94vw, 440px);
+      padding: 0.95rem 1.15rem;
+      border-radius: var(--radius);
+      background: var(--surface);
+      border: 2px solid var(--accent);
+      box-shadow: 0 10px 32px rgba(0,0,0,.14);
+      animation: kitTimerToastIn 0.32s ease-out;
+    }
+    .kit-timer-toast-title {
+      margin: 0 0 0.5rem;
+      font-size: 0.8rem;
+      font-weight: 800;
+      color: var(--muted);
+      text-align: center;
+      letter-spacing: 0.04em;
+    }
+    .kit-timer-toast-list {
+      max-height: min(40vh, 280px);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .kit-timer-toast-line {
+      margin: 0;
+      padding: 0.55rem 0.7rem;
+      border-radius: 8px;
+      background: #fff7ed;
+      border: 1px solid #fdba74;
+      font-size: 0.9rem;
+      font-weight: 800;
+      text-align: center;
+      line-height: 1.45;
+      color: #9a3412;
+    }
+    .kit-timer-toast-ack {
+      margin-top: 0.75rem;
+      width: 100%;
+      justify-content: center;
+      font-weight: 800;
+      border-color: var(--accent) !important;
+      color: var(--accent) !important;
+    }
+    .kit-timer-toast[hidden] { display: none !important; }
+    @keyframes kitTimerToastIn {
+      from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
   </style>
 </head>
 <body>
@@ -311,11 +385,28 @@
       fetch(path, { ...opt, credentials: "include" }).then(async (r) => {
         if (r.status === 401) {
           location.assign("/staff-app/login?next=" + encodeURIComponent(location.pathname));
-          throw new Error("unauthorized");
+          throw new Error("ログインの有効期限が切れたか、権限がありません。再度ログインしてください。");
         }
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(j.error || r.statusText || String(r.status));
-        return j;
+        const raw = await r.text();
+        let body = null;
+        if (raw) {
+          try {
+            body = JSON.parse(raw);
+          } catch (_) {
+            body = null;
+          }
+        }
+        let errMsg = "";
+        if (body && typeof body === "object" && !Array.isArray(body)) {
+          if (body.error != null && String(body.error) !== "") errMsg = String(body.error);
+          else if (body.message != null && String(body.message) !== "") errMsg = String(body.message);
+        }
+        if (!r.ok) {
+          throw new Error(errMsg || raw.trim().slice(0, 400) || r.statusText || String(r.status));
+        }
+        if (body === null || body === undefined) return {};
+        if (typeof body === "object") return body;
+        return {};
       });
 
     document.getElementById("logout").onclick = async (e) => {
@@ -324,9 +415,13 @@
       location.assign("/staff-app/login");
     };
 
-    function log(t) {
+    function log(t, options) {
       const el = document.getElementById("log");
-      if (el) el.textContent = t || "";
+      if (el) {
+        el.textContent = t || "";
+        const skipScroll = options && options.skipScroll;
+        if (t && !skipScroll) el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
     }
 
     (function navActive() {

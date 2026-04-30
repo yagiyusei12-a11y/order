@@ -72,6 +72,18 @@ async function removeLocalUploadedImage(imageUrl: string | null | undefined): Pr
   await unlink(oldAbs).catch(() => undefined);
 }
 
+function copiedItemName(name: string): string {
+  const base = name.trim() || "商品";
+  if (base.endsWith("（コピー）")) return `${base} 2`;
+  return `${base}（コピー）`;
+}
+
+function copiedCategoryName(name: string): string {
+  const base = name.trim() || "カテゴリ";
+  if (base.endsWith("（コピー）")) return `${base} 2`;
+  return `${base}（コピー）`;
+}
+
 export async function registerCatalog(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { storeId: string } }>("/stores/:storeId/menu", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
@@ -154,6 +166,8 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       kitchenStationId?: string | null;
       stockQty?: number | null;
       stockLowThreshold?: number | null;
+      cookTimerSec?: number | null;
+      cookTimerSec2?: number | null;
     };
   }>("/stores/:storeId/menu/items", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
@@ -193,6 +207,22 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({ error: "stockLowThreshold must be null or non-negative integer" });
       }
     }
+    let cookTimerSec: number | null | undefined = undefined;
+    if (req.body && "cookTimerSec" in req.body) {
+      const v = (req.body as { cookTimerSec?: unknown }).cookTimerSec;
+      if (v === null || v === undefined) cookTimerSec = null;
+      else if (v === 0 || v === "0") cookTimerSec = null;
+      else if (typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 86400) cookTimerSec = v;
+      else return reply.code(400).send({ error: "cookTimerSec must be null, 0, or 1-86400" });
+    }
+    let cookTimerSec2: number | null | undefined = undefined;
+    if (req.body && "cookTimerSec2" in req.body) {
+      const v = (req.body as { cookTimerSec2?: unknown }).cookTimerSec2;
+      if (v === null || v === undefined) cookTimerSec2 = null;
+      else if (v === 0 || v === "0") cookTimerSec2 = null;
+      else if (typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 86400) cookTimerSec2 = v;
+      else return reply.code(400).send({ error: "cookTimerSec2 must be null, 0, or 1-86400" });
+    }
     let imageUrl: string | null | undefined = undefined;
     if (req.body && "imageUrl" in req.body) {
       if (req.body.imageUrl === null) imageUrl = null;
@@ -212,6 +242,8 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
         kitchenStationId,
         ...(stockQty !== undefined ? { stockQty } : {}),
         ...(stockLowThreshold !== undefined ? { stockLowThreshold } : {}),
+        ...(cookTimerSec !== undefined ? { cookTimerSec } : {}),
+        ...(cookTimerSec2 !== undefined ? { cookTimerSec2 } : {}),
       },
     });
     return item;
@@ -254,6 +286,91 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     if (Object.keys(data).length === 0) return reply.code(400).send({ error: "no fields to update" });
     const updated = await prisma.menuCategory.update({ where: { id: cat.id }, data });
     return updated;
+  });
+
+  app.post<{
+    Params: { storeId: string; categoryId: string };
+  }>("/stores/:storeId/menu/categories/:categoryId/copy", async (req, reply) => {
+    const src = await prisma.menuCategory.findFirst({
+      where: { id: req.params.categoryId, storeId: req.params.storeId },
+      include: {
+        items: {
+          orderBy: { sortOrder: "asc" },
+          include: { optionLinks: { orderBy: { sortOrder: "asc" } } },
+        },
+      },
+    });
+    if (!src) return reply.code(404).send({ error: "category not found" });
+
+    const copied = await prisma.$transaction(async (tx) => {
+      const cat = await tx.menuCategory.create({
+        data: {
+          storeId: src.storeId,
+          parentId: src.parentId,
+          name: copiedCategoryName(src.name),
+          sortOrder: (src.sortOrder ?? 0) + 1,
+          visibleToGuest: src.visibleToGuest,
+        },
+      });
+
+      for (const item of src.items) {
+        const createdItem = await tx.menuItem.create({
+          data: {
+            categoryId: cat.id,
+            name: copiedItemName(item.name),
+            description: item.description,
+            imageUrl: item.imageUrl,
+            price: item.price,
+            sortOrder: item.sortOrder,
+            isAvailable: item.isAvailable,
+            stockQty: item.stockQty,
+            stockLowThreshold: item.stockLowThreshold,
+            kitchenStationId: item.kitchenStationId,
+            cookTimerSec: item.cookTimerSec,
+            cookTimerSec2: item.cookTimerSec2,
+          },
+        });
+        if (item.optionLinks.length > 0) {
+          await tx.menuItemOptionGroup.createMany({
+            data: item.optionLinks.map((l) => ({
+              menuItemId: createdItem.id,
+              optionGroupId: l.optionGroupId,
+              sortOrder: l.sortOrder,
+            })),
+          });
+        }
+      }
+      return cat;
+    });
+    return copied;
+  });
+
+  app.delete<{
+    Params: { storeId: string; categoryId: string };
+  }>("/stores/:storeId/menu/categories/:categoryId", async (req, reply) => {
+    const cat = await prisma.menuCategory.findFirst({
+      where: { id: req.params.categoryId, storeId: req.params.storeId },
+      select: { id: true, name: true },
+    });
+    if (!cat) return reply.code(404).send({ error: "category not found" });
+
+    const childCount = await prisma.menuCategory.count({
+      where: { parentId: cat.id, storeId: req.params.storeId },
+    });
+    if (childCount > 0) {
+      return reply.code(400).send({ error: "category has child categories; delete/move children first" });
+    }
+
+    const images = await prisma.menuItem.findMany({
+      where: { categoryId: cat.id },
+      select: { imageUrl: true },
+    });
+
+    await prisma.menuCategory.delete({ where: { id: cat.id } });
+    for (const r of images) {
+      await removeLocalUploadedImage(r.imageUrl);
+    }
+    return { ok: true, deletedCategoryId: cat.id };
   });
 
   app.get<{ Params: { storeId: string } }>("/stores/:storeId/options/groups", async (req, reply) => {
@@ -483,6 +600,8 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       kitchenStationId?: string | null;
       stockQty?: number | null;
       stockLowThreshold?: number | null;
+      cookTimerSec?: number | null;
+      cookTimerSec2?: number | null;
     };
   }>("/stores/:storeId/menu/items/:itemId", async (req, reply) => {
     const item = await prisma.menuItem.findFirst({
@@ -502,6 +621,8 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       kitchenStationId?: string | null;
       stockQty?: number | null;
       stockLowThreshold?: number | null;
+      cookTimerSec?: number | null;
+      cookTimerSec2?: number | null;
     } = {};
     if (req.body?.categoryId !== undefined) {
       const cat = await prisma.menuCategory.findFirst({
@@ -563,6 +684,20 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({ error: "stockLowThreshold must be null or non-negative integer" });
       }
     }
+    if (req.body && "cookTimerSec" in req.body) {
+      const v = req.body.cookTimerSec;
+      if (v === null || v === undefined) data.cookTimerSec = null;
+      else if (v === 0) data.cookTimerSec = null;
+      else if (typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 86400) data.cookTimerSec = v;
+      else return reply.code(400).send({ error: "cookTimerSec must be null, 0, or 1-86400" });
+    }
+    if (req.body && "cookTimerSec2" in req.body) {
+      const v = req.body.cookTimerSec2;
+      if (v === null || v === undefined) data.cookTimerSec2 = null;
+      else if (v === 0) data.cookTimerSec2 = null;
+      else if (typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 86400) data.cookTimerSec2 = v;
+      else return reply.code(400).send({ error: "cookTimerSec2 must be null, 0, or 1-86400" });
+    }
 
     if (Object.keys(data).length === 0) return reply.code(400).send({ error: "no fields to update" });
 
@@ -575,6 +710,65 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       await removeLocalUploadedImage(prevImageUrl);
     }
     return updated;
+  });
+
+  app.post<{
+    Params: { storeId: string; itemId: string };
+  }>("/stores/:storeId/menu/items/:itemId/copy", async (req, reply) => {
+    const src = await prisma.menuItem.findFirst({
+      where: { id: req.params.itemId, category: { storeId: req.params.storeId } },
+      include: { optionLinks: { orderBy: { sortOrder: "asc" } } },
+    });
+    if (!src) return reply.code(404).send({ error: "item not found" });
+
+    const copied = await prisma.$transaction(async (tx) => {
+      const item = await tx.menuItem.create({
+        data: {
+          categoryId: src.categoryId,
+          name: copiedItemName(src.name),
+          description: src.description,
+          imageUrl: src.imageUrl,
+          price: src.price,
+          sortOrder: (src.sortOrder ?? 0) + 1,
+          isAvailable: src.isAvailable,
+          stockQty: src.stockQty,
+          stockLowThreshold: src.stockLowThreshold,
+          kitchenStationId: src.kitchenStationId,
+          cookTimerSec: src.cookTimerSec,
+          cookTimerSec2: src.cookTimerSec2,
+        },
+      });
+      if (src.optionLinks.length > 0) {
+        await tx.menuItemOptionGroup.createMany({
+          data: src.optionLinks.map((l) => ({
+            menuItemId: item.id,
+            optionGroupId: l.optionGroupId,
+            sortOrder: l.sortOrder,
+          })),
+        });
+      }
+      return tx.menuItem.findUniqueOrThrow({
+        where: { id: item.id },
+        include: {
+          kitchenStation: { select: { id: true, name: true, active: true } },
+          optionLinks: { orderBy: { sortOrder: "asc" }, select: { optionGroupId: true, sortOrder: true } },
+        },
+      });
+    });
+    return copied;
+  });
+
+  app.delete<{
+    Params: { storeId: string; itemId: string };
+  }>("/stores/:storeId/menu/items/:itemId", async (req, reply) => {
+    const item = await prisma.menuItem.findFirst({
+      where: { id: req.params.itemId, category: { storeId: req.params.storeId } },
+      select: { id: true, imageUrl: true },
+    });
+    if (!item) return reply.code(404).send({ error: "item not found" });
+    await prisma.menuItem.delete({ where: { id: item.id } });
+    await removeLocalUploadedImage(item.imageUrl);
+    return { ok: true, deletedItemId: item.id };
   });
 
   app.get<{

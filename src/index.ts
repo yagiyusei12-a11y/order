@@ -30,6 +30,23 @@ async function main(): Promise<void> {
 
   app.get("/health", async () => ({ ok: true }));
 
+  app.setErrorHandler((err, req, reply) => {
+    app.log.error({ err, url: req.url, method: req.method });
+    if (reply.sent) return;
+    const sc = (err as { statusCode?: number }).statusCode;
+    const status = typeof sc === "number" && sc >= 400 && sc < 600 ? sc : 500;
+    const msg = err instanceof Error ? err.message : String(err);
+    const isJsonApi =
+      req.url.startsWith("/stores/") ||
+      req.url.startsWith("/auth/") ||
+      req.url.startsWith("/public/") ||
+      req.url.startsWith("/guest/");
+    if (isJsonApi) {
+      return reply.code(status).send({ error: msg });
+    }
+    return reply.code(status).type("text/plain; charset=utf-8").send(msg);
+  });
+
   await app.register(registerAuth);
   await app.register(registerPublicApi);
   await app.register(registerGuest);

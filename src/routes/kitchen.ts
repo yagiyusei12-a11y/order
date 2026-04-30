@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 
-const LINE_STATUSES = ["queued", "cooking", "done"] as const;
+const LINE_STATUSES = ["queued", "cooking", "done", "served"] as const;
 
 export async function registerKitchen(app: FastifyInstance): Promise<void> {
   app.get<{
@@ -15,7 +15,7 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
     const whereLine =
       lineStatus && LINE_STATUSES.includes(lineStatus as (typeof LINE_STATUSES)[number])
         ? { status: lineStatus }
-        : { status: { in: ["queued", "cooking"] } };
+        : { status: { in: ["queued", "cooking", "done"] } };
 
     const lines = await prisma.orderLine.findMany({
       where: {
@@ -55,6 +55,10 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
         categoryVisibleToGuest: l.menuItem?.category?.visibleToGuest ?? null,
         kitchenStationId: l.menuItem?.kitchenStationId ?? null,
         kitchenStationName: l.menuItem?.kitchenStation?.name ?? null,
+        cookTimerSec:
+          l.menuItem?.cookTimerSec != null && l.menuItem.cookTimerSec > 0 ? l.menuItem.cookTimerSec : null,
+        cookTimerSec2:
+          l.menuItem?.cookTimerSec2 != null && l.menuItem.cookTimerSec2 > 0 ? l.menuItem.cookTimerSec2 : null,
         orderId: l.orderId,
         orderCreatedAt: l.order.createdAt,
         tableName: l.order.session.table.name,
@@ -87,8 +91,10 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
     });
 
     const allLines = await prisma.orderLine.findMany({ where: { orderId: line.orderId } });
-    const allDone = allLines.every((x) => x.status === "done");
-    if (allDone) {
+    const activeLines = allLines.filter((x) => x.status !== "cancelled");
+    const allServed =
+      activeLines.length > 0 && activeLines.every((x) => x.status === "served");
+    if (allServed) {
       await prisma.salesOrder.update({
         where: { id: line.orderId },
         data: { status: "served" },

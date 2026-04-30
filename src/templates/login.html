@@ -23,11 +23,12 @@
   <div class="card">
     <h1>店舗ログイン</h1>
     <p>HTTPS 利用時は <code>COOKIE_SECURE=1</code> を推奨（Cookie の Secure フラグ）。</p>
-    <label>店舗ID</label>
-    <input id="storeId" type="text" autocomplete="organization" value="seed-store-1" />
-    <label>メール</label>
+    <label for="storeId">店舗ID（ログインする店の識別子）</label>
+    <p id="login-hint-store" class="hint" style="margin:-0.25rem 0 0.45rem">スタッフURLの <code>/staff-app/___</code> に当たるコードです。</p>
+    <input id="storeId" type="text" autocomplete="organization" value="seed-store-1" aria-describedby="login-hint-store" />
+    <label for="email">メールアドレス（スタッフアカウント）</label>
     <input id="email" type="email" autocomplete="username" value="admin@seed.local" />
-    <label>パスワード</label>
+    <label for="password">パスワード</label>
     <input id="password" type="password" autocomplete="current-password" />
     <button type="button" id="go">ログイン</button>
     <div id="err"></div>

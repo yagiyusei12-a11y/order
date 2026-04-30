@@ -64,5 +64,3 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
   });
 }
 
-/** @fastify/jwt の secret を登録時と揃える */
-export { jwtSecret, COOKIE_NAME };

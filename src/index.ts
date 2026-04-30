@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import jwt from "@fastify/jwt";
@@ -58,23 +57,8 @@ async function main(): Promise<void> {
 
   const port = Number(process.env.PORT ?? 3000);
   const host = process.env.HOST ?? "0.0.0.0";
-  const keyPath = process.env.HTTPS_KEY_PATH;
-  const certPath = process.env.HTTPS_CERT_PATH;
-
-  if (keyPath && certPath) {
-    await app.listen({
-      port,
-      host,
-      https: {
-        key: readFileSync(keyPath),
-        cert: readFileSync(certPath),
-      },
-    });
-    app.log.info({ port, https: true }, "listening");
-  } else {
-    await app.listen({ port, host });
-    app.log.info({ port, https: false }, "listening (set HTTPS_KEY_PATH + HTTPS_CERT_PATH for TLS)");
-  }
+  await app.listen({ port, host });
+  app.log.info({ port, https: false }, "listening (TLS should be terminated at proxy/platform)");
 }
 
 main().catch((err) => {

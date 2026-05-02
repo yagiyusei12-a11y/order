@@ -6,6 +6,8 @@ import { registerTimeWindows } from "./time-windows.js";
 import { registerKitchen } from "./kitchen.js";
 import { registerKitchenStations } from "./kitchen-stations.js";
 import { registerSessions } from "./sessions.js";
+import { registerStaffVerbalOrders } from "./staff-verbal-orders.js";
+import { registerCustomers } from "./customers.js";
 import { registerTables } from "./tables.js";
 
 async function verifyStaff(req: FastifyRequest, reply: FastifyReply): Promise<void> {
@@ -32,6 +34,8 @@ export async function registerProtectedStaffRoutes(app: FastifyInstance): Promis
   await registerCatalog(app);
   await registerTables(app);
   await registerSessions(app);
+  await registerStaffVerbalOrders(app);
+  await registerCustomers(app);
   await registerKitchenStations(app);
   await registerKitchen(app);
 }

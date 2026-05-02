@@ -234,6 +234,17 @@ function mapGuestSetMenuItem(
   return opt.length ? { ...base, sellKind: "set", setSteps: stepsOut, optionGroups: opt } : { ...base, sellKind: "set", setSteps: stepsOut };
 }
 
+const DEVICE_ID_RE = /^[a-zA-Z0-9_-]{8,128}$/;
+
+function normalizeOptionalProfile(
+  name: unknown,
+  phone: unknown,
+): { name: string | null; phone: string | null } {
+  const n = typeof name === "string" ? name.trim().slice(0, 100) : "";
+  const p = typeof phone === "string" ? phone.replace(/\s/g, "").slice(0, 20) : "";
+  return { name: n || null, phone: p || null };
+}
+
 export async function registerGuest(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { token: string } }>("/guest/:token/menu", async (req, reply) => {
     const session = await prisma.diningSession.findUnique({
@@ -242,6 +253,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         course: {
           include: { includedItems: { select: { menuItemId: true } } },
         },
+        customer: { select: { name: true, phone: true } },
       },
     });
     if (!session || session.status !== "open") {
@@ -345,6 +357,9 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         guestCount: session.guestCount,
         course: courseOut,
       },
+      customerProfile: session.customer
+        ? { name: session.customer.name, phone: session.customer.phone }
+        : null,
       store: {
         showMenuPrices: st.guestShowMenuPrices,
         menuPriceTaxMode: st.menuPriceTaxMode,
@@ -374,6 +389,95 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
           .filter(Boolean),
       })),
     };
+  });
+
+  /**
+   * 端末IDで匿名会員を紐づけ。初回紐づけで visitCount 加算。名前・電話は任意。
+   */
+  app.post<{
+    Params: { token: string };
+    Body: { deviceId?: string; name?: string | null; phone?: string | null };
+  }>("/guest/:token/identify", async (req, reply) => {
+    const deviceId = req.body?.deviceId;
+    if (typeof deviceId !== "string" || !DEVICE_ID_RE.test(deviceId)) {
+      return reply.code(400).send({ error: "deviceId must be 8-128 chars [A-Za-z0-9_-]" });
+    }
+    const bodyObj = req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
+    const hasName = "name" in bodyObj;
+    const hasPhone = "phone" in bodyObj;
+    const { name, phone } = normalizeOptionalProfile(bodyObj.name, bodyObj.phone);
+
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        const sess = await tx.diningSession.findUnique({
+          where: { guestToken: req.params.token },
+        });
+        if (!sess || sess.status !== "open") {
+          const e = new Error("NO_SESSION");
+          throw e;
+        }
+
+        const customer = await tx.customer.upsert({
+          where: { storeId_deviceId: { storeId: sess.storeId, deviceId } },
+          create: {
+            storeId: sess.storeId,
+            deviceId,
+            name: hasName ? name : null,
+            phone: hasPhone ? phone : null,
+            lastSeenAt: new Date(),
+          },
+          update: {
+            lastSeenAt: new Date(),
+            ...(hasName ? { name } : {}),
+            ...(hasPhone ? { phone } : {}),
+          },
+        });
+
+        if (sess.customerId != null && sess.customerId !== customer.id) {
+          const e = new Error("DEVICE_CONFLICT");
+          throw e;
+        }
+
+        if (sess.customerId == null) {
+          await tx.diningSession.update({
+            where: { id: sess.id },
+            data: { customerId: customer.id },
+          });
+          const updated = await tx.customer.update({
+            where: { id: customer.id },
+            data: { visitCount: { increment: 1 } },
+          });
+          return { customer: updated, firstLink: true, visitCount: updated.visitCount };
+        }
+
+        const updated = await tx.customer.update({
+          where: { id: customer.id },
+          data: {
+            lastSeenAt: new Date(),
+            ...(hasName ? { name } : {}),
+            ...(hasPhone ? { phone } : {}),
+          },
+        });
+        return { customer: updated, firstLink: false, visitCount: updated.visitCount };
+      });
+
+      return {
+        ok: true,
+        customer: {
+          name: result.customer.name,
+          phone: result.customer.phone,
+          visitCount: result.visitCount,
+          firstLinkThisSession: result.firstLink,
+        },
+      };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      if (msg === "NO_SESSION") return reply.code(404).send({ error: "session not found or closed" });
+      if (msg === "DEVICE_CONFLICT") {
+        return reply.code(409).send({ error: "この卓のセッションは既に別端末で紐づいています" });
+      }
+      throw e;
+    }
   });
 
   app.post<{

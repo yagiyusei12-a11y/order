@@ -1,0 +1,255 @@
+<main class="handy-bright">
+  <div class="handy-bright-inner">
+    <h2 class="page-title handy-page-title">口頭注文（ハンディ）</h2>
+    <p class="muted handy-lead">
+      電話・カウンター受付の代行注文です。先に<strong>卓・会計</strong>でセッションを開いてから、卓を選んで商品を追加してください。
+      オプション必須の商品・セットはここでは選べません。
+    </p>
+
+    <section class="handy-card handy-section">
+      <div class="handy-section-head">
+        <span class="handy-section-title">お客様情報</span>
+        <span class="handy-section-hint">端末で登録した会員向け</span>
+      </div>
+      <label for="handyCustSearch">お客様を検索</label>
+      <input id="handyCustSearch" type="search" placeholder="名前・電話・端末IDの一部" autocomplete="off" />
+      <label for="handyCustomer">お客様を選択</label>
+      <select id="handyCustomer" style="margin-bottom:0.5rem">
+        <option value="">お客様を選ぶ（任意）</option>
+      </select>
+      <div class="row" style="margin-bottom:0">
+        <button type="button" class="btn-ghost" id="handyRefCust" style="width:auto">一覧を再読込</button>
+      </div>
+
+      <div id="handyProfile" class="handy-profile-wrap">
+        <p class="handy-placeholder">お客様を選ぶと、来店情報や注文傾向が表示されます。</p>
+      </div>
+
+      <div id="handyRankingHost" class="handy-subblock" hidden>
+        <div class="handy-subtitle">累計 · よく注文する商品</div>
+        <div id="handyRanking" class="handy-ranking"></div>
+      </div>
+
+      <div id="handyHistoryHost" class="handy-subblock" hidden>
+        <div class="handy-subtitle">最近の注文履歴</div>
+        <div id="handyHistory" class="handy-history"></div>
+      </div>
+    </section>
+
+    <section class="handy-card handy-section">
+      <div class="handy-section-head">
+        <span class="handy-section-title">注文先</span>
+      </div>
+      <label for="handySession">注文先の卓（開店中セッション）</label>
+      <select id="handySession" style="margin-bottom:0.5rem">
+        <option value="">読込中…</option>
+      </select>
+      <div class="row" style="margin-bottom:0">
+        <button type="button" class="btn-ghost" id="handyRefSess" style="width:auto">セッション再読込</button>
+      </div>
+    </section>
+
+    <section class="handy-card handy-section">
+      <div class="handy-section-head">
+        <span class="handy-section-title">メニュー</span>
+      </div>
+      <label for="handyCat">カテゴリ</label>
+      <select id="handyCat" style="margin-bottom:0.5rem">
+        <option value="">すべて</option>
+      </select>
+      <label for="handySearch">商品を検索</label>
+      <input id="handySearch" type="search" placeholder="名前の一部" autocomplete="off" />
+    </section>
+
+    <div id="handyItemList" class="handy-item-list handy-card" style="padding:0;overflow:hidden"></div>
+
+    <section class="handy-card handy-section handy-cart-section">
+      <div class="handy-section-head">
+        <span class="handy-section-title">カート</span>
+        <button type="button" class="btn-ghost" id="handyClearCart" style="width:auto;padding:0.25rem 0.5rem;font-size:0.75rem">空にする</button>
+      </div>
+      <div id="handyCart" class="muted handy-cart-empty">商品をタップして追加</div>
+      <label for="handyOrderNote">伝票メモ（任意）</label>
+      <input id="handyOrderNote" type="text" placeholder="例: 電話注文・テイクアウト希望 など" />
+      <button type="button" class="btn-primary handy-submit-btn" id="handySubmit">キッチンへ送信</button>
+    </section>
+    <div id="log"></div>
+  </div>
+</main>
+<style>
+  main.handy-bright {
+    min-height: 100%;
+    background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 55%, #e8ecf3 100%);
+    margin: -1rem;
+    padding: 1rem;
+    color: #1e293b;
+  }
+  .handy-bright-inner { max-width: 560px; margin: 0 auto; }
+  main.handy-bright .handy-page-title {
+    color: #ea580c;
+    margin-bottom: 0.35rem;
+  }
+  .handy-lead { margin-top: 0; margin-bottom: 1rem; line-height: 1.45; }
+
+  .handy-card {
+    background: #ffffff;
+    border-radius: 16px;
+    border: 1px solid #e8ecf1;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+    padding: 1rem 1rem 0.95rem;
+    margin-bottom: 0.75rem;
+  }
+  main.handy-bright .handy-section label { color: #64748b; }
+  main.handy-bright select,
+  main.handy-bright input[type="text"],
+  main.handy-bright input[type="search"] {
+    background: #f8fafc;
+    border-color: #e2e8f0;
+  }
+
+  .handy-section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.65rem;
+    flex-wrap: wrap;
+  }
+  .handy-section-title { font-weight: 800; font-size: 0.92rem; color: #0f172a; }
+  .handy-section-hint { font-size: 0.72rem; color: #94a3b8; }
+
+  .handy-placeholder {
+    margin: 0.75rem 0 0;
+    font-size: 0.85rem;
+    color: #94a3b8;
+    line-height: 1.45;
+  }
+
+  .handy-profile-wrap { margin-top: 0.85rem; }
+  .handy-profile {
+    display: flex;
+    gap: 0.85rem;
+    align-items: flex-start;
+  }
+  .handy-avatar {
+    flex-shrink: 0;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: linear-gradient(145deg, #fb923c, #ea580c);
+    color: #fff;
+    font-weight: 800;
+    font-size: 1.15rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(234, 88, 12, 0.28);
+  }
+  .handy-profile-main { min-width: 0; flex: 1; }
+  .handy-profile-name { font-weight: 800; font-size: 1.05rem; color: #0f172a; margin: 0 0 0.15rem; }
+  .handy-profile-meta { font-size: 0.78rem; color: #64748b; margin: 0; }
+  .handy-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.45rem;
+    margin-top: 0.85rem;
+  }
+  .handy-stat {
+    background: linear-gradient(180deg, #fff7ed 0%, #ffedd5 100%);
+    border: 1px solid #fed7aa;
+    border-radius: 12px;
+    padding: 0.5rem 0.35rem;
+    text-align: center;
+  }
+  .handy-stat .lbl { display: block; font-size: 0.65rem; color: #9a3412; font-weight: 600; margin-bottom: 0.15rem; }
+  .handy-stat .val { font-size: 0.95rem; font-weight: 800; color: #c2410c; line-height: 1.2; }
+
+  .handy-subblock { margin-top: 1rem; padding-top: 0.85rem; border-top: 1px dashed #e2e8f0; }
+  .handy-subtitle { font-size: 0.78rem; font-weight: 700; color: #475569; margin-bottom: 0.5rem; }
+
+  .handy-rank-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.45rem 0;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 0.88rem;
+  }
+  .handy-rank-row:last-child { border-bottom: none; }
+  .handy-rank-badge {
+    flex-shrink: 0;
+    width: 1.75rem;
+    text-align: center;
+    font-weight: 800;
+    font-size: 0.85rem;
+  }
+  .handy-rank-badge.g1 { color: #ca8a04; }
+  .handy-rank-badge.g2 { color: #64748b; }
+  .handy-rank-badge.g3 { color: #b45309; }
+  .handy-rank-name { min-width: 0; flex: 1; font-weight: 600; color: #334155; }
+  .handy-rank-qty { font-weight: 700; color: #ea580c; font-variant-numeric: tabular-nums; }
+
+  .handy-history { max-height: min(38vh, 280px); overflow-y: auto; margin: 0 -0.25rem; padding: 0 0.25rem; }
+  .handy-order-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 0.55rem 0.65rem;
+    margin-bottom: 0.45rem;
+  }
+  .handy-order-card:last-child { margin-bottom: 0; }
+  .handy-order-when {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #475569;
+    margin-bottom: 0.35rem;
+  }
+  .handy-order-when small { font-weight: 500; color: #94a3b8; margin-left: 0.35rem; }
+  .handy-order-lines { margin: 0; padding-left: 1rem; font-size: 0.8rem; color: #334155; line-height: 1.45; }
+
+  .handy-item-list { max-height: min(42vh, 320px); overflow-y: auto; }
+  .handy-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.65rem 0.85rem;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 0.88rem;
+    background: #fff;
+  }
+  .handy-row:last-child { border-bottom: none; }
+  .handy-row.dim { opacity: 0.45; pointer-events: none; }
+  .handy-row .meta { font-size: 0.72rem; color: #94a3b8; }
+  .handy-row button.add {
+    flex-shrink: 0;
+    padding: 0.35rem 0.65rem !important;
+    font-size: 0.8rem !important;
+    width: auto !important;
+    font-weight: 800;
+  }
+  .handy-cart-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.35rem;
+    padding: 0.35rem 0;
+    border-bottom: 1px dashed #e2e8f0;
+    font-size: 0.85rem;
+    color: #334155;
+  }
+  .handy-cart-line:last-child { border-bottom: none; }
+  .handy-cart-line .qtyctl { display: flex; align-items: center; gap: 0.25rem; }
+  .handy-cart-line .qtyctl button {
+    width: 2rem !important;
+    min-width: 2rem;
+    padding: 0.2rem !important;
+    font-weight: 800;
+  }
+  .handy-cart-empty { font-size: 0.85rem; min-height: 2rem; }
+  .handy-cart-section .handy-section-head { margin-bottom: 0.5rem; }
+  .handy-submit-btn { margin-top: 0.65rem; }
+
+  main.handy-bright #log { color: #dc2626; }
+</style>

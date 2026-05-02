@@ -3,120 +3,581 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0c0e12" />
   <title>ご注文</title>
   <style>
-    :root { --bg: #0c0f12; --surface: #161c24; --line: #2a3340; --text: #eef2f7; --muted: #8b98a8; --accent: #e8b84a; --ok: #3ecf8e; }
+    :root {
+      --bg: #0c0e12;
+      --surface: #151922;
+      --surface2: #1c2230;
+      --line: #2a3142;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --accent: #f97316;
+      --accent-dim: rgba(249, 115, 22, 0.15);
+      --ok: #22c55e;
+      --danger: #fb7185;
+    }
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); padding-bottom: 6.5rem; }
-    header { padding: 0.85rem 1rem; background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
-    header h1 { font-size: 1.05rem; margin: 0 0 0.2rem; font-weight: 700; }
-    header .sub { font-size: 0.8rem; color: var(--muted); }
-    .cat { padding: 0.6rem 1rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); background: var(--bg); }
-    .item {
-      display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
-      padding: 0.85rem 1rem; border-bottom: 1px solid var(--line); background: var(--surface);
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding-bottom: calc(5.75rem + env(safe-area-inset-bottom));
+      min-height: 100dvh;
     }
-    .item .left { display: flex; gap: 0.7rem; align-items: center; min-width: 0; }
-    .item .thumb {
-      width: 56px; height: 56px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line);
-      background: #0f141c; flex-shrink: 0;
+
+    /* ========== トップバー（アイコン） ========== */
+    .go-topbar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.35rem;
+      padding: 0.5rem 0.65rem calc(0.45rem + env(safe-area-inset-top));
+      background: linear-gradient(180deg, #12161f 0%, #0c0e12 100%);
+      border-bottom: 1px solid var(--line);
     }
-    .item .text { min-width: 0; }
-    .item .name { font-weight: 600; font-size: 0.95rem; }
-    .item .meta { font-size: 0.8rem; color: var(--muted); margin-top: 0.15rem; }
-    .item .badges { margin-top: 0.2rem; display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
-    .item .badge-low { font-size: 0.68rem; font-weight: 700; color: #92400e; background: #fef3c7; padding: 0.12rem 0.4rem; border-radius: 4px; }
-    .item .badge-sold { font-size: 0.68rem; font-weight: 700; color: #fecaca; background: #450a0a; padding: 0.12rem 0.4rem; border-radius: 4px; }
-    .item .price { font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 600; }
-    .item .price .incl { display:block; font-size:0.72rem; color:var(--muted); font-weight:500; margin-top:0.1rem; }
-    .item button {
-      flex-shrink: 0; min-width: 2.75rem; height: 2.75rem; border-radius: 8px; border: 1px solid var(--line);
-      background: #222a35; color: var(--text); font-size: 1.1rem; font-weight: 700; cursor: pointer;
+    .go-topicons {
+      display: flex;
+      align-items: center;
+      gap: 0.15rem;
     }
-    .item button:active { transform: scale(0.96); }
-    .item button:disabled { opacity: 0.4; cursor: not-allowed; }
-    .toast { position: fixed; bottom: 5.5rem; left: 50%; transform: translateX(-50%); background: #2a3340; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.85rem; opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 20; }
+    .go-iconbtn {
+      width: 44px;
+      height: 44px;
+      border: none;
+      border-radius: 12px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.15s, background 0.15s;
+    }
+    .go-iconbtn:active { background: var(--surface2); color: var(--text); }
+    .go-iconbtn svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+    .go-brand {
+      flex: 1;
+      min-width: 0;
+      text-align: center;
+      padding: 0 0.25rem;
+    }
+    .go-brand h1 {
+      margin: 0;
+      font-size: 0.95rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+    .go-brand .sub {
+      font-size: 0.68rem;
+      color: var(--muted);
+      margin-top: 0.15rem;
+      line-height: 1.35;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ========== カテゴリタブ ========== */
+    .go-tabs-wrap {
+      position: sticky;
+      top: calc(52px + env(safe-area-inset-top));
+      z-index: 40;
+      background: linear-gradient(180deg, #0c0e12 70%, transparent);
+      padding: 0.35rem 0 0.65rem;
+      margin-top: -1px;
+    }
+    .go-tabs {
+      display: flex;
+      gap: 0.35rem;
+      overflow-x: auto;
+      padding: 0 0.75rem;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+    }
+    .go-tabs::-webkit-scrollbar { display: none; }
+    .go-tab {
+      flex-shrink: 0;
+      padding: 0.45rem 1rem;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .go-tab.is-active {
+      background: var(--accent-dim);
+      border-color: rgba(249, 115, 22, 0.45);
+      color: var(--accent);
+    }
+
+    /* ========== メニューグリッド ========== */
+    .go-menu-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.65rem;
+      padding: 0 0.65rem 1rem;
+    }
+    @media (min-width: 480px) {
+      .go-menu-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.85rem; padding: 0 1rem 1rem; }
+    }
+    .go-card {
+      border-radius: 16px;
+      overflow: hidden;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      cursor: pointer;
+      transition: transform 0.12s, box-shadow 0.12s;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .go-card:active { transform: scale(0.98); }
+    .go-card.is-dim { opacity: 0.45; pointer-events: none; }
+    .go-card-media {
+      aspect-ratio: 4 / 3;
+      background: linear-gradient(145deg, #1e293b, #0f172a);
+      position: relative;
+    }
+    .go-card-media img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .go-card-media .go-ph {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      opacity: 0.35;
+    }
+    .go-card-badge {
+      position: absolute;
+      top: 0.35rem;
+      left: 0.35rem;
+      font-size: 0.62rem;
+      font-weight: 800;
+      padding: 0.15rem 0.4rem;
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.55);
+      color: #fff;
+    }
+    .go-card-body { padding: 0.55rem 0.65rem 0.65rem; flex: 1; display: flex; flex-direction: column; }
+    .go-card-title {
+      font-size: 0.82rem;
+      font-weight: 700;
+      line-height: 1.35;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .go-card-meta {
+      font-size: 0.68rem;
+      color: var(--muted);
+      margin-top: 0.2rem;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      flex: 1;
+    }
+    .go-card-price {
+      margin-top: 0.45rem;
+      font-size: 0.88rem;
+      font-weight: 800;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+    }
+    .go-card-price .incl {
+      display: block;
+      font-size: 0.65rem;
+      font-weight: 500;
+      color: var(--muted);
+      margin-top: 0.1rem;
+    }
+
+    .badge-low { font-size: 0.6rem; font-weight: 700; color: #fde68a; background: rgba(180, 83, 9, 0.5); padding: 0.1rem 0.35rem; border-radius: 4px; }
+    .badge-sold { font-size: 0.6rem; font-weight: 700; color: #fecaca; background: rgba(127, 29, 29, 0.6); padding: 0.1rem 0.35rem; border-radius: 4px; }
+    .badge-set { font-size: 0.6rem; font-weight: 700; color: #bfdbfe; background: rgba(30, 58, 95, 0.7); padding: 0.1rem 0.35rem; border-radius: 4px; }
+    .badge-alcohol { font-size: 0.6rem; font-weight: 700; color: #ffedd5; background: rgba(124, 45, 18, 0.65); padding: 0.1rem 0.35rem; border-radius: 4px; }
+
+    /* ========== フッターカート ========== */
+    footer.go-cart {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 0.65rem 0.85rem calc(0.65rem + env(safe-area-inset-bottom));
+      background: linear-gradient(180deg, rgba(12, 14, 18, 0.92) 0%, #0c0e12 40%);
+      backdrop-filter: blur(10px);
+      border-top: 1px solid var(--line);
+      display: flex;
+      gap: 0.65rem;
+      align-items: center;
+      z-index: 30;
+    }
+    footer.go-cart .info { flex: 1; min-width: 0; }
+    footer.go-cart .count { font-size: 0.72rem; color: var(--muted); }
+    footer.go-cart .sum { font-size: 1.05rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+    footer.go-cart button.submit {
+      flex-shrink: 0;
+      padding: 0.75rem 1.35rem;
+      border: none;
+      border-radius: 14px;
+      background: linear-gradient(180deg, #fb923c, var(--accent));
+      color: #fff;
+      font-weight: 800;
+      font-size: 0.9rem;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(249, 115, 22, 0.35);
+    }
+    footer.go-cart button.submit:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 6rem;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--surface2);
+      border: 1px solid var(--line);
+      padding: 0.55rem 1rem;
+      border-radius: 12px;
+      font-size: 0.82rem;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+      z-index: 60;
+      max-width: 90vw;
+      text-align: center;
+    }
     .toast.show { opacity: 1; }
-    footer.cart {
-      position: fixed; bottom: 0; left: 0; right: 0; padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
-      background: #121820; border-top: 1px solid var(--line); display: flex; gap: 0.6rem; align-items: stretch; z-index: 10;
+
+    #err {
+      margin: 0.65rem;
+      padding: 0.75rem;
+      background: rgba(127, 29, 29, 0.35);
+      border-radius: 12px;
+      color: #fecaca;
+      font-size: 0.85rem;
+      display: none;
+      border: 1px solid rgba(248, 113, 113, 0.35);
     }
-    footer.cart .info { flex: 1; min-width: 0; }
-    footer.cart .count { font-size: 0.75rem; color: var(--muted); }
-    footer.cart .sum { font-size: 1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-    footer.cart button.submit {
-      flex-shrink: 0; padding: 0 1.1rem; border: none; border-radius: 10px; background: var(--accent); color: #1a1408;
-      font-weight: 800; font-size: 0.95rem; cursor: pointer;
+
+    #orders { padding: 0 0.75rem 1rem; }
+    #orders h2 {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin: 0 0 0.5rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
     }
-    footer.cart button.submit:disabled { opacity: 0.45; cursor: not-allowed; }
-    #err { margin: 1rem; padding: 0.75rem; background: #3a2020; border-radius: 8px; color: #ffb4b4; font-size: 0.9rem; display: none; }
-    #orders { padding: 0 1rem 1rem; }
-    #orders h2 { font-size: 0.85rem; color: var(--muted); margin: 1rem 0 0.5rem; }
-    .order-card { background: var(--surface); border-radius: 10px; padding: 0.65rem 0.85rem; margin-bottom: 0.5rem; border: 1px solid var(--line); font-size: 0.85rem; }
-    .badge-alcohol { font-size: 0.68rem; font-weight: 700; color: #7c2d12; background: #ffedd5; padding: 0.12rem 0.4rem; border-radius: 4px; }
+    .order-card {
+      background: var(--surface);
+      border-radius: 14px;
+      padding: 0.75rem 0.85rem;
+      margin-bottom: 0.5rem;
+      border: 1px solid var(--line);
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+
+    /* ========== 商品詳細シート ========== */
+    #detailSheet {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: rgba(0, 0, 0, 0.55);
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 0;
+    }
+    #detailSheet.is-open { display: flex; }
+    .detail-panel {
+      width: 100%;
+      max-width: 28rem;
+      max-height: 92vh;
+      background: #12161f;
+      border: 1px solid var(--line);
+      border-radius: 20px 20px 0 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      animation: sheetIn 0.28s ease-out;
+    }
+    @keyframes sheetIn {
+      from { transform: translateY(100%); opacity: 0.85; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .detail-close {
+      position: absolute;
+      top: 0.65rem;
+      right: 0.65rem;
+      z-index: 5;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(0, 0, 0, 0.45);
+      color: #fff;
+      font-size: 1.35rem;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .detail-hero {
+      aspect-ratio: 16 / 10;
+      background: linear-gradient(145deg, #1e293b, #0f172a);
+      position: relative;
+      flex-shrink: 0;
+    }
+    .detail-hero img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .detail-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem 1rem 0.5rem;
+      -webkit-overflow-scrolling: touch;
+    }
+    .detail-title { margin: 0 0 0.35rem; font-size: 1.15rem; font-weight: 800; line-height: 1.35; }
+    .detail-desc { margin: 0 0 1rem; font-size: 0.82rem; color: var(--muted); line-height: 1.55; }
+
+    .opt-block { margin-bottom: 1.1rem; }
+    .opt-block-head {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin-bottom: 0.5rem;
+    }
+    .opt-block-head strong { font-size: 0.88rem; }
+    .tag-req {
+      font-size: 0.62rem;
+      font-weight: 800;
+      color: #fecaca;
+      background: rgba(185, 28, 28, 0.45);
+      padding: 0.12rem 0.4rem;
+      border-radius: 4px;
+    }
+    .tag-opt {
+      font-size: 0.62rem;
+      font-weight: 700;
+      color: var(--muted);
+      background: var(--surface2);
+      padding: 0.12rem 0.4rem;
+      border-radius: 4px;
+    }
+    .opt-row {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      padding: 0.55rem 0.65rem;
+      margin-bottom: 0.35rem;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: var(--surface2);
+      cursor: pointer;
+      font-size: 0.86rem;
+    }
+    .opt-row input { accent-color: var(--accent); width: 1.1rem; height: 1.1rem; flex-shrink: 0; }
+    .opt-row .opt-name { flex: 1; min-width: 0; }
+    .opt-row .opt-price { font-size: 0.78rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+    .opt-row.is-disabled { opacity: 0.45; pointer-events: none; }
+
+    .detail-footer {
+      flex-shrink: 0;
+      padding: 0.75rem 1rem calc(0.85rem + env(safe-area-inset-bottom));
+      border-top: 1px solid var(--line);
+      background: #0f131a;
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+    }
+    .qty-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+    }
+    .qty-bar button {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: var(--surface2);
+      color: var(--text);
+      font-size: 1.35rem;
+      font-weight: 700;
+      cursor: pointer;
+      line-height: 1;
+    }
+    .qty-bar button:disabled { opacity: 0.35; cursor: not-allowed; }
+    .qty-bar .qty-num {
+      font-size: 1.25rem;
+      font-weight: 800;
+      min-width: 2rem;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+    .detail-add {
+      width: 100%;
+      padding: 0.85rem 1rem;
+      border: none;
+      border-radius: 14px;
+      background: linear-gradient(180deg, #fb923c, var(--accent));
+      color: #fff;
+      font-weight: 800;
+      font-size: 1rem;
+      cursor: pointer;
+      box-shadow: 0 4px 18px rgba(249, 115, 22, 0.4);
+    }
+    .detail-add:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+
+    .go-profile {
+      margin: 0.55rem 0.75rem 0;
+      padding: 0.75rem 0.85rem;
+      border-radius: 14px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+    }
+    .go-profile > p:first-child { margin: 0 0 0.55rem; font-size: 0.72rem; color: var(--muted); line-height: 1.45; }
+    .go-profile label { display: block; font-size: 0.72rem; color: var(--muted); margin: 0.4rem 0 0.2rem; }
+    .go-profile input {
+      width: 100%;
+      padding: 0.5rem 0.6rem;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: #0f131a;
+      color: var(--text);
+      font-size: 0.9rem;
+      margin-bottom: 0.15rem;
+    }
+    .go-profile button#btnSaveProfile {
+      width: 100%;
+      margin-top: 0.55rem;
+      padding: 0.55rem;
+      border-radius: 10px;
+      border: none;
+      background: linear-gradient(180deg, #fb923c, var(--accent));
+      color: #fff;
+      font-weight: 800;
+      font-size: 0.88rem;
+      cursor: pointer;
+    }
+    #profileHint { margin-top: 0.4rem; }
+
+    .safety-note {
+      margin: 0.5rem 0.75rem 0;
+      padding: 0.55rem 0.65rem;
+      border-radius: 10px;
+      border: 1px solid rgba(185, 28, 28, 0.45);
+      background: rgba(69, 10, 10, 0.45);
+      color: #fecaca;
+      font-size: 0.75rem;
+    }
+
     .agegate {
-      position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, 0.65);
-      display: flex; align-items: center; justify-content: center; padding: 1rem;
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      background: rgba(0, 0, 0, 0.72);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
     }
     .agegate-card {
-      width: 100%; max-width: 30rem; background: #101722; border: 1px solid #314156;
-      border-radius: 12px; padding: 1rem;
+      width: 100%;
+      max-width: 30rem;
+      background: #12161f;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 1.1rem;
     }
     .agegate-card h2 { margin: 0 0 0.45rem; font-size: 1rem; }
-    .agegate-card p { margin: 0 0 0.8rem; color: var(--muted); font-size: 0.82rem; line-height: 1.45; }
+    .agegate-card p { margin: 0 0 0.85rem; color: var(--muted); font-size: 0.82rem; line-height: 1.45; }
     .age-q { margin-bottom: 0.75rem; }
     .age-q strong { display: block; font-size: 0.85rem; margin-bottom: 0.35rem; }
-    .age-q .row { display: flex; gap: 0.4rem; }
+    .age-q .row { display: flex; gap: 0.4rem; flex-wrap: wrap; }
     .age-q button {
-      border: 1px solid var(--line); background: #1e293b; color: var(--text);
-      border-radius: 8px; padding: 0.45rem 0.7rem; cursor: pointer; font-size: 0.82rem;
+      border: 1px solid var(--line);
+      background: var(--surface2);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 0.45rem 0.7rem;
+      cursor: pointer;
+      font-size: 0.82rem;
     }
-    .age-q button.on { border-color: var(--accent); color: var(--accent); background: #2b3442; }
+    .age-q button.on { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
     .agegate-card .primary {
-      width: 100%; border: none; border-radius: 9px; padding: 0.65rem;
-      font-weight: 800; background: var(--accent); color: #1a1408; cursor: pointer;
+      width: 100%;
+      border: none;
+      border-radius: 12px;
+      padding: 0.7rem;
+      font-weight: 800;
+      background: linear-gradient(180deg, #fb923c, var(--accent));
+      color: #fff;
+      cursor: pointer;
     }
-    .agegate-card .primary:disabled { opacity: 0.5; cursor: not-allowed; }
-    .safety-note {
-      margin: 0.5rem 1rem 0.2rem; padding: 0.5rem 0.65rem; border-radius: 8px;
-      border: 1px solid #7f1d1d; background: #3f1616; color: #fecaca; font-size: 0.78rem;
-    }
-    .badge-set { font-size: 0.68rem; font-weight: 700; color: #1e3a5f; background: #bfdbfe; padding: 0.12rem 0.4rem; border-radius: 4px; }
-    .set-sheet {
-      position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,0.55);
-      display: flex; align-items: flex-end; justify-content: center; padding: 0;
-    }
-    .set-sheet .panel {
-      width: 100%; max-width: 28rem; max-height: 88vh; overflow: auto;
-      background: #121820; border: 1px solid var(--line); border-radius: 14px 14px 0 0;
-      padding: 0.85rem 1rem calc(0.85rem + env(safe-area-inset-bottom));
-    }
-    .set-sheet h3 { margin: 0 0 0.5rem; font-size: 1rem; }
-    .set-step { margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--line); }
-    .set-step .sl { font-size: 0.78rem; color: var(--muted); margin-bottom: 0.35rem; }
-    .set-step .pick { display: flex; flex-direction: column; gap: 0.35rem; }
-    .set-step label.row {
-      display: flex; align-items: center; gap: 0.45rem; font-size: 0.85rem; cursor: pointer;
-      padding: 0.35rem 0.4rem; border-radius: 8px; background: #1a222c;
-    }
-    .set-step .extra { font-size: 0.72rem; color: var(--accent); margin-left: auto; }
-    .set-actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
-    .set-actions button { flex: 1; padding: 0.6rem; border-radius: 10px; border: 1px solid var(--line); font-weight: 700; cursor: pointer; }
-    .set-actions .cancel { background: #1e293b; color: var(--text); }
-    .set-actions .ok { background: var(--accent); color: #1a1408; border: none; }
+    .agegate-card .primary:disabled { opacity: 0.45; cursor: not-allowed; }
   </style>
 </head>
 <body>
-  <header>
-    <h1>ご注文</h1>
-    <div class="sub" id="hdr">読み込み中…</div>
+  <header class="go-topbar">
+    <div class="go-topicons">
+      <button type="button" class="go-iconbtn" id="btnHistory" title="注文履歴" aria-label="注文履歴">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+      </button>
+      <button type="button" class="go-iconbtn" id="btnStaff" title="店員を呼ぶ" aria-label="店員を呼ぶ">
+        <svg viewBox="0 0 24 24"><path d="M12 3v3M5.6 5.6l2.1 2.1M3 12h3M5.6 18.4l2.1-2.1M12 21v-3M18.4 18.4l-2.1-2.1M21 12h-3M18.4 5.6l-2.1 2.1"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+    </div>
+    <div class="go-brand">
+      <h1>ご注文</h1>
+      <div class="sub" id="hdr">読み込み中…</div>
+    </div>
+    <div class="go-topicons">
+      <button type="button" class="go-iconbtn" id="btnCartScroll" title="カート" aria-label="カートへ">
+        <svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>
+      </button>
+    </div>
   </header>
+
   <div id="err"></div>
   <div id="safetyNote" class="safety-note" style="display:none"></div>
-  <div id="menu"></div>
+
+  <div class="go-profile" id="profileCard">
+    <p>お客様情報（任意）<br /><span style="font-size:0.68rem;opacity:0.9">端末でお客様をお繋ぎします。お名前・電話は空でもご注文いただけます。</span></p>
+    <label for="custName">お名前（ニックネーム可）</label>
+    <input id="custName" type="text" autocomplete="name" maxlength="100" placeholder="未入力でも構いません" />
+    <label for="custPhone">電話番号</label>
+    <input id="custPhone" type="tel" autocomplete="tel" maxlength="20" placeholder="未入力でも構いません" />
+    <button type="button" id="btnSaveProfile">お客様情報を保存</button>
+    <span id="profileHint" class="muted"></span>
+  </div>
+
+  <div class="go-tabs-wrap">
+    <div class="go-tabs" id="catTabs"></div>
+  </div>
+  <div id="menu" class="go-menu-grid"></div>
   <div id="orders"></div>
 
-  <footer class="cart">
+  <footer class="go-cart" id="cartFooter">
     <div class="info">
       <div class="count" id="cartCount">カート 0点</div>
       <div class="sum" id="cartSum">¥0</div>
@@ -124,8 +585,9 @@
     <button class="submit" id="submit" disabled type="button">注文する</button>
   </footer>
   <div class="toast" id="toast"></div>
-  <div id="setSheet" class="set-sheet" style="display:none" aria-hidden="true"></div>
-  <div id="optionSheet" class="set-sheet" style="display:none" aria-hidden="true"></div>
+
+  <div id="detailSheet" aria-hidden="true"></div>
+
   <div class="agegate" id="ageGate" style="display:none">
     <div class="agegate-card">
       <h2>ご注文前の確認</h2>
@@ -150,18 +612,30 @@
 
   <script>
     const TOKEN = __TOKEN_JS__;
+    const DEVICE_KEY = "order-guest-device-v1";
+
+    function getOrCreateDeviceId() {
+      try {
+        let id = localStorage.getItem(DEVICE_KEY);
+        if (id && /^[a-zA-Z0-9_-]{8,128}$/.test(id)) return id;
+        id =
+          typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : "g" + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+        localStorage.setItem(DEVICE_KEY, id);
+        return id;
+      } catch (_) {
+        return "fallback-" + Date.now().toString(36);
+      }
+    }
+
     const api = (path, opt) => fetch(path, opt).then(async (r) => {
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || r.statusText || String(r.status));
       return j;
     });
 
-    /**
-     * @typedef {{ cartKey: string, menuItemId: string, name: string, unitPrice: number, qty: number,
-     *   sellKind?: string, setSelections?: { stepId: string, menuItemIds: string[] }[],
-     *   optionSelections?: { optionGroupId: string, optionItemIds: string[] }[] }} CartLine
-     */
-    /** @type {Record<string, CartLine>} */
+    /** @type {Record<string, unknown>} */
     const cart = {};
     let guestShowMenuPrices = true;
     let menuPriceTaxMode = "inclusive";
@@ -179,7 +653,7 @@
       if (mode === "exclusive") {
         const base = Number(item.basePrice || item.price || 0);
         const incl = Number(item.taxIncludedPrice || item.price || 0);
-        return "¥" + base.toLocaleString("ja-JP") + "<span class=\"incl\">(税込 ¥" + incl.toLocaleString("ja-JP") + ")</span>";
+        return "¥" + base.toLocaleString("ja-JP") + "<span class=\"incl\">税込 ¥" + incl.toLocaleString("ja-JP") + "</span>";
       }
       return "¥" + Number(item.price || 0).toLocaleString("ja-JP");
     }
@@ -207,7 +681,7 @@
       const el = document.getElementById("toast");
       el.textContent = t;
       el.classList.add("show");
-      setTimeout(() => el.classList.remove("show"), 1600);
+      setTimeout(() => el.classList.remove("show"), 1800);
     }
 
     function stableSetKey(sel) {
@@ -261,143 +735,19 @@
       return Number(item.price || 0) + add;
     }
 
-    function openOptionSheet(item) {
-      const host = document.getElementById("optionSheet");
-      if (!host) return;
-      let html = "<div class=\"panel\" role=\"dialog\" aria-labelledby=\"optSheetTitle\">";
-      html += "<h3 id=\"optSheetTitle\">" + escapeHtml(item.name) + "</h3>";
-      html += "<p class=\"meta\" style=\"margin:0 0 0.75rem\">オプションを選んでください。加算は<strong>税込</strong>の目安です（店舗設定に合わせた税表示と合算されます）。</p>";
-      for (const g of item.optionGroups || []) {
-        html += "<div class=\"set-step\" data-opt-group-id=\"" + escapeHtml(g.id) + "\">";
-        html +=
-          "<div class=\"sl\"><strong>" +
-          escapeHtml(g.name) +
-          "</strong> · " +
-          g.minSelect +
-          "〜" +
-          g.maxSelect +
-          " 個選ぶ</div><div class=\"pick\">";
-        const useRadio = Number(g.maxSelect || 1) <= 1;
-        for (const oi of g.items || []) {
-          const yen = Number(oi.priceDelta || 0);
-          const delta =
-            yen > 0 ? "<span class=\"extra\">（+" + yen.toLocaleString("ja-JP") + "円）</span>" : "<span class=\"extra\"></span>";
-          if (useRadio) {
-            html +=
-              "<label class=\"row\"><input type=\"radio\" name=\"og-" +
-              escapeHtml(g.id) +
-              "\" value=\"" +
-              escapeHtml(oi.id) +
-              "\" data-min=\"" +
-              g.minSelect +
-              "\" data-max=\"" +
-              g.maxSelect +
-              "\" /><span>" +
-              escapeHtml(oi.name) +
-              "</span>" +
-              delta +
-              "</label>";
-          } else {
-            html +=
-              "<label class=\"row\"><input type=\"checkbox\" name=\"ogcb-" +
-              escapeHtml(g.id) +
-              "\" value=\"" +
-              escapeHtml(oi.id) +
-              "\" data-min=\"" +
-              g.minSelect +
-              "\" data-max=\"" +
-              g.maxSelect +
-              "\" /><span>" +
-              escapeHtml(oi.name) +
-              "</span>" +
-              delta +
-              "</label>";
-          }
-        }
-        html += "</div></div>";
-      }
-      html += "<div class=\"set-actions\"><button type=\"button\" class=\"cancel\">閉じる</button><button type=\"button\" class=\"ok\">カートに追加</button></div></div>";
-      host.innerHTML = html;
-      host.style.display = "flex";
-      host.setAttribute("aria-hidden", "false");
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
 
-      host.querySelectorAll("[data-opt-group-id]").forEach((stepEl) => {
-        const gid = stepEl.getAttribute("data-opt-group-id");
-        const boxes = [...stepEl.querySelectorAll("input[type=checkbox]")];
-        if (boxes.length === 0) return;
-        const minP = Number(boxes[0].getAttribute("data-min") || 0);
-        const maxP = Number(boxes[0].getAttribute("data-max") || 1);
-        boxes.forEach((inp) => {
-          inp.addEventListener("change", () => {
-            const checked = boxes.filter((b) => b.checked);
-            if (checked.length > maxP) {
-              inp.checked = false;
-              toast("このオプションは最大 " + maxP + " 個までです");
-            }
-          });
-        });
-      });
-
-      host.querySelector(".cancel").onclick = () => {
-        host.style.display = "none";
-        host.innerHTML = "";
-      };
-      host.querySelector(".ok").onclick = () => {
-        /** @type {{ optionGroupId: string, optionItemIds: string[] }[]} */
-        const optionSelections = [];
-        for (const g of item.optionGroups || []) {
-          const stepEl = [...host.querySelectorAll("[data-opt-group-id]")].find(
-            (el) => el.getAttribute("data-opt-group-id") === g.id,
-          );
-          let ids = [];
-          if (Number(g.maxSelect || 1) <= 1) {
-            const r = stepEl ? stepEl.querySelector("input[type=radio]:checked") : null;
-            if (r && r.value) ids = [r.value];
-          } else {
-            ids = stepEl ? [...stepEl.querySelectorAll("input[type=checkbox]:checked")].map((x) => x.value) : [];
-          }
-          optionSelections.push({ optionGroupId: g.id, optionItemIds: ids });
-        }
-        for (const g of item.optionGroups || []) {
-          const sel = optionSelections.find((x) => x.optionGroupId === g.id);
-          const n = (sel && sel.optionItemIds) ? sel.optionItemIds.length : 0;
-          if (n < g.minSelect || n > g.maxSelect) {
-            toast(g.name + " は " + g.minSelect + "〜" + g.maxSelect + " 個選んでください");
-            return;
-          }
-        }
-        const unitPrice = computeOptionUnitPrice(item, optionSelections);
-        const cartKey = "o:" + item.id + ":" + stableOptionKey(optionSelections);
-        const cur = cart[cartKey] || {
-          cartKey,
-          menuItemId: item.id,
-          name: item.name,
-          unitPrice,
-          qty: 0,
-          sellKind: "single",
-          optionSelections,
-        };
-        cur.unitPrice = unitPrice;
-        cur.optionSelections = optionSelections;
-        cur.name = item.name;
-        const next = (cur.qty || 0) + 1;
-        if (item.stockQty != null && next > item.stockQty) {
-          toast("これ以上は在庫がありません");
-          return;
-        }
-        cur.qty = next;
-        cart[cartKey] = cur;
-        host.style.display = "none";
-        host.innerHTML = "";
-        renderCart();
-        toast(item.name + " を追加");
-      };
-      host.onclick = (ev) => {
-        if (ev.target === host) {
-          host.style.display = "none";
-          host.innerHTML = "";
-        }
-      };
+    function closeDetail() {
+      const host = document.getElementById("detailSheet");
+      host.classList.remove("is-open");
+      host.innerHTML = "";
+      host.setAttribute("aria-hidden", "true");
     }
 
     function setStockAllows(item, setSelections, addQty) {
@@ -449,181 +799,397 @@
       return true;
     }
 
-    function openSetSheet(item) {
-      const host = document.getElementById("setSheet");
-      if (!host) return;
-      let html = "<div class=\"panel\" role=\"dialog\" aria-labelledby=\"setSheetTitle\">";
-      html += "<h3 id=\"setSheetTitle\">" + escapeHtml(item.name) + "</h3>";
-      html += "<p class=\"meta\" style=\"margin:0 0 0.75rem\">項目ごとに選んでください。+表示は<strong>税抜</strong>／カート合計は税込換算後です。</p>";
+    function selEsc(id) {
+      return String(id).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    }
+
+    /**
+     * @param {{ lines?: { optionGroupId: string, optionItemIds: string[] }[] }} host — detail panel element
+     */
+    function collectOptionSelections(host, item) {
+      /** @type {{ optionGroupId: string, optionItemIds: string[] }[]} */
+      const optionSelections = [];
+      for (const g of item.optionGroups || []) {
+        const stepEl = host.querySelector("[data-opt-group-id=\"" + selEsc(g.id) + "\"]");
+        let ids = [];
+        if (Number(g.maxSelect || 1) <= 1) {
+          const r = stepEl ? stepEl.querySelector("input[type=radio]:checked") : null;
+          if (r && r.value) ids = [r.value];
+        } else {
+          ids = stepEl ? [...stepEl.querySelectorAll("input[type=checkbox]:checked")].map((x) => x.value) : [];
+        }
+        optionSelections.push({ optionGroupId: g.id, optionItemIds: ids });
+      }
+      return optionSelections;
+    }
+
+    function collectSetSelections(host, item) {
+      /** @type {{ stepId: string, menuItemIds: string[] }[]} */
+      const setSelections = [];
       for (const st of item.setSteps || []) {
-        html += "<div class=\"set-step\" data-step-id=\"" + escapeHtml(st.id) + "\">";
-        html += "<div class=\"sl\"><strong>" + escapeHtml(st.label) + "</strong> · " + st.minPick + "〜" + st.maxPick + "品選ぶ</div>";
-        html += "<div class=\"pick\">";
-        for (const ch of st.choices || []) {
-          const sold = ch.soldOut === true || (ch.stockQty != null && ch.stockQty <= 0);
-          const ex = Number(ch.extraPrice || 0);
-          const incl = choiceExtraInclusive(ch);
-          const exLabel =
-            ex > 0
-              ? "（税抜+" + ex.toLocaleString("ja-JP") + "・税込+" + incl.toLocaleString("ja-JP") + "）"
-              : "";
-          const soldTag = sold ? "<span class=\"badge-sold\" style=\"margin-left:0.25rem\">売り切れ</span>" : "";
-          html +=
-            "<label class=\"row\" style=\"" +
-            (sold ? "opacity:0.55" : "") +
-            "\"><input type=\"checkbox\" name=\"p-" +
-            escapeHtml(st.id) +
-            "\" value=\"" +
-            escapeHtml(ch.menuItemId) +
-            "\" data-min=\"" +
-            st.minPick +
-            "\" data-max=\"" +
-            st.maxPick +
-            "\"" +
-            (sold ? " disabled" : "") +
-            " /><span>" +
-            escapeHtml(ch.name) +
-            soldTag +
-            "</span><span class=\"extra\">" +
-            escapeHtml(exLabel) +
-            "</span></label>";
-        }
-        html += "</div></div>";
+        const stepEl = host.querySelector("[data-step-id=\"" + selEsc(st.id) + "\"]");
+        const ids = stepEl
+          ? [...stepEl.querySelectorAll("input[type=checkbox]:checked")].map((x) => x.value)
+          : [];
+        setSelections.push({ stepId: st.id, menuItemIds: ids });
       }
-      html += "<div class=\"set-actions\"><button type=\"button\" class=\"cancel\">閉じる</button><button type=\"button\" class=\"ok\">カートに追加</button></div></div>";
-      host.innerHTML = html;
-      host.style.display = "flex";
-      host.setAttribute("aria-hidden", "false");
-
-      function syncChecks(ev) {
-        const inp = ev.target;
-        if (!inp || inp.type !== "checkbox" || !inp.name || !inp.name.startsWith("p-")) return;
-        const stepId = inp.name.slice(2);
-        const stepEl = [...host.querySelectorAll("[data-step-id]")].find(
-          (el) => el.getAttribute("data-step-id") === stepId,
-        );
-        if (!stepEl) return;
-        const boxes = [...stepEl.querySelectorAll("input[type=checkbox]")];
-        const minP = Number(boxes[0]?.getAttribute("data-min") || 0);
-        const maxP = Number(boxes[0]?.getAttribute("data-max") || 1);
-        const checked = boxes.filter((b) => b.checked);
-        if (checked.length > maxP) {
-          inp.checked = false;
-          toast("この項目は最大 " + maxP + " 品までです");
-        }
-      }
-      host.querySelectorAll("input[type=checkbox]").forEach((b) => b.addEventListener("change", syncChecks));
-
-      host.querySelector(".cancel").onclick = () => {
-        host.style.display = "none";
-        host.innerHTML = "";
-      };
-      host.querySelector(".ok").onclick = () => {
-        const setSelections = [];
-        for (const st of item.setSteps || []) {
-          const stepEl = [...host.querySelectorAll("[data-step-id]")].find(
-            (el) => el.getAttribute("data-step-id") === st.id,
-          );
-          const ids = stepEl
-            ? [...stepEl.querySelectorAll("input[type=checkbox]:checked")].map((x) => x.value)
-            : [];
-          setSelections.push({ stepId: st.id, menuItemIds: ids });
-        }
-        for (const st of item.setSteps || []) {
-          const sel = setSelections.find((x) => x.stepId === st.id);
-          const n = (sel && sel.menuItemIds) ? sel.menuItemIds.length : 0;
-          if (n < st.minPick || n > st.maxPick) {
-            toast(st.label + " は " + st.minPick + "〜" + st.maxPick + " 品選んでください");
-            return;
-          }
-        }
-        const unitPrice = computeSetUnitPrice(item, setSelections);
-        if (unitPrice == null) {
-          toast("選択内容を確認してください");
-          return;
-        }
-        if (!setStockAllows(item, setSelections, 1)) {
-          toast("在庫が不足しています");
-          return;
-        }
-        const cartKey = "s:" + item.id + ":" + stableSetKey(setSelections);
-        const cur = cart[cartKey] || {
-          cartKey,
-          menuItemId: item.id,
-          name: item.name,
-          unitPrice,
-          qty: 0,
-          sellKind: "set",
-          setSelections,
-        };
-        cur.unitPrice = unitPrice;
-        cur.setSelections = setSelections;
-        cur.name = item.name;
-        const next = (cur.qty || 0) + 1;
-        if (!setStockAllows(item, setSelections, next)) {
-          toast("これ以上は在庫がありません");
-          return;
-        }
-        cur.qty = next;
-        cart[cartKey] = cur;
-        host.style.display = "none";
-        host.innerHTML = "";
-        renderCart();
-        toast(item.name + " を追加");
-      };
-      host.onclick = (ev) => {
-        if (ev.target === host) {
-          host.style.display = "none";
-          host.innerHTML = "";
-        }
-      };
+      return setSelections;
     }
 
-    function escapeHtml(s) {
-      return String(s)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;");
+    function syncDetailAddPrice(panel, unitPrice, qty) {
+      const btn = panel.querySelector("[data-add]");
+      if (!btn || !guestShowMenuPrices) return;
+      const n = Number(unitPrice) * Number(qty);
+      btn.textContent = "追加 " + fmtMoney(isFinite(n) ? n : 0);
     }
 
-    function addLine(item) {
+    function wireQty(panel, item, getUnitPrice) {
+      const minus = panel.querySelector("[data-qty-min]");
+      const plus = panel.querySelector("[data-qty-plus]");
+      const numEl = panel.querySelector("[data-qty]");
+      let qty = 1;
+      const maxSingle = item.stockQty != null ? item.stockQty : 99;
+
+      function refresh() {
+        numEl.textContent = String(qty);
+        minus.disabled = qty <= 1;
+        plus.disabled = qty >= maxSingle;
+        syncDetailAddPrice(panel, getUnitPrice(), qty);
+      }
+
+      minus.onclick = () => {
+        qty = Math.max(1, qty - 1);
+        refresh();
+      };
+      plus.onclick = () => {
+        qty = Math.min(maxSingle, qty + 1);
+        refresh();
+      };
+      refresh();
+      return () => qty;
+    }
+
+    function openProductDetail(item) {
       if (alcoholRestricted && alcoholById.get(item.id)) {
         toast("酒類はご注文いただけません");
         return;
       }
-      if (item.sellKind === "set" && item.setSteps && item.setSteps.length) {
-        openSetSheet(item);
-        return;
-      }
-      if (item.optionGroups && item.optionGroups.length) {
-        openOptionSheet(item);
-        return;
-      }
-      if (item.stockQty != null && item.stockQty <= 0) {
+      const sold = item.stockQty != null && item.stockQty <= 0;
+      if (sold && item.sellKind !== "set") {
         toast("売り切れです");
         return;
       }
-      const cartKey = item.id;
-      const cur = cart[cartKey] || {
-        cartKey,
-        menuItemId: item.id,
-        name: item.name,
-        unitPrice: item.price,
-        qty: 0,
-        sellKind: "single",
-      };
-      cur.unitPrice = item.price;
-      cur.name = item.name;
-      const next = (cur.qty || 0) + 1;
-      if (item.stockQty != null && next > item.stockQty) {
-        toast("これ以上は在庫がありません");
-        return;
+
+      const host = document.getElementById("detailSheet");
+      const imgHtml = item.imageUrl
+        ? "<img src=\"" + escapeHtml(item.imageUrl) + "\" alt=\"\" />"
+        : "<div style=\"display:flex;align-items:center;justify-content:center;height:100%;font-size:3rem;opacity:.25\">◆</div>";
+
+      let bodyInner = "";
+      if (item.sellKind === "set" && item.setSteps && item.setSteps.length) {
+        for (const st of item.setSteps) {
+          const req = st.minPick > 0;
+          bodyInner +=
+            "<div class=\"opt-block\" data-step-id=\"" +
+            escapeHtml(st.id) +
+            "\">" +
+            "<div class=\"opt-block-head\"><strong>" +
+            escapeHtml(st.label) +
+            "</strong>" +
+            (req ? "<span class=\"tag-req\">必須</span>" : "<span class=\"tag-opt\">任意</span>") +
+            "<span class=\"tag-opt\" style=\"margin-left:auto\">" +
+            st.minPick +
+            "〜" +
+            st.maxPick +
+            "品</span></div>";
+          for (const ch of st.choices || []) {
+            const soldX = ch.soldOut === true || (ch.stockQty != null && ch.stockQty <= 0);
+            const ex = Number(ch.extraPrice || 0);
+            const incl = choiceExtraInclusive(ch);
+            const priceTxt =
+              ex > 0
+                ? "+" +
+                  fmtMoney(incl).replace("¥", "") +
+                  " <span style=\"color:var(--muted);font-size:.68rem;font-weight:500\">(税込)</span>"
+                : "+¥0";
+            bodyInner +=
+              "<label class=\"opt-row" +
+              (soldX ? " is-disabled" : "") +
+              "\"><input type=\"checkbox\" name=\"p-" +
+              escapeHtml(st.id) +
+              "\" value=\"" +
+              escapeHtml(ch.menuItemId) +
+              "\" data-min=\"" +
+              st.minPick +
+              "\" data-max=\"" +
+              st.maxPick +
+              "\"" +
+              (soldX ? " disabled" : "") +
+              " /><span class=\"opt-name\">" +
+              escapeHtml(ch.name) +
+              (soldX ? " · 売切" : "") +
+              "</span><span class=\"opt-price\">" +
+              priceTxt +
+              "</span></label>";
+          }
+          bodyInner += "</div>";
+        }
+      } else if (item.optionGroups && item.optionGroups.length) {
+        for (const g of item.optionGroups) {
+          const req = g.minSelect > 0;
+          bodyInner +=
+            "<div class=\"opt-block\" data-opt-group-id=\"" +
+            escapeHtml(g.id) +
+            "\">" +
+            "<div class=\"opt-block-head\"><strong>" +
+            escapeHtml(g.name) +
+            "</strong>" +
+            (req ? "<span class=\"tag-req\">必須</span>" : "<span class=\"tag-opt\">任意</span>") +
+            "<span class=\"tag-opt\" style=\"margin-left:auto\">" +
+            g.minSelect +
+            "〜" +
+            g.maxSelect +
+            "個</span></div>";
+          const useRadio = Number(g.maxSelect || 1) <= 1;
+          for (const oi of g.items || []) {
+            const yen = Number(oi.priceDelta || 0);
+            const priceTxt =
+              yen > 0
+                ? "+" +
+                  yen.toLocaleString("ja-JP") +
+                  "円 <span style=\"color:var(--muted);font-size:.68rem\">(税込目安)</span>"
+                : "+¥0";
+            if (useRadio) {
+              bodyInner +=
+                "<label class=\"opt-row\"><input type=\"radio\" name=\"og-" +
+                escapeHtml(g.id) +
+                "\" value=\"" +
+                escapeHtml(oi.id) +
+                "\" /><span class=\"opt-name\">" +
+                escapeHtml(oi.name) +
+                "</span><span class=\"opt-price\">" +
+                priceTxt +
+                "</span></label>";
+            } else {
+              bodyInner +=
+                "<label class=\"opt-row\"><input type=\"checkbox\" name=\"ogcb-" +
+                escapeHtml(g.id) +
+                "\" value=\"" +
+                escapeHtml(oi.id) +
+                "\" data-min=\"" +
+                g.minSelect +
+                "\" data-max=\"" +
+                g.maxSelect +
+                "\" /><span class=\"opt-name\">" +
+                escapeHtml(oi.name) +
+                "</span><span class=\"opt-price\">" +
+                priceTxt +
+                "</span></label>";
+            }
+          }
+          bodyInner += "</div>";
+        }
       }
-      cur.qty = next;
-      cart[cartKey] = cur;
-      renderCart();
-      toast(item.name + " を追加");
+
+      host.innerHTML =
+        "<div class=\"detail-panel\" role=\"dialog\" aria-modal=\"true\">" +
+        "<button type=\"button\" class=\"detail-close\" aria-label=\"閉じる\">×</button>" +
+        "<div class=\"detail-hero\">" +
+        imgHtml +
+        "</div>" +
+        "<div class=\"detail-scroll\">" +
+        "<h2 class=\"detail-title\">" +
+        escapeHtml(item.name) +
+        "</h2>" +
+        (item.description
+          ? "<p class=\"detail-desc\">" + escapeHtml(item.description) + "</p>"
+          : "") +
+        bodyInner +
+        "</div>" +
+        "<div class=\"detail-footer\">" +
+        "<div class=\"qty-bar\">" +
+        "<button type=\"button\" data-qty-min\">−</button>" +
+        "<span class=\"qty-num\" data-qty>1</span>" +
+        "<button type=\"button\" data-qty-plus\">+</button>" +
+        "</div>" +
+        "<button type=\"button\" class=\"detail-add\" data-add data-add-price>追加</button>" +
+        "</div></div>";
+
+      host.classList.add("is-open");
+      host.setAttribute("aria-hidden", "false");
+
+      const panel = host.querySelector(".detail-panel");
+      panel.querySelector(".detail-close").onclick = closeDetail;
+      host.onclick = (ev) => {
+        if (ev.target === host) closeDetail();
+      };
+
+      if (item.sellKind === "set" && item.setSteps && item.setSteps.length) {
+        panel.querySelectorAll("input[type=checkbox]").forEach((inp) => {
+          inp.addEventListener("change", (ev) => {
+            const inpX = ev.target;
+            if (!inpX || inpX.type !== "checkbox" || !inpX.name || !inpX.name.startsWith("p-")) return;
+            const stepId = inpX.name.slice(2);
+            const stepEl = panel.querySelector("[data-step-id=\"" + selEsc(stepId) + "\"]");
+            if (!stepEl) return;
+            const boxes = [...stepEl.querySelectorAll("input[type=checkbox]")];
+            const maxP = Number(boxes[0]?.getAttribute("data-max") || item.setSteps.find((s) => s.id === stepId)?.maxPick || 1);
+            const checked = boxes.filter((b) => b.checked);
+            if (checked.length > maxP) {
+              inpX.checked = false;
+              toast("この項目は最大 " + maxP + " 品までです");
+            }
+            const sel = collectSetSelections(panel, item);
+            const up = computeSetUnitPrice(item, sel);
+            const unit = up != null ? up : Number(item.price || 0);
+            syncDetailAddPrice(panel, unit, Number(panel.querySelector("[data-qty]").textContent));
+          });
+        });
+        const getQty = wireQty(panel, item, () => {
+          const sel = collectSetSelections(panel, item);
+          const up = computeSetUnitPrice(item, sel);
+          return up != null ? up : Number(item.price || 0);
+        });
+        panel.querySelector("[data-add]").onclick = () => {
+          const setSelections = collectSetSelections(panel, item);
+          for (const st of item.setSteps || []) {
+            const sel = setSelections.find((x) => x.stepId === st.id);
+            const n = sel && sel.menuItemIds ? sel.menuItemIds.length : 0;
+            if (n < st.minPick || n > st.maxPick) {
+              toast(st.label + " は " + st.minPick + "〜" + st.maxPick + " 品選んでください");
+              return;
+            }
+          }
+          const unitPrice = computeSetUnitPrice(item, setSelections);
+          if (unitPrice == null) {
+            toast("選択内容を確認してください");
+            return;
+          }
+          const q = getQty();
+          if (!setStockAllows(item, setSelections, q)) {
+            toast("在庫が不足しています");
+            return;
+          }
+          const cartKey = "s:" + item.id + ":" + stableSetKey(setSelections);
+          const cur = cart[cartKey] || {
+            cartKey,
+            menuItemId: item.id,
+            name: item.name,
+            unitPrice,
+            qty: 0,
+            sellKind: "set",
+            setSelections,
+          };
+          cur.unitPrice = unitPrice;
+          cur.setSelections = setSelections;
+          cur.name = item.name;
+          cur.qty = (cur.qty || 0) + q;
+          cart[cartKey] = cur;
+          closeDetail();
+          renderCart();
+          toast(item.name + " をカートに追加");
+        };
+      } else if (item.optionGroups && item.optionGroups.length) {
+        panel.querySelectorAll("[data-opt-group-id]").forEach((stepEl) => {
+          const boxes = [...stepEl.querySelectorAll("input[type=checkbox]")];
+          if (boxes.length === 0) return;
+          const maxP = Number(boxes[0].getAttribute("data-max") || 1);
+          boxes.forEach((inp) => {
+            inp.addEventListener("change", () => {
+              const checked = boxes.filter((b) => b.checked);
+              if (checked.length > maxP) {
+                inp.checked = false;
+                toast("このオプションは最大 " + maxP + " 個までです");
+              }
+              const optionSelections = collectOptionSelections(panel, item);
+              syncDetailAddPrice(panel, computeOptionUnitPrice(item, optionSelections), Number(panel.querySelector("[data-qty]").textContent));
+            });
+          });
+        });
+        panel.querySelectorAll("input[type=radio]").forEach((r) => {
+          r.addEventListener("change", () => {
+            const optionSelections = collectOptionSelections(panel, item);
+            syncDetailAddPrice(panel, computeOptionUnitPrice(item, optionSelections), Number(panel.querySelector("[data-qty]").textContent));
+          });
+        });
+        const getQty = wireQty(panel, item, () => {
+          const optionSelections = collectOptionSelections(panel, item);
+          return computeOptionUnitPrice(item, optionSelections);
+        });
+        panel.querySelector("[data-add]").onclick = () => {
+          const optionSelections = collectOptionSelections(panel, item);
+          for (const g of item.optionGroups || []) {
+            const sel = optionSelections.find((x) => x.optionGroupId === g.id);
+            const n = sel && sel.optionItemIds ? sel.optionItemIds.length : 0;
+            if (n < g.minSelect || n > g.maxSelect) {
+              toast(g.name + " は " + g.minSelect + "〜" + g.maxSelect + " 個選んでください");
+              return;
+            }
+          }
+          const unitPrice = computeOptionUnitPrice(item, optionSelections);
+          const q = getQty();
+          const cartKey = "o:" + item.id + ":" + stableOptionKey(optionSelections);
+          const cur = cart[cartKey] || {
+            cartKey,
+            menuItemId: item.id,
+            name: item.name,
+            unitPrice,
+            qty: 0,
+            sellKind: "single",
+            optionSelections,
+          };
+          cur.unitPrice = unitPrice;
+          cur.optionSelections = optionSelections;
+          cur.name = item.name;
+          if (item.stockQty != null && (cur.qty || 0) + q > item.stockQty) {
+            toast("これ以上は在庫がありません");
+            return;
+          }
+          cur.qty = (cur.qty || 0) + q;
+          cart[cartKey] = cur;
+          closeDetail();
+          renderCart();
+          toast(item.name + " をカートに追加");
+        };
+      } else {
+        const getQty = wireQty(panel, item, () => Number(item.price || 0));
+        panel.querySelector("[data-add]").onclick = () => {
+          const q = getQty();
+          if (item.stockQty != null && q > item.stockQty) {
+            toast("在庫が不足しています");
+            return;
+          }
+          const cartKey = item.id;
+          const cur = cart[cartKey] || {
+            cartKey,
+            menuItemId: item.id,
+            name: item.name,
+            unitPrice: item.price,
+            qty: 0,
+            sellKind: "single",
+          };
+          cur.unitPrice = item.price;
+          cur.name = item.name;
+          if (item.stockQty != null && (cur.qty || 0) + q > item.stockQty) {
+            toast("これ以上は在庫がありません");
+            return;
+          }
+          cur.qty = (cur.qty || 0) + q;
+          cart[cartKey] = cur;
+          closeDetail();
+          renderCart();
+          toast(item.name + " をカートに追加");
+        };
+      }
+
+      if (!guestShowMenuPrices) {
+        const da = panel.querySelector("[data-add]");
+        if (da) da.textContent = "追加";
+      }
+    }
+
+    function addLine(item) {
+      openProductDetail(item);
     }
 
     function clampCartToStock(categories) {
@@ -667,10 +1233,10 @@
       if (s.course) {
         hdr += " · " + s.course.name + "（制限時間 " + s.course.durationMinutes + "分）";
         if (s.course.restrictedToMenuItems) {
-          hdr += " · コース対象メニューのみ注文可";
+          hdr += " · コース対象メニューのみ";
         }
       }
-      if (alcoholRestricted) hdr += " · 酒類注文は制限中";
+      if (alcoholRestricted) hdr += " · 酒類は制限中";
       document.getElementById("hdr").textContent = hdr;
       const sn = document.getElementById("safetyNote");
       if (sn) {
@@ -680,59 +1246,130 @@
           : "";
       }
 
+      const cp = data.customerProfile;
+      if (cp) {
+        document.getElementById("custName").value = cp.name || "";
+        document.getElementById("custPhone").value = cp.phone || "";
+      }
+
+      try {
+        const dev = getOrCreateDeviceId();
+        const idRes = await api("/guest/" + encodeURIComponent(TOKEN) + "/identify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ deviceId: dev }),
+        });
+        const hint = document.getElementById("profileHint");
+        if (hint && idRes.customer && idRes.customer.visitCount != null) {
+          hint.textContent =
+            "ご来店の記録: " +
+            idRes.customer.visitCount +
+            "回" +
+            (idRes.customer.firstLinkThisSession ? "（今回のご来店を記録しました）" : "");
+        }
+      } catch (_) {}
+
       const cats = data.categories || [];
       alcoholById.clear();
       clampCartToStock(cats);
       renderCart();
-      const catNameById = new Map(cats.map((c) => [c.id, c.name]));
+
+      const tabs = document.getElementById("catTabs");
+      tabs.innerHTML = "";
+      const allBtn = document.createElement("button");
+      allBtn.type = "button";
+      allBtn.className = "go-tab is-active";
+      allBtn.dataset.cat = "";
+      allBtn.textContent = "すべて";
+      tabs.appendChild(allBtn);
+      for (const c of cats) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "go-tab";
+        b.dataset.cat = c.id;
+        b.textContent = c.name;
+        tabs.appendChild(b);
+      }
+      tabs.onclick = (ev) => {
+        const t = ev.target.closest(".go-tab");
+        if (!t) return;
+        [...tabs.querySelectorAll(".go-tab")].forEach((x) => x.classList.toggle("is-active", x === t));
+        const id = t.dataset.cat || "";
+        document.querySelectorAll(".go-card").forEach((card) => {
+          if (!id || card.dataset.cat === id) {
+            card.style.display = "";
+          } else {
+            card.style.display = "none";
+          }
+        });
+      };
 
       const root = document.getElementById("menu");
       root.innerHTML = "";
       for (const c of cats) {
-        const d = document.createElement("div");
-        d.className = "cat";
-        d.textContent = c.parentId && catNameById.has(c.parentId) ? catNameById.get(c.parentId) + " > " + c.name : c.name;
-        root.appendChild(d);
         for (const it of c.items || []) {
           const isAlcohol = isAlcoholItem(it, c.name);
           alcoholById.set(it.id, isAlcohol);
-          const row = document.createElement("div");
-          row.className = "item";
-          row.innerHTML =
-            "<div class=\"left\"><img class=\"thumb\" alt=\"\"><div class=\"text\"><div class=\"name\"></div><div class=\"meta\"></div><div class=\"badges\"></div></div></div>" +
-            "<div class=\"price\"></div><button type=\"button\" aria-label=\"追加\">+</button>";
-          const thumb = row.querySelector(".thumb");
-          if (it.imageUrl) {
-            thumb.src = it.imageUrl;
-            thumb.alt = it.name;
-          } else {
-            thumb.style.display = "none";
-          }
-          row.querySelector(".name").textContent = it.name;
-          row.querySelector(".meta").textContent = it.description || "";
+          const card = document.createElement("article");
+          card.className = "go-card";
+          card.dataset.cat = c.id;
           const sold = it.stockQty != null && it.stockQty <= 0;
-          const badges = row.querySelector(".badges");
+          const blocked = sold || (isAlcohol && alcoholRestricted);
+          if (blocked) card.classList.add("is-dim");
+
+          const media = document.createElement("div");
+          media.className = "go-card-media";
+          if (it.imageUrl) {
+            const im = document.createElement("img");
+            im.src = it.imageUrl;
+            im.alt = it.name;
+            im.loading = "lazy";
+            media.appendChild(im);
+          } else {
+            const ph = document.createElement("div");
+            ph.className = "go-ph";
+            ph.textContent = "◇";
+            media.appendChild(ph);
+          }
+          const badgeStack = document.createElement("div");
+          badgeStack.style.cssText = "position:absolute;top:0;right:0;display:flex;flex-direction:column;align-items:flex-end;gap:0.25rem;padding:0.35rem;";
+          if (it.sellKind === "set") {
+            const b = document.createElement("span");
+            b.className = "go-card-badge";
+            b.textContent = "セット";
+            badgeStack.appendChild(b);
+          }
+          if (isAlcohol) {
+            const b = document.createElement("span");
+            b.className = "go-card-badge";
+            b.style.background = "rgba(124,45,18,.75)";
+            b.textContent = "酒類";
+            badgeStack.appendChild(b);
+          }
+          media.appendChild(badgeStack);
+
+          const body = document.createElement("div");
+          body.className = "go-card-body";
+          const title = document.createElement("div");
+          title.className = "go-card-title";
+          title.textContent = it.name;
+          const meta = document.createElement("div");
+          meta.className = "go-card-meta";
+          meta.textContent = it.description || "";
+          const price = document.createElement("div");
+          price.className = "go-card-price";
+          price.innerHTML = fmtItemPrice(it);
+          const badges = document.createElement("div");
+          badges.style.cssText = "display:flex;flex-wrap:wrap;gap:0.25rem;margin-top:0.35rem;";
           if (sold) {
             const b = document.createElement("span");
             b.className = "badge-sold";
-            b.textContent = "売り切れ";
+            b.textContent = "売切";
             badges.appendChild(b);
           } else if (it.lowStock) {
             const b = document.createElement("span");
             b.className = "badge-low";
             b.textContent = "残りわずか";
-            badges.appendChild(b);
-          }
-          if (it.sellKind === "set") {
-            const b = document.createElement("span");
-            b.className = "badge-set";
-            b.textContent = "セット";
-            badges.appendChild(b);
-          }
-          if (isAlcohol) {
-            const b = document.createElement("span");
-            b.className = "badge-alcohol";
-            b.textContent = "酒類";
             badges.appendChild(b);
           }
           if (isAlcohol && alcoholRestricted) {
@@ -741,11 +1378,19 @@
             b.textContent = "注文不可";
             badges.appendChild(b);
           }
-          row.querySelector(".price").innerHTML = fmtItemPrice(it);
-          const btn = row.querySelector("button");
-          btn.disabled = sold || (isAlcohol && alcoholRestricted);
-          btn.onclick = () => addLine(it);
-          root.appendChild(row);
+          body.appendChild(title);
+          if (it.description) body.appendChild(meta);
+          body.appendChild(price);
+          if (badges.childNodes.length) body.appendChild(badges);
+
+          card.appendChild(media);
+          card.appendChild(body);
+          card.onclick = () => {
+            if (!blocked) addLine(it);
+            else if (sold) toast("売り切れです");
+            else if (isAlcohol && alcoholRestricted) toast("酒類はご注文いただけません");
+          };
+          root.appendChild(card);
         }
       }
     }
@@ -758,7 +1403,7 @@
         box.innerHTML = "";
         return;
       }
-      let html = "<h2>注文履歴</h2>";
+      let html = "<h2 id=\"orderHistoryAnchor\">注文履歴</h2>";
       for (const o of list) {
         const lines = (o.lines || []).map((l) => l.nameSnapshot + " ×" + l.qty + " " + fmtMoney(l.unitPrice * l.qty)).join("<br>");
         html += "<div class=\"order-card\"><strong>" + new Date(o.createdAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) + "</strong> · " + (o.status || "") + "<br>" + lines + "</div>";
@@ -801,6 +1446,36 @@
         document.getElementById("err").textContent = String(e.message || e);
       } finally {
         btn.disabled = Object.values(cart).reduce((s, x) => s + (x.qty || 0), 0) === 0;
+      }
+    };
+
+    document.getElementById("btnHistory").onclick = () => {
+      const box = document.getElementById("orders");
+      if (box && box.innerHTML.trim()) box.scrollIntoView({ behavior: "smooth", block: "start" });
+      else toast("まだ注文履歴がありません");
+    };
+    document.getElementById("btnStaff").onclick = () => toast("スタッフをお呼びしています。少々お待ちください。");
+    document.getElementById("btnCartScroll").onclick = () => {
+      document.getElementById("cartFooter").scrollIntoView({ behavior: "smooth", block: "end" });
+    };
+
+    document.getElementById("btnSaveProfile").onclick = async () => {
+      try {
+        const dev = getOrCreateDeviceId();
+        const name = document.getElementById("custName").value.trim();
+        const phone = document.getElementById("custPhone").value.trim();
+        const idRes = await api("/guest/" + encodeURIComponent(TOKEN) + "/identify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ deviceId: dev, name, phone }),
+        });
+        const hint = document.getElementById("profileHint");
+        if (hint && idRes.customer && idRes.customer.visitCount != null) {
+          hint.textContent = "ご来店の記録: " + idRes.customer.visitCount + "回 · 保存しました";
+        }
+        toast("お客様情報を保存しました");
+      } catch (e) {
+        toast(String(e.message || e));
       }
     };
 

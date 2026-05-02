@@ -96,6 +96,11 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
     return staffHtml(reply, req.params.storeId, "オペレーション", "staff-body-ops.html", "staff-script-ops.js");
   });
 
+  app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/handy", async (req, reply) => {
+    if (!(await assertStaffStore(req, reply))) return;
+    return staffHtml(reply, req.params.storeId, "口頭注文", "staff-body-handy.html", "staff-script-handy.js");
+  });
+
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/tables", async (req, reply) => {
     if (!(await assertStaffStore(req, reply))) return;
     return staffHtml(reply, req.params.storeId, "席マスタ", "staff-body-tables.html", "staff-script-tables.js");
@@ -140,6 +145,11 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/settings", async (req, reply) => {
     if (!(await assertStaffStore(req, reply))) return;
     return staffHtml(reply, req.params.storeId, "設定", "staff-body-settings.html", "staff-script-settings.js");
+  });
+
+  app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/customers", async (req, reply) => {
+    if (!(await assertStaffStore(req, reply))) return;
+    return staffHtml(reply, req.params.storeId, "お客様", "staff-body-customers.html", "staff-script-customers.js");
   });
 
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId", async (req, reply) => {

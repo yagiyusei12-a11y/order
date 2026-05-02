@@ -430,6 +430,9 @@
       <a href="/staff-app/__STORE_PATH__/ops" class="snav" id="nav-ops" title="卓・会計">
         <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
       </a>
+      <a href="/staff-app/__STORE_PATH__/handy" class="snav" id="nav-handy" title="口頭注文">
+        <svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M10 18h4"/></svg>
+      </a>
       <a href="/staff-app/__STORE_PATH__/tables" class="snav" id="nav-tables" title="席マスタ">
         <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h16"/></svg>
       </a>
@@ -438,6 +441,9 @@
       </a>
       <a href="/staff-app/__STORE_PATH__/menu" class="snav" id="nav-menu" title="メニュー">
         <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      </a>
+      <a href="/staff-app/__STORE_PATH__/customers" class="snav" id="nav-customers" title="お客様">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="9" r="4"/><path d="M5 20v-1a7 7 0 0114 0v1"/></svg>
       </a>
       <a href="/staff-app/__STORE_PATH__/billing" class="snav" id="nav-billing" title="会計・レジ">
         <svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
@@ -526,9 +532,11 @@
       const segs = p.split("/").filter(Boolean);
       let id = "nav-home";
       if (p.includes("/ops")) id = "nav-ops";
+      else if (p.includes("/handy")) id = "nav-handy";
       else if (p.includes("/tables")) id = "nav-tables";
       else if (p.includes("/kitchen")) id = "nav-kitchen";
       else if (p.includes("/menu")) id = "nav-menu";
+      else if (p.includes("/customers")) id = "nav-customers";
       else if (p.includes("/billing")) id = "nav-billing";
       else if (p.includes("/reports")) id = "nav-reports";
       else if (p.includes("/courses")) id = "nav-courses";

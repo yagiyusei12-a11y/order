@@ -23,7 +23,27 @@ model Store {
   kitchenStations  KitchenStation[]
   sessions         DiningSession[]
   timeWindows      StoreTimeWindow[]
+  customers        Customer[]
   createdAt        DateTime             @default(now())
+}
+
+/// QR経由の匿名端末会員（店舗スコープ）。端末IDで識別し、名前・電話は任意。
+model Customer {
+  id         String            @id @default(cuid())
+  storeId    String
+  deviceId   String
+  name       String?
+  phone      String?
+  visitCount Int               @default(0)
+  lastSeenAt DateTime          @default(now())
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  store      Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  sessions   DiningSession[]
+
+  @@unique([storeId, deviceId])
+  @@index([storeId])
+  @@index([storeId, lastSeenAt])
 }
 
 /// 店舗の「何時から何時まで」マスタ（カテゴリのゲスト表示時間・商品の時間帯割引で参照）
@@ -314,6 +334,8 @@ model DiningSession {
   status     String       @default("open")
   openedAt   DateTime     @default(now())
   closedAt   DateTime?
+  customerId String?
+  customer   Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
   store      Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
   table      Table        @relation(fields: [tableId], references: [id], onDelete: Cascade)
   course     Course?      @relation(fields: [courseId], references: [id], onDelete: SetNull)
@@ -322,6 +344,7 @@ model DiningSession {
 
   @@index([storeId])
   @@index([tableId])
+  @@index([customerId])
 }
 
 model SalesOrder {

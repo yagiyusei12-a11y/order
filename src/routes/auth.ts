@@ -3,19 +3,103 @@ import bcrypt from "bcryptjs";
 import type { FastifyInstance } from "fastify";
 import { STAFF_JWT_COOKIE_NAME, cookieSecureDefault } from "../config.js";
 import { prisma } from "../db.js";
+import { normalizeStaffEmail, parseStoreId, validatePasswordPlain } from "../lib/staff-credentials.js";
 
 export async function registerAuth(app: FastifyInstance): Promise<void> {
+  app.get("/auth/bootstrap-status", async () => {
+    const disabled = process.env.BOOTSTRAP_DISABLED === "1";
+    if (disabled) return { open: false, reason: "disabled" as const };
+    const count = await prisma.staffUser.count();
+    return { open: count === 0, reason: count === 0 ? ("empty" as const) : ("staff_exist" as const) };
+  });
+
   app.register(async (scope) => {
     await scope.register(rateLimit, {
       max: Number(process.env.AUTH_LOGIN_MAX_PER_MINUTE ?? 30),
       timeWindow: "1 minute",
     });
     scope.post<{
+      Body: {
+        storeId?: string;
+        storeName?: string;
+        email?: string;
+        password?: string;
+      };
+    }>("/auth/bootstrap", async (req, reply) => {
+      if (process.env.BOOTSTRAP_DISABLED === "1") {
+        return reply.code(403).send({ error: "bootstrap disabled" });
+      }
+      const existingStaff = await prisma.staffUser.count();
+      if (existingStaff > 0) {
+        return reply.code(403).send({ error: "already initialized" });
+      }
+
+      const storeId = parseStoreId(req.body?.storeId ?? "");
+      if (!storeId) {
+        return reply
+          .code(400)
+          .send({ error: "店舗IDは2〜64文字の英小文字・数字・-_のみ（login / setup は使えません）" });
+      }
+      const storeName = typeof req.body?.storeName === "string" ? req.body.storeName.trim() : "";
+
+      const email = normalizeStaffEmail(req.body?.email ?? "");
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return reply.code(400).send({ error: "有効なメールアドレスを入力してください" });
+      }
+      const password = req.body?.password ?? "";
+      const pwErr = validatePasswordPlain(password);
+      if (pwErr) return reply.code(400).send({ error: pwErr });
+
+      const storeRow = await prisma.store.findUnique({ where: { id: storeId } });
+      if (!storeRow && !storeName) {
+        return reply.code(400).send({ error: "店舗名を入力してください（新規店舗のとき必須）" });
+      }
+
+      if (storeRow) {
+        const dupe = await prisma.staffUser.findUnique({
+          where: { storeId_email: { storeId, email } },
+        });
+        if (dupe) return reply.code(409).send({ error: "このメールは既に登録されています" });
+        await prisma.staffUser.create({
+          data: {
+            storeId,
+            email,
+            passwordHash: bcrypt.hashSync(password, 10),
+          },
+        });
+        return { ok: true, storeId, email, createdStore: false };
+      }
+
+      try {
+        await prisma.$transaction(async (tx) => {
+          await tx.store.create({
+            data: { id: storeId, name: storeName, settings: {} },
+          });
+          await tx.staffUser.create({
+            data: {
+              storeId,
+              email,
+              passwordHash: bcrypt.hashSync(password, 10),
+            },
+          });
+        });
+      } catch (e: unknown) {
+        const code = (e as { code?: string })?.code;
+        if (code === "P2002") {
+          return reply.code(409).send({ error: "この店舗IDは既に使われています" });
+        }
+        throw e;
+      }
+
+      return { ok: true, storeId, email, createdStore: true };
+    });
+
+    scope.post<{
       Body: { email?: string; password?: string; storeId?: string };
     }>("/auth/login", async (req, reply) => {
-      const email = req.body?.email?.trim().toLowerCase();
+      const email = normalizeStaffEmail(req.body?.email ?? "");
       const password = req.body?.password ?? "";
-      const storeId = req.body?.storeId?.trim();
+      const storeId = req.body?.storeId?.trim().toLowerCase() ?? "";
       if (!email || !password || !storeId) {
         return reply.code(400).send({ error: "email, password, and storeId required" });
       }

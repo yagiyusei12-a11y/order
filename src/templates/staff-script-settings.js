@@ -186,6 +186,45 @@ async function loadAll() {
       .join("");
   }
 
+  const addBox = document.getElementById("staffAddBox");
+  if (addBox) {
+    addBox.innerHTML =
+      "<div class=\"muted\" style=\"font-size:0.72rem;margin-bottom:0.45rem\">スタッフを追加</div>" +
+      "<div style=\"display:flex;flex-direction:column;gap:0.5rem;max-width:24rem\">" +
+      "<div><label for=\"staffNewEmail\" style=\"font-size:0.7rem;color:var(--muted)\">メール（ログインID）</label>" +
+      "<input id=\"staffNewEmail\" type=\"email\" autocomplete=\"off\" placeholder=\"staff@example.com\" style=\"margin:0.15rem 0 0\" /></div>" +
+      "<div><label for=\"staffNewName\" style=\"font-size:0.7rem;color:var(--muted)\">表示名（任意）</label>" +
+      "<input id=\"staffNewName\" type=\"text\" autocomplete=\"off\" placeholder=\"省略可\" style=\"margin:0.15rem 0 0\" /></div>" +
+      "<div><label for=\"staffNewPw\" style=\"font-size:0.7rem;color:var(--muted)\">パスワード（8文字以上）</label>" +
+      "<input id=\"staffNewPw\" type=\"password\" autocomplete=\"new-password\" style=\"margin:0.15rem 0 0\" /></div>" +
+      "<button type=\"button\" class=\"btn-primary\" id=\"btnStaffAdd\" style=\"align-self:flex-start;margin-top:0.15rem\">追加</button></div>";
+    const btn = document.getElementById("btnStaffAdd");
+    if (btn) {
+      btn.onclick = async () => {
+        log("");
+        const email = document.getElementById("staffNewEmail").value.trim();
+        const name = document.getElementById("staffNewName").value.trim();
+        const password = document.getElementById("staffNewPw").value;
+        if (!email) return log("メールを入力してください");
+        if (!password || password.length < 8) return log("パスワードは8文字以上にしてください");
+        try {
+          await api("/stores/" + encodeURIComponent(STORE) + "/staff-users", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password, name: name || undefined }),
+          });
+          document.getElementById("staffNewEmail").value = "";
+          document.getElementById("staffNewName").value = "";
+          document.getElementById("staffNewPw").value = "";
+          log("スタッフを追加しました");
+          await loadAll();
+        } catch (e) {
+          log(String(e.message || e));
+        }
+      };
+    }
+  }
+
   const newBox = document.getElementById("payMethodsNew");
   const box = document.getElementById("payMethods");
   newBox.innerHTML =

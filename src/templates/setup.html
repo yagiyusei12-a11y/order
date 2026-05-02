@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>初回セットアップ</title>
+  <style>
+    :root { --bg: #0f1218; --card: #181f2a; --line: #2a3344; --text: #e8edf4; --muted: #8b97a8; --gold: #d4a84b; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+    .card { width: 100%; max-width: 22rem; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 1.25rem; }
+    h1 { font-size: 1.1rem; margin: 0 0 0.35rem; }
+    p { color: var(--muted); font-size: 0.85rem; margin: 0 0 1rem; line-height: 1.45; }
+    label { display: block; font-size: 0.78rem; color: var(--muted); margin-bottom: 0.25rem; }
+    input { width: 100%; padding: 0.55rem 0.65rem; border-radius: 8px; border: 1px solid var(--line); background: #0f141c; color: var(--text); margin-bottom: 0.75rem; }
+    button { width: 100%; padding: 0.65rem; border: none; border-radius: 10px; background: var(--gold); color: #1a1408; font-weight: 800; cursor: pointer; margin-top: 0.25rem; }
+    #err { color: #ff8a8a; font-size: 0.85rem; margin-top: 0.75rem; display: none; }
+    .hint { font-size: 0.75rem; color: var(--muted); margin-top: 1rem; }
+    code { background: #0f141c; padding: 0.1rem 0.35rem; border-radius: 4px; }
+    a { color: var(--gold); }
+    #closed { display: none; }
+    #formWrap { display: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>初回セットアップ</h1>
+    <div id="closed">
+      <p>スタッフがすでに登録されています。ここからの新規登録はできません。</p>
+      <p><a href="/staff-app/login">店舗ログインへ</a></p>
+    </div>
+    <div id="formWrap">
+      <p>最初の<strong>店舗</strong>と<strong>管理者スタッフ</strong>を登録します。完了後はログイン画面へ進みます。</p>
+      <label for="storeId">店舗ID</label>
+      <p class="hint" style="margin:-0.25rem 0 0.45rem">URL の <code>/staff-app/___</code> に使う識別子（英小文字・数字・<code>-</code> <code>_</code>・2〜64文字）。</p>
+      <input id="storeId" type="text" autocomplete="off" placeholder="例: my-shop-1" />
+      <label for="storeName">店舗名（表示名）</label>
+      <input id="storeName" type="text" autocomplete="organization" placeholder="例: 本店" />
+      <label for="email">メールアドレス（ログインID）</label>
+      <input id="email" type="email" autocomplete="email" placeholder="account@example.com" />
+      <label for="password">パスワード（8文字以上）</label>
+      <input id="password" type="password" autocomplete="new-password" />
+      <button type="button" id="go">登録してログインへ</button>
+      <div id="err"></div>
+      <p class="hint"><a href="/staff-app/login">ログイン画面に戻る</a></p>
+    </div>
+  </div>
+  <script>
+    (async function () {
+      const closed = document.getElementById("closed");
+      const formWrap = document.getElementById("formWrap");
+      try {
+        const r = await fetch("/auth/bootstrap-status");
+        const j = await r.json();
+        if (j.open) {
+          formWrap.style.display = "block";
+        } else {
+          closed.style.display = "block";
+        }
+      } catch {
+        closed.style.display = "block";
+        closed.querySelector("p").textContent = "状態を確認できませんでした。";
+      }
+
+      document.getElementById("go").onclick = async () => {
+        const err = document.getElementById("err");
+        err.style.display = "none";
+        const storeId = document.getElementById("storeId").value.trim();
+        const storeName = document.getElementById("storeName").value.trim();
+        const email = document.getElementById("email").value.trim();
+        const password = document.getElementById("password").value;
+        try {
+          const r = await fetch("/auth/bootstrap", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ storeId, storeName, email, password }),
+          });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.error || r.statusText);
+          const sid = encodeURIComponent(storeId.trim().toLowerCase());
+          location.assign("/staff-app/login?storeId=" + sid);
+        } catch (e) {
+          err.style.display = "block";
+          err.textContent = String(e.message || e);
+        }
+      };
+    })();
+  </script>
+</body>
+</html>

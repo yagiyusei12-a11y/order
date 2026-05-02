@@ -1,5 +1,7 @@
+import bcrypt from "bcryptjs";
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
+import { normalizeStaffEmail, validatePasswordPlain } from "../lib/staff-credentials.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
 
 /** 英小文字・数字・アンダースコアのみ（決済記録の methodCode に保存されるため変更しにくい形式に正規化） */
@@ -71,6 +73,45 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
       select: { id: true, email: true, name: true, createdAt: true },
     });
     return { storeId: store.id, staffUsers };
+  });
+
+  app.post<{
+    Params: { storeId: string };
+    Body: { email?: string; password?: string; name?: string };
+  }>("/stores/:storeId/staff-users", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+
+    const email = normalizeStaffEmail(req.body?.email ?? "");
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return reply.code(400).send({ error: "有効なメールアドレスを入力してください" });
+    }
+    const password = req.body?.password ?? "";
+    const pwErr = validatePasswordPlain(password);
+    if (pwErr) return reply.code(400).send({ error: pwErr });
+
+    const name =
+      typeof req.body?.name === "string" && req.body.name.trim()
+        ? req.body.name.trim()
+        : null;
+
+    try {
+      const row = await prisma.staffUser.create({
+        data: {
+          storeId: store.id,
+          email,
+          passwordHash: bcrypt.hashSync(password, 10),
+          name,
+        },
+        select: { id: true, email: true, name: true, createdAt: true },
+      });
+      return row;
+    } catch (e: unknown) {
+      if ((e as { code?: string }).code === "P2002") {
+        return reply.code(409).send({ error: "このメールはこの店舗に既に登録されています" });
+      }
+      throw e;
+    }
   });
 
   app.post<{

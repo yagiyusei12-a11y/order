@@ -37,6 +37,10 @@ async function assertStaffStore(
     reply.redirect("/staff-app/login");
     return false;
   }
+  if (storeId === "setup") {
+    reply.redirect("/staff-app/setup");
+    return false;
+  }
   try {
     await req.jwtVerify();
   } catch {
@@ -76,6 +80,10 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
 
   app.get("/staff-app/login", async (_req, reply) => {
     return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(html("login.html"));
+  });
+
+  app.get("/staff-app/setup", async (_req, reply) => {
+    return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(html("setup.html"));
   });
 
   app.get<{ Params: { token: string } }>("/guest-app/:token", async (req, reply) => {

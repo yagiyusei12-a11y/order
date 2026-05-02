@@ -22,7 +22,40 @@ model Store {
   optionGroups     OptionGroup[]
   kitchenStations  KitchenStation[]
   sessions         DiningSession[]
+  timeWindows      StoreTimeWindow[]
   createdAt        DateTime             @default(now())
+}
+
+/// 店舗の「何時から何時まで」マスタ（カテゴリのゲスト表示時間・商品の時間帯割引で参照）
+model StoreTimeWindow {
+  id        String   @id @default(cuid())
+  storeId   String
+  name      String
+  /// 店舗 timezone の 0 時からの分（0〜1439）
+  startMin  Int
+  endMin    Int
+  sortOrder Int      @default(0)
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  categoriesGuestVisible MenuCategory[] @relation("GuestVisibleTimeWindow")
+  itemDiscounts          MenuItemTimeDiscount[]
+
+  @@index([storeId])
+}
+
+/// 商品ごとの時間帯割引（税込販売価格に対して適用。複数該当時は最も安くなる1件）
+model MenuItemTimeDiscount {
+  id           String          @id @default(cuid())
+  menuItemId   String
+  timeWindowId String
+  /// percent（0〜100）または fixed_yen（税込から減算する円）
+  discountKind String
+  value        Int
+  menuItem     MenuItem        @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  timeWindow   StoreTimeWindow @relation(fields: [timeWindowId], references: [id], onDelete: Cascade)
+
+  @@unique([menuItemId, timeWindowId])
+  @@index([menuItemId])
+  @@index([timeWindowId])
 }
 
 /// 調理場（キッチン絞り込み用。ゲスト画面には出さないマスタ）
@@ -147,6 +180,13 @@ model MenuCategory {
   sortOrder        Int        @default(0)
   /// false のカテゴリはゲストメニューに出さない（厨房・スタッフ用）
   visibleToGuest   Boolean    @default(true)
+  /// ゲスト向け表示の開始（店舗設定の timezone の 0 時からの経過分・0〜1439）。guestVisibleEndMin と両方 null なら時間制限なし
+  guestVisibleStartMin Int?
+  /// ゲスト向け表示の終了（同上）。開始より大きい場合は翌日跨ぎ（例 22:00〜02:00）
+  guestVisibleEndMin   Int?
+  /// 設定時はマスタの時間帯でゲスト表示を判定（guestVisibleStartMin/EndMin は無視）
+  guestVisibleTimeWindowId String?
+  guestVisibleTimeWindow   StoreTimeWindow? @relation("GuestVisibleTimeWindow", fields: [guestVisibleTimeWindowId], references: [id], onDelete: SetNull)
   store            Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
   parent           MenuCategory? @relation("MenuCategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
   children         MenuCategory[] @relation("MenuCategoryHierarchy")
@@ -163,6 +203,10 @@ model MenuItem {
   description       String?
   imageUrl          String?
   price             Int
+  /// 価格入力モード: inclusive=税込入力, exclusive=税抜入力（表示は税抜（税込））
+  priceTaxMode      String          @default("inclusive")
+  /// single=通常商品, set=セット（setSteps で項目・候補を定義）
+  sellKind          String          @default("single")
   sortOrder         Int             @default(0)
   isAvailable       Boolean         @default(true)
   /// null = 在庫管理しない（注文で減らない）
@@ -174,14 +218,49 @@ model MenuItem {
   cookTimerSec      Int?
   /// 同一商品の2つ目の調理タイマー（秒）。null / 0 = 未使用
   cookTimerSec2     Int?
+  /// メニュー保存の楽観ロック（PATCH 時 ifMasterVersion と照合）
+  masterVersion     Int             @default(1)
   category          MenuCategory    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   kitchenStation    KitchenStation? @relation(fields: [kitchenStationId], references: [id], onDelete: SetNull)
   orderLines        OrderLine[]
   courseLinks       CourseMenuItem[]
   optionLinks       MenuItemOptionGroup[]
+  timeDiscounts     MenuItemTimeDiscount[]
+  setSteps          MenuSetStep[]   @relation("MenuSetOfItem")
+  setChoiceAsComponent MenuSetChoice[] @relation("MenuSetChoiceComponent")
 
   @@index([categoryId])
   @@index([kitchenStationId])
+}
+
+/// セット商品の選択項目（例: 焼き鳥・一品など）
+model MenuSetStep {
+  id            String          @id @default(cuid())
+  setMenuItemId String
+  label         String
+  /// この項目で選ぶ個数の下限（0 なら任意）
+  minPick       Int             @default(1)
+  /// この項目で選ぶ個数の上限
+  maxPick       Int             @default(1)
+  sortOrder     Int             @default(0)
+  setMenuItem   MenuItem        @relation("MenuSetOfItem", fields: [setMenuItemId], references: [id], onDelete: Cascade)
+  choices       MenuSetChoice[]
+
+  @@index([setMenuItemId])
+}
+
+/// セット項目の候補となる単品（extraPrice は税抜の上乗せ円・会計時に店舗税率で税込換算）
+model MenuSetChoice {
+  id                  String       @id @default(cuid())
+  stepId              String
+  componentMenuItemId String
+  extraPrice          Int          @default(0)
+  sortOrder           Int          @default(0)
+  step                MenuSetStep  @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  componentMenuItem   MenuItem     @relation("MenuSetChoiceComponent", fields: [componentMenuItemId], references: [id], onDelete: Cascade)
+
+  @@index([stepId])
+  @@index([componentMenuItemId])
 }
 
 /// 商品オプショングループ（例: トッピング、サイズ）
@@ -265,6 +344,8 @@ model OrderLine {
   unitPrice    Int
   qty          Int
   note         String?
+  /// セット注文時の内訳など JSON（kind: set, steps: [...]）
+  lineExtra    Json?
   status       String     @default("queued")
   order        SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   menuItem     MenuItem?  @relation(fields: [menuItemId], references: [id], onDelete: SetNull)

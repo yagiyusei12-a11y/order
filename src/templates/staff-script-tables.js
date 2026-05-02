@@ -19,6 +19,13 @@ function btn(label, onClick) {
   return b;
 }
 
+function moveInArray(arr, from, to) {
+  const a = arr.slice();
+  const [el] = a.splice(from, 1);
+  a.splice(to, 0, el);
+  return a;
+}
+
 async function renderTablesMaster(list) {
   const box = document.getElementById("tablesMaster");
   if (!list || list.length === 0) {
@@ -27,14 +34,18 @@ async function renderTablesMaster(list) {
     return;
   }
   box.innerHTML = "";
-  for (const t of list) {
+  for (let rowIndex = 0; rowIndex < list.length; rowIndex++) {
+    const t = list[rowIndex];
     const url = tableFixedUrl(t.publicCode);
     const row = document.createElement("div");
-    row.className = "pm-row";
+    row.className = "pm-row tables-master-row";
     if (!t.active) row.style.opacity = "0.55";
 
     const thumb = document.createElement("div");
-    thumb.className = "pm-thumb";
+    thumb.className = "pm-thumb tables-master-grip";
+    thumb.textContent = "⋮⋮";
+    thumb.title = "ドラッグして並び替え（POS「卓」の表示順に反映）";
+    thumb.draggable = true;
 
     const mid = document.createElement("div");
     mid.className = "pm-mid";
@@ -118,7 +129,76 @@ async function renderTablesMaster(list) {
         }
       })
     );
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "btn-ghost";
+    delBtn.style.color = "#b91c1c";
+    delBtn.textContent = "削除";
+    delBtn.title = "卓マスタから削除（履歴に紐づくデータも削除されます）";
+    delBtn.onclick = async () => {
+      if (
+        !window.confirm(
+          "席「" + t.name + "」（コード " + t.publicCode + "）を削除しますか？\n" +
+            "この卓の滞在・注文履歴も削除されます。開いている卓がある場合は削除できません。"
+        )
+      ) {
+        return;
+      }
+      try {
+        await api("/stores/" + encodeURIComponent(STORE) + "/tables/" + encodeURIComponent(t.id), {
+          method: "DELETE",
+        });
+        log("席を削除しました");
+        await bootTables();
+      } catch (e) {
+        log(String(e.message || e));
+      }
+    };
+    rowBtns.appendChild(delBtn);
     actions.appendChild(rowBtns);
+
+    thumb.addEventListener("dragstart", (e) => {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", String(rowIndex));
+      row.classList.add("is-dragging");
+    });
+    thumb.addEventListener("dragend", () => {
+      row.classList.remove("is-dragging");
+      box.querySelectorAll(".pm-row.tables-master-row.drag-over").forEach((el) => {
+        el.classList.remove("drag-over");
+      });
+    });
+
+    row.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+    });
+    row.addEventListener("dragenter", (e) => {
+      if (e.currentTarget === row) row.classList.add("drag-over");
+    });
+    row.addEventListener("dragleave", (e) => {
+      const rt = e.relatedTarget;
+      if (!(rt instanceof Node) || !row.contains(rt)) row.classList.remove("drag-over");
+    });
+    row.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      row.classList.remove("drag-over");
+      const fromStr = e.dataTransfer.getData("text/plain");
+      const from = parseInt(fromStr, 10);
+      if (Number.isNaN(from) || from === rowIndex) return;
+      const newOrder = moveInArray(list, from, rowIndex);
+      try {
+        await api("/stores/" + encodeURIComponent(STORE) + "/tables/reorder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderedIds: newOrder.map((x) => x.id) }),
+        });
+        log("並び順を保存しました（POS「卓」に反映）");
+        await bootTables();
+      } catch (err) {
+        log(String(err.message || err));
+      }
+    });
 
     row.appendChild(thumb);
     row.appendChild(mid);

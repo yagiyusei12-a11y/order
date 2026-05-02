@@ -2,6 +2,19 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
 
+/** 英小文字・数字・アンダースコアのみ（決済記録の methodCode に保存されるため変更しにくい形式に正規化） */
+function normalizePaymentMethodCode(raw: string): string | null {
+  const s = String(raw || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "");
+  if (!s.length || s.length > 64) return null;
+  if (!/^[a-z0-9_]+$/.test(s)) return null;
+  return s;
+}
+
 export async function registerStoreSettings(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { storeId: string } }>("/stores/:storeId/settings", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
@@ -60,9 +73,62 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
     return { storeId: store.id, staffUsers };
   });
 
+  app.post<{
+    Params: { storeId: string };
+    Body: { code: string; labelJa: string; sortOrder?: number; enabled?: boolean };
+  }>("/stores/:storeId/payment-methods", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    const code = normalizePaymentMethodCode(req.body?.code ?? "");
+    if (!code) {
+      return reply
+        .code(400)
+        .send({ error: "code must be 1-64 chars: lowercase letters, digits, underscores only" });
+    }
+    const labelJa = typeof req.body?.labelJa === "string" ? req.body.labelJa.trim() : "";
+    if (!labelJa) return reply.code(400).send({ error: "labelJa required" });
+    const sortOrder =
+      typeof req.body?.sortOrder === "number" && Number.isInteger(req.body.sortOrder)
+        ? req.body.sortOrder
+        : 0;
+    const enabled = req.body?.enabled === false ? false : true;
+
+    const existingLink = await prisma.storePaymentMethod.findFirst({
+      where: { storeId: store.id, definition: { code } },
+    });
+    if (existingLink) {
+      return reply.code(409).send({ error: "this store already has a payment method with that code" });
+    }
+
+    let def = await prisma.paymentMethodDefinition.findUnique({ where: { code } });
+    if (!def) {
+      def = await prisma.paymentMethodDefinition.create({
+        data: { code, labelJa, sortOrder: 0 },
+      });
+    }
+
+    const row = await prisma.storePaymentMethod.create({
+      data: {
+        storeId: store.id,
+        definitionId: def.id,
+        sortOrder,
+        enabled,
+      },
+      include: { definition: true },
+    });
+
+    return {
+      id: row.id,
+      code: row.definition.code,
+      labelJa: row.definition.labelJa,
+      enabled: row.enabled,
+      sortOrder: row.sortOrder,
+    };
+  });
+
   app.patch<{
     Params: { storeId: string; storePaymentMethodId: string };
-    Body: { enabled?: boolean; sortOrder?: number };
+    Body: { enabled?: boolean; sortOrder?: number; labelJa?: string };
   }>("/stores/:storeId/payment-methods/:storePaymentMethodId", async (req, reply) => {
     const row = await prisma.storePaymentMethod.findFirst({
       where: { id: req.params.storePaymentMethodId, storeId: req.params.storeId },
@@ -80,18 +146,66 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
       }
       data.sortOrder = req.body.sortOrder;
     }
-    if (Object.keys(data).length === 0) return reply.code(400).send({ error: "no fields to update" });
 
-    const updated = await prisma.storePaymentMethod.update({
-      where: { id: row.id },
-      data,
-    });
+    let labelJa = row.definition.labelJa;
+    if (typeof req.body?.labelJa === "string") {
+      const lj = req.body.labelJa.trim();
+      if (!lj) return reply.code(400).send({ error: "labelJa cannot be empty" });
+      await prisma.paymentMethodDefinition.update({
+        where: { id: row.definition.id },
+        data: { labelJa: lj },
+      });
+      labelJa = lj;
+    }
+
+    const hasLabelField = typeof req.body?.labelJa === "string";
+    if (Object.keys(data).length === 0 && !hasLabelField) {
+      return reply.code(400).send({ error: "no fields to update" });
+    }
+
+    const updated =
+      Object.keys(data).length > 0
+        ? await prisma.storePaymentMethod.update({
+            where: { id: row.id },
+            data,
+          })
+        : row;
+
     return {
       id: updated.id,
       code: row.definition.code,
-      labelJa: row.definition.labelJa,
+      labelJa,
       enabled: updated.enabled,
       sortOrder: updated.sortOrder,
     };
   });
+
+  app.delete<{ Params: { storeId: string; storePaymentMethodId: string } }>(
+    "/stores/:storeId/payment-methods/:storePaymentMethodId",
+    async (req, reply) => {
+      const row = await prisma.storePaymentMethod.findFirst({
+        where: { id: req.params.storePaymentMethodId, storeId: req.params.storeId },
+        include: { definition: true },
+      });
+      if (!row) return reply.code(404).send({ error: "payment method row not found" });
+
+      await prisma.storePaymentMethod.delete({ where: { id: row.id } });
+
+      const stillLinked = await prisma.storePaymentMethod.count({
+        where: { definitionId: row.definitionId },
+      });
+      if (stillLinked === 0) {
+        const payUses = await prisma.payment.count({
+          where: { methodCode: row.definition.code },
+        });
+        if (payUses === 0) {
+          await prisma.paymentMethodDefinition.delete({
+            where: { id: row.definition.id },
+          });
+        }
+      }
+
+      return { ok: true };
+    },
+  );
 }

@@ -23,6 +23,7 @@ function flatMenuItems() {
         name: it.name,
         categoryName: cat.name,
         isAvailable: it.isAvailable,
+        sellKind: it.sellKind || "single",
       });
     }
   }
@@ -44,6 +45,7 @@ function collectCheckedIds(courseId) {
   if (!box) return [];
   const ids = [];
   for (const inp of box.querySelectorAll("input[type=\"checkbox\"]")) {
+    if (inp.disabled) continue;
     if (inp.checked) ids.push(inp.value);
   }
   return ids;
@@ -200,7 +202,7 @@ function render() {
     sum.style.cursor = "pointer";
     sum.style.fontWeight = "600";
     sum.style.fontSize = "0.82rem";
-    sum.textContent = "対象商品（メニューマスタから複数選択）";
+    sum.textContent = "対象商品（通常商品のみ。セット商品はコース対象にできません）";
     details.appendChild(sum);
 
     const chkWrap = document.createElement("div");
@@ -227,13 +229,17 @@ function render() {
       lab.style.alignItems = "center";
       lab.style.gap = "0.35rem";
       lab.style.margin = "0.15rem 0";
+      const isSet = it.sellKind === "set";
       const inp = document.createElement("input");
       inp.type = "checkbox";
       inp.value = it.id;
-      inp.checked = selected.has(it.id);
-      if (!it.isAvailable) inp.disabled = true;
+      inp.checked = selected.has(it.id) && !isSet;
+      if (!it.isAvailable || isSet) inp.disabled = true;
       const span = document.createElement("span");
-      span.textContent = it.name + (!it.isAvailable ? "（販売停止）" : "");
+      span.textContent =
+        it.name +
+        (!it.isAvailable ? "（販売停止）" : "") +
+        (isSet ? "（セット・対象外）" : "");
       lab.appendChild(inp);
       lab.appendChild(span);
       chkWrap.appendChild(lab);

@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { registerBilling } from "./billing.js";
 import { registerCatalog } from "./catalog.js";
 import { registerStoreSettings } from "./store-settings.js";
+import { registerTimeWindows } from "./time-windows.js";
 import { registerKitchen } from "./kitchen.js";
 import { registerKitchenStations } from "./kitchen-stations.js";
 import { registerSessions } from "./sessions.js";
@@ -27,6 +28,7 @@ export async function registerProtectedStaffRoutes(app: FastifyInstance): Promis
   app.addHook("preHandler", verifyStaff);
   await registerBilling(app);
   await registerStoreSettings(app);
+  await registerTimeWindows(app);
   await registerCatalog(app);
   await registerTables(app);
   await registerSessions(app);

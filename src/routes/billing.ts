@@ -25,21 +25,189 @@ function sessionPreviewFromSession(session: SessionForPreview): {
   return { courseTotal, ordersTotal, suggestedTotal: courseTotal + ordersTotal };
 }
 
+/** 伝票詳細レスポンスを組み立て。オープン伝票はセッションから totalAmount を同期（注文行変更後にレジ表示と一致させる） */
+async function buildBillDetailPayload(
+  storeId: string,
+  billId: string
+): Promise<{
+  id: string;
+  storeId: string;
+  sessionId: string | null;
+  label: string | null;
+  totalAmount: number;
+  status: string;
+  createdAt: Date;
+  settledAt: Date | null;
+  paidTotal: number;
+  remainder: number;
+  payments: {
+    id: string;
+    methodCode: string;
+    labelJa: string;
+    amount: number;
+    note: string | null;
+    createdAt: Date;
+  }[];
+  preview: ReturnType<typeof sessionPreviewFromSession> | null;
+  sessionSummary: {
+    id: string;
+    status: string;
+    guestCount: number;
+    tableName: string | null;
+    courseName: string | null;
+  } | null;
+  courseLine: { name: string; lineTotal: number } | null;
+  orderLines: {
+    id: string;
+    nameSnapshot: string;
+    qty: number;
+    unitPrice: number;
+    lineTotal: number;
+    status: string;
+    menuItemId: string | null;
+    lineExtra: unknown;
+  }[];
+} | null> {
+  const bill = await prisma.bill.findFirst({
+    where: { id: billId, storeId },
+    include: {
+      payments: { orderBy: { createdAt: "asc" } },
+      session: {
+        include: {
+          table: true,
+          course: true,
+          orders: { include: { lines: true } },
+        },
+      },
+    },
+  });
+  if (!bill) return null;
+
+  if (bill.session && bill.status === "open") {
+    const previewSum = sessionPreviewFromSession(bill.session as SessionForPreview).suggestedTotal;
+    if (bill.totalAmount !== previewSum) {
+      await prisma.bill.update({
+        where: { id: bill.id },
+        data: { totalAmount: previewSum },
+      });
+      bill.totalAmount = previewSum;
+    }
+  }
+
+  const defs = await prisma.paymentMethodDefinition.findMany();
+  const labelByCode = Object.fromEntries(defs.map((d) => [d.code, d.labelJa]));
+
+  const paid = bill.payments.reduce((s, p) => s + p.amount, 0);
+  const remainder = bill.totalAmount - paid;
+
+  const paymentsOut = bill.payments.map((p) => ({
+    id: p.id,
+    methodCode: p.methodCode,
+    labelJa: labelByCode[p.methodCode] ?? p.methodCode,
+    amount: p.amount,
+    note: p.note,
+    createdAt: p.createdAt,
+  }));
+
+  let preview: ReturnType<typeof sessionPreviewFromSession> | null = null;
+  let sessionSummary: {
+    id: string;
+    status: string;
+    guestCount: number;
+    tableName: string | null;
+    courseName: string | null;
+  } | null = null;
+  let courseLine: { name: string; lineTotal: number } | null = null;
+  const orderLines: {
+    id: string;
+    nameSnapshot: string;
+    qty: number;
+    unitPrice: number;
+    lineTotal: number;
+    status: string;
+    menuItemId: string | null;
+    lineExtra: unknown;
+  }[] = [];
+  if (bill.session) {
+    preview = sessionPreviewFromSession(bill.session as SessionForPreview);
+    sessionSummary = {
+      id: bill.session.id,
+      status: bill.session.status,
+      guestCount: bill.session.guestCount,
+      tableName: bill.session.table?.name ?? null,
+      courseName: bill.session.course?.name ?? null,
+    };
+    if (bill.session.course && bill.session.courseId) {
+      courseLine = {
+        name: `${bill.session.course.name}（${bill.session.guestCount}名×${bill.session.course.pricePerPerson}円）`,
+        lineTotal: bill.session.course.pricePerPerson * bill.session.guestCount,
+      };
+    }
+    for (const o of bill.session.orders) {
+      for (const l of o.lines) {
+        orderLines.push({
+          id: l.id,
+          nameSnapshot: l.nameSnapshot,
+          qty: l.qty,
+          unitPrice: l.unitPrice,
+          lineTotal: l.unitPrice * l.qty,
+          status: l.status,
+          menuItemId: l.menuItemId,
+          lineExtra: l.lineExtra,
+        });
+      }
+    }
+  }
+
+  return {
+    id: bill.id,
+    storeId: bill.storeId,
+    sessionId: bill.sessionId,
+    label: bill.label,
+    totalAmount: bill.totalAmount,
+    status: bill.status,
+    createdAt: bill.createdAt,
+    settledAt: bill.settledAt,
+    paidTotal: paid,
+    remainder,
+    payments: paymentsOut,
+    preview,
+    sessionSummary,
+    courseLine,
+    orderLines,
+  };
+}
+
 export async function registerBilling(app: FastifyInstance): Promise<void> {
   app.get<{
     Params: { storeId: string };
-    Querystring: { status?: string; limit?: string };
+    Querystring: { status?: string; limit?: string; from?: string; to?: string; methodCode?: string };
   }>("/stores/:storeId/bills", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
     if (!store) return reply.code(404).send({ error: "store not found" });
     const status = req.query.status;
     const limitRaw = req.query.limit ? Number(req.query.limit) : 40;
     const limit = Number.isInteger(limitRaw) && limitRaw > 0 && limitRaw <= 200 ? limitRaw : 40;
+    const from = req.query.from?.trim();
+    const to = req.query.to?.trim();
+    const methodCode = req.query.methodCode?.trim();
+    const dateRx = /^\d{4}-\d{2}-\d{2}$/;
+    if (from && !dateRx.test(from)) return reply.code(400).send({ error: "from must be YYYY-MM-DD" });
+    if (to && !dateRx.test(to)) return reply.code(400).send({ error: "to must be YYYY-MM-DD" });
+    const settledAtRange: { gte?: Date; lt?: Date } = {};
+    if (from) settledAtRange.gte = new Date(`${from}T00:00:00.000+09:00`);
+    if (to) {
+      const end = new Date(`${to}T00:00:00.000+09:00`);
+      end.setDate(end.getDate() + 1);
+      settledAtRange.lt = end;
+    }
 
     const bills = await prisma.bill.findMany({
       where: {
         storeId: store.id,
         ...(status === "open" || status === "settled" || status === "void" ? { status } : {}),
+        ...(settledAtRange.gte || settledAtRange.lt ? { settledAt: settledAtRange } : {}),
+        ...(methodCode ? { payments: { some: { methodCode } } } : {}),
       },
       orderBy: { createdAt: "desc" },
       take: limit,
@@ -64,6 +232,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
           settledAt: b.settledAt,
           paidTotal: paid,
           remainder: b.totalAmount - paid,
+          paymentMethodCodes: [...new Set(b.payments.map((p) => p.methodCode))],
         };
       }),
     };
@@ -139,101 +308,9 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
   app.get<{
     Params: { storeId: string; billId: string };
   }>("/stores/:storeId/bills/:billId", async (req, reply) => {
-    const bill = await prisma.bill.findFirst({
-      where: { id: req.params.billId, storeId: req.params.storeId },
-      include: {
-        payments: { orderBy: { createdAt: "asc" } },
-        session: {
-          include: {
-            table: true,
-            course: true,
-            orders: { include: { lines: true } },
-          },
-        },
-      },
-    });
-    if (!bill) return reply.code(404).send({ error: "bill not found" });
-
-    const defs = await prisma.paymentMethodDefinition.findMany();
-    const labelByCode = Object.fromEntries(defs.map((d) => [d.code, d.labelJa]));
-
-    const paid = bill.payments.reduce((s, p) => s + p.amount, 0);
-    const remainder = bill.totalAmount - paid;
-
-    const paymentsOut = bill.payments.map((p) => ({
-      id: p.id,
-      methodCode: p.methodCode,
-      labelJa: labelByCode[p.methodCode] ?? p.methodCode,
-      amount: p.amount,
-      note: p.note,
-      createdAt: p.createdAt,
-    }));
-
-    let preview: ReturnType<typeof sessionPreviewFromSession> | null = null;
-    let sessionSummary: {
-      id: string;
-      status: string;
-      guestCount: number;
-      tableName: string | null;
-      courseName: string | null;
-    } | null = null;
-    let courseLine: { name: string; lineTotal: number } | null = null;
-    const orderLines: {
-      id: string;
-      nameSnapshot: string;
-      qty: number;
-      unitPrice: number;
-      lineTotal: number;
-      status: string;
-      menuItemId: string | null;
-    }[] = [];
-    if (bill.session) {
-      preview = sessionPreviewFromSession(bill.session as SessionForPreview);
-      sessionSummary = {
-        id: bill.session.id,
-        status: bill.session.status,
-        guestCount: bill.session.guestCount,
-        tableName: bill.session.table?.name ?? null,
-        courseName: bill.session.course?.name ?? null,
-      };
-      if (bill.session.course && bill.session.courseId) {
-        courseLine = {
-          name: `${bill.session.course.name}（${bill.session.guestCount}名×${bill.session.course.pricePerPerson}円）`,
-          lineTotal: bill.session.course.pricePerPerson * bill.session.guestCount,
-        };
-      }
-      for (const o of bill.session.orders) {
-        for (const l of o.lines) {
-          orderLines.push({
-            id: l.id,
-            nameSnapshot: l.nameSnapshot,
-            qty: l.qty,
-            unitPrice: l.unitPrice,
-            lineTotal: l.unitPrice * l.qty,
-            status: l.status,
-            menuItemId: l.menuItemId,
-          });
-        }
-      }
-    }
-
-    return {
-      id: bill.id,
-      storeId: bill.storeId,
-      sessionId: bill.sessionId,
-      label: bill.label,
-      totalAmount: bill.totalAmount,
-      status: bill.status,
-      createdAt: bill.createdAt,
-      settledAt: bill.settledAt,
-      paidTotal: paid,
-      remainder,
-      payments: paymentsOut,
-      preview,
-      sessionSummary,
-      courseLine,
-      orderLines,
-    };
+    const payload = await buildBillDetailPayload(req.params.storeId, req.params.billId);
+    if (!payload) return reply.code(404).send({ error: "bill not found" });
+    return payload;
   });
 
   app.post<{
@@ -286,7 +363,62 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
 
       return next;
     });
-    return { ok: true, line: updated };
+    const billPayload = await buildBillDetailPayload(req.params.storeId, bill.id);
+    return { ok: true, line: updated, bill: billPayload };
+  });
+
+  app.patch<{
+    Params: { storeId: string; billId: string; lineId: string };
+    Body: { qty: number };
+  }>("/stores/:storeId/bills/:billId/order-lines/:lineId", async (req, reply) => {
+    const bill = await prisma.bill.findFirst({
+      where: { id: req.params.billId, storeId: req.params.storeId },
+      include: { session: true },
+    });
+    if (!bill) return reply.code(404).send({ error: "bill not found" });
+    if (!bill.sessionId || !bill.session) return reply.code(400).send({ error: "bill is not linked to session" });
+    if (bill.status !== "open") return reply.code(400).send({ error: "only open bill can edit order lines" });
+    const nextQty = req.body?.qty;
+    if (!Number.isInteger(nextQty) || nextQty < 1) {
+      return reply.code(400).send({ error: "qty must be integer >= 1" });
+    }
+    const line = await prisma.orderLine.findFirst({
+      where: { id: req.params.lineId, order: { sessionId: bill.sessionId } },
+      include: { menuItem: true },
+    });
+    if (!line) return reply.code(404).send({ error: "order line not found for this bill" });
+    if (line.status === "cancelled") return reply.code(400).send({ error: "order line already cancelled" });
+    const diff = nextQty - line.qty;
+    const updated = await prisma.$transaction(async (tx) => {
+      if (diff > 0 && line.menuItemId) {
+        const it = await tx.menuItem.findUnique({ where: { id: line.menuItemId } });
+        if (it && it.stockQty !== null && it.stockQty < diff) {
+          throw new Error("BAD_STOCK");
+        }
+        if (it && it.stockQty !== null) {
+          await tx.menuItem.update({
+            where: { id: it.id },
+            data: { stockQty: { decrement: diff } },
+          });
+        }
+      }
+      if (diff < 0 && line.menuItemId) {
+        const it = await tx.menuItem.findUnique({ where: { id: line.menuItemId } });
+        if (it && it.stockQty !== null) {
+          await tx.menuItem.update({
+            where: { id: it.id },
+            data: { stockQty: { increment: -diff } },
+          });
+        }
+      }
+      return tx.orderLine.update({ where: { id: line.id }, data: { qty: nextQty } });
+    }).catch((e: Error) => {
+      if (e.message === "BAD_STOCK") return null;
+      throw e;
+    });
+    if (!updated) return reply.code(400).send({ error: "insufficient stock" });
+    const billPayload = await buildBillDetailPayload(req.params.storeId, bill.id);
+    return { ok: true, line: updated, bill: billPayload };
   });
 
   app.patch<{
@@ -298,18 +430,21 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       include: { payments: true },
     });
     if (!bill) return reply.code(404).send({ error: "bill not found" });
-    if (bill.status === "settled") return reply.code(400).send({ error: "cannot edit settled bill" });
     if (bill.status === "void") return reply.code(400).send({ error: "cannot edit void bill" });
 
     const paid = bill.payments.reduce((s, p) => s + p.amount, 0);
-    if (paid > 0) return reply.code(400).send({ error: "cannot change bill after payments recorded" });
+    const wantsTotal = typeof req.body?.totalAmount === "number";
+    if ((bill.status === "settled" || paid > 0) && wantsTotal) {
+      return reply.code(400).send({ error: "cannot change totalAmount after payments recorded" });
+    }
 
     const data: { totalAmount?: number; label?: string | null } = {};
-    if (typeof req.body?.totalAmount === "number") {
-      if (!Number.isInteger(req.body.totalAmount) || req.body.totalAmount < 0) {
+    if (wantsTotal) {
+      const totalAmount = req.body.totalAmount as number;
+      if (!Number.isInteger(totalAmount) || totalAmount < 0) {
         return reply.code(400).send({ error: "totalAmount must be non-negative integer" });
       }
-      data.totalAmount = req.body.totalAmount;
+      data.totalAmount = totalAmount;
     }
     if (req.body?.label !== undefined) {
       data.label = typeof req.body.label === "string" ? req.body.label.trim() || null : null;

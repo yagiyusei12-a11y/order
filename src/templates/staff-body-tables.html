@@ -4,9 +4,10 @@
     <button type="button">カテゴリ</button>
     <button type="button">インポート</button>
   </div>
-  <div class="row" style="margin-bottom:0.75rem;justify-content:space-between">
+  <div class="row" style="margin-bottom:0.75rem;justify-content:space-between;flex-wrap:wrap;gap:0.35rem">
     <button type="button" class="btn-ghost" id="btnRefTables">一覧を再読込</button>
-    <span class="muted" style="font-size:0.78rem">卓QRのURLは固定コードごとに不変</span>
+    <span class="muted" style="font-size:0.78rem">左の⋮⋮をドラッグして並び替え（POS「卓」一覧の順・利用中は先頭固定）</span>
+    <span class="muted" style="font-size:0.78rem">卓QRのURLは固定コードごとに不変。お客様がQRから人数・単品／コースを選んで注文開始できます（オペのセッション開始は任意）</span>
   </div>
   <div id="tablesMaster" class="card" style="padding:0;overflow:hidden"></div>
   <div class="card" style="margin-top:1rem">

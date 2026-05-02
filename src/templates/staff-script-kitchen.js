@@ -23,6 +23,34 @@ function lineGroupKey(ln) {
   return ln.menuItemId || "name:" + ln.nameSnapshot;
 }
 
+/** @param {unknown} extra */
+function orderLineExtraSubtext(extra) {
+  if (extra == null || typeof extra !== "object") return "";
+  const o = /** @type {Record<string, unknown>} */ (extra);
+  const lines = [];
+  if (o.kind === "set" && Array.isArray(o.steps)) {
+    for (const st of o.steps) {
+      if (!st || typeof st !== "object") continue;
+      const label = typeof /** @type {{ label?: string }} */ (st).label === "string" ? /** @type {{ label: string }} */ (st).label : "";
+      const picks = /** @type {{ picks?: { name?: string }[] }} */ (st).picks;
+      const names = Array.isArray(picks) ? picks.map((p) => (p && p.name ? String(p.name) : "")).filter(Boolean) : [];
+      if (label && names.length) lines.push(label + ": " + names.join("・"));
+      else if (names.length) lines.push(names.join("・"));
+    }
+  }
+  if (o.kind === "single" && Array.isArray(o.options)) {
+    for (const gr of o.options) {
+      if (!gr || typeof gr !== "object") continue;
+      const gn = typeof /** @type {{ groupName?: string }} */ (gr).groupName === "string" ? /** @type {{ groupName: string }} */ (gr).groupName : "";
+      const picks = /** @type {{ picks?: { name?: string }[] }} */ (gr).picks;
+      const names = Array.isArray(picks) ? picks.map((p) => (p && p.name ? String(p.name) : "")).filter(Boolean) : [];
+      if (gn && names.length) lines.push(gn + ": " + names.join("・"));
+      else if (names.length) lines.push(names.join("・"));
+    }
+  }
+  return lines.join("\n");
+}
+
 function cookTimerSlotGroupKey(baseKey, slot) {
   return baseKey + ":t" + slot;
 }
@@ -622,6 +650,7 @@ function renderKitList() {
       ln.qty +
       " · " +
       ln.status;
+    const extraTxt = orderLineExtraSubtext(ln.lineExtra);
     const actions = document.createElement("div");
     actions.className = "row";
     actions.style.marginTop = "0.35rem";
@@ -684,6 +713,13 @@ function renderKitList() {
       }
     }
     d.appendChild(name);
+    if (extraTxt) {
+      const ex = document.createElement("div");
+      ex.className = "muted";
+      ex.style.cssText = "font-size:0.74rem;margin-top:0.25rem;white-space:pre-line;line-height:1.35";
+      ex.textContent = extraTxt;
+      d.appendChild(ex);
+    }
     d.appendChild(actions);
     box.appendChild(d);
   }

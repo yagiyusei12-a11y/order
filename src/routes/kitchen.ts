@@ -49,6 +49,7 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
         unitPrice: l.unitPrice,
         qty: l.qty,
         note: l.note,
+        lineExtra: l.lineExtra,
         menuItemId: l.menuItemId,
         categoryId: l.menuItem?.categoryId ?? null,
         categoryName: l.menuItem?.category?.name ?? null,

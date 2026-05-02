@@ -43,6 +43,44 @@ export async function registerTables(app: FastifyInstance): Promise<void> {
     return table;
   });
 
+  app.post<{
+    Params: { storeId: string };
+    Body: { orderedIds: string[] };
+  }>("/stores/:storeId/tables/reorder", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    const orderedIds = req.body?.orderedIds;
+    if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+      return reply.code(400).send({ error: "orderedIds required" });
+    }
+    const tables = await prisma.table.findMany({
+      where: { storeId: store.id },
+      select: { id: true },
+    });
+    if (orderedIds.length !== tables.length) {
+      return reply
+        .code(400)
+        .send({ error: "orderedIds must list every table in this store exactly once" });
+    }
+    const idSet = new Set(tables.map((x) => x.id));
+    const seen = new Set<string>();
+    for (const id of orderedIds) {
+      if (typeof id !== "string" || !idSet.has(id) || seen.has(id)) {
+        return reply.code(400).send({ error: "invalid or duplicate id in orderedIds" });
+      }
+      seen.add(id);
+    }
+    await prisma.$transaction(
+      orderedIds.map((id, index) =>
+        prisma.table.update({
+          where: { id },
+          data: { sortOrder: index + 1 },
+        }),
+      ),
+    );
+    return { ok: true };
+  });
+
   app.patch<{
     Params: { storeId: string; tableId: string };
     Body: { name?: string; active?: boolean; sortOrder?: number };
@@ -62,4 +100,24 @@ export async function registerTables(app: FastifyInstance): Promise<void> {
     const updated = await prisma.table.update({ where: { id: t.id }, data });
     return updated;
   });
+
+  app.delete<{ Params: { storeId: string; tableId: string } }>(
+    "/stores/:storeId/tables/:tableId",
+    async (req, reply) => {
+      const t = await prisma.table.findFirst({
+        where: { id: req.params.tableId, storeId: req.params.storeId },
+      });
+      if (!t) return reply.code(404).send({ error: "table not found" });
+      const openSessions = await prisma.diningSession.count({
+        where: { tableId: t.id, status: "open" },
+      });
+      if (openSessions > 0) {
+        return reply
+          .code(409)
+          .send({ error: "この卓に開いている滞在があるため削除できません。会計を終えてから再度お試しください。" });
+      }
+      await prisma.table.delete({ where: { id: t.id } });
+      return { ok: true };
+    },
+  );
 }

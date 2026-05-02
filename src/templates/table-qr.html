@@ -2,34 +2,155 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>卓 — __PUBLIC_CODE_HTML__</title>
   <style>
-    :root { --bg: #0f1419; --text: #e8eef4; --muted: #8b9aab; --accent: #c9a227; }
-    body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem; text-align: center; }
-    p { color: var(--muted); max-width: 22rem; line-height: 1.5; }
-    a { color: var(--accent); }
+    :root { --bg: #0f1419; --card: #161c24; --text: #e8eef4; --muted: #8b9aab; --accent: #c9a227; --line: #2a3340; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom)); }
+    .wrap { max-width: 26rem; margin: 0 auto; }
+    h1 { font-size: 1.15rem; margin: 0 0 0.35rem; font-weight: 700; }
+    .sub { color: var(--muted); font-size: 0.85rem; margin: 0 0 1rem; line-height: 1.45; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1rem 1.1rem; margin-bottom: 0.85rem; }
+    label.lbl { display: block; font-size: 0.78rem; color: var(--muted); margin-bottom: 0.35rem; }
+    input[type="number"] {
+      width: 100%; padding: 0.55rem 0.65rem; border-radius: 8px; border: 1px solid var(--line);
+      background: #0f141c; color: var(--text); font-size: 1rem; margin-bottom: 0.5rem;
+    }
+    .course-list { display: flex; flex-direction: column; gap: 0.45rem; margin-top: 0.35rem; }
+    .course-list label.row {
+      display: flex; align-items: flex-start; gap: 0.5rem; padding: 0.5rem 0.55rem; border-radius: 8px;
+      border: 1px solid var(--line); background: #1a222c; cursor: pointer; font-size: 0.88rem;
+    }
+    .course-list label.row:has(input:checked) { border-color: var(--accent); background: #1e2735; }
+    .course-list input { margin-top: 0.2rem; flex-shrink: 0; }
+    .course-meta { font-size: 0.72rem; color: var(--muted); margin-top: 0.2rem; }
+    button.primary {
+      width: 100%; padding: 0.7rem; border: none; border-radius: 10px; background: var(--accent); color: #1a1408;
+      font-weight: 800; font-size: 0.95rem; cursor: pointer; margin-top: 0.35rem;
+    }
+    button.primary:disabled { opacity: 0.45; cursor: not-allowed; }
+    #err { color: #ffb4b4; font-size: 0.85rem; margin-top: 0.65rem; display: none; }
+    #loading { color: var(--muted); text-align: center; padding: 2rem 0; }
+    .hint { font-size: 0.72rem; color: var(--muted); margin-top: 0.75rem; line-height: 1.5; }
   </style>
 </head>
 <body>
-  <div>
-    <p id="msg">読み込み中…</p>
+  <div class="wrap">
+    <p id="loading">読み込み中…</p>
+    <div id="main" style="display:none">
+      <h1 id="title">ご注文</h1>
+      <p class="sub" id="deskLine"></p>
+      <div class="card" id="formCard">
+        <label class="lbl" for="guestCount">人数</label>
+        <input id="guestCount" type="number" min="1" max="99" step="1" value="2" inputmode="numeric" />
+        <label class="lbl">メニューの種類</label>
+        <div class="course-list" id="courseRadios"></div>
+        <button type="button" class="primary" id="btnStart">注文を始める</button>
+        <p id="err" role="alert"></p>
+        <p class="hint">すでに同伴の方が開始している場合は、同じ注文画面に入ります。コースは事前にスタッフへご確認ください。</p>
+      </div>
+    </div>
   </div>
   <script>
     const code = __PUBLIC_CODE_JS__;
+
+    function esc(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function goGuest(token) {
+      location.replace("/guest-app/" + encodeURIComponent(token));
+    }
+
+    function renderCourseRadios(courses) {
+      const box = document.getElementById("courseRadios");
+      box.innerHTML = "";
+      const noneId = "course-none";
+      const none = document.createElement("label");
+      none.className = "row";
+      none.innerHTML =
+        "<input type=\"radio\" name=\"coursePick\" id=\"" +
+        noneId +
+        "\" value=\"\" checked /><div><strong>単品メニュー</strong><div class=\"course-meta\">コースなし・全メニューから注文</div></div>";
+      box.appendChild(none);
+      for (const c of courses || []) {
+        const id = "course-" + c.id;
+        const lab = document.createElement("label");
+        lab.className = "row";
+        lab.innerHTML =
+          "<input type=\"radio\" name=\"coursePick\" id=\"" +
+          esc(id) +
+          "\" value=\"" +
+          esc(c.id) +
+          "\" /><div><strong>" +
+          esc(c.name) +
+          "</strong><div class=\"course-meta\">" +
+          esc(c.durationMinutes) +
+          "分 · " +
+          Number(c.pricePerPerson).toLocaleString("ja-JP") +
+          "円/人 · " +
+          esc(c.kind || "") +
+          "</div></div>";
+        box.appendChild(lab);
+      }
+    }
+
     (async () => {
-      const msg = document.getElementById("msg");
+      const loading = document.getElementById("loading");
+      const main = document.getElementById("main");
+      const err = document.getElementById("err");
       try {
         const r = await fetch("/public/tables/" + encodeURIComponent(code));
-        const j = await r.json();
+        const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error || r.statusText);
         if (j.session && j.session.guestToken) {
-          location.replace("/guest-app/" + encodeURIComponent(j.session.guestToken));
+          goGuest(j.session.guestToken);
           return;
         }
-        msg.innerHTML = "いまこの卓に開いているセッションがありません。<br>スタッフに声をかけてください。";
+        loading.style.display = "none";
+        main.style.display = "block";
+        const tname = (j.table && j.table.name) || code;
+        document.getElementById("title").textContent = tname;
+        document.getElementById("deskLine").textContent =
+          "卓コード " + code + " · 人数とメニュー種類を選んでください。";
+        renderCourseRadios(j.courses || []);
+
+        document.getElementById("btnStart").onclick = async () => {
+          err.style.display = "none";
+          const gc = Number(document.getElementById("guestCount").value);
+          if (!Number.isInteger(gc) || gc < 1 || gc > 99) {
+            err.textContent = "人数は1〜99の整数で入力してください";
+            err.style.display = "block";
+            return;
+          }
+          const picked = document.querySelector("input[name=\"coursePick\"]:checked");
+          const courseVal = picked ? picked.value : "";
+          const courseId = courseVal && String(courseVal).trim() ? String(courseVal).trim() : null;
+          const btn = document.getElementById("btnStart");
+          btn.disabled = true;
+          try {
+            const r2 = await fetch("/public/tables/" + encodeURIComponent(code) + "/session", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ guestCount: gc, courseId: courseId }),
+            });
+            const j2 = await r2.json().catch(() => ({}));
+            if (!r2.ok) throw new Error(j2.error || r2.statusText);
+            if (j2.guestToken) goGuest(j2.guestToken);
+            else throw new Error("トークンを取得できませんでした");
+          } catch (e) {
+            err.textContent = String(e.message || e);
+            err.style.display = "block";
+            btn.disabled = false;
+          }
+        };
       } catch (e) {
-        msg.textContent = "卓情報を取得できませんでした。";
+        loading.innerHTML = esc(String(e.message || e)) || "卓情報を取得できませんでした。";
       }
     })();
   </script>

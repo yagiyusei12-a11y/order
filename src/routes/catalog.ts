@@ -1,6 +1,8 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
+import { parseGuestHourFieldsFromBody } from "../lib/guest-category-hours.js";
+import { pruneOrphanSetStructure } from "../lib/menu-set-cleanup.js";
 import { prisma } from "../db.js";
 
 async function validateMenuItemIdsForStore(
@@ -16,6 +18,50 @@ async function validateMenuItemIdsForStore(
   });
   if (found.length !== uniq.length) return { ok: false };
   return { ok: true, ids: uniq };
+}
+
+async function validateCourseMenuItemIds(
+  storeId: string,
+  raw: unknown,
+): Promise<{ ok: false; error: string } | { ok: true; ids: string[] }> {
+  const base = await validateMenuItemIdsForStore(storeId, raw);
+  if (!base.ok) return { ok: false, error: "invalid menuItemIds" };
+  if (base.ids.length === 0) return { ok: true, ids: [] };
+  const sets = await prisma.menuItem.findMany({
+    where: { id: { in: base.ids }, sellKind: "set" },
+    select: { id: true },
+  });
+  if (sets.length > 0) {
+    return {
+      ok: false,
+      error: "コース対象にセット商品は含められません（通常商品のみ選択してください）",
+    };
+  }
+  return base;
+}
+
+function readIfMasterVersion(body: Record<string, unknown>): number | undefined {
+  if (!("ifMasterVersion" in body)) return undefined;
+  const v = body.ifMasterVersion;
+  if (typeof v !== "number" || !Number.isInteger(v)) return undefined;
+  return v;
+}
+
+async function assertMenuItemMasterVersion(
+  item: { id: string; masterVersion: number },
+  ifMasterVersion: number | undefined,
+  reply: FastifyReply,
+): Promise<boolean> {
+  if (ifMasterVersion === undefined) return true;
+  if (ifMasterVersion !== item.masterVersion) {
+    reply.code(409).send({
+      error: "他端末でメニューが更新されました。一覧を再読込してから保存してください。",
+      conflict: true,
+      currentMasterVersion: item.masterVersion,
+    });
+    return false;
+  }
+  return true;
 }
 
 async function validateOptionGroupIdsForStore(
@@ -43,6 +89,182 @@ async function assertKitchenStationForStore(
   });
   if (!st) return { ok: false };
   return { ok: true };
+}
+
+type MenuItemPatchData = {
+  name?: string;
+  price?: number;
+  priceTaxMode?: string;
+  description?: string | null;
+  imageUrl?: string | null;
+  sortOrder?: number;
+  isAvailable?: boolean;
+  categoryId?: string;
+  kitchenStationId?: string | null;
+  stockQty?: number | null;
+  stockLowThreshold?: number | null;
+  cookTimerSec?: number | null;
+  cookTimerSec2?: number | null;
+  sellKind?: string;
+};
+
+/** 単体 PATCH と一括 PATCH で共通の入力検証（optionGroupIds は含めない） */
+async function buildMenuItemPatchData(
+  storeId: string,
+  body: Record<string, unknown>
+): Promise<{ error: string } | { data: MenuItemPatchData }> {
+  const data: MenuItemPatchData = {};
+  if (body.categoryId !== undefined) {
+    const cid = body.categoryId;
+    if (typeof cid !== "string") return { error: "categoryId must be string" };
+    const cat = await prisma.menuCategory.findFirst({
+      where: { id: cid, storeId },
+    });
+    if (!cat) return { error: "category not found" };
+    data.categoryId = cat.id;
+  }
+  if (typeof body.name === "string") {
+    const n = body.name.trim();
+    if (!n) return { error: "name cannot be empty" };
+    data.name = n;
+  }
+  if (typeof body.price === "number") {
+    if (!Number.isInteger(body.price) || body.price < 0) {
+      return { error: "price must be non-negative integer" };
+    }
+    data.price = body.price;
+  }
+  if (body && "priceTaxMode" in body) {
+    if (body.priceTaxMode !== "inclusive" && body.priceTaxMode !== "exclusive") {
+      return { error: "priceTaxMode must be inclusive or exclusive" };
+    }
+    data.priceTaxMode = body.priceTaxMode as string;
+  }
+  if (body.description !== undefined) {
+    data.description = typeof body.description === "string" ? body.description.trim() || null : null;
+  }
+  if (body.imageUrl !== undefined) {
+    data.imageUrl = typeof body.imageUrl === "string" ? body.imageUrl.trim() || null : null;
+  }
+  if (typeof body.sortOrder === "number" && Number.isInteger(body.sortOrder)) {
+    data.sortOrder = body.sortOrder;
+  }
+  if (typeof body.isAvailable === "boolean") {
+    data.isAvailable = body.isAvailable;
+  }
+  if (body.kitchenStationId !== undefined) {
+    if (body.kitchenStationId === null) {
+      data.kitchenStationId = null;
+    } else if (typeof body.kitchenStationId === "string") {
+      const sid = body.kitchenStationId.trim();
+      if (!sid) {
+        data.kitchenStationId = null;
+      } else {
+        const ok = await assertKitchenStationForStore(storeId, sid);
+        if (!ok.ok) return { error: "kitchenStation not found" };
+        data.kitchenStationId = sid;
+      }
+    }
+  }
+  if (body && "stockQty" in body) {
+    const v = body.stockQty;
+    if (v === null) data.stockQty = null;
+    else if (typeof v === "number" && Number.isInteger(v) && v >= 0) data.stockQty = v;
+    else return { error: "stockQty must be null or non-negative integer" };
+  }
+  if (body && "stockLowThreshold" in body) {
+    const v = body.stockLowThreshold;
+    if (v === null) data.stockLowThreshold = null;
+    else if (typeof v === "number" && Number.isInteger(v) && v >= 0) data.stockLowThreshold = v;
+    else return { error: "stockLowThreshold must be null or non-negative integer" };
+  }
+  if (body && "cookTimerSec" in body) {
+    const v = body.cookTimerSec;
+    if (v === null || v === undefined) data.cookTimerSec = null;
+    else if (v === 0) data.cookTimerSec = null;
+    else if (typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 86400) data.cookTimerSec = v;
+    else return { error: "cookTimerSec must be null, 0, or 1-86400" };
+  }
+  if (body && "cookTimerSec2" in body) {
+    const v = body.cookTimerSec2;
+    if (v === null || v === undefined) data.cookTimerSec2 = null;
+    else if (v === 0) data.cookTimerSec2 = null;
+    else if (typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 86400) data.cookTimerSec2 = v;
+    else return { error: "cookTimerSec2 must be null, 0, or 1-86400" };
+  }
+  if (body && "sellKind" in body) {
+    const sk = body.sellKind;
+    if (sk !== "single" && sk !== "set") return { error: "sellKind must be single or set" };
+    data.sellKind = sk;
+  }
+  return { data };
+}
+
+type SetDefChoiceIn = { menuItemId: string; extraPrice: number; sortOrder: number };
+type SetDefStepIn = {
+  label: string;
+  minPick: number;
+  maxPick: number;
+  sortOrder: number;
+  choices: SetDefChoiceIn[];
+};
+
+function parseSetDefinitionBody(raw: unknown): { ok: false; error: string } | { ok: true; steps: SetDefStepIn[] } {
+  if (!raw || typeof raw !== "object" || !("steps" in raw)) return { ok: false, error: "steps[] required" };
+  const stepsRaw = (raw as { steps?: unknown }).steps;
+  if (!Array.isArray(stepsRaw) || stepsRaw.length === 0) {
+    return { ok: false, error: "steps must be a non-empty array" };
+  }
+  const steps: SetDefStepIn[] = [];
+  for (let i = 0; i < stepsRaw.length; i++) {
+    const row = stepsRaw[i];
+    if (!row || typeof row !== "object") return { ok: false, error: "invalid step" };
+    const label = typeof (row as { label?: unknown }).label === "string" ? (row as { label: string }).label.trim() : "";
+    if (!label) return { ok: false, error: "step label required" };
+    const minPick = (row as { minPick?: unknown }).minPick;
+    const maxPick = (row as { maxPick?: unknown }).maxPick;
+    const sortOrder = (row as { sortOrder?: unknown }).sortOrder;
+    if (typeof minPick !== "number" || !Number.isInteger(minPick) || minPick < 0 || minPick > 50) {
+      return { ok: false, error: "minPick must be 0-50 integer" };
+    }
+    if (typeof maxPick !== "number" || !Number.isInteger(maxPick) || maxPick < 0 || maxPick > 50) {
+      return { ok: false, error: "maxPick must be 0-50 integer" };
+    }
+    if (maxPick < minPick) return { ok: false, error: "maxPick must be >= minPick" };
+    if (typeof sortOrder !== "number" || !Number.isInteger(sortOrder)) {
+      return { ok: false, error: "step sortOrder must be integer" };
+    }
+    const chRaw = (row as { choices?: unknown }).choices;
+    if (!Array.isArray(chRaw) || chRaw.length === 0) {
+      return { ok: false, error: "each step needs at least one choice" };
+    }
+    const choices: SetDefChoiceIn[] = [];
+    const seenComp = new Set<string>();
+    for (let j = 0; j < chRaw.length; j++) {
+      const ch = chRaw[j];
+      if (!ch || typeof ch !== "object") return { ok: false, error: "invalid choice" };
+      const menuItemId =
+        typeof (ch as { menuItemId?: unknown }).menuItemId === "string"
+          ? (ch as { menuItemId: string }).menuItemId.trim()
+          : "";
+      if (!menuItemId) return { ok: false, error: "choice menuItemId required" };
+      if (seenComp.has(menuItemId)) return { ok: false, error: "duplicate component in same step" };
+      seenComp.add(menuItemId);
+      const extraPrice = (ch as { extraPrice?: unknown }).extraPrice;
+      if (typeof extraPrice !== "number" || !Number.isInteger(extraPrice) || extraPrice < 0 || extraPrice > 1_000_000) {
+        return { ok: false, error: "extraPrice（税抜上乗せ円）は0-1000000の整数" };
+      }
+      const cSort = (ch as { sortOrder?: unknown }).sortOrder;
+      if (typeof cSort !== "number" || !Number.isInteger(cSort)) {
+        return { ok: false, error: "choice sortOrder must be integer" };
+      }
+      choices.push({ menuItemId, extraPrice, sortOrder: cSort });
+    }
+    choices.sort((a, b) => a.sortOrder - b.sortOrder);
+    steps.push({ label, minPick, maxPick, sortOrder, choices });
+  }
+  steps.sort((a, b) => a.sortOrder - b.sortOrder);
+  return { ok: true, steps };
 }
 
 function mapCourseWithItems<T extends { includedItems: { menuItemId: string }[] }>(
@@ -106,6 +328,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       where: { storeId: store.id },
       orderBy: { sortOrder: "asc" },
       include: {
+        guestVisibleTimeWindow: true,
         items: {
           orderBy: { sortOrder: "asc" },
           include: {
@@ -113,6 +336,29 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
             optionLinks: {
               orderBy: { sortOrder: "asc" },
               select: { optionGroupId: true, sortOrder: true },
+            },
+            timeDiscounts: {
+              include: { timeWindow: true },
+            },
+            setSteps: {
+              orderBy: { sortOrder: "asc" },
+              include: {
+                choices: {
+                  orderBy: { sortOrder: "asc" },
+                  include: {
+                    componentMenuItem: {
+                      select: {
+                        id: true,
+                        name: true,
+                        sellKind: true,
+                        isAvailable: true,
+                        price: true,
+                        priceTaxMode: true,
+                      },
+                    },
+                  },
+                },
+              },
             },
           },
         },
@@ -123,7 +369,15 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
 
   app.post<{
     Params: { storeId: string };
-    Body: { name: string; sortOrder?: number; visibleToGuest?: boolean; parentId?: string | null };
+    Body: {
+      name: string;
+      sortOrder?: number;
+      visibleToGuest?: boolean;
+      parentId?: string | null;
+      guestVisibleStartMin?: number | null;
+      guestVisibleEndMin?: number | null;
+      guestVisibleTimeWindowId?: string | null;
+    };
   }>("/stores/:storeId/menu/categories", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
     if (!store) return reply.code(404).send({ error: "store not found" });
@@ -142,6 +396,31 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
         parentId = parent.id;
       }
     }
+    const hourParsed = parseGuestHourFieldsFromBody(req.body as Record<string, unknown>);
+    if (!hourParsed.ok) return reply.code(400).send({ error: hourParsed.error });
+    let guestVisibleStartMin: number | null = null;
+    let guestVisibleEndMin: number | null = null;
+    if (hourParsed.action === "set") {
+      guestVisibleStartMin = hourParsed.guestVisibleStartMin;
+      guestVisibleEndMin = hourParsed.guestVisibleEndMin;
+    }
+    let guestVisibleTimeWindowId: string | null = null;
+    if (req.body && "guestVisibleTimeWindowId" in req.body) {
+      const wid = req.body.guestVisibleTimeWindowId;
+      if (wid === null || wid === "") {
+        guestVisibleTimeWindowId = null;
+      } else if (typeof wid === "string") {
+        const w = await prisma.storeTimeWindow.findFirst({
+          where: { id: wid.trim(), storeId: store.id },
+        });
+        if (!w) return reply.code(400).send({ error: "time window not found" });
+        guestVisibleTimeWindowId = w.id;
+        guestVisibleStartMin = null;
+        guestVisibleEndMin = null;
+      } else {
+        return reply.code(400).send({ error: "guestVisibleTimeWindowId must be string or null" });
+      }
+    }
     const cat = await prisma.menuCategory.create({
       data: {
         storeId: store.id,
@@ -149,6 +428,9 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
         sortOrder: req.body?.sortOrder ?? 0,
         visibleToGuest,
         parentId,
+        guestVisibleStartMin,
+        guestVisibleEndMin,
+        guestVisibleTimeWindowId,
       },
     });
     return cat;
@@ -160,6 +442,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       categoryId: string;
       name: string;
       price: number;
+      priceTaxMode?: string;
       description?: string;
       imageUrl?: string | null;
       sortOrder?: number;
@@ -178,6 +461,10 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     if (!cat) return reply.code(400).send({ error: "category not found" });
     const name = req.body?.name?.trim();
     const price = req.body?.price;
+    const priceTaxMode =
+      req.body?.priceTaxMode === "exclusive" || req.body?.priceTaxMode === "inclusive"
+        ? req.body.priceTaxMode
+        : "inclusive";
     if (!name) return reply.code(400).send({ error: "name required" });
     if (typeof price !== "number" || !Number.isInteger(price) || price < 0) {
       return reply.code(400).send({ error: "price must be non-negative integer" });
@@ -236,6 +523,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
         categoryId: cat.id,
         name,
         price,
+        priceTaxMode,
         description: req.body?.description?.trim() || null,
         ...(imageUrl !== undefined ? { imageUrl } : {}),
         sortOrder: req.body?.sortOrder ?? 0,
@@ -251,13 +539,29 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
 
   app.patch<{
     Params: { storeId: string; categoryId: string };
-    Body: { name?: string; sortOrder?: number; visibleToGuest?: boolean; parentId?: string | null };
+    Body: {
+      name?: string;
+      sortOrder?: number;
+      visibleToGuest?: boolean;
+      parentId?: string | null;
+      guestVisibleStartMin?: number | null;
+      guestVisibleEndMin?: number | null;
+      guestVisibleTimeWindowId?: string | null;
+    };
   }>("/stores/:storeId/menu/categories/:categoryId", async (req, reply) => {
     const cat = await prisma.menuCategory.findFirst({
       where: { id: req.params.categoryId, storeId: req.params.storeId },
     });
     if (!cat) return reply.code(404).send({ error: "category not found" });
-    const data: { name?: string; sortOrder?: number; visibleToGuest?: boolean; parentId?: string | null } = {};
+    const data: {
+      name?: string;
+      sortOrder?: number;
+      visibleToGuest?: boolean;
+      parentId?: string | null;
+      guestVisibleStartMin?: number | null;
+      guestVisibleEndMin?: number | null;
+      guestVisibleTimeWindowId?: string | null;
+    } = {};
     if (typeof req.body?.name === "string") {
       const n = req.body.name.trim();
       if (!n) return reply.code(400).send({ error: "name cannot be empty" });
@@ -283,9 +587,70 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
         data.parentId = parent.id;
       }
     }
+    const hourParsed = parseGuestHourFieldsFromBody(req.body as Record<string, unknown>);
+    if (!hourParsed.ok) return reply.code(400).send({ error: hourParsed.error });
+    if (hourParsed.action === "clear") {
+      data.guestVisibleStartMin = null;
+      data.guestVisibleEndMin = null;
+      data.guestVisibleTimeWindowId = null;
+    } else if (hourParsed.action === "set") {
+      data.guestVisibleStartMin = hourParsed.guestVisibleStartMin;
+      data.guestVisibleEndMin = hourParsed.guestVisibleEndMin;
+      data.guestVisibleTimeWindowId = null;
+    }
+    if (req.body && "guestVisibleTimeWindowId" in req.body) {
+      const wid = req.body.guestVisibleTimeWindowId;
+      if (wid === null || wid === "") {
+        data.guestVisibleTimeWindowId = null;
+      } else if (typeof wid === "string") {
+        const w = await prisma.storeTimeWindow.findFirst({
+          where: { id: wid.trim(), storeId: req.params.storeId },
+        });
+        if (!w) return reply.code(400).send({ error: "time window not found" });
+        data.guestVisibleTimeWindowId = w.id;
+        data.guestVisibleStartMin = null;
+        data.guestVisibleEndMin = null;
+      } else {
+        return reply.code(400).send({ error: "guestVisibleTimeWindowId must be string or null" });
+      }
+    }
     if (Object.keys(data).length === 0) return reply.code(400).send({ error: "no fields to update" });
     const updated = await prisma.menuCategory.update({ where: { id: cat.id }, data });
     return updated;
+  });
+
+  /** カテゴリ内の商品表示順（ゲストメニューも同じ sortOrder で並ぶ） */
+  app.put<{
+    Params: { storeId: string; categoryId: string };
+    Body: { itemIds: string[] };
+  }>("/stores/:storeId/menu/categories/:categoryId/item-order", async (req, reply) => {
+    const cat = await prisma.menuCategory.findFirst({
+      where: { id: req.params.categoryId, storeId: req.params.storeId },
+      include: { items: { select: { id: true } } },
+    });
+    if (!cat) return reply.code(404).send({ error: "category not found" });
+    const ids = req.body?.itemIds;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return reply.code(400).send({ error: "itemIds[] required" });
+    }
+    const uniq = new Set(ids);
+    if (uniq.size !== ids.length) return reply.code(400).send({ error: "duplicate itemIds" });
+    const existing = new Set(cat.items.map((i) => i.id));
+    if (existing.size !== ids.length || !ids.every((id) => existing.has(id))) {
+      return reply.code(400).send({ error: "itemIds must list each item in this category exactly once" });
+    }
+    await prisma.$transaction(
+      async (tx) => {
+        for (let idx = 0; idx < ids.length; idx++) {
+          await tx.menuItem.update({
+            where: { id: ids[idx] },
+            data: { sortOrder: idx },
+          });
+        }
+      },
+      { timeout: 60_000 }
+    );
+    return { ok: true };
   });
 
   app.post<{
@@ -296,7 +661,13 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       include: {
         items: {
           orderBy: { sortOrder: "asc" },
-          include: { optionLinks: { orderBy: { sortOrder: "asc" } } },
+          include: {
+            optionLinks: { orderBy: { sortOrder: "asc" } },
+            setSteps: {
+              orderBy: { sortOrder: "asc" },
+              include: { choices: { orderBy: { sortOrder: "asc" } } },
+            },
+          },
         },
       },
     });
@@ -310,6 +681,9 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
           name: copiedCategoryName(src.name),
           sortOrder: (src.sortOrder ?? 0) + 1,
           visibleToGuest: src.visibleToGuest,
+          guestVisibleStartMin: src.guestVisibleStartMin,
+          guestVisibleEndMin: src.guestVisibleEndMin,
+          guestVisibleTimeWindowId: src.guestVisibleTimeWindowId,
         },
       });
 
@@ -321,6 +695,8 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
             description: item.description,
             imageUrl: item.imageUrl,
             price: item.price,
+            priceTaxMode: item.priceTaxMode,
+            sellKind: item.sellKind === "set" ? "set" : "single",
             sortOrder: item.sortOrder,
             isAvailable: item.isAvailable,
             stockQty: item.stockQty,
@@ -338,6 +714,29 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
               sortOrder: l.sortOrder,
             })),
           });
+        }
+        if (item.sellKind === "set" && item.setSteps && item.setSteps.length > 0) {
+          for (const st of item.setSteps) {
+            const step = await tx.menuSetStep.create({
+              data: {
+                setMenuItemId: createdItem.id,
+                label: st.label,
+                minPick: st.minPick,
+                maxPick: st.maxPick,
+                sortOrder: st.sortOrder,
+              },
+            });
+            if (st.choices.length > 0) {
+              await tx.menuSetChoice.createMany({
+                data: st.choices.map((c) => ({
+                  stepId: step.id,
+                  componentMenuItemId: c.componentMenuItemId,
+                  extraPrice: c.extraPrice,
+                  sortOrder: c.sortOrder,
+                })),
+              });
+            }
+          }
         }
       }
       return cat;
@@ -518,9 +917,13 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
   }>("/stores/:storeId/menu/items/:itemId/options", async (req, reply) => {
     const item = await prisma.menuItem.findFirst({
       where: { id: req.params.itemId, category: { storeId: req.params.storeId } },
+      select: { id: true, masterVersion: true },
     });
     if (!item) return reply.code(404).send({ error: "item not found" });
-    const v = await validateOptionGroupIdsForStore(req.params.storeId, req.body?.optionGroupIds);
+    const bodyObj = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? (req.body as Record<string, unknown>) : {};
+    const ifM = readIfMasterVersion(bodyObj);
+    if (!(await assertMenuItemMasterVersion(item, ifM, reply))) return;
+    const v = await validateOptionGroupIdsForStore(req.params.storeId, bodyObj.optionGroupIds);
     if (!v.ok) return reply.code(400).send({ error: "invalid optionGroupIds" });
     await prisma.$transaction(async (tx) => {
       await tx.menuItemOptionGroup.deleteMany({ where: { menuItemId: item.id } });
@@ -533,6 +936,10 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
           })),
         });
       }
+      await tx.menuItem.update({
+        where: { id: item.id },
+        data: { masterVersion: { increment: 1 } },
+      });
     });
     const links = await prisma.menuItemOptionGroup.findMany({
       where: { menuItemId: item.id },
@@ -566,7 +973,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     const old = item.imageUrl;
     const updated = await prisma.menuItem.update({
       where: { id: item.id },
-      data: { imageUrl },
+      data: { imageUrl, masterVersion: { increment: 1 } },
     });
     await removeLocalUploadedImage(old);
     return { ok: true, imageUrl: updated.imageUrl };
@@ -581,7 +988,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     if (!item) return reply.code(404).send({ error: "item not found" });
     await prisma.menuItem.update({
       where: { id: item.id },
-      data: { imageUrl: null },
+      data: { imageUrl: null, masterVersion: { increment: 1 } },
     });
     await removeLocalUploadedImage(item.imageUrl);
     return { ok: true };
@@ -592,6 +999,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     Body: {
       name?: string;
       price?: number;
+      priceTaxMode?: string;
       description?: string | null;
       imageUrl?: string | null;
       sortOrder?: number;
@@ -602,6 +1010,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       stockLowThreshold?: number | null;
       cookTimerSec?: number | null;
       cookTimerSec2?: number | null;
+      sellKind?: "single" | "set";
     };
   }>("/stores/:storeId/menu/items/:itemId", async (req, reply) => {
     const item = await prisma.menuItem.findFirst({
@@ -610,101 +1019,35 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     });
     if (!item) return reply.code(404).send({ error: "item not found" });
 
-    const data: {
-      name?: string;
-      price?: number;
-      description?: string | null;
-      imageUrl?: string | null;
-      sortOrder?: number;
-      isAvailable?: boolean;
-      categoryId?: string;
-      kitchenStationId?: string | null;
-      stockQty?: number | null;
-      stockLowThreshold?: number | null;
-      cookTimerSec?: number | null;
-      cookTimerSec2?: number | null;
-    } = {};
-    if (req.body?.categoryId !== undefined) {
-      const cat = await prisma.menuCategory.findFirst({
-        where: { id: req.body.categoryId, storeId: req.params.storeId },
-      });
-      if (!cat) return reply.code(400).send({ error: "category not found" });
-      data.categoryId = cat.id;
-    }
-    if (typeof req.body?.name === "string") {
-      const n = req.body.name.trim();
-      if (!n) return reply.code(400).send({ error: "name cannot be empty" });
-      data.name = n;
-    }
-    if (typeof req.body?.price === "number") {
-      if (!Number.isInteger(req.body.price) || req.body.price < 0) {
-        return reply.code(400).send({ error: "price must be non-negative integer" });
-      }
-      data.price = req.body.price;
-    }
-    if (req.body?.description !== undefined) {
-      data.description =
-        typeof req.body.description === "string" ? req.body.description.trim() || null : null;
-    }
-    if (req.body?.imageUrl !== undefined) {
-      data.imageUrl =
-        typeof req.body.imageUrl === "string" ? req.body.imageUrl.trim() || null : null;
-    }
-    if (typeof req.body?.sortOrder === "number" && Number.isInteger(req.body.sortOrder)) {
-      data.sortOrder = req.body.sortOrder;
-    }
-    if (typeof req.body?.isAvailable === "boolean") {
-      data.isAvailable = req.body.isAvailable;
-    }
-    if (req.body?.kitchenStationId !== undefined) {
-      if (req.body.kitchenStationId === null) {
-        data.kitchenStationId = null;
-      } else if (typeof req.body.kitchenStationId === "string") {
-        const sid = req.body.kitchenStationId.trim();
-        if (!sid) {
-          data.kitchenStationId = null;
-        } else {
-          const ok = await assertKitchenStationForStore(req.params.storeId, sid);
-          if (!ok.ok) return reply.code(400).send({ error: "kitchenStation not found" });
-          data.kitchenStationId = sid;
-        }
-      }
-    }
-    if (req.body && "stockQty" in req.body) {
-      const v = req.body.stockQty;
-      if (v === null) data.stockQty = null;
-      else if (typeof v === "number" && Number.isInteger(v) && v >= 0) data.stockQty = v;
-      else return reply.code(400).send({ error: "stockQty must be null or non-negative integer" });
-    }
-    if (req.body && "stockLowThreshold" in req.body) {
-      const v = req.body.stockLowThreshold;
-      if (v === null) data.stockLowThreshold = null;
-      else if (typeof v === "number" && Number.isInteger(v) && v >= 0) data.stockLowThreshold = v;
-      else {
-        return reply.code(400).send({ error: "stockLowThreshold must be null or non-negative integer" });
-      }
-    }
-    if (req.body && "cookTimerSec" in req.body) {
-      const v = req.body.cookTimerSec;
-      if (v === null || v === undefined) data.cookTimerSec = null;
-      else if (v === 0) data.cookTimerSec = null;
-      else if (typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 86400) data.cookTimerSec = v;
-      else return reply.code(400).send({ error: "cookTimerSec must be null, 0, or 1-86400" });
-    }
-    if (req.body && "cookTimerSec2" in req.body) {
-      const v = req.body.cookTimerSec2;
-      if (v === null || v === undefined) data.cookTimerSec2 = null;
-      else if (v === 0) data.cookTimerSec2 = null;
-      else if (typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 86400) data.cookTimerSec2 = v;
-      else return reply.code(400).send({ error: "cookTimerSec2 must be null, 0, or 1-86400" });
-    }
+    const bodyRaw = { ...(req.body as Record<string, unknown>) };
+    const ifM = readIfMasterVersion(bodyRaw);
+    delete bodyRaw.ifMasterVersion;
+    if (!(await assertMenuItemMasterVersion(item, ifM, reply))) return;
 
+    const built = await buildMenuItemPatchData(req.params.storeId, bodyRaw);
+    if ("error" in built) return reply.code(400).send({ error: built.error });
+    const data = built.data;
     if (Object.keys(data).length === 0) return reply.code(400).send({ error: "no fields to update" });
 
+    if (data.sellKind === "set") {
+      const stepCount = await prisma.menuSetStep.count({ where: { setMenuItemId: item.id } });
+      if (stepCount === 0) {
+        return reply
+          .code(400)
+          .send({ error: "セット商品にするには、先に「セット構成」を保存して項目を1件以上登録してください" });
+      }
+    }
+
     const prevImageUrl = item.imageUrl;
-    const updated = await prisma.menuItem.update({
-      where: { id: item.id },
-      data,
+    const clearingSet = data.sellKind === "single" && item.sellKind === "set";
+    const updated = await prisma.$transaction(async (tx) => {
+      if (clearingSet) {
+        await tx.menuSetStep.deleteMany({ where: { setMenuItemId: item.id } });
+      }
+      return tx.menuItem.update({
+        where: { id: item.id },
+        data: { ...data, masterVersion: { increment: 1 } },
+      });
     });
     if ("imageUrl" in data && data.imageUrl !== prevImageUrl) {
       await removeLocalUploadedImage(prevImageUrl);
@@ -712,12 +1055,285 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     return updated;
   });
 
+  app.put<{
+    Params: { storeId: string; itemId: string };
+    Body: { steps?: unknown };
+  }>("/stores/:storeId/menu/items/:itemId/set-definition", async (req, reply) => {
+    const storeId = req.params.storeId;
+    const item = await prisma.menuItem.findFirst({
+      where: { id: req.params.itemId, category: { storeId } },
+    });
+    if (!item) return reply.code(404).send({ error: "item not found" });
+
+    const bodyObj = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? (req.body as Record<string, unknown>) : {};
+    const ifM = readIfMasterVersion(bodyObj);
+    if (!(await assertMenuItemMasterVersion(item, ifM, reply))) return;
+
+    const parsed = parseSetDefinitionBody(req.body);
+    if (!parsed.ok) return reply.code(400).send({ error: parsed.error });
+
+    const setItemId = item.id;
+    const allCompIds = new Set<string>();
+    for (const st of parsed.steps) {
+      for (const c of st.choices) {
+        if (c.menuItemId === setItemId) {
+          return reply.code(400).send({ error: "set cannot include itself as a choice" });
+        }
+        allCompIds.add(c.menuItemId);
+      }
+    }
+
+    const comps = await prisma.menuItem.findMany({
+      where: { id: { in: [...allCompIds] }, category: { storeId } },
+      select: { id: true, sellKind: true },
+    });
+    if (comps.length !== allCompIds.size) {
+      return reply.code(400).send({ error: "invalid component menuItemId" });
+    }
+    for (const c of comps) {
+      if (c.sellKind === "set") {
+        return reply.code(400).send({ error: "set choices must be single items, not other sets" });
+      }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.menuSetStep.deleteMany({ where: { setMenuItemId: setItemId } });
+      for (const st of parsed.steps) {
+        const step = await tx.menuSetStep.create({
+          data: {
+            setMenuItemId: setItemId,
+            label: st.label,
+            minPick: st.minPick,
+            maxPick: st.maxPick,
+            sortOrder: st.sortOrder,
+          },
+        });
+        await tx.menuSetChoice.createMany({
+          data: st.choices.map((c) => ({
+            stepId: step.id,
+            componentMenuItemId: c.menuItemId,
+            extraPrice: c.extraPrice,
+            sortOrder: c.sortOrder,
+          })),
+        });
+      }
+      await tx.menuItem.update({
+        where: { id: setItemId },
+        data: { sellKind: "set", masterVersion: { increment: 1 } },
+      });
+    });
+
+    const out = await prisma.menuItem.findUniqueOrThrow({
+      where: { id: setItemId },
+      include: {
+        setSteps: {
+          orderBy: { sortOrder: "asc" },
+          include: {
+            choices: {
+              orderBy: { sortOrder: "asc" },
+              include: {
+                componentMenuItem: {
+                  select: { id: true, name: true, sellKind: true, isAvailable: true, price: true, priceTaxMode: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    return out;
+  });
+
+  app.patch<{
+    Params: { storeId: string };
+    Body: { itemIds?: unknown; patch?: Record<string, unknown> };
+  }>("/stores/:storeId/menu/items/bulk", async (req, reply) => {
+    const storeId = req.params.storeId;
+    const itemIdsRaw = req.body?.itemIds;
+    const patchRaw = req.body?.patch;
+    const v = await validateMenuItemIdsForStore(storeId, itemIdsRaw);
+    if (!v.ok) return reply.code(400).send({ error: "invalid itemIds" });
+    if (v.ids.length === 0) return reply.code(400).send({ error: "itemIds required" });
+    if (!patchRaw || typeof patchRaw !== "object" || Array.isArray(patchRaw)) {
+      return reply.code(400).send({ error: "patch object required" });
+    }
+
+    const patch = patchRaw as Record<string, unknown>;
+    const built = await buildMenuItemPatchData(storeId, patch);
+    if ("error" in built) return reply.code(400).send({ error: built.error });
+
+    let optionGroupIds: string[] | undefined;
+    if ("optionGroupIds" in patch) {
+      const og = await validateOptionGroupIdsForStore(storeId, patch.optionGroupIds);
+      if (!og.ok) return reply.code(400).send({ error: "invalid optionGroupIds" });
+      optionGroupIds = og.ids;
+    }
+
+    const hasFieldUpdates = Object.keys(built.data).length > 0;
+    const hasOptionsUpdate = optionGroupIds !== undefined;
+    if (!hasFieldUpdates && !hasOptionsUpdate) {
+      return reply.code(400).send({ error: "no fields to update" });
+    }
+
+    if (built.data.sellKind === "set") {
+      for (const id of v.ids) {
+        const n = await prisma.menuSetStep.count({ where: { setMenuItemId: id } });
+        if (n === 0) {
+          return reply.code(400).send({
+            error: "一括でセットにする商品には、事前にセット構成が保存されている必要があります",
+          });
+        }
+      }
+    }
+
+    const needsCategoryReorder =
+      hasFieldUpdates &&
+      built.data.categoryId !== undefined &&
+      !("sortOrder" in patch);
+
+    /** トランザクション内で fs I/O しない（接続／TX が閉じて Transaction not found になる環境がある） */
+    const imageUrlsToDeleteAfterTx = new Set<string>();
+
+    await prisma.$transaction(
+      async (tx) => {
+        let appendBase: number | null = null;
+        if (needsCategoryReorder && built.data.categoryId) {
+          const max = await tx.menuItem.aggregate({
+            where: { categoryId: built.data.categoryId },
+            _max: { sortOrder: true },
+          });
+          appendBase = (max._max.sortOrder ?? -1) + 1;
+        }
+
+        const existing = await tx.menuItem.findMany({
+          where: { id: { in: v.ids }, category: { storeId } },
+          select: { id: true, imageUrl: true },
+        });
+        const rowById = new Map(existing.map((r) => [r.id, r]));
+
+        for (let i = 0; i < v.ids.length; i++) {
+          const id = v.ids[i];
+          const row = rowById.get(id);
+          if (!row) continue;
+
+          const data: MenuItemPatchData = { ...built.data };
+          if (needsCategoryReorder && appendBase !== null) {
+            data.sortOrder = appendBase + i;
+          }
+
+          if (Object.keys(data).length > 0) {
+            if (data.sellKind === "single") {
+              await tx.menuSetStep.deleteMany({ where: { setMenuItemId: id } });
+            }
+            if ("imageUrl" in data && data.imageUrl !== row.imageUrl && row.imageUrl) {
+              imageUrlsToDeleteAfterTx.add(row.imageUrl);
+            }
+            await tx.menuItem.update({ where: { id }, data });
+          }
+
+          if (hasOptionsUpdate && optionGroupIds !== undefined) {
+            await tx.menuItemOptionGroup.deleteMany({ where: { menuItemId: id } });
+            if (optionGroupIds.length > 0) {
+              await tx.menuItemOptionGroup.createMany({
+                data: optionGroupIds.map((optionGroupId, idx) => ({
+                  menuItemId: id,
+                  optionGroupId,
+                  sortOrder: idx,
+                })),
+              });
+            }
+          }
+        }
+      },
+      { maxWait: 10_000, timeout: 60_000 }
+    );
+
+    for (const url of imageUrlsToDeleteAfterTx) {
+      await removeLocalUploadedImage(url);
+    }
+
+    return { ok: true, updated: v.ids.length };
+  });
+
+  app.put<{
+    Params: { storeId: string; itemId: string };
+    Body: { discounts?: { timeWindowId: string; discountKind: string; value: number }[] };
+  }>("/stores/:storeId/menu/items/:itemId/time-discounts", async (req, reply) => {
+    const storeId = req.params.storeId;
+    const item = await prisma.menuItem.findFirst({
+      where: { id: req.params.itemId, category: { storeId } },
+      select: { id: true, masterVersion: true },
+    });
+    if (!item) return reply.code(404).send({ error: "item not found" });
+    const bodyObj = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? (req.body as Record<string, unknown>) : {};
+    const ifM = readIfMasterVersion(bodyObj);
+    if (!(await assertMenuItemMasterVersion(item, ifM, reply))) return;
+    const raw = req.body?.discounts;
+    if (!Array.isArray(raw)) return reply.code(400).send({ error: "discounts[] required (empty array clears)" });
+    const seenTw = new Set<string>();
+    for (const row of raw) {
+      if (!row || typeof row.timeWindowId !== "string") {
+        return reply.code(400).send({ error: "each row needs timeWindowId" });
+      }
+      if (row.discountKind !== "percent" && row.discountKind !== "fixed_yen") {
+        return reply.code(400).send({ error: "discountKind must be percent or fixed_yen" });
+      }
+      if (typeof row.value !== "number" || !Number.isInteger(row.value)) {
+        return reply.code(400).send({ error: "value must be integer" });
+      }
+      if (row.discountKind === "percent" && (row.value < 0 || row.value > 100)) {
+        return reply.code(400).send({ error: "percent value must be 0-100" });
+      }
+      if (row.discountKind === "fixed_yen" && row.value < 0) {
+        return reply.code(400).send({ error: "fixed_yen value must be non-negative" });
+      }
+      const twid = row.timeWindowId.trim();
+      if (seenTw.has(twid)) return reply.code(400).send({ error: "duplicate timeWindowId" });
+      seenTw.add(twid);
+      const tw = await prisma.storeTimeWindow.findFirst({
+        where: { id: twid, storeId },
+      });
+      if (!tw) return reply.code(400).send({ error: "time window not found" });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.menuItemTimeDiscount.deleteMany({ where: { menuItemId: item.id } });
+      if (raw.length > 0) {
+        await tx.menuItemTimeDiscount.createMany({
+          data: raw.map((r) => ({
+            menuItemId: item.id,
+            timeWindowId: r.timeWindowId.trim(),
+            discountKind: r.discountKind,
+            value: r.value,
+          })),
+        });
+      }
+      await tx.menuItem.update({
+        where: { id: item.id },
+        data: { masterVersion: { increment: 1 } },
+      });
+    });
+    const out = await prisma.menuItemTimeDiscount.findMany({
+      where: { menuItemId: item.id },
+      include: { timeWindow: true },
+      orderBy: { id: "asc" },
+    });
+    return { menuItemId: item.id, timeDiscounts: out };
+  });
+
   app.post<{
     Params: { storeId: string; itemId: string };
   }>("/stores/:storeId/menu/items/:itemId/copy", async (req, reply) => {
     const src = await prisma.menuItem.findFirst({
       where: { id: req.params.itemId, category: { storeId: req.params.storeId } },
-      include: { optionLinks: { orderBy: { sortOrder: "asc" } } },
+      include: {
+        optionLinks: { orderBy: { sortOrder: "asc" } },
+        timeDiscounts: true,
+        setSteps: {
+          orderBy: { sortOrder: "asc" },
+          include: { choices: { orderBy: { sortOrder: "asc" } } },
+        },
+      },
     });
     if (!src) return reply.code(404).send({ error: "item not found" });
 
@@ -729,6 +1345,8 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
           description: src.description,
           imageUrl: src.imageUrl,
           price: src.price,
+          priceTaxMode: src.priceTaxMode,
+          sellKind: src.sellKind === "set" ? "set" : "single",
           sortOrder: (src.sortOrder ?? 0) + 1,
           isAvailable: src.isAvailable,
           stockQty: src.stockQty,
@@ -738,6 +1356,29 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
           cookTimerSec2: src.cookTimerSec2,
         },
       });
+      if (src.sellKind === "set" && src.setSteps.length > 0) {
+        for (const st of src.setSteps) {
+          const step = await tx.menuSetStep.create({
+            data: {
+              setMenuItemId: item.id,
+              label: st.label,
+              minPick: st.minPick,
+              maxPick: st.maxPick,
+              sortOrder: st.sortOrder,
+            },
+          });
+          if (st.choices.length > 0) {
+            await tx.menuSetChoice.createMany({
+              data: st.choices.map((c) => ({
+                stepId: step.id,
+                componentMenuItemId: c.componentMenuItemId,
+                extraPrice: c.extraPrice,
+                sortOrder: c.sortOrder,
+              })),
+            });
+          }
+        }
+      }
       if (src.optionLinks.length > 0) {
         await tx.menuItemOptionGroup.createMany({
           data: src.optionLinks.map((l) => ({
@@ -747,11 +1388,35 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
           })),
         });
       }
+      if (src.timeDiscounts && src.timeDiscounts.length > 0) {
+        await tx.menuItemTimeDiscount.createMany({
+          data: src.timeDiscounts.map((d) => ({
+            menuItemId: item.id,
+            timeWindowId: d.timeWindowId,
+            discountKind: d.discountKind,
+            value: d.value,
+          })),
+        });
+      }
       return tx.menuItem.findUniqueOrThrow({
         where: { id: item.id },
         include: {
           kitchenStation: { select: { id: true, name: true, active: true } },
           optionLinks: { orderBy: { sortOrder: "asc" }, select: { optionGroupId: true, sortOrder: true } },
+          timeDiscounts: { include: { timeWindow: true } },
+          setSteps: {
+            orderBy: { sortOrder: "asc" },
+            include: {
+              choices: {
+                orderBy: { sortOrder: "asc" },
+                include: {
+                  componentMenuItem: {
+                    select: { id: true, name: true, sellKind: true, isAvailable: true, price: true, priceTaxMode: true },
+                  },
+                },
+              },
+            },
+          },
         },
       });
     });
@@ -766,7 +1431,10 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       select: { id: true, imageUrl: true },
     });
     if (!item) return reply.code(404).send({ error: "item not found" });
-    await prisma.menuItem.delete({ where: { id: item.id } });
+    await prisma.$transaction(async (tx) => {
+      await tx.menuItem.delete({ where: { id: item.id } });
+      await pruneOrphanSetStructure(tx);
+    });
     await removeLocalUploadedImage(item.imageUrl);
     return { ok: true, deletedItemId: item.id };
   });
@@ -815,8 +1483,8 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
 
     let linkIds: string[] = [];
     if (req.body && typeof req.body === "object" && "menuItemIds" in req.body) {
-      const v = await validateMenuItemIdsForStore(store.id, req.body.menuItemIds);
-      if (!v.ok) return reply.code(400).send({ error: "invalid menuItemIds" });
+      const v = await validateCourseMenuItemIds(store.id, req.body.menuItemIds);
+      if (!v.ok) return reply.code(400).send({ error: v.error });
       linkIds = v.ids;
     }
 
@@ -895,8 +1563,8 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     const syncMenu = bodyObj !== null && "menuItemIds" in bodyObj;
     let linkIds: string[] | null = null;
     if (syncMenu) {
-      const v = await validateMenuItemIdsForStore(req.params.storeId, bodyObj.menuItemIds);
-      if (!v.ok) return reply.code(400).send({ error: "invalid menuItemIds" });
+      const v = await validateCourseMenuItemIds(req.params.storeId, bodyObj.menuItemIds);
+      if (!v.ok) return reply.code(400).send({ error: v.error });
       linkIds = v.ids;
     }
 

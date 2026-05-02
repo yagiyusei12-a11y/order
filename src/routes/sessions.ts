@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
-import { newGuestToken } from "../lib/token.js";
+import { openSessionForTable } from "../lib/open-table-session.js";
 
 export async function registerSessions(app: FastifyInstance): Promise<void> {
   app.post<{
@@ -9,66 +9,108 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
   }>("/stores/:storeId/sessions", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
     if (!store) return reply.code(404).send({ error: "store not found" });
-    const table = await prisma.table.findFirst({
-      where: { id: req.body?.tableId, storeId: store.id, active: true },
-    });
-    if (!table) return reply.code(400).send({ error: "table not found or inactive" });
+    const tableId = req.body?.tableId;
+    if (typeof tableId !== "string" || !tableId) {
+      return reply.code(400).send({ error: "tableId required" });
+    }
     const guestCount = req.body?.guestCount;
     if (typeof guestCount !== "number" || guestCount < 1 || !Number.isInteger(guestCount)) {
       return reply.code(400).send({ error: "guestCount must be integer >= 1" });
     }
+    const courseIdRaw = req.body?.courseId;
+    const courseId =
+      courseIdRaw === null || courseIdRaw === undefined || courseIdRaw === ""
+        ? null
+        : typeof courseIdRaw === "string"
+          ? courseIdRaw
+          : null;
 
-    let courseId: string | null = req.body?.courseId ?? null;
-    if (courseId) {
-      const c = await prisma.course.findFirst({
-        where: { id: courseId, storeId: store.id, active: true },
-      });
-      if (!c) return reply.code(400).send({ error: "course not found" });
-    } else {
-      courseId = null;
-    }
-
-    const openOnTable = await prisma.diningSession.findFirst({
-      where: { tableId: table.id, status: "open" },
+    const result = await openSessionForTable({
+      tableId,
+      storeId: store.id,
+      guestCount,
+      courseId,
+      mode: "failIfOpen",
     });
-    if (openOnTable) {
-      return reply.code(400).send({ error: "table already has an open session", sessionId: openOnTable.id });
+    if (!result.ok) {
+      if (result.code === "CONFLICT") {
+        return reply
+          .code(400)
+          .send({ error: "table already has an open session", sessionId: result.existingSessionId });
+      }
+      if (result.code === "BAD_TABLE") return reply.code(400).send({ error: "table not found or inactive" });
+      if (result.code === "BAD_COUNT") return reply.code(400).send({ error: "guestCount must be integer 1-99" });
+      if (result.code === "BAD_COURSE") return reply.code(400).send({ error: "course not found" });
+      return reply.code(400).send({ error: result.error });
     }
-
-    let guestToken = newGuestToken();
-    for (let i = 0; i < 5; i++) {
-      const clash = await prisma.diningSession.findUnique({ where: { guestToken } });
-      if (!clash) break;
-      guestToken = newGuestToken();
-    }
-
-    const session = await prisma.diningSession.create({
-      data: {
-        storeId: store.id,
-        tableId: table.id,
-        guestToken,
-        guestCount,
-        courseId,
-        status: "open",
-      },
+    const full = await prisma.diningSession.findUniqueOrThrow({
+      where: { id: result.session.id },
       include: { table: true, course: true },
     });
-    return session;
+    return full;
   });
 
   app.get<{
     Params: { storeId: string };
-    Querystring: { status?: string };
+    Querystring: { status?: string; includeTotals?: string };
   }>("/stores/:storeId/sessions", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
     if (!store) return reply.code(404).send({ error: "store not found" });
-    const status = req.query.status ?? "open";
+    const statusRaw = (req.query.status ?? "open").trim();
+    const statuses =
+      statusRaw === "all"
+        ? []
+        : statusRaw
+            .split(",")
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0);
     const sessions = await prisma.diningSession.findMany({
-      where: { storeId: store.id, status },
+      where: {
+        storeId: store.id,
+        ...(statuses.length > 0 ? { status: { in: statuses } } : {}),
+      },
       orderBy: { openedAt: "desc" },
-      include: { table: true, course: true, bill: true },
+      include: {
+        table: true,
+        course: true,
+        bill: true,
+        orders: {
+          include: {
+            lines: {
+              select: { unitPrice: true, qty: true, status: true },
+            },
+          },
+        },
+      },
     });
-    return { storeId: store.id, sessions };
+    const includeTotals = req.query.includeTotals === "1" || req.query.includeTotals === "true";
+    if (!includeTotals) {
+      return {
+        storeId: store.id,
+        sessions: sessions.map((s) => ({
+          ...s,
+          orders: undefined,
+        })),
+      };
+    }
+    return {
+      storeId: store.id,
+      sessions: sessions.map((s) => {
+        const courseTotal = s.course && s.courseId ? s.course.pricePerPerson * s.guestCount : 0;
+        let ordersTotal = 0;
+        for (const o of s.orders) {
+          for (const l of o.lines) {
+            if (l.status === "cancelled") continue;
+            ordersTotal += l.unitPrice * l.qty;
+          }
+        }
+        return {
+          ...s,
+          currentTotal: courseTotal + ordersTotal,
+          orders: undefined,
+        };
+      }),
+    };
   });
 
   app.patch<{ Params: { storeId: string; sessionId: string } }>(
@@ -82,6 +124,23 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       const updated = await prisma.diningSession.update({
         where: { id: session.id },
         data: { status: "closed", closedAt: new Date() },
+      });
+      return updated;
+    }
+  );
+
+  app.patch<{ Params: { storeId: string; sessionId: string } }>(
+    "/stores/:storeId/sessions/:sessionId/bashing",
+    async (req, reply) => {
+      const session = await prisma.diningSession.findFirst({
+        where: { id: req.params.sessionId, storeId: req.params.storeId },
+      });
+      if (!session) return reply.code(404).send({ error: "session not found" });
+      if (session.status === "closed") return reply.code(400).send({ error: "already closed" });
+      if (session.status === "bashing_waiting") return reply.code(400).send({ error: "already bashing_waiting" });
+      const updated = await prisma.diningSession.update({
+        where: { id: session.id },
+        data: { status: "bashing_waiting" },
       });
       return updated;
     }

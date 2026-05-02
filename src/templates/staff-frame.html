@@ -219,13 +219,94 @@
       transition: border-color .12s, box-shadow .12s;
     }
     .table-cell:hover { border-color: #fdba74; }
+    .table-cell.busy {
+      border-color: #22c55e;
+      box-shadow: 0 0 0 2px rgba(34,197,94,.2);
+    }
+    .table-cell.bashing {
+      border-color: #f59e0b;
+      box-shadow: 0 0 0 2px rgba(245,158,11,.2);
+    }
     .table-cell.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(249,115,22,.25); }
     .table-cell .code { font-size: 0.72rem; color: var(--muted); }
     .table-cell .name { font-weight: 700; font-size: 0.88rem; text-align: center; line-height: 1.2; }
-    .table-cell .st { font-size: 0.7rem; margin-top: 0.25rem; color: var(--muted); }
-    .table-cell.busy .st { color: var(--accent); font-weight: 700; }
+    .table-cell .meta { font-size: 0.72rem; margin-top: 0.2rem; color: var(--muted); text-align: center; line-height: 1.25; }
+    .table-cell .meta.money { font-weight: 800; color: #065f46; }
+    .table-cell .meta.warn { font-weight: 800; color: #b45309; }
+    /* 商品マスタ一覧（並び替え） */
+    .mi-row {
+      width: 100%;
+      display: flex;
+      gap: 0.45rem;
+      align-items: center;
+      padding: 0.55rem 0.65rem;
+      border: none;
+      border-bottom: 1px solid var(--border);
+      background: transparent;
+      cursor: pointer;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .mi-row.selected { background: #fff7ed; }
+    .mi-sort-col {
+      display: flex;
+      flex-direction: column;
+      gap: 0.12rem;
+      flex-shrink: 0;
+    }
+    .mi-sort-btn {
+      padding: 0.06rem 0.28rem !important;
+      font-size: 0.72rem !important;
+      line-height: 1.15 !important;
+      min-width: 30px;
+      font-weight: 700;
+    }
     .detail-placeholder { color: var(--muted); font-size: 0.88rem; line-height: 1.55; padding: 1.5rem 0.5rem; text-align: center; }
-    .detail-panel { background: #f3f4f6; border-radius: var(--radius); border: 1px solid var(--border); padding: 1rem; min-height: 200px; }
+    .detail-panel {
+      background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+      border-radius: var(--radius);
+      border: 1px solid #dbe2ea;
+      padding: 1rem;
+      min-height: 200px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    }
+    .ops-register-head { display: flex; align-items: center; gap: 0.45rem; }
+    .ops-register-guest { font-size: 0.84rem; color: #334155; font-weight: 600; }
+    .ops-sec-title { margin: 0.7rem 0 0.45rem; font-size: 0.95rem; letter-spacing: 0.01em; color: #0f172a; }
+    .ops-order-card { padding: 0.45rem; margin-bottom: 0.6rem; border-color: #e2e8f0; background: #fff; }
+    .ops-order-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    .ops-order-table tr + tr td { border-top: 1px solid #f1f5f9; }
+    .ops-order-table td { padding: 0.45rem 0.35rem; vertical-align: middle; }
+    .ops-line-name { font-weight: 700; color: #0f172a; margin-bottom: 0.15rem; }
+    .ops-line-sub { font-size: 0.73rem; color: #64748b; margin-bottom: 0.35rem; }
+    .ops-line-actions { display: flex; align-items: center; gap: 0.28rem; flex-wrap: wrap; }
+    .ops-act-btn { min-width: 30px; padding: 0.12rem 0.32rem !important; font-weight: 700; }
+    .ops-act-del { padding: 0.13rem 0.5rem !important; color: #b91c1c !important; border-color: #fecaca !important; background: #fff1f2 !important; }
+    .ops-act-del:hover { color: #991b1b !important; border-color: #fda4af !important; }
+    .ops-qty-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 44px;
+      padding: 0.14rem 0.45rem;
+      border-radius: 999px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: #1d4ed8;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+    .ops-line-total { text-align: right; font-weight: 800; color: #0f766e; white-space: nowrap; }
+    .ops-total-row { justify-content: space-between; margin-bottom: 0.3rem; }
+    .ops-total-main {
+      margin-top: 0.15rem;
+      margin-bottom: 0.55rem;
+      padding: 0.5rem 0.65rem;
+      border-radius: 10px;
+      background: #fff7ed;
+      border: 1px solid #fed7aa;
+    }
+    .ops-total-main strong { color: #c2410c; font-size: 1rem; }
 
     /* 席マスタ行 */
     .pm-row {
@@ -241,6 +322,22 @@
     .pm-row .pm-actions { flex: 1; min-width: 200px; }
     .pm-row:last-child { border-bottom: none; }
     .pm-thumb { flex-shrink: 0; width: 48px; height: 48px; border-radius: 8px; background: linear-gradient(135deg, #e5e7eb, #f3f4f6); border: 1px solid var(--border); }
+    .pm-thumb.tables-master-grip {
+      cursor: grab;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      color: var(--muted);
+      line-height: 1;
+    }
+    .pm-thumb.tables-master-grip:active { cursor: grabbing; }
+    .pm-row.tables-master-row.is-dragging { opacity: 0.45; }
+    .pm-row.tables-master-row.drag-over {
+      box-shadow: inset 0 0 0 2px var(--accent);
+      background: var(--accent-soft);
+    }
     .pm-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; justify-content: flex-end; }
 
     /* キッチン */

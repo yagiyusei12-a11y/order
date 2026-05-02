@@ -22,12 +22,22 @@
       <input type="checkbox" id="stGuestPrice" aria-describedby="stGuestPrice-desc" /> <span>ゲスト注文画面にメニュー金額を表示する</span>
     </label>
     <p id="stGuestPrice-desc" class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.65rem">オフにするとゲストには単価を隠し、会計時に案内する運用向けです。</p>
+    <label for="stTz">メニュー時間帯の基準タイムゾーン（IANA）</label>
+    <p class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.35rem">カテゴリの「ゲストに表示する時間」はこのタイムゾーンの時計で判定されます（例: <code>Asia/Tokyo</code>）。</p>
+    <input id="stTz" type="text" placeholder="Asia/Tokyo" autocomplete="off" />
     <button type="button" class="btn-primary" id="btnSaveUi">表示設定を保存</button>
   </div>
 
   <div class="card" style="margin-top:1rem">
+    <strong style="font-size:0.9rem">時間帯マスタ</strong>
+    <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">「何時から何時まで」を名前付きで登録します。メニューのカテゴリ（ゲスト表示）や商品の時間帯割引で選びます。店舗のタイムゾーンは上の表示設定と同じ基準です。</p>
+    <div id="timeWindowsMaster" style="padding:0"></div>
+  </div>
+
+  <div class="card" style="margin-top:1rem">
     <strong style="font-size:0.9rem">決済手段（会計画面）</strong>
-    <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">有効にした手段だけが会計の入金記録に出ます。並びは数字が小さいほど上に表示されます。</p>
+    <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">有効にした手段だけが会計の入金記録に出ます。並びは数字が小さいほど上に表示されます。コードは英小文字・数字・アンダースコア（保存後は変更できません）。表示名を変えると、同一コードを使う全店の表示が変わります。</p>
+    <div id="payMethodsNew" style="margin-bottom:0.85rem;padding-bottom:0.85rem;border-bottom:1px solid var(--border)"></div>
     <div id="payMethods" style="padding:0"></div>
   </div>
 

@@ -1,8 +1,8 @@
 <main>
   <div class="top-tabs" role="tablist" aria-label="会計まわり（表示のみ）">
     <button type="button" class="is-on">会計管理</button>
-    <button type="button">レシートボックス</button>
-    <button type="button">精算</button>
+    <button type="button" id="btnOpenReceiptBox">レシートボックス</button>
+    <button type="button" id="btnOpenBilling">精算</button>
   </div>
   <div class="ops-split">
     <div>
@@ -17,9 +17,9 @@
       </div>
     </div>
     <div>
-      <h2 class="page-title" style="font-size:0.95rem">詳細</h2>
+      <h2 class="page-title" style="font-size:0.95rem">詳細・レジ</h2>
       <div id="detailPanel" class="detail-panel">
-        <div class="detail-placeholder">左の卓一覧からテーブルをお選びください</div>
+        <div class="detail-placeholder">左の卓一覧からテーブルを選ぶと、ここに会計機能が表示されます</div>
       </div>
     </div>
   </div>

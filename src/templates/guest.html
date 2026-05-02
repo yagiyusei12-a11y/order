@@ -28,6 +28,7 @@
     .item .badge-low { font-size: 0.68rem; font-weight: 700; color: #92400e; background: #fef3c7; padding: 0.12rem 0.4rem; border-radius: 4px; }
     .item .badge-sold { font-size: 0.68rem; font-weight: 700; color: #fecaca; background: #450a0a; padding: 0.12rem 0.4rem; border-radius: 4px; }
     .item .price { font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 600; }
+    .item .price .incl { display:block; font-size:0.72rem; color:var(--muted); font-weight:500; margin-top:0.1rem; }
     .item button {
       flex-shrink: 0; min-width: 2.75rem; height: 2.75rem; border-radius: 8px; border: 1px solid var(--line);
       background: #222a35; color: var(--text); font-size: 1.1rem; font-weight: 700; cursor: pointer;
@@ -80,6 +81,29 @@
       margin: 0.5rem 1rem 0.2rem; padding: 0.5rem 0.65rem; border-radius: 8px;
       border: 1px solid #7f1d1d; background: #3f1616; color: #fecaca; font-size: 0.78rem;
     }
+    .badge-set { font-size: 0.68rem; font-weight: 700; color: #1e3a5f; background: #bfdbfe; padding: 0.12rem 0.4rem; border-radius: 4px; }
+    .set-sheet {
+      position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,0.55);
+      display: flex; align-items: flex-end; justify-content: center; padding: 0;
+    }
+    .set-sheet .panel {
+      width: 100%; max-width: 28rem; max-height: 88vh; overflow: auto;
+      background: #121820; border: 1px solid var(--line); border-radius: 14px 14px 0 0;
+      padding: 0.85rem 1rem calc(0.85rem + env(safe-area-inset-bottom));
+    }
+    .set-sheet h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+    .set-step { margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--line); }
+    .set-step .sl { font-size: 0.78rem; color: var(--muted); margin-bottom: 0.35rem; }
+    .set-step .pick { display: flex; flex-direction: column; gap: 0.35rem; }
+    .set-step label.row {
+      display: flex; align-items: center; gap: 0.45rem; font-size: 0.85rem; cursor: pointer;
+      padding: 0.35rem 0.4rem; border-radius: 8px; background: #1a222c;
+    }
+    .set-step .extra { font-size: 0.72rem; color: var(--accent); margin-left: auto; }
+    .set-actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+    .set-actions button { flex: 1; padding: 0.6rem; border-radius: 10px; border: 1px solid var(--line); font-weight: 700; cursor: pointer; }
+    .set-actions .cancel { background: #1e293b; color: var(--text); }
+    .set-actions .ok { background: var(--accent); color: #1a1408; border: none; }
   </style>
 </head>
 <body>
@@ -100,6 +124,8 @@
     <button class="submit" id="submit" disabled type="button">注文する</button>
   </footer>
   <div class="toast" id="toast"></div>
+  <div id="setSheet" class="set-sheet" style="display:none" aria-hidden="true"></div>
+  <div id="optionSheet" class="set-sheet" style="display:none" aria-hidden="true"></div>
   <div class="agegate" id="ageGate" style="display:none">
     <div class="agegate-card">
       <h2>ご注文前の確認</h2>
@@ -130,15 +156,32 @@
       return j;
     });
 
-    /** @type {Record<string, { id: string, name: string, unitPrice: number, qty: number }>} */
+    /**
+     * @typedef {{ cartKey: string, menuItemId: string, name: string, unitPrice: number, qty: number,
+     *   sellKind?: string, setSelections?: { stepId: string, menuItemIds: string[] }[],
+     *   optionSelections?: { optionGroupId: string, optionItemIds: string[] }[] }} CartLine
+     */
+    /** @type {Record<string, CartLine>} */
     const cart = {};
     let guestShowMenuPrices = true;
+    let menuPriceTaxMode = "inclusive";
+    let taxRatePercent = 10;
     let alcoholRestricted = false;
     const alcoholById = new Map();
 
     function fmtMoney(n) {
       if (!guestShowMenuPrices) return "—";
       return "¥" + n.toLocaleString("ja-JP");
+    }
+    function fmtItemPrice(item) {
+      if (!guestShowMenuPrices) return "—";
+      const mode = item.priceTaxMode === "exclusive" ? "exclusive" : menuPriceTaxMode;
+      if (mode === "exclusive") {
+        const base = Number(item.basePrice || item.price || 0);
+        const incl = Number(item.taxIncludedPrice || item.price || 0);
+        return "¥" + base.toLocaleString("ja-JP") + "<span class=\"incl\">(税込 ¥" + incl.toLocaleString("ja-JP") + ")</span>";
+      }
+      return "¥" + Number(item.price || 0).toLocaleString("ja-JP");
     }
 
     function isAlcoholItem(item, categoryName) {
@@ -167,16 +210,409 @@
       setTimeout(() => el.classList.remove("show"), 1600);
     }
 
+    function stableSetKey(sel) {
+      if (!sel || !sel.length) return "";
+      return sel
+        .map((s) => String(s.stepId) + ":" + [...(s.menuItemIds || [])].sort().join(","))
+        .sort()
+        .join("|");
+    }
+
+    function choiceExtraInclusive(ch) {
+      const ex = Number(ch.extraPrice || 0);
+      if (ch.extraTaxIncluded != null && Number.isFinite(Number(ch.extraTaxIncluded))) {
+        return Number(ch.extraTaxIncluded);
+      }
+      return Math.round(ex * (1 + taxRatePercent / 100));
+    }
+
+    function computeSetUnitPrice(item, setSelections) {
+      let extras = 0;
+      for (const st of item.setSteps || []) {
+        const sel = setSelections.find((x) => x.stepId === st.id);
+        if (!sel) return null;
+        for (const mid of sel.menuItemIds || []) {
+          const ch = (st.choices || []).find((c) => c.menuItemId === mid);
+          if (!ch) return null;
+          extras += choiceExtraInclusive(ch);
+        }
+      }
+      return Number(item.price || 0) + extras;
+    }
+
+    function stableOptionKey(sel) {
+      if (!sel || !sel.length) return "";
+      return sel
+        .map((x) => String(x.optionGroupId) + ":" + [...(x.optionItemIds || [])].sort().join(","))
+        .sort()
+        .join("|");
+    }
+
+    function computeOptionUnitPrice(item, optionSelections) {
+      let add = 0;
+      for (const g of item.optionGroups || []) {
+        const row = optionSelections.find((o) => o.optionGroupId === g.id);
+        const ids = (row && row.optionItemIds) || [];
+        for (const oid of ids) {
+          const oi = (g.items || []).find((x) => x.id === oid);
+          if (oi) add += Number(oi.priceDelta || 0);
+        }
+      }
+      return Number(item.price || 0) + add;
+    }
+
+    function openOptionSheet(item) {
+      const host = document.getElementById("optionSheet");
+      if (!host) return;
+      let html = "<div class=\"panel\" role=\"dialog\" aria-labelledby=\"optSheetTitle\">";
+      html += "<h3 id=\"optSheetTitle\">" + escapeHtml(item.name) + "</h3>";
+      html += "<p class=\"meta\" style=\"margin:0 0 0.75rem\">オプションを選んでください。加算は<strong>税込</strong>の目安です（店舗設定に合わせた税表示と合算されます）。</p>";
+      for (const g of item.optionGroups || []) {
+        html += "<div class=\"set-step\" data-opt-group-id=\"" + escapeHtml(g.id) + "\">";
+        html +=
+          "<div class=\"sl\"><strong>" +
+          escapeHtml(g.name) +
+          "</strong> · " +
+          g.minSelect +
+          "〜" +
+          g.maxSelect +
+          " 個選ぶ</div><div class=\"pick\">";
+        const useRadio = Number(g.maxSelect || 1) <= 1;
+        for (const oi of g.items || []) {
+          const yen = Number(oi.priceDelta || 0);
+          const delta =
+            yen > 0 ? "<span class=\"extra\">（+" + yen.toLocaleString("ja-JP") + "円）</span>" : "<span class=\"extra\"></span>";
+          if (useRadio) {
+            html +=
+              "<label class=\"row\"><input type=\"radio\" name=\"og-" +
+              escapeHtml(g.id) +
+              "\" value=\"" +
+              escapeHtml(oi.id) +
+              "\" data-min=\"" +
+              g.minSelect +
+              "\" data-max=\"" +
+              g.maxSelect +
+              "\" /><span>" +
+              escapeHtml(oi.name) +
+              "</span>" +
+              delta +
+              "</label>";
+          } else {
+            html +=
+              "<label class=\"row\"><input type=\"checkbox\" name=\"ogcb-" +
+              escapeHtml(g.id) +
+              "\" value=\"" +
+              escapeHtml(oi.id) +
+              "\" data-min=\"" +
+              g.minSelect +
+              "\" data-max=\"" +
+              g.maxSelect +
+              "\" /><span>" +
+              escapeHtml(oi.name) +
+              "</span>" +
+              delta +
+              "</label>";
+          }
+        }
+        html += "</div></div>";
+      }
+      html += "<div class=\"set-actions\"><button type=\"button\" class=\"cancel\">閉じる</button><button type=\"button\" class=\"ok\">カートに追加</button></div></div>";
+      host.innerHTML = html;
+      host.style.display = "flex";
+      host.setAttribute("aria-hidden", "false");
+
+      host.querySelectorAll("[data-opt-group-id]").forEach((stepEl) => {
+        const gid = stepEl.getAttribute("data-opt-group-id");
+        const boxes = [...stepEl.querySelectorAll("input[type=checkbox]")];
+        if (boxes.length === 0) return;
+        const minP = Number(boxes[0].getAttribute("data-min") || 0);
+        const maxP = Number(boxes[0].getAttribute("data-max") || 1);
+        boxes.forEach((inp) => {
+          inp.addEventListener("change", () => {
+            const checked = boxes.filter((b) => b.checked);
+            if (checked.length > maxP) {
+              inp.checked = false;
+              toast("このオプションは最大 " + maxP + " 個までです");
+            }
+          });
+        });
+      });
+
+      host.querySelector(".cancel").onclick = () => {
+        host.style.display = "none";
+        host.innerHTML = "";
+      };
+      host.querySelector(".ok").onclick = () => {
+        /** @type {{ optionGroupId: string, optionItemIds: string[] }[]} */
+        const optionSelections = [];
+        for (const g of item.optionGroups || []) {
+          const stepEl = [...host.querySelectorAll("[data-opt-group-id]")].find(
+            (el) => el.getAttribute("data-opt-group-id") === g.id,
+          );
+          let ids = [];
+          if (Number(g.maxSelect || 1) <= 1) {
+            const r = stepEl ? stepEl.querySelector("input[type=radio]:checked") : null;
+            if (r && r.value) ids = [r.value];
+          } else {
+            ids = stepEl ? [...stepEl.querySelectorAll("input[type=checkbox]:checked")].map((x) => x.value) : [];
+          }
+          optionSelections.push({ optionGroupId: g.id, optionItemIds: ids });
+        }
+        for (const g of item.optionGroups || []) {
+          const sel = optionSelections.find((x) => x.optionGroupId === g.id);
+          const n = (sel && sel.optionItemIds) ? sel.optionItemIds.length : 0;
+          if (n < g.minSelect || n > g.maxSelect) {
+            toast(g.name + " は " + g.minSelect + "〜" + g.maxSelect + " 個選んでください");
+            return;
+          }
+        }
+        const unitPrice = computeOptionUnitPrice(item, optionSelections);
+        const cartKey = "o:" + item.id + ":" + stableOptionKey(optionSelections);
+        const cur = cart[cartKey] || {
+          cartKey,
+          menuItemId: item.id,
+          name: item.name,
+          unitPrice,
+          qty: 0,
+          sellKind: "single",
+          optionSelections,
+        };
+        cur.unitPrice = unitPrice;
+        cur.optionSelections = optionSelections;
+        cur.name = item.name;
+        const next = (cur.qty || 0) + 1;
+        if (item.stockQty != null && next > item.stockQty) {
+          toast("これ以上は在庫がありません");
+          return;
+        }
+        cur.qty = next;
+        cart[cartKey] = cur;
+        host.style.display = "none";
+        host.innerHTML = "";
+        renderCart();
+        toast(item.name + " を追加");
+      };
+      host.onclick = (ev) => {
+        if (ev.target === host) {
+          host.style.display = "none";
+          host.innerHTML = "";
+        }
+      };
+    }
+
+    function setStockAllows(item, setSelections, addQty) {
+      const need = new Map();
+      need.set(item.id, addQty);
+      for (const st of item.setSteps || []) {
+        const sel = setSelections.find((x) => x.stepId === st.id);
+        if (!sel) return false;
+        for (const mid of sel.menuItemIds || []) {
+          need.set(mid, (need.get(mid) || 0) + addQty);
+        }
+      }
+      for (const [id, q] of need) {
+        let max = null;
+        if (id === item.id) {
+          max = item.stockQty;
+        } else {
+          for (const st of item.setSteps) {
+            for (const ch of st.choices || []) {
+              if (ch.menuItemId === id && ch.stockQty != null) max = ch.stockQty;
+            }
+          }
+        }
+        if (max != null && max < q) return false;
+      }
+      for (const [id, q] of need) {
+        const existing = Object.values(cart).reduce((s, line) => {
+          if (line.menuItemId === id) return s + (line.qty || 0);
+          if (line.sellKind === "set" && line.setSelections) {
+            let u = 0;
+            for (const st of line.setSelections) {
+              for (const mid of st.menuItemIds || []) if (mid === id) u += line.qty || 0;
+            }
+            return s + u;
+          }
+          return s;
+        }, 0);
+        let max = null;
+        if (id === item.id) max = item.stockQty;
+        else {
+          for (const st of item.setSteps) {
+            for (const ch of st.choices || []) {
+              if (ch.menuItemId === id && ch.stockQty != null) max = ch.stockQty;
+            }
+          }
+        }
+        if (max != null && existing + q > max) return false;
+      }
+      return true;
+    }
+
+    function openSetSheet(item) {
+      const host = document.getElementById("setSheet");
+      if (!host) return;
+      let html = "<div class=\"panel\" role=\"dialog\" aria-labelledby=\"setSheetTitle\">";
+      html += "<h3 id=\"setSheetTitle\">" + escapeHtml(item.name) + "</h3>";
+      html += "<p class=\"meta\" style=\"margin:0 0 0.75rem\">項目ごとに選んでください。+表示は<strong>税抜</strong>／カート合計は税込換算後です。</p>";
+      for (const st of item.setSteps || []) {
+        html += "<div class=\"set-step\" data-step-id=\"" + escapeHtml(st.id) + "\">";
+        html += "<div class=\"sl\"><strong>" + escapeHtml(st.label) + "</strong> · " + st.minPick + "〜" + st.maxPick + "品選ぶ</div>";
+        html += "<div class=\"pick\">";
+        for (const ch of st.choices || []) {
+          const sold = ch.soldOut === true || (ch.stockQty != null && ch.stockQty <= 0);
+          const ex = Number(ch.extraPrice || 0);
+          const incl = choiceExtraInclusive(ch);
+          const exLabel =
+            ex > 0
+              ? "（税抜+" + ex.toLocaleString("ja-JP") + "・税込+" + incl.toLocaleString("ja-JP") + "）"
+              : "";
+          const soldTag = sold ? "<span class=\"badge-sold\" style=\"margin-left:0.25rem\">売り切れ</span>" : "";
+          html +=
+            "<label class=\"row\" style=\"" +
+            (sold ? "opacity:0.55" : "") +
+            "\"><input type=\"checkbox\" name=\"p-" +
+            escapeHtml(st.id) +
+            "\" value=\"" +
+            escapeHtml(ch.menuItemId) +
+            "\" data-min=\"" +
+            st.minPick +
+            "\" data-max=\"" +
+            st.maxPick +
+            "\"" +
+            (sold ? " disabled" : "") +
+            " /><span>" +
+            escapeHtml(ch.name) +
+            soldTag +
+            "</span><span class=\"extra\">" +
+            escapeHtml(exLabel) +
+            "</span></label>";
+        }
+        html += "</div></div>";
+      }
+      html += "<div class=\"set-actions\"><button type=\"button\" class=\"cancel\">閉じる</button><button type=\"button\" class=\"ok\">カートに追加</button></div></div>";
+      host.innerHTML = html;
+      host.style.display = "flex";
+      host.setAttribute("aria-hidden", "false");
+
+      function syncChecks(ev) {
+        const inp = ev.target;
+        if (!inp || inp.type !== "checkbox" || !inp.name || !inp.name.startsWith("p-")) return;
+        const stepId = inp.name.slice(2);
+        const stepEl = [...host.querySelectorAll("[data-step-id]")].find(
+          (el) => el.getAttribute("data-step-id") === stepId,
+        );
+        if (!stepEl) return;
+        const boxes = [...stepEl.querySelectorAll("input[type=checkbox]")];
+        const minP = Number(boxes[0]?.getAttribute("data-min") || 0);
+        const maxP = Number(boxes[0]?.getAttribute("data-max") || 1);
+        const checked = boxes.filter((b) => b.checked);
+        if (checked.length > maxP) {
+          inp.checked = false;
+          toast("この項目は最大 " + maxP + " 品までです");
+        }
+      }
+      host.querySelectorAll("input[type=checkbox]").forEach((b) => b.addEventListener("change", syncChecks));
+
+      host.querySelector(".cancel").onclick = () => {
+        host.style.display = "none";
+        host.innerHTML = "";
+      };
+      host.querySelector(".ok").onclick = () => {
+        const setSelections = [];
+        for (const st of item.setSteps || []) {
+          const stepEl = [...host.querySelectorAll("[data-step-id]")].find(
+            (el) => el.getAttribute("data-step-id") === st.id,
+          );
+          const ids = stepEl
+            ? [...stepEl.querySelectorAll("input[type=checkbox]:checked")].map((x) => x.value)
+            : [];
+          setSelections.push({ stepId: st.id, menuItemIds: ids });
+        }
+        for (const st of item.setSteps || []) {
+          const sel = setSelections.find((x) => x.stepId === st.id);
+          const n = (sel && sel.menuItemIds) ? sel.menuItemIds.length : 0;
+          if (n < st.minPick || n > st.maxPick) {
+            toast(st.label + " は " + st.minPick + "〜" + st.maxPick + " 品選んでください");
+            return;
+          }
+        }
+        const unitPrice = computeSetUnitPrice(item, setSelections);
+        if (unitPrice == null) {
+          toast("選択内容を確認してください");
+          return;
+        }
+        if (!setStockAllows(item, setSelections, 1)) {
+          toast("在庫が不足しています");
+          return;
+        }
+        const cartKey = "s:" + item.id + ":" + stableSetKey(setSelections);
+        const cur = cart[cartKey] || {
+          cartKey,
+          menuItemId: item.id,
+          name: item.name,
+          unitPrice,
+          qty: 0,
+          sellKind: "set",
+          setSelections,
+        };
+        cur.unitPrice = unitPrice;
+        cur.setSelections = setSelections;
+        cur.name = item.name;
+        const next = (cur.qty || 0) + 1;
+        if (!setStockAllows(item, setSelections, next)) {
+          toast("これ以上は在庫がありません");
+          return;
+        }
+        cur.qty = next;
+        cart[cartKey] = cur;
+        host.style.display = "none";
+        host.innerHTML = "";
+        renderCart();
+        toast(item.name + " を追加");
+      };
+      host.onclick = (ev) => {
+        if (ev.target === host) {
+          host.style.display = "none";
+          host.innerHTML = "";
+        }
+      };
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
     function addLine(item) {
       if (alcoholRestricted && alcoholById.get(item.id)) {
         toast("酒類はご注文いただけません");
+        return;
+      }
+      if (item.sellKind === "set" && item.setSteps && item.setSteps.length) {
+        openSetSheet(item);
+        return;
+      }
+      if (item.optionGroups && item.optionGroups.length) {
+        openOptionSheet(item);
         return;
       }
       if (item.stockQty != null && item.stockQty <= 0) {
         toast("売り切れです");
         return;
       }
-      const cur = cart[item.id] || { id: item.id, name: item.name, unitPrice: item.price, qty: 0 };
+      const cartKey = item.id;
+      const cur = cart[cartKey] || {
+        cartKey,
+        menuItemId: item.id,
+        name: item.name,
+        unitPrice: item.price,
+        qty: 0,
+        sellKind: "single",
+      };
       cur.unitPrice = item.price;
       cur.name = item.name;
       const next = (cur.qty || 0) + 1;
@@ -185,28 +621,47 @@
         return;
       }
       cur.qty = next;
-      cart[item.id] = cur;
+      cart[cartKey] = cur;
       renderCart();
       toast(item.name + " を追加");
     }
 
     function clampCartToStock(categories) {
       const maxById = new Map();
+      const setById = new Map();
       for (const c of categories || []) {
         for (const it of c.items || []) {
           if (it.stockQty != null) maxById.set(it.id, it.stockQty);
+          if (it.sellKind === "set") setById.set(it.id, it);
         }
       }
       for (const k of Object.keys(cart)) {
-        const m = maxById.get(k);
-        if (m != null && cart[k].qty > m) cart[k].qty = m;
-        if (!cart[k].qty || cart[k].qty <= 0) delete cart[k];
+        const line = cart[k];
+        if (line.sellKind === "set" && line.setSelections) {
+          const it = setById.get(line.menuItemId);
+          if (it && !setStockAllows(it, line.setSelections, line.qty)) {
+            let lo = 0;
+            let hi = line.qty;
+            while (lo < hi) {
+              const mid = Math.ceil((lo + hi) / 2);
+              if (setStockAllows(it, line.setSelections, mid)) lo = mid;
+              else hi = mid - 1;
+            }
+            line.qty = lo;
+          }
+        } else {
+          const m = maxById.get(line.menuItemId);
+          if (m != null && line.qty > m) line.qty = m;
+        }
+        if (!line.qty || line.qty <= 0) delete cart[k];
       }
     }
 
     async function loadMenu() {
       const data = await api("/guest/" + encodeURIComponent(TOKEN) + "/menu");
       guestShowMenuPrices = !(data.store && data.store.showMenuPrices === false);
+      menuPriceTaxMode = (data.store && data.store.menuPriceTaxMode) || "inclusive";
+      taxRatePercent = Number((data.store && data.store.taxRatePercent) || 10);
       const s = data.session;
       let hdr = "人数 " + (s.guestCount || "—");
       if (s.course) {
@@ -268,6 +723,12 @@
             b.textContent = "残りわずか";
             badges.appendChild(b);
           }
+          if (it.sellKind === "set") {
+            const b = document.createElement("span");
+            b.className = "badge-set";
+            b.textContent = "セット";
+            badges.appendChild(b);
+          }
           if (isAlcohol) {
             const b = document.createElement("span");
             b.className = "badge-alcohol";
@@ -280,7 +741,7 @@
             b.textContent = "注文不可";
             badges.appendChild(b);
           }
-          row.querySelector(".price").textContent = fmtMoney(it.price);
+          row.querySelector(".price").innerHTML = fmtItemPrice(it);
           const btn = row.querySelector("button");
           btn.disabled = sold || (isAlcohol && alcoholRestricted);
           btn.onclick = () => addLine(it);
@@ -306,7 +767,14 @@
     }
 
     document.getElementById("submit").onclick = async () => {
-      const lines = Object.values(cart).filter((x) => x.qty > 0).map((x) => ({ menuItemId: x.id, qty: x.qty }));
+      const lines = Object.values(cart)
+        .filter((x) => x.qty > 0)
+        .map((x) => {
+          const o = { menuItemId: x.menuItemId, qty: x.qty };
+          if (x.sellKind === "set" && x.setSelections) o.setSelections = x.setSelections;
+          if (x.optionSelections && x.optionSelections.length) o.optionSelections = x.optionSelections;
+          return o;
+        });
       if (lines.length === 0) return;
       if (alcoholRestricted) {
         const alcoholLine = lines.find((l) => alcoholById.get(l.menuItemId));

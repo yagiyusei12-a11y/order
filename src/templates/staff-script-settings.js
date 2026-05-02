@@ -11,18 +11,157 @@ function escapeHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
+function guestMinToTimeInputValue(min) {
+  if (min == null || min === "") return "";
+  const n = Number(min);
+  if (!Number.isFinite(n) || n < 0 || n > 1439) return "";
+  const h = Math.floor(n / 60);
+  const m = n % 60;
+  return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
+}
+
+function timeInputValueToGuestMin(s) {
+  if (!s || !String(s).trim()) return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(s).trim());
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const mi = parseInt(m[2], 10);
+  if (h < 0 || h > 23 || mi < 0 || mi > 59) return null;
+  return h * 60 + mi;
+}
+
+function renderTimeWindows(list) {
+  const box = document.getElementById("timeWindowsMaster");
+  if (!box) return;
+  box.innerHTML =
+    "<div class=\"muted\" style=\"font-size:0.72rem;margin-bottom:0.45rem\">新規追加</div>" +
+    "<div class=\"row\" style=\"flex-wrap:wrap;gap:0.5rem;align-items:flex-end;margin-bottom:0.85rem;padding-bottom:0.85rem;border-bottom:1px solid var(--border)\">" +
+    "<div style=\"display:flex;flex-direction:column;gap:0.2rem;flex:1;min-width:140px\">" +
+    "<label for=\"twNewName\" style=\"font-size:0.7rem;color:var(--muted)\">名前</label>" +
+    "<input id=\"twNewName\" type=\"text\" placeholder=\"例: ランチ\" style=\"margin:0\" /></div>" +
+    "<label style=\"font-size:0.78rem;margin:0\">開始 <input id=\"twNewStart\" type=\"time\" style=\"margin:0\" /></label>" +
+    "<label style=\"font-size:0.78rem;margin:0\">終了 <input id=\"twNewEnd\" type=\"time\" style=\"margin:0\" /></label>" +
+    "<button type=\"button\" class=\"btn-primary\" id=\"btnTwAdd\" style=\"margin-bottom:0.05rem\">追加</button></div>";
+  const btnTwAdd = document.getElementById("btnTwAdd");
+  if (btnTwAdd) {
+    btnTwAdd.onclick = async () => {
+      log("");
+      const name = document.getElementById("twNewName").value.trim();
+      const sm = timeInputValueToGuestMin(document.getElementById("twNewStart").value);
+      const em = timeInputValueToGuestMin(document.getElementById("twNewEnd").value);
+      if (!name) return log("名前を入力してください");
+      if (sm === null || em === null) return log("開始・終了の時刻を両方指定してください");
+      try {
+        await api("/stores/" + encodeURIComponent(STORE) + "/time-windows", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, startMin: sm, endMin: em }),
+        });
+        document.getElementById("twNewName").value = "";
+        document.getElementById("twNewStart").value = "";
+        document.getElementById("twNewEnd").value = "";
+        log("時間帯を追加しました");
+        await loadAll();
+      } catch (e) {
+        log(String(e.message || e));
+      }
+    };
+  }
+  const arr = list || [];
+  if (!arr.length) {
+    box.innerHTML += "<span class=\"muted\">まだありません。上のフォームから追加してください。</span>";
+    return;
+  }
+  for (const w of arr) {
+    const row = document.createElement("div");
+    row.className = "pm-row";
+    row.style.padding = "0.55rem 0.75rem";
+    row.style.alignItems = "flex-end";
+    row.style.flexWrap = "wrap";
+    row.style.gap = "0.5rem";
+    row.innerHTML =
+      "<div style=\"flex:1;min-width:160px;display:flex;flex-direction:column;gap:0.2rem\">" +
+      "<span class=\"muted\" style=\"font-size:0.7rem\">名前</span>" +
+      "<input type=\"text\" data-tw-name value=\"" +
+      escapeHtml(w.name) +
+      "\" style=\"margin:0\" /></div>" +
+      "<label style=\"font-size:0.78rem;margin:0\">開始 <input type=\"time\" data-tw-start value=\"" +
+      guestMinToTimeInputValue(w.startMin) +
+      "\" style=\"margin:0\" /></label>" +
+      "<label style=\"font-size:0.78rem;margin:0\">終了 <input type=\"time\" data-tw-end value=\"" +
+      guestMinToTimeInputValue(w.endMin) +
+      "\" style=\"margin:0\" /></label>" +
+      "<div style=\"display:flex;flex-direction:column;gap:0.2rem\"><span class=\"muted\" style=\"font-size:0.7rem\">並び</span>" +
+      "<input type=\"number\" data-tw-sort step=\"1\" value=\"" +
+      escapeHtml(String(w.sortOrder ?? 0)) +
+      "\" style=\"margin:0;width:72px\" /></div>" +
+      "<button type=\"button\" class=\"btn-ghost\" data-tw-save=\"" +
+      escapeHtml(w.id) +
+      "\">保存</button>" +
+      "<button type=\"button\" class=\"btn-ghost\" data-tw-del=\"" +
+      escapeHtml(w.id) +
+      "\" style=\"color:#b91c1c\">削除</button>";
+    box.appendChild(row);
+  }
+  box.querySelectorAll("button[data-tw-save]").forEach((b) => {
+    b.onclick = async () => {
+      log("");
+      const id = b.getAttribute("data-tw-save");
+      const row = b.closest(".pm-row");
+      const name = row.querySelector("[data-tw-name]").value.trim();
+      const sm = timeInputValueToGuestMin(row.querySelector("[data-tw-start]").value);
+      const em = timeInputValueToGuestMin(row.querySelector("[data-tw-end]").value);
+      const sortOrder = Number(row.querySelector("[data-tw-sort]").value);
+      if (!name) return log("名前を入力してください");
+      if (sm === null || em === null) return log("開始・終了を指定してください");
+      if (!Number.isInteger(sortOrder)) return log("並びは整数で");
+      try {
+        await api("/stores/" + encodeURIComponent(STORE) + "/time-windows/" + encodeURIComponent(id), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, startMin: sm, endMin: em, sortOrder }),
+        });
+        log("時間帯を保存しました");
+        await loadAll();
+      } catch (e) {
+        log(String(e.message || e));
+      }
+    };
+  });
+  box.querySelectorAll("button[data-tw-del]").forEach((b) => {
+    b.onclick = async () => {
+      const id = b.getAttribute("data-tw-del");
+      const row = b.closest(".pm-row");
+      const name = row?.querySelector("[data-tw-name]")?.value?.trim() || "この時間帯";
+      if (!window.confirm("「" + name + "」を削除しますか？\nカテゴリ・商品の参照は外れます。")) return;
+      log("");
+      try {
+        await api("/stores/" + encodeURIComponent(STORE) + "/time-windows/" + encodeURIComponent(id), {
+          method: "DELETE",
+        });
+        log("削除しました");
+        await loadAll();
+      } catch (e) {
+        log(String(e.message || e));
+      }
+    };
+  });
+}
+
 async function loadAll() {
   log("");
-  const [st, staff, pay] = await Promise.all([
+  const [st, staff, pay, twRes] = await Promise.all([
     api("/stores/" + encodeURIComponent(STORE) + "/settings"),
     api("/stores/" + encodeURIComponent(STORE) + "/staff-users"),
     api("/stores/" + encodeURIComponent(STORE) + "/payment-methods?all=1"),
+    api("/stores/" + encodeURIComponent(STORE) + "/time-windows"),
   ]);
   document.getElementById("stName").value = st.store.name || "";
   document.getElementById("stId").value = st.store.id || "";
   const s = st.store.settings || {};
   document.getElementById("stKitSec").value = String(s.kitchenAutoRefreshSec ?? 10);
   document.getElementById("stGuestPrice").checked = s.guestShowMenuPrices !== false;
+  document.getElementById("stTz").value = s.timezone || "Asia/Tokyo";
 
   const sl = document.getElementById("staffList");
   const users = staff.staffUsers || [];
@@ -41,32 +180,75 @@ async function loadAll() {
       .join("");
   }
 
+  const newBox = document.getElementById("payMethodsNew");
   const box = document.getElementById("payMethods");
-  const methods = pay.paymentMethods || [];
-  if (!methods.length) {
-    box.innerHTML = "<span class=\"muted\">登録がありません</span>";
-    return;
+  newBox.innerHTML =
+    "<div class=\"muted\" style=\"font-size:0.72rem;margin-bottom:0.45rem\">新規追加（コードは保存後に変更できません）</div>" +
+    "<div class=\"row\" style=\"flex-wrap:wrap;gap:0.5rem;align-items:flex-end\">" +
+    "<div style=\"display:flex;flex-direction:column;gap:0.2rem\">" +
+    "<label for=\"payNewCode\" style=\"font-size:0.7rem;color:var(--muted)\">コード</label>" +
+    "<input id=\"payNewCode\" type=\"text\" placeholder=\"例: line_pay\" style=\"margin:0;min-width:130px\" autocomplete=\"off\" title=\"英小文字・数字・アンダースコア\" />" +
+    "</div>" +
+    "<div style=\"display:flex;flex-direction:column;gap:0.2rem;flex:1;min-width:160px\">" +
+    "<label for=\"payNewLabel\" style=\"font-size:0.7rem;color:var(--muted)\">表示名</label>" +
+    "<input id=\"payNewLabel\" type=\"text\" placeholder=\"例: LINE Pay\" style=\"margin:0\" />" +
+    "</div>" +
+    "<button type=\"button\" class=\"btn-primary\" id=\"btnPayAdd\" style=\"margin-bottom:0.05rem\">追加</button></div>";
+  const btnPayAdd = document.getElementById("btnPayAdd");
+  if (btnPayAdd) {
+    btnPayAdd.onclick = async () => {
+      log("");
+      const code = document.getElementById("payNewCode").value;
+      const labelJa = document.getElementById("payNewLabel").value.trim();
+      if (!labelJa) return log("表示名を入力してください");
+      try {
+        await api("/stores/" + encodeURIComponent(STORE) + "/payment-methods", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code, labelJa }),
+        });
+        document.getElementById("payNewCode").value = "";
+        document.getElementById("payNewLabel").value = "";
+        log("決済手段を追加しました");
+        await loadAll();
+      } catch (e) {
+        log(String(e.message || e));
+      }
+    };
   }
+
+  const methods = pay.paymentMethods || [];
   box.innerHTML = "";
+  if (!methods.length) {
+    box.innerHTML = "<span class=\"muted\">まだ登録がありません。上のフォームから追加するか、シードされた手段があれば一覧に表示されます。</span>";
+  }
   for (const m of methods) {
     const row = document.createElement("div");
     row.className = "pm-row";
     row.style.padding = "0.65rem 0.75rem";
-    row.style.alignItems = "center";
+    row.style.alignItems = "flex-start";
     const mid = document.createElement("div");
     mid.className = "pm-mid";
     mid.style.flex = "2";
-    mid.innerHTML =
-      "<div style=\"font-weight:700\">" +
-      escapeHtml(m.labelJa || m.code) +
-      "</div>" +
-      "<div class=\"muted\" style=\"font-size:0.72rem\">" +
-      escapeHtml(m.code) +
-      "</div>";
+    mid.style.display = "flex";
+    mid.style.flexDirection = "column";
+    mid.style.gap = "0.35rem";
+    const labInp = document.createElement("input");
+    labInp.type = "text";
+    labInp.value = m.labelJa || "";
+    labInp.style.margin = "0";
+    labInp.style.fontWeight = "700";
+    labInp.title = "会計画面・レポートに出る名前（共通マスタを更新します）";
+    const codeEl = document.createElement("div");
+    codeEl.className = "muted";
+    codeEl.style.fontSize = "0.72rem";
+    codeEl.textContent = "コード: " + m.code + "（変更不可）";
+
     const enabled = document.createElement("input");
     enabled.type = "checkbox";
     enabled.checked = m.enabled;
     enabled.title = "会計画面の入金手段として使うか";
+
     const ord = document.createElement("input");
     ord.type = "number";
     ord.step = "1";
@@ -74,35 +256,60 @@ async function loadAll() {
     ord.style.width = "72px";
     ord.style.marginBottom = "0";
     ord.title = "会計画面のドロップダウンでの並び（小さいほど上）";
+
     const save = document.createElement("button");
     save.type = "button";
     save.className = "btn-ghost";
     save.textContent = "保存";
     save.onclick = async () => {
       log("");
+      const labelJa = labInp.value.trim();
+      if (!labelJa) return log("表示名を入力してください");
       const so = Number(ord.value);
       if (!Number.isInteger(so)) return log("並びは整数で入力してください");
       try {
-        await api(
-          "/stores/" +
-            encodeURIComponent(STORE) +
-            "/payment-methods/" +
-            encodeURIComponent(m.id),
-          {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              enabled: enabled.checked,
-              sortOrder: so,
-            }),
-          }
-        );
+        await api("/stores/" + encodeURIComponent(STORE) + "/payment-methods/" + encodeURIComponent(m.id), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            labelJa,
+            enabled: enabled.checked,
+            sortOrder: so,
+          }),
+        });
         log("決済手段を更新しました");
         await loadAll();
       } catch (e) {
         log(String(e.message || e));
       }
     };
+
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "btn-ghost";
+    del.style.color = "#b91c1c";
+    del.textContent = "削除";
+    del.onclick = async () => {
+      const ok = window.confirm(
+        "この店舗から「" + (m.labelJa || m.code) + "」を外しますか？\n" +
+          "過去の入金データのコードは残ります。他店と共通のマスタのみ残し、誰も使っていなければマスタごと削除されます。"
+      );
+      if (!ok) return;
+      log("");
+      try {
+        await api("/stores/" + encodeURIComponent(STORE) + "/payment-methods/" + encodeURIComponent(m.id), {
+          method: "DELETE",
+        });
+        log("削除しました");
+        await loadAll();
+      } catch (e) {
+        log(String(e.message || e));
+      }
+    };
+
+    mid.appendChild(labInp);
+    mid.appendChild(codeEl);
+
     const lab = document.createElement("label");
     lab.className = "row";
     lab.style.margin = "0";
@@ -111,6 +318,7 @@ async function loadAll() {
     lab.style.fontSize = "0.78rem";
     lab.appendChild(enabled);
     lab.appendChild(document.createTextNode("会計で選べるようにする"));
+
     const ordWrap = document.createElement("div");
     ordWrap.style.display = "flex";
     ordWrap.style.flexDirection = "column";
@@ -122,6 +330,7 @@ async function loadAll() {
     ordLab.textContent = "表示順（小さいほど上）";
     ordWrap.appendChild(ordLab);
     ordWrap.appendChild(ord);
+
     const actions = document.createElement("div");
     actions.className = "row";
     actions.style.gap = "0.35rem";
@@ -130,10 +339,14 @@ async function loadAll() {
     actions.appendChild(lab);
     actions.appendChild(ordWrap);
     actions.appendChild(save);
+    actions.appendChild(del);
+
     row.appendChild(mid);
     row.appendChild(actions);
     box.appendChild(row);
   }
+
+  renderTimeWindows(twRes.timeWindows || []);
 }
 
 document.getElementById("btnSaveStore").onclick = async () => {
@@ -158,12 +371,13 @@ document.getElementById("btnSaveUi").onclick = async () => {
   const sec = Number(document.getElementById("stKitSec").value);
   if (!Number.isInteger(sec) || sec < 5 || sec > 300) return log("キッチン更新は5〜300の整数で");
   const guestShowMenuPrices = document.getElementById("stGuestPrice").checked;
+  const timezone = document.getElementById("stTz").value.trim() || "Asia/Tokyo";
   try {
     await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        settings: { kitchenAutoRefreshSec: sec, guestShowMenuPrices },
+        settings: { kitchenAutoRefreshSec: sec, guestShowMenuPrices, timezone },
       }),
     });
     log("表示設定を保存しました");

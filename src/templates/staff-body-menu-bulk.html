@@ -1,0 +1,150 @@
+<main>
+  <style>
+    .bulk-hidden { display: none !important; }
+  </style>
+  <h2 class="page-title">商品の一括編集</h2>
+  <p class="muted" style="margin-top:-0.35rem;margin-bottom:0.75rem">一覧で商品にチェックし、下のフォームで<strong>変更する項目だけ</strong>にチェックを入れて反映します。カテゴリのみ変更する場合、並びは移動先カテゴリの末尾に続けて付け足します。</p>
+  <div class="row" style="gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.75rem">
+    <a class="btn-ghost" href="/staff-app/__STORE_PATH__/menu" style="text-decoration:none;display:inline-flex;align-items:center">← メニュー管理</a>
+    <button type="button" class="btn-ghost" id="btnRefBulk">再読込</button>
+  </div>
+  <div class="row" style="gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.5rem">
+    <input id="bulkFilter" type="search" placeholder="商品名・カテゴリで絞り込み" style="margin:0;flex:1;min-width:200px;max-width:360px" />
+    <button type="button" class="btn-ghost" id="bulkSelAll">表示中をすべて選択</button>
+    <button type="button" class="btn-ghost" id="bulkSelNone">選択解除</button>
+    <span id="bulkSelCount" class="muted" style="font-size:0.85rem"></span>
+  </div>
+  <div class="card" style="padding:0;margin-bottom:1rem;overflow:auto;max-height:min(52vh,480px)">
+    <table style="width:100%;border-collapse:collapse;font-size:0.82rem">
+      <thead>
+        <tr style="background:#f7f8fa;border-bottom:1px solid var(--border);text-align:left">
+          <th style="padding:0.5rem 0.6rem;width:2rem"></th>
+          <th style="padding:0.5rem 0.6rem">商品名</th>
+          <th style="padding:0.5rem 0.6rem">カテゴリ</th>
+          <th style="padding:0.5rem 0.6rem;width:5.5rem">価格</th>
+          <th style="padding:0.5rem 0.6rem">調理場</th>
+          <th style="padding:0.5rem 0.6rem;width:5rem">店内表示</th>
+        </tr>
+      </thead>
+      <tbody id="bulkTableBody"></tbody>
+    </table>
+  </div>
+
+  <div class="card" style="padding:0.85rem">
+    <strong style="font-size:0.9rem">選択した商品へ反映する内容</strong>
+    <p class="muted" style="font-size:0.72rem;margin:0.35rem 0 0.65rem">各行の「変更」のチェックを入れた項目だけが API に送られます（未チェックの列は触りません）。</p>
+
+    <div class="bulk-field" style="margin-bottom:0.65rem">
+      <label class="row" style="align-items:center;gap:0.45rem;margin:0 0 0.35rem">
+        <input type="checkbox" id="applyCat" /> カテゴリ
+      </label>
+      <select id="bulkCat" style="margin:0;max-width:100%"></select>
+    </div>
+
+    <div class="bulk-field" style="margin-bottom:0.65rem">
+      <label class="row" style="align-items:center;gap:0.45rem;margin:0 0 0.35rem">
+        <input type="checkbox" id="applyStation" /> 調理場
+      </label>
+      <select id="bulkStation" style="margin:0;max-width:100%"></select>
+    </div>
+
+    <div class="bulk-field" style="margin-bottom:0.65rem">
+      <label class="row" style="align-items:center;gap:0.45rem;margin:0 0 0.35rem">
+        <input type="checkbox" id="applyName" /> 商品名（全選択商品を同一の名前にします）
+      </label>
+      <input id="bulkName" type="text" style="margin:0" placeholder="商品名" />
+    </div>
+
+    <div class="bulk-field row" style="margin-bottom:0.65rem;gap:0.75rem;flex-wrap:wrap;align-items:flex-end">
+      <div style="flex:1;min-width:140px">
+        <label class="row" style="align-items:center;gap:0.45rem;margin:0 0 0.35rem">
+          <input type="checkbox" id="applyPrice" /> 価格（円）
+        </label>
+        <input id="bulkPrice" type="number" min="0" step="1" style="margin:0" />
+      </div>
+      <div style="min-width:140px">
+        <label class="row" style="align-items:center;gap:0.45rem;margin:0 0 0.35rem">
+          <input type="checkbox" id="applyTax" /> 価格表示
+        </label>
+        <select id="bulkTaxMode" style="margin:0">
+          <option value="inclusive">税込</option>
+          <option value="exclusive">税抜（税込併記）</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="bulk-field" style="margin-bottom:0.65rem">
+      <label class="row" style="align-items:center;gap:0.45rem;margin:0 0 0.35rem">
+        <input type="checkbox" id="applyDesc" /> 説明文（ゲスト・詳細用）
+      </label>
+      <textarea id="bulkDesc" rows="2" style="margin:0;width:100%;resize:vertical" placeholder="空にする場合は空欄のままチェックして反映"></textarea>
+    </div>
+
+    <div class="bulk-field" style="margin-bottom:0.65rem">
+      <label class="row" style="align-items:center;gap:0.45rem;margin:0 0 0.35rem">
+        <input type="checkbox" id="applyImageUrl" /> 画像URL
+      </label>
+      <input id="bulkImageUrl" type="text" style="margin:0;width:100%" placeholder="/uploads/... または外部URL・クリアは空欄" />
+    </div>
+
+    <div class="bulk-field row" style="margin-bottom:0.65rem;gap:0.75rem;flex-wrap:wrap;align-items:flex-end">
+      <div style="min-width:120px">
+        <label class="row" style="align-items:center;gap:0.45rem;margin:0 0 0.35rem">
+          <input type="checkbox" id="applySort" /> 並び順（sortOrder・同一値が入ります）
+        </label>
+        <input id="bulkSortOrder" type="number" step="1" style="margin:0" placeholder="0" />
+      </div>
+      <div style="min-width:140px">
+        <label class="row" style="align-items:center;gap:0.45rem;margin:0 0 0.35rem">
+          <input type="checkbox" id="applyAvail" /> 店内での販売表示
+        </label>
+        <select id="bulkAvail" style="margin:0">
+          <option value="true">表示する</option>
+          <option value="false">表示しない</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="bulk-field row" style="margin-bottom:0.65rem;gap:0.75rem;flex-wrap:wrap;align-items:flex-end">
+      <div style="flex:1;min-width:120px">
+        <label class="row" style="align-items:center;gap:0.45rem;margin:0 0 0.35rem">
+          <input type="checkbox" id="applyStock" /> 在庫数
+        </label>
+        <input id="bulkStock" type="number" min="0" step="1" style="margin:0" placeholder="空欄＝在庫管理しない" />
+      </div>
+      <div style="flex:1;min-width:120px">
+        <label class="row" style="align-items:center;gap:0.45rem;margin:0 0 0.35rem">
+          <input type="checkbox" id="applyStockTh" /> 残りわずかしきい値
+        </label>
+        <input id="bulkStockTh" type="number" min="0" step="1" style="margin:0" placeholder="空欄＝なし" />
+      </div>
+    </div>
+
+    <div class="bulk-field row" style="margin-bottom:0.65rem;gap:0.75rem;flex-wrap:wrap;align-items:flex-end">
+      <div style="flex:1;min-width:120px">
+        <label class="row" style="align-items:center;gap:0.45rem;margin:0 0 0.35rem">
+          <input type="checkbox" id="applyCook" /> 調理タイマー1（秒）
+        </label>
+        <input id="bulkCook" type="number" min="1" max="86400" step="1" style="margin:0" placeholder="空欄＝なし" />
+      </div>
+      <div style="flex:1;min-width:120px">
+        <label class="row" style="align-items:center;gap:0.45rem;margin:0 0 0.35rem">
+          <input type="checkbox" id="applyCook2" /> 調理タイマー2（秒）
+        </label>
+        <input id="bulkCook2" type="number" min="1" max="86400" step="1" style="margin:0" placeholder="空欄＝なし" />
+      </div>
+    </div>
+
+    <div class="bulk-field" style="margin-bottom:0.65rem">
+      <label class="row" style="align-items:center;gap:0.45rem;margin:0 0 0.35rem">
+        <input type="checkbox" id="applyOpts" /> オプショングループ（チェックしたグループに差し替え・グループを選ばない場合は付与なし）
+      </label>
+      <div id="bulkOptGroups" style="max-height:140px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:0.35rem 0.5rem;background:#fff;font-size:0.78rem"></div>
+    </div>
+
+    <div style="margin-top:0.85rem">
+      <button type="button" class="btn-primary" id="btnBulkApply">一括反映</button>
+    </div>
+  </div>
+  <div id="log"></div>
+</main>

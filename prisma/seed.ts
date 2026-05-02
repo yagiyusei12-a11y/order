@@ -3,6 +3,18 @@ import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
+/** シード店舗の卓マスタ（publicCode を卓名として登録） */
+const SEED_TABLE_ROWS: { publicCode: string; sortOrder: number; active?: boolean }[] = [
+  ...Array.from({ length: 10 }, (_, i) => {
+    const code = `C${String(i + 1).padStart(2, "0")}`;
+    return { publicCode: code, sortOrder: i + 1, active: true };
+  }),
+  ...[21, 22, 23, 24].map((n, i) => ({ publicCode: `T${n}`, sortOrder: 11 + i, active: true })),
+  ...[31, 32, 33, 34, 35, 36, 37].map((n, i) => ({ publicCode: `T${n}`, sortOrder: 15 + i, active: true })),
+  ...[52, 53, 54].map((n, i) => ({ publicCode: `T${n}`, sortOrder: 22 + i, active: true })),
+  ...[61, 62, 63, 64].map((n, i) => ({ publicCode: `T${n}`, sortOrder: 25 + i, active: true })),
+];
+
 const DEFAULT_METHODS: { code: string; labelJa: string; sortOrder: number }[] = [
   { code: "cash", labelJa: "現金", sortOrder: 10 },
   { code: "credit_card", labelJa: "クレジット", sortOrder: 20 },
@@ -102,47 +114,24 @@ async function main() {
     },
   });
 
-  await prisma.table.upsert({
-    where: { publicCode: "seed-t1" },
-    create: {
-      storeId: store.id,
-      name: "1卓",
-      publicCode: "seed-t1",
-      sortOrder: 1,
-    },
-    update: { name: "1卓", active: true, storeId: store.id },
-  });
-  await prisma.table.upsert({
-    where: { publicCode: "seed-t2" },
-    create: {
-      storeId: store.id,
-      name: "2卓",
-      publicCode: "seed-t2",
-      sortOrder: 2,
-    },
-    update: { name: "2卓", active: true, storeId: store.id },
-  });
-  await prisma.table.upsert({
-    where: { publicCode: "seed-t3" },
-    create: {
-      storeId: store.id,
-      name: "3卓",
-      publicCode: "seed-t3",
-      sortOrder: 3,
-    },
-    update: { name: "3卓", active: true, storeId: store.id, sortOrder: 3 },
-  });
-  await prisma.table.upsert({
-    where: { publicCode: "seed-t4" },
-    create: {
-      storeId: store.id,
-      name: "4卓（メンテ中）",
-      publicCode: "seed-t4",
-      sortOrder: 4,
-      active: false,
-    },
-    update: { name: "4卓（メンテ中）", active: false, storeId: store.id, sortOrder: 4 },
-  });
+  for (const row of SEED_TABLE_ROWS) {
+    await prisma.table.upsert({
+      where: { publicCode: row.publicCode },
+      create: {
+        storeId: store.id,
+        name: row.publicCode,
+        publicCode: row.publicCode,
+        sortOrder: row.sortOrder,
+        active: row.active !== false,
+      },
+      update: {
+        name: row.publicCode,
+        active: row.active !== false,
+        storeId: store.id,
+        sortOrder: row.sortOrder,
+      },
+    });
+  }
 
   await prisma.kitchenStation.upsert({
     where: { id: "seed-kst-drink" },
@@ -534,7 +523,7 @@ async function main() {
     create: {
       id: "seed-session-open-course",
       storeId: store.id,
-      tableId: (await prisma.table.findUniqueOrThrow({ where: { publicCode: "seed-t1" } })).id,
+      tableId: (await prisma.table.findUniqueOrThrow({ where: { publicCode: "C01" } })).id,
       guestToken: "seed-guest-open-course",
       courseId: "seed-course-tabenomiho",
       guestCount: 3,
@@ -542,7 +531,7 @@ async function main() {
     },
     update: {
       storeId: store.id,
-      tableId: (await prisma.table.findUniqueOrThrow({ where: { publicCode: "seed-t1" } })).id,
+      tableId: (await prisma.table.findUniqueOrThrow({ where: { publicCode: "C01" } })).id,
       guestToken: "seed-guest-open-course",
       courseId: "seed-course-tabenomiho",
       guestCount: 3,
@@ -555,14 +544,14 @@ async function main() {
     create: {
       id: "seed-session-open-free",
       storeId: store.id,
-      tableId: (await prisma.table.findUniqueOrThrow({ where: { publicCode: "seed-t2" } })).id,
+      tableId: (await prisma.table.findUniqueOrThrow({ where: { publicCode: "T21" } })).id,
       guestToken: "seed-guest-open-free",
       guestCount: 2,
       status: "open",
     },
     update: {
       storeId: store.id,
-      tableId: (await prisma.table.findUniqueOrThrow({ where: { publicCode: "seed-t2" } })).id,
+      tableId: (await prisma.table.findUniqueOrThrow({ where: { publicCode: "T21" } })).id,
       guestToken: "seed-guest-open-free",
       courseId: null,
       guestCount: 2,
@@ -575,7 +564,7 @@ async function main() {
     create: {
       id: "seed-session-closed",
       storeId: store.id,
-      tableId: (await prisma.table.findUniqueOrThrow({ where: { publicCode: "seed-t3" } })).id,
+      tableId: (await prisma.table.findUniqueOrThrow({ where: { publicCode: "T31" } })).id,
       guestToken: "seed-guest-closed",
       courseId: "seed-course-nomihodai",
       guestCount: 4,
@@ -584,7 +573,7 @@ async function main() {
     },
     update: {
       storeId: store.id,
-      tableId: (await prisma.table.findUniqueOrThrow({ where: { publicCode: "seed-t3" } })).id,
+      tableId: (await prisma.table.findUniqueOrThrow({ where: { publicCode: "T31" } })).id,
       guestToken: "seed-guest-closed",
       courseId: "seed-course-nomihodai",
       guestCount: 4,
@@ -601,10 +590,10 @@ async function main() {
     { id: "seed-order-open-5", sessionId: "seed-session-open-course", status: "submitted", note: "団体追加3" },
     { id: "seed-order-open-6", sessionId: "seed-session-open-course", status: "submitted", note: "ラストオーダー前" },
     { id: "seed-order-karaage-demo", sessionId: "seed-session-open-course", status: "cooking", note: "唐揚げサンプル" },
-    { id: "seed-order-free-1", sessionId: "seed-session-open-free", status: "cooking", note: "2卓の注文" },
-    { id: "seed-order-free-2", sessionId: "seed-session-open-free", status: "submitted", note: "2卓の追加" },
-    { id: "seed-order-karaage-t2", sessionId: "seed-session-open-free", status: "cooking", note: "2卓・唐揚げサンプル" },
-    { id: "seed-order-free-3", sessionId: "seed-session-open-free", status: "submitted", note: "2卓の深夜追加" },
+    { id: "seed-order-free-1", sessionId: "seed-session-open-free", status: "cooking", note: "T21の注文" },
+    { id: "seed-order-free-2", sessionId: "seed-session-open-free", status: "submitted", note: "T21の追加" },
+    { id: "seed-order-karaage-t2", sessionId: "seed-session-open-free", status: "cooking", note: "T21・唐揚げサンプル" },
+    { id: "seed-order-free-3", sessionId: "seed-session-open-free", status: "submitted", note: "T21の深夜追加" },
     { id: "seed-order-closed-1", sessionId: "seed-session-closed", status: "served", note: "会計済み" },
     { id: "seed-order-closed-2", sessionId: "seed-session-closed", status: "served", note: "会計済み2" },
   ] as const;
@@ -687,7 +676,7 @@ async function main() {
         nameSnapshot: "若鶏の唐揚げ",
         unitPrice: 580,
         qty: 2,
-        note: "2卓・唐揚げサンプル",
+        note: "T21・唐揚げサンプル",
         status: "cooking",
       },
       {
@@ -714,14 +703,14 @@ async function main() {
       id: "seed-bill-open",
       storeId: store.id,
       sessionId: "seed-session-open-course",
-      label: "1卓 会計途中",
+      label: "C01 会計途中",
       totalAmount: 12000,
       status: "open",
     },
     update: {
       storeId: store.id,
       sessionId: "seed-session-open-course",
-      label: "1卓 会計途中",
+      label: "C01 会計途中",
       totalAmount: 12000,
       status: "open",
       settledAt: null,
@@ -733,7 +722,7 @@ async function main() {
       id: "seed-bill-settled",
       storeId: store.id,
       sessionId: "seed-session-closed",
-      label: "3卓 会計完了",
+      label: "T31 会計完了",
       totalAmount: 8800,
       status: "settled",
       settledAt: new Date(),
@@ -741,7 +730,7 @@ async function main() {
     update: {
       storeId: store.id,
       sessionId: "seed-session-closed",
-      label: "3卓 会計完了",
+      label: "T31 会計完了",
       totalAmount: 8800,
       status: "settled",
       settledAt: new Date(),

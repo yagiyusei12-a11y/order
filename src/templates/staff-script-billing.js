@@ -6,6 +6,34 @@ function escapeHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
+/** @param {unknown} extra */
+function orderLineExtraSubtext(extra) {
+  if (extra == null || typeof extra !== "object") return "";
+  const o = /** @type {Record<string, unknown>} */ (extra);
+  const lines = [];
+  if (o.kind === "set" && Array.isArray(o.steps)) {
+    for (const st of o.steps) {
+      if (!st || typeof st !== "object") continue;
+      const label = typeof /** @type {{ label?: string }} */ (st).label === "string" ? /** @type {{ label: string }} */ (st).label : "";
+      const picks = /** @type {{ picks?: { name?: string }[] }} */ (st).picks;
+      const names = Array.isArray(picks) ? picks.map((p) => (p && p.name ? String(p.name) : "")).filter(Boolean) : [];
+      if (label && names.length) lines.push(label + ": " + names.join("・"));
+      else if (names.length) lines.push(names.join("・"));
+    }
+  }
+  if (o.kind === "single" && Array.isArray(o.options)) {
+    for (const gr of o.options) {
+      if (!gr || typeof gr !== "object") continue;
+      const gn = typeof /** @type {{ groupName?: string }} */ (gr).groupName === "string" ? /** @type {{ groupName: string }} */ (gr).groupName : "";
+      const picks = /** @type {{ picks?: { name?: string }[] }} */ (gr).picks;
+      const names = Array.isArray(picks) ? picks.map((p) => (p && p.name ? String(p.name) : "")).filter(Boolean) : [];
+      if (gn && names.length) lines.push(gn + ": " + names.join("・"));
+      else if (names.length) lines.push(names.join("・"));
+    }
+  }
+  return lines.join("\n");
+}
+
 function billPath(billId) {
   return "/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(billId);
 }
@@ -14,9 +42,65 @@ let billsCache = [];
 let methodsCache = [];
 let selectedBillId = null;
 let regSuggestedTotal = null;
+let billingMode = "cashier";
+
+function todayJst() {
+  const now = new Date();
+  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  return jst.toISOString().slice(0, 10);
+}
+
+function reflectTab() {
+  const isCashier = billingMode === "cashier";
+  const isReceipt = billingMode === "receipt";
+  const tabs = [
+    ["tabCashier", isCashier],
+    ["tabReceiptBox", isReceipt],
+    ["tabSettlement", billingMode === "settlement"],
+  ];
+  for (const [id, on] of tabs) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle("is-on", on);
+  }
+}
+
+function applyMode(mode) {
+  billingMode = mode;
+  const regCard = document.getElementById("regCard");
+  const billFilter = document.getElementById("billFilter");
+  const fltFrom = document.getElementById("fltFrom");
+  const fltTo = document.getElementById("fltTo");
+  const fltMethod = document.getElementById("fltMethod");
+  const isCashier = mode === "cashier";
+  const isReceipt = mode === "receipt";
+  if (regCard) regCard.style.display = isCashier ? "" : "none";
+  if (billFilter) billFilter.value = isCashier ? "open" : "settled";
+  if (fltFrom) fltFrom.disabled = isCashier;
+  if (fltTo) fltTo.disabled = isCashier;
+  if (fltMethod) fltMethod.disabled = isCashier || isReceipt;
+  if (isReceipt) {
+    const d = todayJst();
+    if (fltFrom) fltFrom.value = d;
+    if (fltTo) fltTo.value = d;
+    if (fltMethod) fltMethod.value = "";
+  }
+  reflectTab();
+}
 
 async function loadMethods() {
   methodsCache = await api("/stores/" + encodeURIComponent(STORE) + "/payment-methods");
+  const sel = document.getElementById("fltMethod");
+  if (sel) {
+    const prev = sel.value;
+    sel.innerHTML = "<option value=\"\">すべて</option>";
+    for (const m of methodsCache) {
+      const opt = document.createElement("option");
+      opt.value = m.code;
+      opt.textContent = m.labelJa || m.code;
+      sel.appendChild(opt);
+    }
+    if ([...sel.options].some((o) => o.value === prev)) sel.value = prev;
+  }
 }
 
 async function loadSessionsForRegister() {
@@ -38,8 +122,16 @@ async function loadSessionsForRegister() {
 
 async function loadBills() {
   const f = document.getElementById("billFilter").value;
-  const q = f ? "status=" + encodeURIComponent(f) + "&" : "";
-  const res = await api("/stores/" + encodeURIComponent(STORE) + "/bills?" + q + "limit=80");
+  const from = document.getElementById("fltFrom").value;
+  const to = document.getElementById("fltTo").value;
+  const method = document.getElementById("fltMethod").value;
+  const qs = [];
+  if (f) qs.push("status=" + encodeURIComponent(f));
+  if (from) qs.push("from=" + encodeURIComponent(from));
+  if (to) qs.push("to=" + encodeURIComponent(to));
+  if (method) qs.push("methodCode=" + encodeURIComponent(method));
+  qs.push("limit=200");
+  const res = await api("/stores/" + encodeURIComponent(STORE) + "/bills?" + qs.join("&"));
   billsCache = res.bills || [];
   renderList();
   if (selectedBillId) await renderDetail(selectedBillId);
@@ -132,9 +224,11 @@ function buildReceiptDocument(b) {
   }
   for (const ol of b.orderLines || []) {
     if (ol.status === "cancelled") continue;
+    const sub = orderLineExtraSubtext(ol.lineExtra);
     lines.push(
       "<tr><td>" +
         escapeHtml(ol.nameSnapshot) +
+        (sub ? "<br><span style=\"font-size:11px;color:#666;white-space:pre-line\">" + escapeHtml(sub) + "</span>" : "") +
         " ×" +
         ol.qty +
         "</td><td style=\"text-align:right;white-space:nowrap\">" +
@@ -302,11 +396,18 @@ async function renderDetail(billId) {
               ? "<span class=\"bill-chip\" style=\"background:#e0f2fe;color:#0369a1;border-color:#bae6fd\">調理済・提供待ち</span>"
               : "<span class=\"bill-chip\" style=\"background:#fff7ed;color:#c2410c;border-color:#fed7aa\">調理・提供前</span>";
       const canCancel = b.status === "open" && l.status !== "cancelled";
+      const subL = orderLineExtraSubtext(l.lineExtra);
       orderLinesHtml +=
         "<div style=\"border:1px solid var(--border);border-radius:8px;padding:0.45rem 0.55rem;margin-top:0.4rem;background:#fff\">" +
         "<div class=\"row\" style=\"justify-content:space-between;align-items:flex-start;gap:0.5rem\"><div><strong style=\"font-size:0.84rem\">" +
         escapeHtml(l.nameSnapshot) +
-        "</strong><div class=\"muted\" style=\"font-size:0.74rem;margin-top:0.15rem\">×" +
+        "</strong>" +
+        (subL
+          ? "<div class=\"muted\" style=\"font-size:0.72rem;margin-top:0.2rem;white-space:pre-line;line-height:1.35\">" +
+            escapeHtml(subL) +
+            "</div>"
+          : "") +
+        "<div class=\"muted\" style=\"font-size:0.74rem;margin-top:0.15rem\">×" +
         l.qty +
         " · " +
         Number(l.lineTotal || 0).toLocaleString("ja-JP") +
@@ -354,6 +455,17 @@ async function renderDetail(billId) {
       "<button type=\"button\" class=\"btn-primary\" id=\"btnBillPatch\">保存</button>" +
       "<button type=\"button\" class=\"btn-ghost\" id=\"btnBillVoid\" style=\"color:var(--danger,#b91c1c)\">伝票を取消</button>" +
       "</div></div>";
+  } else if (b.status === "settled") {
+    editBlock =
+      "<div style=\"margin-top:0.85rem;padding-top:0.65rem;border-top:1px solid var(--border)\">" +
+      "<strong style=\"font-size:0.85rem\">レシートボックス修正</strong>" +
+      "<p class=\"muted\" style=\"font-size:0.72rem;margin:0.35rem 0 0.5rem\">精算済み伝票のメモのみ修正できます。</p>" +
+      "<label>伝票メモ（任意）</label>" +
+      "<input id=\"billEditLabel\" type=\"text\" maxlength=\"120\" value=\"" +
+      escapeHtml(b.label || "") +
+      "\" placeholder=\"店内メモ・テイクアウト名など\" />" +
+      "<button type=\"button\" class=\"btn-primary\" id=\"btnBillPatch\" style=\"margin-top:0.45rem\">保存</button>" +
+      "</div>";
   }
 
   let afterSettle = "";
@@ -578,14 +690,18 @@ async function renderDetail(billId) {
   if (btnPatch) {
     btnPatch.onclick = async () => {
       log("");
-      const totalAmount = Number(document.getElementById("billEditTotal").value);
+      const totalInput = document.getElementById("billEditTotal");
+      const totalAmount = totalInput ? Number(totalInput.value) : undefined;
       const labelRaw = document.getElementById("billEditLabel").value;
-      if (!Number.isInteger(totalAmount) || totalAmount < 0) return log("合計は0以上の整数で");
+      if (totalInput && (!Number.isInteger(totalAmount) || totalAmount < 0)) return log("合計は0以上の整数で");
       try {
+        const payload = totalInput
+          ? { totalAmount, label: labelRaw.trim() || null }
+          : { label: labelRaw.trim() || null };
         await api(billPath(billId), {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ totalAmount, label: labelRaw.trim() || null }),
+          body: JSON.stringify(payload),
         });
         log("保存しました");
         await loadBills();
@@ -681,6 +797,30 @@ document.getElementById("billFilter").onchange = () => {
   selectedBillId = null;
   loadBills().catch((e) => log(String(e.message || e)));
 };
+["fltFrom", "fltTo", "fltMethod"].forEach((id) => {
+  const el = document.getElementById(id);
+  if (el) {
+    el.onchange = () => {
+      selectedBillId = null;
+      loadBills().catch((e) => log(String(e.message || e)));
+    };
+  }
+});
+document.getElementById("tabCashier").onclick = () => {
+  location.assign("/staff-app/" + encodeURIComponent(STORE) + "/ops");
+};
+document.getElementById("tabReceiptBox").onclick = () => {
+  applyMode("receipt");
+  selectedBillId = null;
+  location.hash = "mode=receipt";
+  loadBills().catch((e) => log(String(e.message || e)));
+};
+document.getElementById("tabSettlement").onclick = () => {
+  applyMode("settlement");
+  selectedBillId = null;
+  location.hash = "mode=settlement";
+  loadBills().catch((e) => log(String(e.message || e)));
+};
 
 document.getElementById("regCard").addEventListener("click", (ev) => {
   const q = ev.target && ev.target.getAttribute && ev.target.getAttribute("data-reg-quick");
@@ -752,7 +892,23 @@ document.getElementById("btnCreateBill").onclick = async () => {
     selectedBillId = decodeURIComponent(h.slice(5));
     const sel = document.getElementById("billFilter");
     if (sel) sel.value = "";
+    return;
+  }
+  if (h.startsWith("filter=")) {
+    const f = decodeURIComponent(h.slice(7));
+    const sel = document.getElementById("billFilter");
+    if (sel && ["", "open", "settled", "void"].includes(f)) {
+      sel.value = f;
+    }
+    return;
+  }
+  if (h.startsWith("mode=")) {
+    const m = decodeURIComponent(h.slice(5));
+    if (m === "cashier" || m === "receipt" || m === "settlement") {
+      applyMode(m);
+    }
   }
 })();
 
+if (!location.hash || location.hash === "#") applyMode("cashier");
 Promise.all([loadMethods(), loadBills(), loadSessionsForRegister()]).catch((e) => log(String(e.message || e)));

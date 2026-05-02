@@ -57,4 +57,23 @@ export async function registerKitchenStations(app: FastifyInstance): Promise<voi
     if (Object.keys(data).length === 0) return reply.code(400).send({ error: "no fields to update" });
     return prisma.kitchenStation.update({ where: { id: row.id }, data });
   });
+
+  app.delete<{
+    Params: { storeId: string; stationId: string };
+  }>("/stores/:storeId/kitchen-stations/:stationId", async (req, reply) => {
+    const row = await prisma.kitchenStation.findFirst({
+      where: { id: req.params.stationId, storeId: req.params.storeId },
+    });
+    if (!row) return reply.code(404).send({ error: "station not found" });
+
+    await prisma.$transaction(async (tx) => {
+      await tx.menuItem.updateMany({
+        where: { kitchenStationId: row.id, category: { storeId: req.params.storeId } },
+        data: { kitchenStationId: null },
+      });
+      await tx.kitchenStation.delete({ where: { id: row.id } });
+    });
+
+    return { ok: true };
+  });
 }

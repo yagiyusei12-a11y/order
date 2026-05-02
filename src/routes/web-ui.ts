@@ -111,6 +111,17 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
     return staffHtml(reply, req.params.storeId, "メニュー", "staff-body-menu.html", "staff-script-menu.js");
   });
 
+  app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/menu/bulk", async (req, reply) => {
+    if (!(await assertStaffStore(req, reply))) return;
+    return staffHtml(
+      reply,
+      req.params.storeId,
+      "商品の一括編集",
+      "staff-body-menu-bulk.html",
+      "staff-script-menu-bulk.js"
+    );
+  });
+
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/courses", async (req, reply) => {
     if (!(await assertStaffStore(req, reply))) return;
     return staffHtml(reply, req.params.storeId, "コース", "staff-body-courses.html", "staff-script-courses.js");

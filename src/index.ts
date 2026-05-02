@@ -7,6 +7,7 @@ import { STAFF_JWT_COOKIE_NAME, jwtSecret } from "./config.js";
 import { registerAuth } from "./routes/auth.js";
 import { registerGuest } from "./routes/guest.js";
 import { registerProtectedStaffRoutes } from "./routes/protected-staff.js";
+import { isDbDiagEnabled, registerDbDiag } from "./routes/db-diag.js";
 import { registerPublicApi } from "./routes/public-api.js";
 import { registerWebUi } from "./routes/web-ui.js";
 
@@ -28,6 +29,9 @@ async function main(): Promise<void> {
   });
 
   app.get("/health", async () => ({ ok: true }));
+  if (isDbDiagEnabled()) {
+    await app.register(registerDbDiag);
+  }
 
   app.setErrorHandler((err, req, reply) => {
     app.log.error({ err, url: req.url, method: req.method });

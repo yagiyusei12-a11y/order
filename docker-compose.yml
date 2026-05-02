@@ -1,0 +1,18 @@
+# ローカルで Postgres を動かし Neon との速度差を試す用。
+# 起動: docker compose up -d
+# 止める: docker compose down（データを残す）
+# データごと消す: docker compose down -v
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: order
+      POSTGRES_PASSWORD: order_local_dev
+      POSTGRES_DB: order
+    volumes:
+      - order_pgdata:/var/lib/postgresql/data
+
+volumes:
+  order_pgdata:

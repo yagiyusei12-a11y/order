@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
+import { openOrReuseSessionForTable } from "../lib/open-table-session.js";
 
 /**
  * 認証不要の公開API（卓の固定QRから参照する想定）
@@ -14,6 +15,17 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
       where: { tableId: table.id, status: "open" },
       include: { course: true },
     });
+    const courses = await prisma.course.findMany({
+      where: { storeId: table.storeId, active: true },
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        kind: true,
+        durationMinutes: true,
+        pricePerPerson: true,
+      },
+    });
     return {
       storeId: table.storeId,
       table: { id: table.id, name: table.name, publicCode: table.publicCode },
@@ -25,6 +37,51 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
             course: session.course,
           }
         : null,
+      courses,
+    };
+  });
+
+  app.post<{
+    Params: { publicCode: string };
+    Body: { guestCount?: unknown; courseId?: unknown };
+  }>("/public/tables/:publicCode/session", async (req, reply) => {
+    const table = await prisma.table.findUnique({
+      where: { publicCode: req.params.publicCode },
+    });
+    if (!table || !table.active) return reply.code(404).send({ error: "table not found" });
+
+    const body = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+    const guestCount = body.guestCount;
+    if (typeof guestCount !== "number" || !Number.isInteger(guestCount)) {
+      return reply.code(400).send({ error: "guestCount must be an integer" });
+    }
+    const courseRaw = body.courseId;
+    const courseId =
+      courseRaw === null || courseRaw === undefined || courseRaw === ""
+        ? null
+        : typeof courseRaw === "string"
+          ? courseRaw
+          : null;
+
+    const result = await openOrReuseSessionForTable({
+      tableId: table.id,
+      storeId: table.storeId,
+      guestCount,
+      courseId,
+    });
+    if (!result.ok) {
+      if (result.code === "BAD_COUNT") return reply.code(400).send({ error: "guestCount must be integer 1-99" });
+      if (result.code === "BAD_COURSE") return reply.code(400).send({ error: "course not found" });
+      return reply.code(400).send({ error: result.error });
+    }
+    return {
+      guestToken: result.session.guestToken,
+      reused: result.reused,
+      session: {
+        id: result.session.id,
+        guestCount: result.session.guestCount,
+        course: result.session.course,
+      },
     };
   });
 }

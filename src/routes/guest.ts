@@ -129,6 +129,30 @@ function componentVisibleToGuest(
   return categoryGuestVisibleAt(cat, slice, nowMin);
 }
 
+/** コース終了の offset 分前を締め時としたときのゲスト向けラストオーダー情報 */
+function computeGuestLastOrderPayload(
+  openedAt: Date,
+  durationMinutes: number,
+  offsetMinutesBeforeEnd: number,
+  enforceBlock: boolean,
+): {
+  deadlineIso: string;
+  secondsRemaining: number;
+  orderingClosed: boolean;
+} | null {
+  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return null;
+  const offset = Math.min(Math.max(0, offsetMinutesBeforeEnd), durationMinutes);
+  const deadlineMs = openedAt.getTime() + (durationMinutes - offset) * 60 * 1000;
+  const now = Date.now();
+  const orderingClosed = enforceBlock && now > deadlineMs;
+  const secondsRemaining = Math.floor((deadlineMs - now) / 1000);
+  return {
+    deadlineIso: new Date(deadlineMs).toISOString(),
+    secondsRemaining,
+    orderingClosed,
+  };
+}
+
 function mapGuestSetMenuItem(
   it: {
     id: string;
@@ -186,7 +210,6 @@ function mapGuestSetMenuItem(
   defaultPriceTaxMode: "inclusive" | "exclusive",
   taxRatePercent: number,
   nowMin: number,
-  allowedIds: Set<string> | null,
 ): Record<string, unknown> | null {
   const stepsOut: Record<string, unknown>[] = [];
   for (const st of it.setSteps) {
@@ -201,7 +224,6 @@ function mapGuestSetMenuItem(
     for (const ch of st.choices) {
       const comp = ch.componentMenuItem;
       if (!comp.isAvailable) continue;
-      if (allowedIds && !allowedIds.has(comp.id)) continue;
       if (!comp.category.visibleToGuest) continue;
       if (!componentVisibleToGuest(comp.category, nowMin)) continue;
       const ex = ch.extraPrice;
@@ -253,6 +275,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         course: {
           include: { includedItems: { select: { menuItemId: true } } },
         },
+        coursePriceTier: true,
         customer: { select: { name: true, phone: true } },
       },
     });
@@ -260,19 +283,15 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       return reply.code(404).send({ error: "session not found or closed" });
     }
 
-    const restricted =
-      session.course &&
-      session.course.includedItems &&
-      session.course.includedItems.length > 0;
-    let allowedIds: Set<string> | null = null;
-    if (restricted && session.courseId) {
+    const includedSingleIds = new Set<string>();
+    if (session.courseId) {
       const linkRows = await prisma.courseMenuItem.findMany({
         where: { courseId: session.courseId },
         include: { menuItem: { select: { id: true, sellKind: true } } },
       });
-      allowedIds = new Set(
-        linkRows.filter((x) => x.menuItem && x.menuItem.sellKind !== "set").map((x) => x.menuItemId),
-      );
+      for (const row of linkRows) {
+        if (row.menuItem && row.menuItem.sellKind !== "set") includedSingleIds.add(row.menuItemId);
+      }
     }
 
     const storeRow = await prisma.store.findUnique({
@@ -282,6 +301,21 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     const st = mergeStoreSettings(storeRow?.settings);
     const nowMin = minutesSinceMidnightInTimeZone(new Date(), st.timezone);
 
+    const tierForLo = session.coursePriceTier;
+    const lastOrder =
+      session.courseId && session.course && tierForLo
+        ? (() => {
+            const p = computeGuestLastOrderPayload(
+              session.openedAt,
+              tierForLo.durationMinutes,
+              st.guestCourseLastOrderMinutesBeforeEnd,
+              st.guestEnforceLastOrder,
+            );
+            if (!p) return null;
+            return { ...p, minutesBeforeEnd: st.guestCourseLastOrderMinutesBeforeEnd };
+          })()
+        : null;
+
     const categories = await prisma.menuCategory.findMany({
       where: { storeId: session.storeId, visibleToGuest: true },
       orderBy: { sortOrder: "asc" },
@@ -290,7 +324,6 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         items: {
           where: {
             isAvailable: true,
-            ...(allowedIds ? { id: { in: [...allowedIds] } } : {}),
           },
           orderBy: { sortOrder: "asc" },
           include: {
@@ -340,14 +373,22 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       return categoryGuestVisibleAt(c, slice, nowMin);
     });
 
-    const courseOut = session.course
+    const tier = session.coursePriceTier;
+    const courseOut =
+      session.course && tier
       ? {
           id: session.course.id,
           name: session.course.name,
           kind: session.course.kind,
-          durationMinutes: session.course.durationMinutes,
-          pricePerPerson: session.course.pricePerPerson,
-          restrictedToMenuItems: Boolean(restricted),
+          durationMinutes: tier.durationMinutes,
+          pricePerPerson: tier.pricePerPerson,
+          childPricePerPerson: tier.childPricePerPerson,
+          priceTierId: tier.id,
+          restrictedToMenuItems: false,
+          pricingHint:
+            includedSingleIds.size > 0
+              ? "コース対象の単品はコース料に含まれます。対象外の単品・セットは追加料金です。"
+              : "コース対象の単品が未設定のため、メニュー表記上はすべて追加料金扱いです。",
         }
       : null;
 
@@ -355,8 +396,10 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       session: {
         id: session.id,
         guestCount: session.guestCount,
+        childCount: session.childCount,
         course: courseOut,
       },
+      lastOrder,
       customerProfile: session.customer
         ? { name: session.customer.name, phone: session.customer.phone }
         : null,
@@ -364,6 +407,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         showMenuPrices: st.guestShowMenuPrices,
         menuPriceTaxMode: st.menuPriceTaxMode,
         taxRatePercent: st.taxRatePercent,
+        guestCourseIncludedChargeOptionExtras: st.guestCourseIncludedChargeOptionExtras,
       },
       categories: categoriesFiltered.map((c) => ({
         id: c.id,
@@ -373,18 +417,25 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         items: c.items
           .map((it) => {
             if (it.sellKind === "set") {
-              return mapGuestSetMenuItem(
+              const row = mapGuestSetMenuItem(
                 it as never,
                 st.menuPriceTaxMode,
                 st.taxRatePercent,
                 nowMin,
-                allowedIds,
               );
+              if (!row) return null;
+              return { ...row, courseTier: "addon" as const };
             }
             const single = mapGuestMenuItem(it, st.menuPriceTaxMode, st.taxRatePercent, nowMin);
             const opt = mapGuestOptionGroups(it.optionLinks ?? []);
             if (opt.length) (single as Record<string, unknown>).optionGroups = opt;
-            return single;
+            const courseTier =
+              session.courseId == null
+                ? null
+                : includedSingleIds.has(it.id)
+                  ? ("included" as const)
+                  : ("addon" as const);
+            return { ...single, courseTier };
           })
           .filter(Boolean),
       })),
@@ -495,6 +546,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
   }>("/guest/:token/orders", async (req, reply) => {
     const session = await prisma.diningSession.findUnique({
       where: { guestToken: req.params.token },
+      include: { course: true, coursePriceTier: true },
     });
     if (!session || session.status !== "open") {
       return reply.code(404).send({ error: "session not found or closed" });
@@ -512,6 +564,19 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     const st = mergeStoreSettings(storeRow?.settings);
     const nowMin = minutesSinceMidnightInTimeZone(new Date(), st.timezone);
     const storeTaxRatePercent = st.taxRatePercent;
+
+    if (session.courseId && session.course && session.coursePriceTier) {
+      const lo = computeGuestLastOrderPayload(
+        session.openedAt,
+        session.coursePriceTier.durationMinutes,
+        st.guestCourseLastOrderMinutesBeforeEnd,
+        st.guestEnforceLastOrder,
+      );
+      if (lo?.orderingClosed) {
+        return reply.code(403).send({ error: "ラストオーダーの時間を過ぎています" });
+      }
+    }
+
     try {
       const order = await prisma.$transaction(async (tx) => {
         const sess = await tx.diningSession.findUnique({
@@ -522,17 +587,15 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
             },
           },
         });
-        const restricted =
-          sess?.course && sess.course.includedItems && sess.course.includedItems.length > 0;
-        let allowedIds: Set<string> | null = null;
-        if (restricted && sess?.courseId) {
+        const includedSingles = new Set<string>();
+        if (sess?.courseId) {
           const linkRows = await tx.courseMenuItem.findMany({
             where: { courseId: sess.courseId },
-            include: { menuItem: { select: { id: true, sellKind: true } } },
+            include: { menuItem: { select: { sellKind: true } } },
           });
-          allowedIds = new Set(
-            linkRows.filter((x) => x.menuItem && x.menuItem.sellKind !== "set").map((x) => x.menuItemId),
-          );
+          for (const row of linkRows) {
+            if (row.menuItem && row.menuItem.sellKind !== "set") includedSingles.add(row.menuItemId);
+          }
         }
 
         const needStock = new Map<string, number>();
@@ -563,10 +626,6 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
           }
           const sel = Array.isArray(l.setSelections) ? l.setSelections : [];
           const hasSetPayload = sel.length > 0;
-
-          if (allowedIds && !allowedIds.has(l.menuItemId)) {
-            throw new Error("BAD_ITEM");
-          }
 
           if (hasSetPayload) {
             const setItem = await tx.menuItem.findFirst({
@@ -626,7 +685,6 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                 if (!ch) throw new Error("BAD_SET");
                 const comp = ch.componentMenuItem;
                 if (!comp.isAvailable) throw new Error("BAD_ITEM");
-                if (allowedIds && !allowedIds.has(comp.id)) throw new Error("BAD_ITEM");
                 if (!comp.category.visibleToGuest) throw new Error("BAD_ITEM");
                 const gw = comp.category.guestVisibleTimeWindow;
                 const slice = gw ? { startMin: gw.startMin, endMin: gw.endMin } : null;
@@ -744,8 +802,15 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
               timeWindow: d.timeWindow,
             }));
             const { price: discountedBase } = applyGuestItemTimeDiscounts(baseTaxIncluded, discRows0, nowMin);
-            const optSum = sumInclusiveOptionPriceDelta(linkedGroups, vOpt.byGroup);
-            const unitPriceWithOpts = discountedBase + optSum;
+            const inCourseIncluded =
+              Boolean(sess?.courseId && includedSingles.has(plainItem.id));
+            const effectiveBase = inCourseIncluded ? 0 : discountedBase;
+            const chargeOptExtras = st.guestCourseIncludedChargeOptionExtras !== false;
+            const optSum =
+              inCourseIncluded && !chargeOptExtras
+                ? 0
+                : sumInclusiveOptionPriceDelta(linkedGroups, vOpt.byGroup);
+            const unitPriceWithOpts = effectiveBase + optSum;
             const lineExtraOpts = buildSingleOptionsLineExtra(linkedGroups, vOpt.byGroup);
             const optArr = lineExtraOpts.options;
             const hasOptDetail = Array.isArray(optArr) && optArr.length > 0;
@@ -762,7 +827,10 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                     nameSnapshot: buildSingleNameSnapshotWithOptions(plainItem.name, lineExtraOpts),
                     lineExtra: lineExtraOpts,
                   }
-                : {}),
+                : {
+                    unitPrice: effectiveBase,
+                    nameSnapshot: plainItem.name,
+                  }),
             });
           }
         }

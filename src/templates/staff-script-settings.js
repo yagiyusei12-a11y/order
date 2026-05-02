@@ -162,6 +162,12 @@ async function loadAll() {
   document.getElementById("stKitSec").value = String(s.kitchenAutoRefreshSec ?? 10);
   document.getElementById("stGuestPrice").checked = s.guestShowMenuPrices !== false;
   document.getElementById("stTz").value = s.timezone || "Asia/Tokyo";
+  const loMin = document.getElementById("stLoMin");
+  const loEnf = document.getElementById("stLoEnforce");
+  if (loMin) loMin.value = String(s.guestCourseLastOrderMinutesBeforeEnd ?? 30);
+  if (loEnf) loEnf.checked = s.guestEnforceLastOrder !== false;
+  const incOpt = document.getElementById("stIncOptCharge");
+  if (incOpt) incOpt.checked = s.guestCourseIncludedChargeOptionExtras !== false;
 
   const sl = document.getElementById("staffList");
   const users = staff.staffUsers || [];
@@ -360,6 +366,49 @@ document.getElementById("btnSaveStore").onclick = async () => {
       body: JSON.stringify({ name }),
     });
     log("店舗名を保存しました");
+    await loadAll();
+  } catch (e) {
+    log(String(e.message || e));
+  }
+};
+
+document.getElementById("btnSaveLastOrder").onclick = async () => {
+  log("");
+  const n = Number(document.getElementById("stLoMin").value);
+  if (!Number.isInteger(n) || n < 0 || n > 1440) return log("ラストオーダー前倒しは0〜1440の整数で");
+  const guestEnforceLastOrder = document.getElementById("stLoEnforce").checked;
+  try {
+    await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        settings: {
+          guestCourseLastOrderMinutesBeforeEnd: n,
+          guestEnforceLastOrder,
+        },
+      }),
+    });
+    log("ラストオーダー設定を保存しました");
+    await loadAll();
+  } catch (e) {
+    log(String(e.message || e));
+  }
+};
+
+document.getElementById("btnSaveCourseGuest").onclick = async () => {
+  log("");
+  const guestCourseIncludedChargeOptionExtras = document.getElementById("stIncOptCharge").checked;
+  try {
+    await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        settings: {
+          guestCourseIncludedChargeOptionExtras,
+        },
+      }),
+    });
+    log("オプション設定を保存しました");
     await loadAll();
   } catch (e) {
     log(String(e.message || e));

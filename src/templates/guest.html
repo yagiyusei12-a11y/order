@@ -214,6 +214,32 @@
     .badge-sold { font-size: 0.6rem; font-weight: 700; color: #fecaca; background: rgba(127, 29, 29, 0.6); padding: 0.1rem 0.35rem; border-radius: 4px; }
     .badge-set { font-size: 0.6rem; font-weight: 700; color: #bfdbfe; background: rgba(30, 58, 95, 0.7); padding: 0.1rem 0.35rem; border-radius: 4px; }
     .badge-alcohol { font-size: 0.6rem; font-weight: 700; color: #ffedd5; background: rgba(124, 45, 18, 0.65); padding: 0.1rem 0.35rem; border-radius: 4px; }
+    .badge-course-in {
+      font-size: 0.58rem; font-weight: 800; color: #ecfdf5; background: rgba(5, 150, 105, 0.85);
+      padding: 0.12rem 0.4rem; border-radius: 4px;
+    }
+    .badge-course-add {
+      font-size: 0.58rem; font-weight: 800; color: #fff7ed; background: rgba(234, 88, 12, 0.85);
+      padding: 0.12rem 0.4rem; border-radius: 4px;
+    }
+    .course-included-price { color: #34d399; font-weight: 800; }
+    #lastOrderBanner {
+      display: none;
+      position: sticky;
+      top: calc(52px + env(safe-area-inset-top));
+      z-index: 45;
+      margin: 0;
+      padding: 0.45rem 0.75rem;
+      background: linear-gradient(180deg, rgba(30, 58, 95, 0.95), rgba(15, 23, 42, 0.98));
+      border-bottom: 1px solid #334155;
+      font-size: 0.78rem;
+      text-align: center;
+      line-height: 1.35;
+    }
+    #lastOrderBanner.lo-ended {
+      background: linear-gradient(180deg, rgba(127, 29, 29, 0.9), rgba(69, 10, 10, 0.95));
+    }
+    #lastOrderBanner strong { font-variant-numeric: tabular-nums; color: #fde68a; }
 
     /* ========== フッターカート ========== */
     footer.go-cart {
@@ -558,6 +584,8 @@
     </div>
   </header>
 
+  <div id="lastOrderBanner" role="status" aria-live="polite"></div>
+
   <div id="err"></div>
   <div id="safetyNote" class="safety-note" style="display:none"></div>
 
@@ -642,20 +670,57 @@
     let taxRatePercent = 10;
     let alcoholRestricted = false;
     const alcoholById = new Map();
+    let lastOrderTimer = null;
+    let lastOrderDeadlineTs = 0;
+    let lastOrderClosedFlag = false;
+    /** コース対象単品でオプション差額を請求する（店舗設定・既定はオン） */
+    let guestCourseIncludedChargeOptionExtras = true;
 
     function fmtMoney(n) {
       if (!guestShowMenuPrices) return "—";
       return "¥" + n.toLocaleString("ja-JP");
     }
     function fmtItemPrice(item) {
-      if (!guestShowMenuPrices) return "—";
+      if (item.courseTier === "included") {
+        if (!guestShowMenuPrices) return "<span class=\"course-included-price\">コース内</span>";
+        const optLine = guestCourseIncludedChargeOptionExtras
+          ? "<span class=\"incl\">オプション差額は追加になる場合があります</span>"
+          : "<span class=\"incl\">オプション差額もコース内（0円）</span>";
+        return (
+          "<span class=\"course-included-price\">コース料に含む（本体追加0円）</span>" +
+          optLine +
+          "<span class=\"incl\">参考・メニュー税込 ¥" +
+          Number(item.price || 0).toLocaleString("ja-JP") +
+          "</span>"
+        );
+      }
+      if (!guestShowMenuPrices) {
+        return item.courseTier === "addon" ? "追加料金" : "—";
+      }
       const mode = item.priceTaxMode === "exclusive" ? "exclusive" : menuPriceTaxMode;
+      let core = "";
       if (mode === "exclusive") {
         const base = Number(item.basePrice || item.price || 0);
         const incl = Number(item.taxIncludedPrice || item.price || 0);
-        return "¥" + base.toLocaleString("ja-JP") + "<span class=\"incl\">税込 ¥" + incl.toLocaleString("ja-JP") + "</span>";
+        core =
+          "¥" +
+          base.toLocaleString("ja-JP") +
+          "<span class=\"incl\">税込 ¥" +
+          incl.toLocaleString("ja-JP") +
+          "</span>";
+      } else {
+        core = "¥" + Number(item.price || 0).toLocaleString("ja-JP");
       }
-      return "¥" + Number(item.price || 0).toLocaleString("ja-JP");
+      if (item.courseTier === "addon") {
+        core += " <span class=\"badge-course-add\" style=\"font-size:0.55rem;vertical-align:middle\">追加料金</span>";
+      }
+      return core;
+    }
+
+    /** コース内単品は追加料金0（税込ベース）。それ以外はゲスト表示価格 */
+    function singleGuestChargeBase(item) {
+      if (item.courseTier === "included") return 0;
+      return Number(item.price || 0);
     }
 
     function isAlcoholItem(item, categoryName) {
@@ -674,7 +739,7 @@
       const sum = lines.reduce((s, x) => s + x.unitPrice * x.qty, 0);
       document.getElementById("cartCount").textContent = "カート " + count + "点";
       document.getElementById("cartSum").textContent = cartSumLabel(sum);
-      document.getElementById("submit").disabled = count === 0;
+      document.getElementById("submit").disabled = count === 0 || lastOrderClosedFlag;
     }
 
     function toast(t) {
@@ -732,7 +797,11 @@
           if (oi) add += Number(oi.priceDelta || 0);
         }
       }
-      return Number(item.price || 0) + add;
+      const base = singleGuestChargeBase(item);
+      if (item.courseTier === "included" && !guestCourseIncludedChargeOptionExtras) {
+        return 0;
+      }
+      return base + add;
     }
 
     function escapeHtml(s) {
@@ -843,26 +912,66 @@
       btn.textContent = "追加 " + fmtMoney(isFinite(n) ? n : 0);
     }
 
+    /** 同一商品IDのカート内合計（在庫残数の計算用） */
+    function totalCartQtyForMenuItem(menuItemId) {
+      let sum = 0;
+      for (const key of Object.keys(cart)) {
+        const line = cart[key];
+        if (line && line.menuItemId === menuItemId) sum += Number(line.qty || 0);
+      }
+      return sum;
+    }
+
     function wireQty(panel, item, getUnitPrice) {
       const minus = panel.querySelector("[data-qty-min]");
       const plus = panel.querySelector("[data-qty-plus]");
       const numEl = panel.querySelector("[data-qty]");
       let qty = 1;
-      const maxSingle = item.stockQty != null ? item.stockQty : 99;
+      const raw = item.stockQty;
+      const stockNum = typeof raw === "number" && Number.isFinite(raw) ? raw : null;
+
+      function maxQtyThisAdd() {
+        if (stockNum == null) return 99;
+        const remain = stockNum - totalCartQtyForMenuItem(item.id);
+        if (remain <= 0) return 0;
+        return Math.min(99, remain);
+      }
 
       function refresh() {
+        const cap = maxQtyThisAdd();
+        if (cap > 0) qty = Math.min(qty, cap);
         numEl.textContent = String(qty);
         minus.disabled = qty <= 1;
-        plus.disabled = qty >= maxSingle;
+        const atMax = cap <= 0 || qty >= cap;
+        plus.disabled = false;
+        plus.style.opacity = atMax ? "0.4" : "";
+        plus.title =
+          cap <= 0 && stockNum != null
+            ? "在庫がありません"
+            : atMax && stockNum != null
+              ? "在庫の上限です"
+              : atMax
+                ? "これ以上は選べません"
+                : "";
         syncDetailAddPrice(panel, getUnitPrice(), qty);
       }
 
       minus.onclick = () => {
-        qty = Math.max(1, qty - 1);
+        if (qty <= 1) return;
+        qty -= 1;
         refresh();
       };
       plus.onclick = () => {
-        qty = Math.min(maxSingle, qty + 1);
+        const cap = maxQtyThisAdd();
+        if (cap <= 0) {
+          toast("在庫がありません");
+          return;
+        }
+        if (qty >= cap) {
+          toast(stockNum != null ? "在庫の上限です" : "これ以上は選べません");
+          return;
+        }
+        qty += 1;
         refresh();
       };
       refresh();
@@ -878,6 +987,14 @@
       if (sold && item.sellKind !== "set") {
         toast("売り切れです");
         return;
+      }
+      if (item.sellKind !== "set") {
+        const sq = item.stockQty;
+        const sn = typeof sq === "number" && Number.isFinite(sq) ? sq : null;
+        if (sn != null && sn <= totalCartQtyForMenuItem(item.id)) {
+          toast("これ以上は在庫がありません");
+          return;
+        }
       }
 
       const host = document.getElementById("detailSheet");
@@ -1008,9 +1125,9 @@
         "</div>" +
         "<div class=\"detail-footer\">" +
         "<div class=\"qty-bar\">" +
-        "<button type=\"button\" data-qty-min\">−</button>" +
+        "<button type=\"button\" data-qty-min>−</button>" +
         "<span class=\"qty-num\" data-qty>1</span>" +
-        "<button type=\"button\" data-qty-plus\">+</button>" +
+        "<button type=\"button\" data-qty-plus>+</button>" +
         "</div>" +
         "<button type=\"button\" class=\"detail-add\" data-add data-add-price>追加</button>" +
         "</div></div>";
@@ -1152,7 +1269,7 @@
           toast(item.name + " をカートに追加");
         };
       } else {
-        const getQty = wireQty(panel, item, () => Number(item.price || 0));
+        const getQty = wireQty(panel, item, () => singleGuestChargeBase(item));
         panel.querySelector("[data-add]").onclick = () => {
           const q = getQty();
           if (item.stockQty != null && q > item.stockQty) {
@@ -1160,15 +1277,16 @@
             return;
           }
           const cartKey = item.id;
+          const base = singleGuestChargeBase(item);
           const cur = cart[cartKey] || {
             cartKey,
             menuItemId: item.id,
             name: item.name,
-            unitPrice: item.price,
+            unitPrice: base,
             qty: 0,
             sellKind: "single",
           };
-          cur.unitPrice = item.price;
+          cur.unitPrice = base;
           cur.name = item.name;
           if (item.stockQty != null && (cur.qty || 0) + q > item.stockQty) {
             toast("これ以上は在庫がありません");
@@ -1190,6 +1308,48 @@
 
     function addLine(item) {
       openProductDetail(item);
+    }
+
+    function stopLastOrderTicker() {
+      if (lastOrderTimer) clearInterval(lastOrderTimer);
+      lastOrderTimer = null;
+    }
+
+    function startLastOrderTicker(lo) {
+      stopLastOrderTicker();
+      const el = document.getElementById("lastOrderBanner");
+      if (!lo || !lo.deadlineIso) {
+        el.style.display = "none";
+        lastOrderClosedFlag = false;
+        return;
+      }
+      lastOrderDeadlineTs = Date.parse(lo.deadlineIso);
+      el.style.display = "block";
+      function tick() {
+        const left = Math.floor((lastOrderDeadlineTs - Date.now()) / 1000);
+        lastOrderClosedFlag = Boolean(lo.orderingClosed) || left <= 0;
+        renderCart();
+        if (lastOrderClosedFlag) {
+          el.innerHTML =
+            "<span class=\"lo-inner\">ラストオーダーは終了しました（追加のご注文はスタッフへお声がけください）</span>";
+          el.classList.add("lo-ended");
+          stopLastOrderTicker();
+          return;
+        }
+        el.classList.remove("lo-ended");
+        const m = Math.floor(left / 60);
+        const s = left % 60;
+        el.innerHTML =
+          "<span class=\"lo-inner\">ラストオーダーまで あと <strong>" +
+          String(m) +
+          ":" +
+          String(s).padStart(2, "0") +
+          "</strong>（残り " +
+          left +
+          " 秒）</span>";
+      }
+      tick();
+      lastOrderTimer = setInterval(tick, 1000);
     }
 
     function clampCartToStock(categories) {
@@ -1228,16 +1388,26 @@
       guestShowMenuPrices = !(data.store && data.store.showMenuPrices === false);
       menuPriceTaxMode = (data.store && data.store.menuPriceTaxMode) || "inclusive";
       taxRatePercent = Number((data.store && data.store.taxRatePercent) || 10);
+      guestCourseIncludedChargeOptionExtras =
+        !data.store || data.store.guestCourseIncludedChargeOptionExtras !== false;
       const s = data.session;
+      const cc = Number(s.childCount || 0);
       let hdr = "人数 " + (s.guestCount || "—");
+      if (cc > 0) hdr += "（大人" + (Number(s.guestCount) - cc) + "・子" + cc + "）";
       if (s.course) {
         hdr += " · " + s.course.name + "（制限時間 " + s.course.durationMinutes + "分）";
-        if (s.course.restrictedToMenuItems) {
-          hdr += " · コース対象メニューのみ";
+        if (guestShowMenuPrices && s.course.childPricePerPerson != null) {
+          hdr +=
+            " · 大人 " +
+            Number(s.course.pricePerPerson).toLocaleString("ja-JP") +
+            "円 / 子 " +
+            Number(s.course.childPricePerPerson).toLocaleString("ja-JP") +
+            "円";
         }
       }
       if (alcoholRestricted) hdr += " · 酒類は制限中";
       document.getElementById("hdr").textContent = hdr;
+      startLastOrderTicker(data.lastOrder);
       const sn = document.getElementById("safetyNote");
       if (sn) {
         sn.style.display = alcoholRestricted ? "block" : "none";
@@ -1346,6 +1516,17 @@
             b.textContent = "酒類";
             badgeStack.appendChild(b);
           }
+          if (it.courseTier === "included") {
+            const b = document.createElement("span");
+            b.className = "badge-course-in";
+            b.textContent = "コース内";
+            badgeStack.appendChild(b);
+          } else if (it.courseTier === "addon") {
+            const b = document.createElement("span");
+            b.className = "badge-course-add";
+            b.textContent = "追加料金";
+            badgeStack.appendChild(b);
+          }
           media.appendChild(badgeStack);
 
           const body = document.createElement("div");
@@ -1412,6 +1593,10 @@
     }
 
     document.getElementById("submit").onclick = async () => {
+      if (lastOrderClosedFlag) {
+        toast("ラストオーダーの時間を過ぎています");
+        return;
+      }
       const lines = Object.values(cart)
         .filter((x) => x.qty > 0)
         .map((x) => {

@@ -139,7 +139,7 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
 
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/billing", async (req, reply) => {
     if (!(await assertStaffStore(req, reply))) return;
-    return staffHtml(reply, req.params.storeId, "会計・レジ", "staff-body-billing.html", "staff-script-billing.js");
+    return reply.redirect(`/staff-app/${encodeURIComponent(req.params.storeId)}/ops`, 302);
   });
 
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/settings", async (req, reply) => {

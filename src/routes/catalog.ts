@@ -267,11 +267,88 @@ function parseSetDefinitionBody(raw: unknown): { ok: false; error: string } | { 
   return { ok: true, steps };
 }
 
-function mapCourseWithItems<T extends { includedItems: { menuItemId: string }[] }>(
-  c: T
-): Omit<T, "includedItems"> & { includedMenuItemIds: string[] } {
-  const { includedItems, ...rest } = c;
-  return { ...rest, includedMenuItemIds: includedItems.map((x) => x.menuItemId) };
+type CourseTierRow = {
+  id: string;
+  durationMinutes: number;
+  pricePerPerson: number;
+  childPricePerPerson: number | null;
+  sortOrder: number;
+};
+
+function mapCourseWithItems<
+  T extends {
+    includedItems: { menuItemId: string }[];
+    priceTiers?: CourseTierRow[];
+  },
+>(
+  c: T,
+): Omit<T, "includedItems" | "priceTiers"> & {
+  includedMenuItemIds: string[];
+  priceTiers: CourseTierRow[];
+} {
+  const { includedItems, priceTiers, ...rest } = c;
+  return {
+    ...rest,
+    includedMenuItemIds: includedItems.map((x) => x.menuItemId),
+    priceTiers: (priceTiers || []).map((t) => ({
+      id: t.id,
+      durationMinutes: t.durationMinutes,
+      pricePerPerson: t.pricePerPerson,
+      childPricePerPerson: t.childPricePerPerson,
+      sortOrder: t.sortOrder,
+    })),
+  };
+}
+
+type PriceTierInput = {
+  durationMinutes: number;
+  pricePerPerson: number;
+  childPricePerPerson?: number | null;
+  sortOrder?: number;
+};
+
+function normalizePriceTiersInput(
+  raw: unknown,
+): { ok: true; tiers: PriceTierInput[] } | { ok: false; error: string } {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return { ok: false, error: "priceTiers must be a non-empty array" };
+  }
+  const tiers: PriceTierInput[] = [];
+  const seenDm = new Set<number>();
+  for (let i = 0; i < raw.length; i++) {
+    const row = raw[i];
+    if (!row || typeof row !== "object" || Array.isArray(row)) {
+      return { ok: false, error: `priceTiers[${i}] must be an object` };
+    }
+    const o = row as Record<string, unknown>;
+    const dm = o.durationMinutes;
+    const pp = o.pricePerPerson;
+    if (typeof dm !== "number" || !Number.isInteger(dm) || dm <= 0) {
+      return { ok: false, error: `priceTiers[${i}].durationMinutes must be positive integer` };
+    }
+    if (typeof pp !== "number" || !Number.isInteger(pp) || pp < 0) {
+      return { ok: false, error: `priceTiers[${i}].pricePerPerson must be non-negative integer` };
+    }
+    if (seenDm.has(dm)) return { ok: false, error: `duplicate durationMinutes ${dm}` };
+    seenDm.add(dm);
+    let childPricePerPerson: number | null | undefined;
+    if ("childPricePerPerson" in o) {
+      const cp = o.childPricePerPerson;
+      if (cp === null) childPricePerPerson = null;
+      else if (typeof cp === "number" && Number.isInteger(cp) && cp >= 0) childPricePerPerson = cp;
+      else return { ok: false, error: `priceTiers[${i}].childPricePerPerson invalid` };
+    }
+    const sortOrder =
+      typeof o.sortOrder === "number" && Number.isInteger(o.sortOrder) ? o.sortOrder : i;
+    tiers.push({
+      durationMinutes: dm,
+      pricePerPerson: pp,
+      ...(childPricePerPerson !== undefined ? { childPricePerPerson } : {}),
+      sortOrder,
+    });
+  }
+  tiers.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.durationMinutes - b.durationMinutes);
+  return { ok: true, tiers };
 }
 
 const MENU_IMAGE_UPLOAD_DIR = join(process.cwd(), "uploads", "menu-items");
@@ -1449,7 +1526,10 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     const courses = await prisma.course.findMany({
       where: includeInactive ? { storeId: store.id } : { storeId: store.id, active: true },
       orderBy: { name: "asc" },
-      include: { includedItems: { select: { menuItemId: true } } },
+      include: {
+        includedItems: { select: { menuItemId: true } },
+        priceTiers: { orderBy: [{ sortOrder: "asc" }, { durationMinutes: "asc" }] },
+      },
     });
     return {
       storeId: store.id,
@@ -1462,8 +1542,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     Body: {
       name: string;
       kind: string;
-      durationMinutes: number;
-      pricePerPerson: number;
+      priceTiers: unknown;
       menuItemIds?: unknown;
     };
   }>("/stores/:storeId/courses", async (req, reply) => {
@@ -1471,15 +1550,9 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     if (!store) return reply.code(404).send({ error: "store not found" });
     const name = req.body?.name?.trim();
     const kind = req.body?.kind?.trim();
-    const dm = req.body?.durationMinutes;
-    const pp = req.body?.pricePerPerson;
     if (!name || !kind) return reply.code(400).send({ error: "name and kind required" });
-    if (typeof dm !== "number" || dm <= 0 || !Number.isInteger(dm)) {
-      return reply.code(400).send({ error: "durationMinutes must be positive integer" });
-    }
-    if (typeof pp !== "number" || pp < 0 || !Number.isInteger(pp)) {
-      return reply.code(400).send({ error: "pricePerPerson must be non-negative integer" });
-    }
+    const pt = normalizePriceTiersInput(req.body?.priceTiers);
+    if (!pt.ok) return reply.code(400).send({ error: pt.error });
 
     let linkIds: string[] = [];
     if (req.body && typeof req.body === "object" && "menuItemIds" in req.body) {
@@ -1494,9 +1567,17 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
           storeId: store.id,
           name,
           kind,
-          durationMinutes: dm,
-          pricePerPerson: pp,
         },
+      });
+      await tx.coursePriceTier.createMany({
+        data: pt.tiers.map((t, idx) => ({
+          courseId: c.id,
+          durationMinutes: t.durationMinutes,
+          pricePerPerson: t.pricePerPerson,
+          childPricePerPerson:
+            t.childPricePerPerson !== undefined ? t.childPricePerPerson : null,
+          sortOrder: t.sortOrder ?? idx,
+        })),
       });
       if (linkIds.length > 0) {
         await tx.courseMenuItem.createMany({
@@ -1505,7 +1586,10 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       }
       return tx.course.findUniqueOrThrow({
         where: { id: c.id },
-        include: { includedItems: { select: { menuItemId: true } } },
+        include: {
+          includedItems: { select: { menuItemId: true } },
+          priceTiers: { orderBy: [{ sortOrder: "asc" }, { durationMinutes: "asc" }] },
+        },
       });
     });
     return mapCourseWithItems(course);
@@ -1516,10 +1600,9 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     Body: {
       name?: string;
       kind?: string;
-      durationMinutes?: number;
-      pricePerPerson?: number;
       active?: boolean;
       menuItemIds?: unknown;
+      priceTiers?: unknown;
     };
   }>("/stores/:storeId/courses/:courseId", async (req, reply) => {
     const course = await prisma.course.findFirst({
@@ -1529,8 +1612,6 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     const data: {
       name?: string;
       kind?: string;
-      durationMinutes?: number;
-      pricePerPerson?: number;
       active?: boolean;
     } = {};
     if (typeof req.body?.name === "string") {
@@ -1543,36 +1624,67 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       if (!k) return reply.code(400).send({ error: "kind cannot be empty" });
       data.kind = k;
     }
-    if (typeof req.body?.durationMinutes === "number") {
-      if (!Number.isInteger(req.body.durationMinutes) || req.body.durationMinutes <= 0) {
-        return reply.code(400).send({ error: "durationMinutes must be positive integer" });
-      }
-      data.durationMinutes = req.body.durationMinutes;
-    }
-    if (typeof req.body?.pricePerPerson === "number") {
-      if (!Number.isInteger(req.body.pricePerPerson) || req.body.pricePerPerson < 0) {
-        return reply.code(400).send({ error: "pricePerPerson must be non-negative integer" });
-      }
-      data.pricePerPerson = req.body.pricePerPerson;
-    }
     if (typeof req.body?.active === "boolean") {
       data.active = req.body.active;
     }
 
     const bodyObj = req.body && typeof req.body === "object" ? req.body : null;
     const syncMenu = bodyObj !== null && "menuItemIds" in bodyObj;
+    const syncTiers = bodyObj !== null && "priceTiers" in bodyObj;
     let linkIds: string[] | null = null;
     if (syncMenu) {
-      const v = await validateCourseMenuItemIds(req.params.storeId, bodyObj.menuItemIds);
+      const v = await validateCourseMenuItemIds(req.params.storeId, bodyObj!.menuItemIds);
       if (!v.ok) return reply.code(400).send({ error: v.error });
       linkIds = v.ids;
     }
+    let replaceTiers: PriceTierInput[] | null = null;
+    if (syncTiers) {
+      const tr = normalizePriceTiersInput(bodyObj!.priceTiers);
+      if (!tr.ok) return reply.code(400).send({ error: tr.error });
+      replaceTiers = tr.tiers;
+    }
 
-    if (Object.keys(data).length === 0 && !syncMenu) {
+    if (Object.keys(data).length === 0 && !syncMenu && !syncTiers) {
       return reply.code(400).send({ error: "no fields to update" });
     }
 
     await prisma.$transaction(async (tx) => {
+      if (syncTiers && replaceTiers) {
+        const sessionsWithDm = await tx.diningSession.findMany({
+          where: { courseId: course.id, coursePriceTierId: { not: null } },
+          select: { id: true, coursePriceTier: { select: { durationMinutes: true } } },
+        });
+        const durationBySession = new Map<string, number>();
+        for (const s of sessionsWithDm) {
+          const dm = s.coursePriceTier?.durationMinutes;
+          if (dm != null) durationBySession.set(s.id, dm);
+        }
+        await tx.coursePriceTier.deleteMany({ where: { courseId: course.id } });
+        await tx.coursePriceTier.createMany({
+          data: replaceTiers.map((t, idx) => ({
+            courseId: course.id,
+            durationMinutes: t.durationMinutes,
+            pricePerPerson: t.pricePerPerson,
+            childPricePerPerson:
+              t.childPricePerPerson !== undefined ? t.childPricePerPerson : null,
+            sortOrder: t.sortOrder ?? idx,
+          })),
+        });
+        const newTiers = await tx.coursePriceTier.findMany({
+          where: { courseId: course.id },
+          select: { id: true, durationMinutes: true },
+        });
+        const tierIdByDuration = new Map(newTiers.map((x) => [x.durationMinutes, x.id]));
+        for (const [sid, dm] of durationBySession) {
+          const nid = tierIdByDuration.get(dm);
+          if (nid) {
+            await tx.diningSession.update({
+              where: { id: sid },
+              data: { coursePriceTierId: nid },
+            });
+          }
+        }
+      }
       if (Object.keys(data).length > 0) {
         await tx.course.update({ where: { id: course.id }, data });
       }
@@ -1588,8 +1700,23 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
 
     const updated = await prisma.course.findUniqueOrThrow({
       where: { id: course.id },
-      include: { includedItems: { select: { menuItemId: true } } },
+      include: {
+        includedItems: { select: { menuItemId: true } },
+        priceTiers: { orderBy: [{ sortOrder: "asc" }, { durationMinutes: "asc" }] },
+      },
     });
     return mapCourseWithItems(updated);
+  });
+
+  app.delete<{
+    Params: { storeId: string; courseId: string };
+  }>("/stores/:storeId/courses/:courseId", async (req, reply) => {
+    const course = await prisma.course.findFirst({
+      where: { id: req.params.courseId, storeId: req.params.storeId },
+      select: { id: true },
+    });
+    if (!course) return reply.code(404).send({ error: "course not found" });
+    await prisma.course.delete({ where: { id: course.id } });
+    return { ok: true, deletedCourseId: course.id };
   });
 }

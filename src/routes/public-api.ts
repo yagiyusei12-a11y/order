@@ -13,19 +13,27 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
     if (!table || !table.active) return reply.code(404).send({ error: "table not found" });
     const session = await prisma.diningSession.findFirst({
       where: { tableId: table.id, status: "open" },
-      include: { course: true },
+      include: { course: true, coursePriceTier: true },
     });
     const courses = await prisma.course.findMany({
       where: { storeId: table.storeId, active: true },
       orderBy: { name: "asc" },
-      select: {
-        id: true,
-        name: true,
-        kind: true,
-        durationMinutes: true,
-        pricePerPerson: true,
+      include: {
+        priceTiers: { orderBy: [{ sortOrder: "asc" }, { durationMinutes: "asc" }] },
       },
     });
+    const coursesOut = courses.map((c) => ({
+      id: c.id,
+      name: c.name,
+      kind: c.kind,
+      priceTiers: c.priceTiers.map((t) => ({
+        id: t.id,
+        durationMinutes: t.durationMinutes,
+        pricePerPerson: t.pricePerPerson,
+        childPricePerPerson: t.childPricePerPerson,
+        sortOrder: t.sortOrder,
+      })),
+    }));
     return {
       storeId: table.storeId,
       table: { id: table.id, name: table.name, publicCode: table.publicCode },
@@ -34,16 +42,18 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
             id: session.id,
             guestToken: session.guestToken,
             guestCount: session.guestCount,
+            childCount: session.childCount,
             course: session.course,
+            coursePriceTier: session.coursePriceTier,
           }
         : null,
-      courses,
+      courses: coursesOut,
     };
   });
 
   app.post<{
     Params: { publicCode: string };
-    Body: { guestCount?: unknown; courseId?: unknown };
+    Body: { guestCount?: unknown; courseId?: unknown; childCount?: unknown; coursePriceTierId?: unknown };
   }>("/public/tables/:publicCode/session", async (req, reply) => {
     const table = await prisma.table.findUnique({
       where: { publicCode: req.params.publicCode },
@@ -63,15 +73,41 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
           ? courseRaw
           : null;
 
+    const childCountBody = (body as { childCount?: unknown }).childCount;
+    const childCount =
+      childCountBody === undefined || childCountBody === null
+        ? 0
+        : typeof childCountBody === "number" && Number.isInteger(childCountBody) && childCountBody >= 0
+          ? childCountBody
+          : -1;
+    if (childCount < 0) {
+      return reply.code(400).send({ error: "childCount must be non-negative integer" });
+    }
+    if (childCount > guestCount) {
+      return reply.code(400).send({ error: "childCount must not exceed guestCount" });
+    }
+
+    const tierRaw = (body as { coursePriceTierId?: unknown }).coursePriceTierId;
+    let coursePriceTierId: string | undefined;
+    if (tierRaw !== undefined && tierRaw !== null && tierRaw !== "") {
+      if (typeof tierRaw !== "string") {
+        return reply.code(400).send({ error: "coursePriceTierId must be a string" });
+      }
+      coursePriceTierId = tierRaw;
+    }
+
     const result = await openOrReuseSessionForTable({
       tableId: table.id,
       storeId: table.storeId,
       guestCount,
+      childCount,
       courseId,
+      coursePriceTierId,
     });
     if (!result.ok) {
       if (result.code === "BAD_COUNT") return reply.code(400).send({ error: "guestCount must be integer 1-99" });
       if (result.code === "BAD_COURSE") return reply.code(400).send({ error: "course not found" });
+      if (result.code === "BAD_TIER") return reply.code(400).send({ error: result.error });
       return reply.code(400).send({ error: result.error });
     }
     return {
@@ -80,7 +116,9 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
       session: {
         id: result.session.id,
         guestCount: result.session.guestCount,
+        childCount: result.session.childCount,
         course: result.session.course,
+        coursePriceTier: result.session.coursePriceTier,
       },
     };
   });

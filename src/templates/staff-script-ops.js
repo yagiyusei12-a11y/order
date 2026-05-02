@@ -134,15 +134,22 @@ function renderGrid() {
       (s ? (s.status === "bashing_waiting" ? " bashing" : " busy") : "") +
       (selectedTableId === t.id ? " selected" : "");
     const meta = s
-      ? "<span class=\"meta " +
-        (s.status === "bashing_waiting" ? "warn" : "") +
-        "\">" +
-        statusText(s) +
-        " · " +
-        Number(s.guestCount || 0) +
-        "人</span><span class=\"meta money\">" +
-        yen(currentTotal(s)) +
-        "</span>"
+      ? (() => {
+          const gc = Number(s.guestCount || 0);
+          const cc = Number(s.childCount || 0);
+          const ppl = cc > 0 ? gc + "人·子" + cc : gc + "人";
+          return (
+            "<span class=\"meta " +
+            (s.status === "bashing_waiting" ? "warn" : "") +
+            "\">" +
+            statusText(s) +
+            " · " +
+            ppl +
+            "</span><span class=\"meta money\">" +
+            yen(currentTotal(s)) +
+            "</span>"
+          );
+        })()
       : "<span class=\"meta\">空席</span>";
     const btn = document.createElement("button");
     btn.type = "button";
@@ -172,8 +179,12 @@ function renderMiniSessions() {
       " · " +
       statusText(s) +
       " · " +
-      Number(s.guestCount || 0) +
-      "人 · " +
+      (function () {
+        const gc = Number(s.guestCount || 0);
+        const cc = Number(s.childCount || 0);
+        return cc > 0 ? gc + "人（子" + cc + "）" : gc + "人";
+      })() +
+      " · " +
       yen(currentTotal(s));
     box.appendChild(d);
   }
@@ -427,8 +438,16 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
     "<div class=\"ops-register-head\"><span class=\"badge\">" +
     escapeHtml(table.name) +
     "</span><span class=\"ops-register-guest\"> " +
-    Number(session.guestCount || 0) +
-    "人</span></div>" +
+    (function () {
+      const gc = Number(session.guestCount || 0);
+      const cc = Number(session.childCount || 0);
+      if (cc > 0) return gc + "人（大人" + (gc - cc) + "・子" + cc + "）";
+      return gc + "人";
+    })() +
+    "</span></div>" +
+    "<div class=\"row\" style=\"margin:0.35rem 0 0.5rem;justify-content:flex-end;flex-wrap:wrap;gap:0.35rem\">" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"btnEndSession\" style=\"color:#b91c1c;border-color:#fecaca;font-weight:700\">セッションを切る</button>" +
+    "</div>" +
     "<h3 class=\"ops-sec-title\">注文内容</h3>" +
     "<div class=\"card ops-order-card\"><table class=\"ops-order-table\">" +
     (orderRows || "<tr><td class=\"muted\">注文なし</td><td></td></tr>") +
@@ -471,6 +490,34 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
   };
   if (recvEl) recvEl.oninput = updateCash;
   methodEl.dispatchEvent(new Event("change"));
+
+  const btnEndSession = document.getElementById("btnEndSession");
+  if (btnEndSession) {
+    btnEndSession.onclick = async () => {
+      const rem = Number(detail.remainder || 0);
+      let msg = "この卓のセッションを終了し、空席に戻しますか？";
+      if (rem > 0) {
+        msg =
+          "未払いが " +
+          yen(rem) +
+          " 残っています。セッションを切るとゲストからの注文はできなくなります。終了して空席に戻しますか？";
+      }
+      if (!confirm(msg)) return;
+      try {
+        await api(
+          "/stores/" + encodeURIComponent(STORE) + "/sessions/" + encodeURIComponent(session.id) + "/close",
+          { method: "PATCH" }
+        );
+        log("セッションを終了しました");
+        await loadAll();
+        selectedTableId = table.id;
+        renderGrid();
+        await renderDetail();
+      } catch (e) {
+        log(String(e.message || e));
+      }
+    };
+  }
 
   document.getElementById("btnConfirmPayment").onclick = async () => {
     const isCash = methodEl.value === "cash";
@@ -570,21 +617,58 @@ async function renderDetail() {
   const session = sessionForTable(table.id);
   if (!session) {
     let opts = "<option value=\"\">なし</option>";
-    for (const c of coursesCache) opts += "<option value=\"" + escapeHtml(c.id) + "\">" + escapeHtml(c.name) + " · " + c.pricePerPerson + "円/人</option>";
+    for (const c of coursesCache) {
+      const tiers = c.priceTiers || [];
+      for (const t of tiers) {
+        const val = escapeHtml(c.id + "|" + t.id);
+        const childBit = t.childPricePerPerson != null ? " · 子" + t.childPricePerPerson + "円" : "";
+        opts +=
+          "<option value=\"" +
+          val +
+          "\">" +
+          escapeHtml(c.name) +
+          " · " +
+          t.durationMinutes +
+          "分 · 大人" +
+          t.pricePerPerson +
+          "円/人" +
+          childBit +
+          "</option>";
+      }
+    }
     panel.innerHTML =
       "<p><span class=\"badge\">" +
       escapeHtml(table.name) +
-      "</span> · <span class=\"muted\">空席</span></p><label>来店人数</label><input id=\"gc\" type=\"number\" min=\"1\" value=\"2\" />" +
+      "</span> · <span class=\"muted\">空席</span></p><label>来店人数（延べ）</label><input id=\"gc\" type=\"number\" min=\"1\" value=\"2\" />" +
+      "<label>うち子供の人数（任意・子供料金があるコース用）</label><input id=\"childGc\" type=\"number\" min=\"0\" value=\"0\" />" +
       "<label>コース</label><select id=\"crs\">" +
       opts +
       "</select><button type=\"button\" class=\"btn-primary\" id=\"btnStart\">セッション開始</button>";
     document.getElementById("btnStart").onclick = async () => {
       const guestCount = Number(document.getElementById("gc").value);
-      const courseId = document.getElementById("crs").value || null;
+      const childCount = Number(document.getElementById("childGc").value);
+      const crsRaw = document.getElementById("crs").value || "";
+      let courseId = null;
+      let coursePriceTierId = undefined;
+      if (crsRaw) {
+        const parts = crsRaw.split("|");
+        courseId = parts[0] || null;
+        if (parts[1]) coursePriceTierId = parts[1];
+      }
+      if (!Number.isInteger(guestCount) || guestCount < 1) {
+        log("来店人数は1以上の整数で");
+        return;
+      }
+      if (!Number.isInteger(childCount) || childCount < 0 || childCount > guestCount) {
+        log("子供の人数は0〜来店人数の整数で");
+        return;
+      }
+      const payload = { tableId: table.id, guestCount, childCount, courseId };
+      if (coursePriceTierId) payload.coursePriceTierId = coursePriceTierId;
       await api("/stores/" + encodeURIComponent(STORE) + "/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tableId: table.id, guestCount, courseId }),
+        body: JSON.stringify(payload),
       });
       await loadAll();
       renderGrid();
@@ -644,16 +728,4 @@ async function loadAll() {
 }
 
 document.getElementById("btnRefFloor").onclick = () => loadAll().catch((e) => log(String(e.message || e)));
-const receiptBtn = document.getElementById("btnOpenReceiptBox");
-if (receiptBtn) {
-  receiptBtn.onclick = () => {
-    location.assign("/staff-app/" + encodeURIComponent(STORE) + "/billing#mode=receipt");
-  };
-}
-const billingBtn = document.getElementById("btnOpenBilling");
-if (billingBtn) {
-  billingBtn.onclick = () => {
-    location.assign("/staff-app/" + encodeURIComponent(STORE) + "/billing#mode=settlement");
-  };
-}
 loadAll().catch((e) => log(String(e.message || e)));

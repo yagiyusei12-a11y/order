@@ -165,20 +165,34 @@ model Table {
   @@index([storeId])
 }
 
-/// 食べ放題・飲み放題・食べ飲み放題コース
+/// 食べ放題・飲み放題・食べ飲み放題コース（料金・制限時間は CoursePriceTier で複数パターン可能）
 model Course {
-  id               String            @id @default(cuid())
-  storeId          String
-  name             String
-  kind             String
-  durationMinutes  Int
-  pricePerPerson   Int
-  active           Boolean           @default(true)
-  store            Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  sessions         DiningSession[]
-  includedItems    CourseMenuItem[]
+  id          String            @id @default(cuid())
+  storeId     String
+  name        String
+  kind        String
+  active      Boolean           @default(true)
+  store       Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  sessions    DiningSession[]
+  includedItems CourseMenuItem[]
+  priceTiers  CoursePriceTier[]
 
   @@index([storeId])
+}
+
+/// コースの時間（分）・単価パターン（例: 60分・90分で金額を分ける）
+model CoursePriceTier {
+  id                  String          @id @default(cuid())
+  courseId            String
+  durationMinutes     Int
+  pricePerPerson      Int
+  childPricePerPerson Int?
+  sortOrder           Int             @default(0)
+  course              Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  sessions            DiningSession[]
+
+  @@unique([courseId, durationMinutes])
+  @@index([courseId])
 }
 
 /// コースで注文可能なメニュー商品（未設定のコースは店舗メニュー全品）
@@ -330,7 +344,11 @@ model DiningSession {
   tableId    String
   guestToken String       @unique
   courseId   String?
+  /// 選択したコース料金・制限時間パターン
+  coursePriceTierId String?
   guestCount Int
+  /// 子供の人数（0〜guestCount）。残りは大人としてコース単価を適用。
+  childCount Int          @default(0)
   status     String       @default("open")
   openedAt   DateTime     @default(now())
   closedAt   DateTime?
@@ -338,8 +356,9 @@ model DiningSession {
   customer   Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
   store      Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
   table      Table        @relation(fields: [tableId], references: [id], onDelete: Cascade)
-  course     Course?      @relation(fields: [courseId], references: [id], onDelete: SetNull)
-  orders     SalesOrder[]
+  course          Course?          @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  coursePriceTier CoursePriceTier? @relation(fields: [coursePriceTierId], references: [id], onDelete: SetNull)
+  orders          SalesOrder[]
   bill       Bill?
 
   @@index([storeId])

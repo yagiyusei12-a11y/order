@@ -1,23 +1,23 @@
 <main>
   <h2 class="page-title">コース</h2>
-  <p class="muted" style="margin-top:-0.35rem;margin-bottom:1rem">食べ飲み放題などは<strong>制限時間（分）</strong>と、各コースの「対象商品を選択」から<strong>ダイアログで単品を選択</strong>してください（メニューのセット構成と同様にカテゴリで絞り込めます）。対象を1件以上にするとゲスト画面はその商品のみ注文できます。未選択のコースは店舗メニュー全品が注文可能です。</p>
+  <p class="muted" style="margin-top:-0.35rem;margin-bottom:1rem">各コースに<strong>複数の時間・料金パターン</strong>（例: 60分・90分）を登録できます。卓開始時にパターンを選びます。対象商品は「対象商品を選択」からダイアログで指定してください。</p>
   <div class="row" style="margin-bottom:0.75rem">
     <button type="button" class="btn-ghost" id="btnRefCourses">再読込</button>
   </div>
   <div id="coursesList" class="card" style="padding:0;overflow:hidden"></div>
   <div class="card" style="margin-top:1rem">
     <strong style="font-size:0.88rem">コースを追加</strong>
-    <p class="muted" style="font-size:0.72rem;margin:0.35rem 0 0.5rem">食べ放題・飲み放題などのプラン名と料金。保存後、一覧で対象メニューを指定できます。</p>
+    <p class="muted" style="font-size:0.72rem;margin:0.35rem 0 0.5rem">プラン名と、時間（分）ごとの大人・子供単価を1行以上追加してください。</p>
     <label for="cName" style="margin-top:0.65rem">コース名（ゲスト・伝票に表示）</label>
     <input id="cName" type="text" placeholder="例: スタンダード食べ放題" />
     <label for="cKind">種別コード（内部・一覧用・任意）</label>
     <p class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.35rem">識別用の短い文字列。画面には補助的に表示されます。</p>
     <input id="cKind" type="text" placeholder="例: eat_drink_all, tabehodai" />
-    <label for="cMin">制限時間（分）</label>
-    <input id="cMin" type="number" min="1" step="1" value="90" />
-    <label for="cPrice">一人あたり料金（円・税込想定）</label>
-    <input id="cPrice" type="number" min="0" step="1" value="2980" />
-    <button type="button" class="btn-primary" id="btnAddCourse">追加</button>
+    <strong style="font-size:0.82rem;display:block;margin-top:0.75rem">料金・制限時間パターン</strong>
+    <p class="muted" style="font-size:0.72rem;margin:0.25rem 0 0.5rem">分単位が異なると別料金として扱われます。子供は空欄で大人と同額です。</p>
+    <div id="addTierRows" style="display:flex;flex-direction:column;gap:0.5rem"></div>
+    <button type="button" class="btn-ghost" id="btnAddTierRowNew" style="margin-top:0.35rem;width:auto">＋ 時間パターンを追加</button>
+    <button type="button" class="btn-primary" id="btnAddCourse" style="margin-top:0.65rem">追加</button>
   </div>
   <div id="log"></div>
 </main>

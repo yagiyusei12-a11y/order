@@ -100,7 +100,9 @@ async function loadSessions() {
     o.value = s.id;
     const tname = s.table && s.table.name ? s.table.name : "?";
     const crs = s.course && s.course.name ? s.course.name : "フリー";
-    o.textContent = tname + " · " + s.guestCount + "名 · " + crs;
+    const cc = Number(s.childCount || 0);
+    const peopleLabel = cc > 0 ? s.guestCount + "名（子" + cc + "）" : s.guestCount + "名";
+    o.textContent = tname + " · " + peopleLabel + " · " + crs;
     sel.appendChild(o);
   }
 }

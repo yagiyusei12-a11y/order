@@ -1,10 +1,17 @@
 import type { FastifyInstance } from "fastify";
+import { computeCourseSessionTotal, formatCourseLineLabel } from "../lib/course-pricing.js";
 import { prisma } from "../db.js";
 
 type SessionForPreview = {
   guestCount: number;
+  childCount: number;
   courseId: string | null;
-  course: { pricePerPerson: number } | null;
+  course: { name: string } | null;
+  coursePriceTier: {
+    durationMinutes: number;
+    pricePerPerson: number;
+    childPricePerPerson: number | null;
+  } | null;
   orders: { lines: { unitPrice: number; qty: number; status: string }[] }[];
 };
 
@@ -14,7 +21,9 @@ function sessionPreviewFromSession(session: SessionForPreview): {
   suggestedTotal: number;
 } {
   const courseTotal =
-    session.course && session.courseId ? session.course.pricePerPerson * session.guestCount : 0;
+    session.courseId && session.coursePriceTier
+      ? computeCourseSessionTotal(session.coursePriceTier, session.courseId, session.guestCount, session.childCount)
+      : 0;
   let ordersTotal = 0;
   for (const o of session.orders) {
     for (const l of o.lines) {
@@ -53,6 +62,7 @@ async function buildBillDetailPayload(
     id: string;
     status: string;
     guestCount: number;
+    childCount: number;
     tableName: string | null;
     courseName: string | null;
   } | null;
@@ -76,6 +86,7 @@ async function buildBillDetailPayload(
         include: {
           table: true,
           course: true,
+          coursePriceTier: true,
           orders: { include: { lines: true } },
         },
       },
@@ -114,6 +125,7 @@ async function buildBillDetailPayload(
     id: string;
     status: string;
     guestCount: number;
+    childCount: number;
     tableName: string | null;
     courseName: string | null;
   } | null = null;
@@ -134,13 +146,21 @@ async function buildBillDetailPayload(
       id: bill.session.id,
       status: bill.session.status,
       guestCount: bill.session.guestCount,
+      childCount: bill.session.childCount,
       tableName: bill.session.table?.name ?? null,
       courseName: bill.session.course?.name ?? null,
     };
-    if (bill.session.course && bill.session.courseId) {
+    if (bill.session.course && bill.session.courseId && bill.session.coursePriceTier) {
+      const c = bill.session.course;
+      const t = bill.session.coursePriceTier;
       courseLine = {
-        name: `${bill.session.course.name}（${bill.session.guestCount}名×${bill.session.course.pricePerPerson}円）`,
-        lineTotal: bill.session.course.pricePerPerson * bill.session.guestCount,
+        name: formatCourseLineLabel(c.name, t, bill.session.guestCount, bill.session.childCount),
+        lineTotal: computeCourseSessionTotal(
+          t,
+          bill.session.courseId,
+          bill.session.guestCount,
+          bill.session.childCount,
+        ),
       };
     }
     for (const o of bill.session.orders) {

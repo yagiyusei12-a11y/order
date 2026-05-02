@@ -8,7 +8,7 @@
  *   npx tsx prisma/import-menu-csv.ts "C:\\path\\to\\file.csv" [storeId] [--merge]
  *
  *   --merge を付けない場合: 対象店舗の既存メニューカテゴリ・商品をすべて削除してから取り込む
- *   （コースに紐づく CourseMenuItem も商品削除で消えます。デモ用 seed-store-1 向け想定）
+ *   （コースに紐づく CourseMenuItem も商品削除で消えます。）
  *
  *   --merge: 既存データは消さず、安定IDで upsert（同名同カテゴリは上書き）
  */
@@ -64,12 +64,16 @@ async function main(): Promise<void> {
   const argv = process.argv.slice(2).filter((a) => a !== "--merge");
   const merge = process.argv.includes("--merge");
   const csvPath = argv[0];
-  const storeId = argv[1] || process.env.IMPORT_STORE_ID || "seed-store-1";
+  const storeId = argv[1] || process.env.IMPORT_STORE_ID;
   if (!csvPath) {
     console.error(
-      "Usage: npx tsx prisma/import-menu-csv.ts <path-to.csv> [storeId] [--merge]\n" +
-        "  default storeId: seed-store-1 or IMPORT_STORE_ID env"
+      "Usage: npx tsx prisma/import-menu-csv.ts <path-to.csv> <storeId> [--merge]\n" +
+        "  or set IMPORT_STORE_ID (2nd arg takes precedence)"
     );
+    process.exit(1);
+  }
+  if (!storeId) {
+    console.error("storeId is required: pass as 2nd argument or set IMPORT_STORE_ID");
     process.exit(1);
   }
 

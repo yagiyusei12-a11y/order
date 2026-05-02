@@ -11,6 +11,100 @@ function log(t) {
   if (el) el.textContent = t || "";
 }
 
+function formatTiersSummary(tiers) {
+  if (!tiers || !tiers.length) return "料金プラン未設定";
+  return tiers
+    .map(function (t) {
+      const child = t.childPricePerPerson != null ? " · 子" + t.childPricePerPerson : "";
+      return t.durationMinutes + "分·大人" + t.pricePerPerson + "円" + child;
+    })
+    .join(" / ");
+}
+
+function buildTierRowEl(t) {
+  const wrap = document.createElement("div");
+  wrap.setAttribute("data-tier-row", "1");
+  wrap.style.cssText =
+    "display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:0.35rem;align-items:end;border:1px solid var(--border);border-radius:8px;padding:0.5rem;background:#fafafa";
+  const dm = document.createElement("input");
+  dm.type = "number";
+  dm.min = "1";
+  dm.step = "1";
+  dm.setAttribute("data-dm", "1");
+  dm.value = t && t.durationMinutes != null ? String(t.durationMinutes) : "90";
+  dm.title = "制限時間（分）";
+  const pp = document.createElement("input");
+  pp.type = "number";
+  pp.min = "0";
+  pp.setAttribute("data-pp", "1");
+  pp.value = t && t.pricePerPerson != null ? String(t.pricePerPerson) : "2980";
+  pp.title = "大人（円/人）";
+  const cp = document.createElement("input");
+  cp.type = "number";
+  cp.min = "0";
+  cp.setAttribute("data-cp", "1");
+  cp.placeholder = "子（任意）";
+  cp.value =
+    t && t.childPricePerPerson != null && t.childPricePerPerson !== ""
+      ? String(t.childPricePerPerson)
+      : "";
+  const rm = document.createElement("button");
+  rm.type = "button";
+  rm.className = "btn-ghost";
+  rm.textContent = "削除";
+  rm.style.marginBottom = "0.05rem";
+  rm.onclick = function () {
+    const box = wrap.parentNode;
+    if (box && box.querySelectorAll("[data-tier-row]").length > 1) box.removeChild(wrap);
+  };
+  const l1 = document.createElement("div");
+  l1.innerHTML = "<span class=\"muted\" style=\"font-size:0.68rem;display:block\">時間（分）</span>";
+  l1.appendChild(dm);
+  const l2 = document.createElement("div");
+  l2.innerHTML = "<span class=\"muted\" style=\"font-size:0.68rem;display:block\">大人（円/人）</span>";
+  l2.appendChild(pp);
+  const l3 = document.createElement("div");
+  l3.innerHTML = "<span class=\"muted\" style=\"font-size:0.68rem;display:block\">子供（任意）</span>";
+  l3.appendChild(cp);
+  wrap.appendChild(l1);
+  wrap.appendChild(l2);
+  wrap.appendChild(l3);
+  wrap.appendChild(rm);
+  return wrap;
+}
+
+function collectPriceTiers(container) {
+  const rows = container.querySelectorAll("[data-tier-row]");
+  const out = [];
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const dm = Number(row.querySelector("[data-dm]").value);
+    const pp = Number(row.querySelector("[data-pp]").value);
+    const cpRaw = row.querySelector("[data-cp]").value.trim();
+    if (!Number.isInteger(dm) || dm <= 0) throw new Error("時間は正の整数で（行" + (i + 1) + "）");
+    if (!Number.isInteger(pp) || pp < 0) throw new Error("大人料金は0以上の整数で（行" + (i + 1) + "）");
+    const o = { durationMinutes: dm, pricePerPerson: pp, sortOrder: i };
+    if (cpRaw !== "") {
+      const n = Number(cpRaw);
+      if (!Number.isInteger(n) || n < 0) throw new Error("子供料金は空欄か整数で（行" + (i + 1) + "）");
+      o.childPricePerPerson = n;
+    }
+    out.push(o);
+  }
+  const durs = out.map(function (x) {
+    return x.durationMinutes;
+  });
+  if (new Set(durs).size !== durs.length) throw new Error("同じ時間（分）の行が重複しています");
+  return out;
+}
+
+function initAddTierRows() {
+  const box = document.getElementById("addTierRows");
+  if (!box) return;
+  box.innerHTML = "";
+  box.appendChild(buildTierRowEl({ durationMinutes: 90, pricePerPerson: 2980 }));
+}
+
 let coursesCache = [];
 let menuCategoriesCache = [];
 
@@ -235,6 +329,7 @@ async function loadAll() {
   coursesCache = cRes.courses || [];
   menuCategoriesCache = mRes.categories || [];
   render();
+  initAddTierRows();
 }
 
 function render() {
@@ -267,11 +362,9 @@ function render() {
       "</div>" +
       "<div class=\"muted\" style=\"font-size:0.75rem;margin-top:0.2rem\">" +
       escapeHtml(c.kind) +
-      " · 制限時間 " +
-      c.durationMinutes +
-      "分 · " +
-      c.pricePerPerson.toLocaleString("ja-JP") +
-      "円/人 · 対象商品 " +
+      " · " +
+      escapeHtml(formatTiersSummary(c.priceTiers || [])) +
+      " · 対象商品 " +
       nSel +
       "件" +
       (c.active ? "" : " · <strong>無効</strong>") +
@@ -281,35 +374,44 @@ function render() {
     actions.className = "pm-actions";
     actions.style.flexDirection = "column";
     actions.style.alignItems = "stretch";
-    actions.style.minWidth = "200px";
+    actions.style.minWidth = "220px";
     const nm = document.createElement("input");
     nm.type = "text";
     nm.value = c.name;
     nm.title = "コースの正式名称";
-    const pr = document.createElement("input");
-    pr.type = "number";
-    pr.min = "0";
-    pr.value = String(c.pricePerPerson);
-    pr.title = "一人あたりのコース料金（円）";
-    const dm = document.createElement("input");
-    dm.type = "number";
-    dm.min = "1";
-    dm.value = String(c.durationMinutes);
-    dm.title = "食べ放題などの制限時間（分）";
     const labName = document.createElement("div");
     labName.className = "muted";
     labName.style.fontSize = "0.72rem";
     labName.textContent = "コース名（ゲスト・会計表示）";
-    const labPrice = document.createElement("div");
-    labPrice.className = "muted";
-    labPrice.style.fontSize = "0.72rem";
-    labPrice.style.marginTop = "0.35rem";
-    labPrice.textContent = "一人あたり料金（円）";
-    const labDur = document.createElement("div");
-    labDur.className = "muted";
-    labDur.style.fontSize = "0.72rem";
-    labDur.style.marginTop = "0.35rem";
-    labDur.textContent = "制限時間（分）";
+
+    const labTiers = document.createElement("div");
+    labTiers.className = "muted";
+    labTiers.style.fontSize = "0.72rem";
+    labTiers.style.marginTop = "0.45rem";
+    labTiers.textContent = "料金・時間パターン（分が異なると別料金）";
+    const tierBox = document.createElement("div");
+    tierBox.style.display = "flex";
+    tierBox.style.flexDirection = "column";
+    tierBox.style.gap = "0.45rem";
+    const tiers = c.priceTiers && c.priceTiers.length ? c.priceTiers : [{ durationMinutes: 90, pricePerPerson: 2980 }];
+    for (const t of tiers) {
+      tierBox.appendChild(
+        buildTierRowEl({
+          durationMinutes: t.durationMinutes,
+          pricePerPerson: t.pricePerPerson,
+          childPricePerPerson: t.childPricePerPerson,
+        }),
+      );
+    }
+    const addTierBtn = document.createElement("button");
+    addTierBtn.type = "button";
+    addTierBtn.className = "btn-ghost";
+    addTierBtn.style.width = "auto";
+    addTierBtn.style.marginTop = "0.15rem";
+    addTierBtn.textContent = "＋ 時間パターンを追加";
+    addTierBtn.onclick = function () {
+      tierBox.appendChild(buildTierRowEl({ durationMinutes: 60, pricePerPerson: 0 }));
+    };
 
     const tog = document.createElement("button");
     tog.type = "button";
@@ -331,18 +433,47 @@ function render() {
         log(String(e.message || e));
       }
     };
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "btn-ghost";
+    del.textContent = "削除";
+    del.style.color = "#b91c1c";
+    del.style.borderColor = "#fecaca";
+    del.title = "コースと対象商品の紐付けを削除します（開店中セッションのコース紐付けは外れます）";
+    del.onclick = async () => {
+      log("");
+      if (
+        !confirm(
+          "「" + c.name + "」を削除しますか？\n対象商品の設定も消えます。開店中の卓でこのコースが選ばれている場合は、コース紐付けだけ外れます。\nこの操作は取り消せません。",
+        )
+      ) {
+        return;
+      }
+      try {
+        await api("/stores/" + encodeURIComponent(STORE) + "/courses/" + encodeURIComponent(c.id), {
+          method: "DELETE",
+        });
+        log("削除しました");
+        await loadAll();
+      } catch (e) {
+        log(String(e.message || e));
+      }
+    };
+
     const save = document.createElement("button");
     save.type = "button";
     save.className = "btn-primary";
-    save.textContent = "基本情報を保存";
+    save.textContent = "名前・料金プランを保存";
     save.onclick = async () => {
       log("");
       const courseName = nm.value.trim();
       if (!courseName) return log("コース名を入力してください");
-      const durationMinutes = Number(dm.value);
-      const pricePerPerson = Number(pr.value);
-      if (!Number.isInteger(durationMinutes) || durationMinutes <= 0) return log("制限時間は正の整数で");
-      if (!Number.isInteger(pricePerPerson) || pricePerPerson < 0) return log("価格は0以上の整数で");
+      let priceTiers;
+      try {
+        priceTiers = collectPriceTiers(tierBox);
+      } catch (err) {
+        return log(String(err.message || err));
+      }
       try {
         await api(
           "/stores/" + encodeURIComponent(STORE) + "/courses/" + encodeURIComponent(c.id),
@@ -351,8 +482,7 @@ function render() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               name: courseName,
-              durationMinutes,
-              pricePerPerson,
+              priceTiers,
             }),
           }
         );
@@ -364,15 +494,18 @@ function render() {
     };
     actions.appendChild(labName);
     actions.appendChild(nm);
-    actions.appendChild(labPrice);
-    actions.appendChild(pr);
-    actions.appendChild(labDur);
-    actions.appendChild(dm);
+    actions.appendChild(labTiers);
+    actions.appendChild(tierBox);
+    actions.appendChild(addTierBtn);
     const rb = document.createElement("div");
     rb.className = "row";
     rb.style.justifyContent = "flex-end";
+    rb.style.flexWrap = "wrap";
+    rb.style.gap = "0.35rem";
+    rb.style.marginTop = "0.35rem";
     rb.appendChild(tog);
     rb.appendChild(save);
+    rb.appendChild(del);
     actions.appendChild(rb);
 
     top.appendChild(mid);
@@ -429,20 +562,29 @@ document.getElementById("btnRefCourses").onclick = () => {
   loadAll().catch((e) => log(String(e.message || e)));
 };
 
+document.getElementById("btnAddTierRowNew").onclick = () => {
+  const box = document.getElementById("addTierRows");
+  if (!box) return;
+  box.appendChild(buildTierRowEl({ durationMinutes: 60, pricePerPerson: 0 }));
+};
+
 document.getElementById("btnAddCourse").onclick = async () => {
   log("");
   const name = document.getElementById("cName").value.trim();
   const kind = document.getElementById("cKind").value.trim() || "course";
-  const durationMinutes = Number(document.getElementById("cMin").value);
-  const pricePerPerson = Number(document.getElementById("cPrice").value);
+  const box = document.getElementById("addTierRows");
   if (!name) return log("名前を入力してください");
-  if (!Number.isInteger(durationMinutes) || durationMinutes <= 0) return log("制限時間は正の整数で");
-  if (!Number.isInteger(pricePerPerson) || pricePerPerson < 0) return log("価格は0以上の整数で");
+  let priceTiers;
+  try {
+    priceTiers = collectPriceTiers(box);
+  } catch (err) {
+    return log(String(err.message || err));
+  }
   try {
     await api("/stores/" + encodeURIComponent(STORE) + "/courses", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, kind, durationMinutes, pricePerPerson }),
+      body: JSON.stringify({ name, kind, priceTiers }),
     });
     document.getElementById("cName").value = "";
     log("コースを追加しました");

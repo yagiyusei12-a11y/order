@@ -1,11 +1,18 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
+import { computeCourseSessionTotal } from "../lib/course-pricing.js";
 import { openSessionForTable } from "../lib/open-table-session.js";
 
 export async function registerSessions(app: FastifyInstance): Promise<void> {
   app.post<{
     Params: { storeId: string };
-    Body: { tableId: string; guestCount: number; courseId?: string | null };
+    Body: {
+      tableId: string;
+      guestCount: number;
+      courseId?: string | null;
+      coursePriceTierId?: string | null;
+      childCount?: number;
+    };
   }>("/stores/:storeId/sessions", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
     if (!store) return reply.code(404).send({ error: "store not found" });
@@ -25,11 +32,36 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
           ? courseIdRaw
           : null;
 
+    const childCountBody = (req.body as { childCount?: unknown })?.childCount;
+    const childCount =
+      childCountBody === undefined || childCountBody === null
+        ? 0
+        : typeof childCountBody === "number" && Number.isInteger(childCountBody) && childCountBody >= 0
+          ? childCountBody
+          : -1;
+    if (childCount < 0) {
+      return reply.code(400).send({ error: "childCount must be non-negative integer" });
+    }
+    if (childCount > guestCount) {
+      return reply.code(400).send({ error: "childCount must not exceed guestCount" });
+    }
+
+    const tierRaw = (req.body as { coursePriceTierId?: unknown })?.coursePriceTierId;
+    let coursePriceTierId: string | undefined;
+    if (tierRaw !== undefined && tierRaw !== null && tierRaw !== "") {
+      if (typeof tierRaw !== "string") {
+        return reply.code(400).send({ error: "coursePriceTierId must be a string" });
+      }
+      coursePriceTierId = tierRaw;
+    }
+
     const result = await openSessionForTable({
       tableId,
       storeId: store.id,
       guestCount,
+      childCount,
       courseId,
+      coursePriceTierId,
       mode: "failIfOpen",
     });
     if (!result.ok) {
@@ -41,11 +73,12 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       if (result.code === "BAD_TABLE") return reply.code(400).send({ error: "table not found or inactive" });
       if (result.code === "BAD_COUNT") return reply.code(400).send({ error: "guestCount must be integer 1-99" });
       if (result.code === "BAD_COURSE") return reply.code(400).send({ error: "course not found" });
+      if (result.code === "BAD_TIER") return reply.code(400).send({ error: result.error });
       return reply.code(400).send({ error: result.error });
     }
     const full = await prisma.diningSession.findUniqueOrThrow({
       where: { id: result.session.id },
-      include: { table: true, course: true },
+      include: { table: true, course: true, coursePriceTier: true },
     });
     return full;
   });
@@ -73,6 +106,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       include: {
         table: true,
         course: true,
+        coursePriceTier: true,
         bill: true,
         orders: {
           include: {
@@ -96,7 +130,10 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
     return {
       storeId: store.id,
       sessions: sessions.map((s) => {
-        const courseTotal = s.course && s.courseId ? s.course.pricePerPerson * s.guestCount : 0;
+        const courseTotal =
+          s.courseId && s.coursePriceTier
+            ? computeCourseSessionTotal(s.coursePriceTier, s.courseId, s.guestCount, s.childCount)
+            : 0;
         let ordersTotal = 0;
         for (const o of s.orders) {
           for (const l of o.lines) {
@@ -111,6 +148,48 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
         };
       }),
     };
+  });
+
+  app.patch<{
+    Params: { storeId: string; sessionId: string };
+    Body: { guestCount?: number; childCount?: number };
+  }>("/stores/:storeId/sessions/:sessionId", async (req, reply) => {
+    const session = await prisma.diningSession.findFirst({
+      where: { id: req.params.sessionId, storeId: req.params.storeId },
+    });
+    if (!session) return reply.code(404).send({ error: "session not found" });
+    if (session.status !== "open") {
+      return reply.code(400).send({ error: "only open sessions can be updated" });
+    }
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    let nextGuest = session.guestCount;
+    let nextChild = session.childCount;
+    if (body.guestCount !== undefined) {
+      const g = body.guestCount;
+      if (typeof g !== "number" || g < 1 || !Number.isInteger(g) || g > 99) {
+        return reply.code(400).send({ error: "guestCount must be integer 1-99" });
+      }
+      nextGuest = g;
+    }
+    if (body.childCount !== undefined) {
+      const c = body.childCount;
+      if (typeof c !== "number" || !Number.isInteger(c) || c < 0) {
+        return reply.code(400).send({ error: "childCount must be non-negative integer" });
+      }
+      nextChild = c;
+    }
+    if (nextChild > nextGuest) {
+      return reply.code(400).send({ error: "childCount must not exceed guestCount" });
+    }
+    if (body.guestCount === undefined && body.childCount === undefined) {
+      return reply.code(400).send({ error: "guestCount or childCount required" });
+    }
+    const updated = await prisma.diningSession.update({
+      where: { id: session.id },
+      data: { guestCount: nextGuest, childCount: nextChild },
+      include: { table: true, course: true },
+    });
+    return updated;
   });
 
   app.patch<{ Params: { storeId: string; sessionId: string } }>(
@@ -154,14 +233,20 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
         where: { id: req.params.sessionId, storeId: req.params.storeId },
         include: {
           course: true,
+          coursePriceTier: true,
           orders: { include: { lines: true } },
         },
       });
       if (!session) return reply.code(404).send({ error: "session not found" });
 
       const courseTotal =
-        session.course && session.courseId
-          ? session.course.pricePerPerson * session.guestCount
+        session.courseId && session.coursePriceTier
+          ? computeCourseSessionTotal(
+              session.coursePriceTier,
+              session.courseId,
+              session.guestCount,
+              session.childCount,
+            )
           : 0;
 
       let ordersTotal = 0;
@@ -175,6 +260,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       return {
         sessionId: session.id,
         guestCount: session.guestCount,
+        childCount: session.childCount,
         course: session.course,
         courseTotal,
         ordersTotal,

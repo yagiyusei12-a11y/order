@@ -276,6 +276,13 @@ function courseOptionPackChargeTaxIncluded(
   return extraPrice;
 }
 
+function packChargeScopeFromDb(
+  raw: string | null | undefined,
+): "table_once" | "per_person_pick" | "per_person_all" {
+  if (raw === "per_person_pick" || raw === "per_person_all") return raw;
+  return "table_once";
+}
+
 function normalizeOptionalProfile(
   name: unknown,
   phone: unknown,
@@ -340,13 +347,22 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     const nowMin = minutesSinceMidnightInTimeZone(new Date(), st.timezone);
 
     const purchasedSet = new Set(parsePurchasedCourseOptionPackIds(session.purchasedCourseOptionPackIds));
+    const gcMenu = Math.max(1, session.guestCount);
     let courseOptionPacksOut:
       | {
           id: string;
           name: string;
+          chargeScope: "table_once" | "per_person_pick" | "per_person_all";
           extraPrice: number;
           extraPriceTaxMode: "inclusive" | "exclusive";
+          /** table_once: 卓一括の税込額。per_person_* では未使用でよい */
           chargeTaxIncluded: number;
+          /** 一人あたりの税込額（per_person_*） */
+          unitChargeTaxIncluded: number;
+          /** per_person_all: 延べ人数ぶんの税込合計 */
+          totalIfAllGuestsTaxIncluded?: number;
+          /** per_person_pick: 選択できる人数の上限 */
+          maxSelectablePeople?: number;
           purchased: boolean;
         }[]
       | undefined;
@@ -354,17 +370,54 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       const packRows = await prisma.courseOptionPack.findMany({
         where: { courseId: session.courseId },
         orderBy: { sortOrder: "asc" },
-        select: { id: true, name: true, extraPrice: true, extraPriceTaxMode: true },
+        select: {
+          id: true,
+          name: true,
+          chargeScope: true,
+          extraPrice: true,
+          extraPriceTaxMode: true,
+        },
       });
       if (packRows.length > 0) {
         courseOptionPacksOut = packRows.map((p) => {
           const tm = p.extraPriceTaxMode === "exclusive" ? "exclusive" : "inclusive";
+          const unitTi = courseOptionPackChargeTaxIncluded(p.extraPrice, tm, st.taxRatePercent);
+          const scope = packChargeScopeFromDb(p.chargeScope);
+          if (scope === "table_once") {
+            return {
+              id: p.id,
+              name: p.name,
+              chargeScope: scope,
+              extraPrice: p.extraPrice,
+              extraPriceTaxMode: tm,
+              chargeTaxIncluded: unitTi,
+              unitChargeTaxIncluded: unitTi,
+              purchased: purchasedSet.has(p.id),
+            };
+          }
+          if (scope === "per_person_all") {
+            const totalAll = unitTi * gcMenu;
+            return {
+              id: p.id,
+              name: p.name,
+              chargeScope: scope,
+              extraPrice: p.extraPrice,
+              extraPriceTaxMode: tm,
+              chargeTaxIncluded: totalAll,
+              unitChargeTaxIncluded: unitTi,
+              totalIfAllGuestsTaxIncluded: totalAll,
+              purchased: purchasedSet.has(p.id),
+            };
+          }
           return {
             id: p.id,
             name: p.name,
+            chargeScope: scope,
             extraPrice: p.extraPrice,
             extraPriceTaxMode: tm,
-            chargeTaxIncluded: courseOptionPackChargeTaxIncluded(p.extraPrice, tm, st.taxRatePercent),
+            chargeTaxIncluded: unitTi,
+            unitChargeTaxIncluded: unitTi,
+            maxSelectablePeople: gcMenu,
             purchased: purchasedSet.has(p.id),
           };
         });
@@ -1052,9 +1105,10 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
 
   app.post<{
     Params: { token: string };
-    Body: { packId?: string };
+    Body: { packId?: string; peopleCount?: number };
   }>("/guest/:token/course-option-packs/purchase", async (req, reply) => {
-    const packId = req.body && typeof req.body === "object" ? (req.body as { packId?: string }).packId : undefined;
+    const bodyObj = req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
+    const packId = typeof bodyObj.packId === "string" ? bodyObj.packId : undefined;
     if (typeof packId !== "string" || !packId.trim()) {
       return reply.code(400).send({ error: "packId required" });
     }
@@ -1094,6 +1148,20 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     if (current.includes(pack.id)) {
       return reply.code(409).send({ error: "すでに追加済みです" });
     }
+    const scopePre = packChargeScopeFromDb(pack.chargeScope);
+    const gcPre = Math.max(1, session.guestCount);
+    let peopleCountPurchase: number | null = null;
+    if (scopePre === "per_person_pick") {
+      const pc = bodyObj.peopleCount;
+      if (typeof pc !== "number" || !Number.isInteger(pc)) {
+        return reply.code(400).send({ error: `人数は1〜${gcPre}の整数で指定してください` });
+      }
+      if (pc < 1 || pc > gcPre) {
+        return reply.code(400).send({ error: `人数は1〜${gcPre}の整数で指定してください` });
+      }
+      peopleCountPurchase = pc;
+    }
+
     try {
       const order = await prisma.$transaction(async (tx) => {
         const sess = await tx.diningSession.findUnique({ where: { id: session.id } });
@@ -1111,11 +1179,30 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         });
         const stTx = mergeStoreSettings(storeRowTx?.settings);
         const tm = packRow.extraPriceTaxMode === "exclusive" ? "exclusive" : "inclusive";
-        const unitPrice = courseOptionPackChargeTaxIncluded(
+        const unitPriceTaxInc = courseOptionPackChargeTaxIncluded(
           packRow.extraPrice,
           tm,
           stTx.taxRatePercent,
         );
+        const scope = packChargeScopeFromDb(packRow.chargeScope);
+        const gc = Math.max(1, sess.guestCount);
+        let qty = 1;
+        let unitPrice = unitPriceTaxInc;
+        if (scope === "table_once") {
+          qty = 1;
+          unitPrice = unitPriceTaxInc;
+        } else if (scope === "per_person_pick") {
+          qty = peopleCountPurchase ?? 1;
+          if (qty < 1 || qty > gc) throw new Error("BAD_PEOPLE");
+          unitPrice = unitPriceTaxInc;
+        } else {
+          qty = gc;
+          unitPrice = unitPriceTaxInc;
+        }
+        const nameSnap =
+          scope === "table_once"
+            ? `[コース＋オプション] ${packRow.name}`
+            : `[コース＋オプション] ${packRow.name}（×${qty}名）`;
         const so = await tx.salesOrder.create({
           data: {
             sessionId: sess.id,
@@ -1123,14 +1210,19 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
             note: null,
           },
         });
-        const lineExtra = { kind: "courseOptionPack", courseOptionPackId: packRow.id };
+        const lineExtra = {
+          kind: "courseOptionPack",
+          courseOptionPackId: packRow.id,
+          chargeScope: scope,
+          peopleCount: qty,
+        };
         await tx.orderLine.create({
           data: {
             orderId: so.id,
             menuItemId: null,
-            nameSnapshot: `[コース＋オプション] ${packRow.name}`,
+            nameSnapshot: nameSnap,
             unitPrice,
-            qty: 1,
+            qty,
             note: null,
             lineExtra: lineExtra as Prisma.InputJsonValue,
             status: "queued",
@@ -1154,6 +1246,9 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       if (msg === "ALREADY") return reply.code(409).send({ error: "すでに追加済みです" });
       if (msg === "PACK_GONE" || msg === "NO_COURSE") {
         return reply.code(404).send({ error: "オプションが見つかりません" });
+      }
+      if (msg === "BAD_PEOPLE") {
+        return reply.code(400).send({ error: "人数が無効です" });
       }
       throw e;
     }

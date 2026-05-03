@@ -88,13 +88,21 @@ async function validateCourseMenuLinks(
   return { ok: true, links };
 }
 
+type CourseOptionPackChargeScope = "table_once" | "per_person_pick" | "per_person_all";
+
 type CourseOptionPackIn = {
   name: string;
+  chargeScope: CourseOptionPackChargeScope;
   extraPrice: number;
   extraPriceTaxMode: "inclusive" | "exclusive";
   sortOrder: number;
   menuItemIds: string[];
 };
+
+function normalizePackChargeScope(raw: unknown): CourseOptionPackChargeScope {
+  if (raw === "per_person_pick" || raw === "per_person_all") return raw;
+  return "table_once";
+}
 
 async function validateCourseOptionPacks(
   storeId: string,
@@ -133,7 +141,8 @@ async function validateCourseOptionPacks(
       }
       extraPriceTaxMode = tm;
     }
-    packs.push({ name, extraPrice: ep, extraPriceTaxMode, sortOrder, menuItemIds: vIds.ids });
+    const chargeScope = normalizePackChargeScope(o.chargeScope);
+    packs.push({ name, chargeScope, extraPrice: ep, extraPriceTaxMode, sortOrder, menuItemIds: vIds.ids });
   }
   return { ok: true, packs };
 }
@@ -380,6 +389,7 @@ function mapCourseWithItems<
     optionPacks?: Array<{
       id: string;
       name: string;
+      chargeScope?: string;
       extraPrice: number;
       extraPriceTaxMode?: string;
       sortOrder: number;
@@ -395,6 +405,7 @@ function mapCourseWithItems<
   optionPacks: {
     id: string;
     name: string;
+    chargeScope: CourseOptionPackChargeScope;
     extraPrice: number;
     extraPriceTaxMode: "inclusive" | "exclusive";
     sortOrder: number;
@@ -421,6 +432,7 @@ function mapCourseWithItems<
     optionPacks: packs.map((p) => ({
       id: p.id,
       name: p.name,
+      chargeScope: normalizePackChargeScope(p.chargeScope),
       extraPrice: p.extraPrice,
       extraPriceTaxMode: p.extraPriceTaxMode === "exclusive" ? "exclusive" : "inclusive",
       sortOrder: p.sortOrder,
@@ -1743,6 +1755,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
           data: {
             courseId: c.id,
             name: p.name,
+            chargeScope: p.chargeScope,
             extraPrice: p.extraPrice,
             extraPriceTaxMode: p.extraPriceTaxMode,
             sortOrder: p.sortOrder,
@@ -1898,6 +1911,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
             data: {
               courseId: course.id,
               name: p.name,
+              chargeScope: p.chargeScope,
               extraPrice: p.extraPrice,
               extraPriceTaxMode: p.extraPriceTaxMode,
               sortOrder: p.sortOrder,

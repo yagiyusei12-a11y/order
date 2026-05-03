@@ -588,6 +588,29 @@
     }
     .course-pack-btn:active { background: var(--surface); }
     .course-pack-btn strong { color: var(--accent); font-weight: 800; }
+    .course-pack-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+    .course-pack-people {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      flex-wrap: wrap;
+      font-size: 0.78rem;
+      line-height: 1.35;
+    }
+    .course-pack-people input[type="number"] {
+      width: 3.25rem;
+      padding: 0.4rem 0.35rem;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--surface2);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.85rem;
+    }
   </style>
 </head>
 <body>
@@ -1456,25 +1479,112 @@
             packStrip.style.display = "block";
             const wrap = document.createElement("div");
             wrap.className = "course-pack-strip-inner";
+            const gCount = Math.max(1, parseInt(String(s.guestCount || 1), 10) || 1);
             for (const p of unw) {
-              const pay =
-                typeof p.chargeTaxIncluded === "number" && Number.isFinite(p.chargeTaxIncluded)
-                  ? p.chargeTaxIncluded
-                  : Number(p.extraPrice || 0);
-              const b = document.createElement("button");
-              b.type = "button";
-              b.className = "course-pack-btn";
-              const taxNote =
+              const scope = p.chargeScope || "table_once";
+              const unitTi =
+                typeof p.unitChargeTaxIncluded === "number" && Number.isFinite(p.unitChargeTaxIncluded)
+                  ? p.unitChargeTaxIncluded
+                  : typeof p.chargeTaxIncluded === "number" && Number.isFinite(p.chargeTaxIncluded)
+                    ? p.chargeTaxIncluded
+                    : 0;
+              const row = document.createElement("div");
+              row.className = "course-pack-row";
+              const taxSub =
                 p.extraPriceTaxMode === "exclusive"
-                  ? "<span style=\"font-size:0.65rem;opacity:0.85;display:block;margin-top:0.2rem\">※追加額は税抜入力 → お支払いは税込です</span>"
+                  ? "（※店舗が税抜入力の場合、お支払いは税込額です）"
                   : "";
-              b.innerHTML =
+
+              if (scope === "per_person_pick") {
+                const maxP =
+                  typeof p.maxSelectablePeople === "number" && p.maxSelectablePeople >= 1
+                    ? p.maxSelectablePeople
+                    : gCount;
+                const line = document.createElement("div");
+                line.className = "course-pack-people";
+                line.appendChild(document.createTextNode(p.name + " · 一人税込 "));
+                const strong = document.createElement("strong");
+                strong.style.color = "var(--accent)";
+                strong.textContent = "¥" + unitTi.toLocaleString("ja-JP");
+                line.appendChild(strong);
+                line.appendChild(document.createTextNode(" × "));
+                const numIn = document.createElement("input");
+                numIn.type = "number";
+                numIn.min = "1";
+                numIn.max = String(maxP);
+                numIn.value = "1";
+                numIn.setAttribute("aria-label", "オプションの人数");
+                line.appendChild(numIn);
+                line.appendChild(document.createTextNode(" 名（1〜" + maxP + "）"));
+                const btnP = document.createElement("button");
+                btnP.type = "button";
+                btnP.className = "course-pack-btn";
+                btnP.style.marginTop = "0.2rem";
+                btnP.textContent = "この内容で追加する";
+                btnP.onclick = async function () {
+                  const n = parseInt(numIn.value, 10);
+                  if (!Number.isInteger(n) || n < 1 || n > maxP) {
+                    toast("人数は1〜" + maxP + "の整数で選んでください");
+                    return;
+                  }
+                  try {
+                    await api("/guest/" + encodeURIComponent(TOKEN) + "/course-option-packs/purchase", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ packId: p.id, peopleCount: n }),
+                    });
+                    toast("追加しました");
+                    await loadMenu();
+                  } catch (e) {
+                    toast(String(e.message || e));
+                  }
+                };
+                row.appendChild(line);
+                row.appendChild(btnP);
+                if (taxSub) {
+                  const tn = document.createElement("div");
+                  tn.style.fontSize = "0.65rem";
+                  tn.style.opacity = "0.85";
+                  tn.textContent = taxSub;
+                  row.appendChild(tn);
+                }
+                wrap.appendChild(row);
+                continue;
+              }
+
+              const payBtn = document.createElement("button");
+              payBtn.type = "button";
+              payBtn.className = "course-pack-btn";
+              let payTotal = 0;
+              let labelExtra = "";
+              if (scope === "per_person_all") {
+                payTotal =
+                  typeof p.totalIfAllGuestsTaxIncluded === "number" &&
+                  Number.isFinite(p.totalIfAllGuestsTaxIncluded)
+                    ? p.totalIfAllGuestsTaxIncluded
+                    : unitTi * gCount;
+                labelExtra = "（税込・延べ" + gCount + "名分）";
+              } else {
+                payTotal =
+                  typeof p.chargeTaxIncluded === "number" && Number.isFinite(p.chargeTaxIncluded)
+                    ? p.chargeTaxIncluded
+                    : unitTi;
+                labelExtra = "（税込・卓1回）";
+              }
+              payBtn.innerHTML =
                 escapeHtml(p.name) +
                 " <strong>+¥" +
-                pay.toLocaleString("ja-JP") +
-                "</strong>（税込・お支払い）で対象メニューが広がります" +
-                taxNote;
-              b.onclick = async function () {
+                payTotal.toLocaleString("ja-JP") +
+                "</strong><span style=\"font-size:0.72rem\">" +
+                escapeHtml(labelExtra) +
+                "</span>" +
+                (taxSub
+                  ? "<span style=\"font-size:0.65rem;opacity:0.85;display:block;margin-top:0.15rem\">" +
+                    escapeHtml(taxSub) +
+                    "</span>"
+                  : "") +
+                "<span style=\"font-size:0.68rem;font-weight:600;opacity:0.9;display:block;margin-top:0.2rem\">対象メニューが広がります</span>";
+              payBtn.onclick = async function () {
                 try {
                   await api("/guest/" + encodeURIComponent(TOKEN) + "/course-option-packs/purchase", {
                     method: "POST",
@@ -1487,7 +1597,8 @@
                   toast(String(e.message || e));
                 }
               };
-              wrap.appendChild(b);
+              row.appendChild(payBtn);
+              wrap.appendChild(row);
             }
             packStrip.appendChild(wrap);
           } else {

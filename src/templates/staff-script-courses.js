@@ -330,8 +330,12 @@ function openCourseOptionPacksModal(course) {
   if (document.getElementById("courseOptPackModalBackdrop")) return;
 
   const draft = (course.optionPacks || []).map(function (p) {
+    let scope = "table_once";
+    if (p.chargeScope === "per_person_pick") scope = "per_person_pick";
+    else if (p.chargeScope === "per_person_all") scope = "per_person_all";
     return {
       name: String(p.name || ""),
+      chargeScope: scope,
       extraPrice: Number(p.extraPrice) || 0,
       extraPriceTaxMode: p.extraPriceTaxMode === "exclusive" ? "exclusive" : "inclusive",
       menuItemIds: Array.isArray(p.menuItemIds) ? p.menuItemIds.slice() : [],
@@ -453,6 +457,34 @@ function openCourseOptionPacksModal(course) {
       const card = document.createElement("div");
       card.style.cssText =
         "border:1px solid var(--border);border-radius:8px;padding:.55rem;margin-bottom:.5rem;background:#fff";
+      const scopeRow = document.createElement("div");
+      scopeRow.style.cssText = "margin-bottom:.35rem;display:flex;flex-wrap:wrap;align-items:center;gap:.35rem";
+      const scopeLab = document.createElement("span");
+      scopeLab.className = "muted";
+      scopeLab.style.fontSize = "0.72rem";
+      scopeLab.textContent = "課金単位";
+      const scopeSel = document.createElement("select");
+      scopeSel.style.fontSize = "0.78rem";
+      scopeSel.style.flex = "1";
+      scopeSel.style.minWidth = "12rem";
+      [
+        ["table_once", "卓1回まとめて（入力金額＝卓の追加額）"],
+        ["per_person_pick", "一人あたり×お客が人数指定"],
+        ["per_person_all", "一人あたり×延べ人数（全員ぶん）"],
+      ].forEach(function (pair) {
+        const o = document.createElement("option");
+        o.value = pair[0];
+        o.textContent = pair[1];
+        scopeSel.appendChild(o);
+      });
+      scopeSel.value = pack.chargeScope || "table_once";
+      scopeSel.addEventListener("change", function () {
+        draft[idx].chargeScope = scopeSel.value;
+        renderPackCards();
+      });
+      scopeRow.appendChild(scopeLab);
+      scopeRow.appendChild(scopeSel);
+      card.appendChild(scopeRow);
       const row1 = document.createElement("div");
       row1.style.cssText = "display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:.35rem";
       const nameInp = document.createElement("input");
@@ -467,7 +499,10 @@ function openCourseOptionPacksModal(course) {
       const labPrice = document.createElement("span");
       labPrice.className = "muted";
       labPrice.style.fontSize = "0.72rem";
-      labPrice.textContent = "追加額（卓1回）";
+      labPrice.textContent =
+        (pack.chargeScope || "table_once") === "table_once"
+          ? "追加額（卓1回）"
+          : "一人あたりの追加額";
       const priceInp = document.createElement("input");
       priceInp.type = "number";
       priceInp.min = "0";
@@ -531,7 +566,7 @@ function openCourseOptionPacksModal(course) {
     "<div style=\"font-weight:800;font-size:1rem\">コース＋オプション（有料で対象拡大）</div>" +
     "<p class=\"muted\" style=\"font-size:.72rem;margin:.35rem 0 0;line-height:1.45\">" +
     escapeHtml(course.name) +
-    " のゲストが追加料金を支払うと、そのオプションに紐づく単品がコース内（本体追加0円）の対象に広がります。金額・税込/税抜は任意で設定してください。</p></div>";
+    " のゲストが追加料金を支払うと紐づく単品がコース内対象に広がります。卓1回・一人×人数・一人×全員から選べます。</p></div>";
 
   const addBar = document.createElement("div");
   addBar.style.cssText = "padding:0 1rem .5rem";
@@ -540,7 +575,13 @@ function openCourseOptionPacksModal(course) {
   addBtn.className = "btn-ghost";
   addBtn.textContent = "＋ オプションを追加";
   addBtn.onclick = function () {
-    draft.push({ name: "", extraPrice: 0, extraPriceTaxMode: "inclusive", menuItemIds: [] });
+    draft.push({
+      name: "",
+      chargeScope: "table_once",
+      extraPrice: 0,
+      extraPriceTaxMode: "inclusive",
+      menuItemIds: [],
+    });
     renderPackCards();
   };
   addBar.appendChild(addBtn);
@@ -604,8 +645,12 @@ function openCourseOptionPacksModal(course) {
       }
     }
     const optionPacks = draft.map(function (p, i) {
+      let cs = "table_once";
+      if (p.chargeScope === "per_person_pick") cs = "per_person_pick";
+      else if (p.chargeScope === "per_person_all") cs = "per_person_all";
       return {
         name: String(p.name).trim(),
+        chargeScope: cs,
         extraPrice: Math.max(0, Math.floor(Number(p.extraPrice) || 0)),
         extraPriceTaxMode: p.extraPriceTaxMode === "exclusive" ? "exclusive" : "inclusive",
         sortOrder: i,
@@ -889,7 +934,7 @@ function render() {
     hintOpt.style.margin = "0.5rem 0 0";
     hintOpt.style.lineHeight = "1.45";
     hintOpt.textContent =
-      "オプション名・追加額（税込または税抜を選択）・対象単品を設定します。ゲストのお支払いは税込に換算された金額です。";
+      "課金単位（卓1回／人数指定／全員）と、一人あたり or 卓の金額、税込・税抜、対象単品を設定します。人数指定のときだけゲスト画面に人数入力が出ます。";
     detailsOpt.appendChild(hintOpt);
     const optRow = document.createElement("div");
     optRow.className = "row";

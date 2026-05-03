@@ -186,7 +186,9 @@ model CourseOptionPack {
   id         String   @id @default(cuid())
   courseId   String
   name       String
-  /// 卓につき1回の上乗せ（円・整数。税込/税抜は extraPriceTaxMode）
+  /// table_once=卓1回定額, per_person_pick=一人あたり×お客指定人数, per_person_all=一人あたり×延べ人数
+  chargeScope String  @default("table_once")
+  /// 円・整数。table_once=卓1回。per_person_*=一人あたり（税込/税抜は extraPriceTaxMode）
   extraPrice Int
   /// inclusive=税込入力, exclusive=税抜入力（会計行は店舗税率で税込に換算）
   extraPriceTaxMode String @default("inclusive")

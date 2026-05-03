@@ -33,6 +33,11 @@ function timeInputValueToGuestMin(s) {
 function renderTimeWindows(list) {
   const box = document.getElementById("timeWindowsMaster");
   if (!box) return;
+  const arr = list || [];
+  /** 空のときの文言は innerHTML 1 回に含める。innerHTML += するとボタンが再パースされ onclick が消える */
+  const emptyHint = !arr.length
+    ? "<div><span class=\"muted\">まだありません。上のフォームから追加してください。</span></div>"
+    : "";
   box.innerHTML =
     "<div class=\"muted\" style=\"font-size:0.72rem;margin-bottom:0.45rem\">新規追加</div>" +
     "<div class=\"row\" style=\"flex-wrap:wrap;gap:0.5rem;align-items:flex-end;margin-bottom:0.85rem;padding-bottom:0.85rem;border-bottom:1px solid var(--border)\">" +
@@ -41,7 +46,8 @@ function renderTimeWindows(list) {
     "<input id=\"twNewName\" type=\"text\" placeholder=\"例: ランチ\" style=\"margin:0\" /></div>" +
     "<label style=\"font-size:0.78rem;margin:0\">開始 <input id=\"twNewStart\" type=\"time\" style=\"margin:0\" /></label>" +
     "<label style=\"font-size:0.78rem;margin:0\">終了 <input id=\"twNewEnd\" type=\"time\" style=\"margin:0\" /></label>" +
-    "<button type=\"button\" class=\"btn-primary\" id=\"btnTwAdd\" style=\"margin-bottom:0.05rem\">追加</button></div>";
+    "<button type=\"button\" class=\"btn-primary\" id=\"btnTwAdd\" style=\"margin-bottom:0.05rem\">追加</button></div>" +
+    emptyHint;
   const btnTwAdd = document.getElementById("btnTwAdd");
   if (btnTwAdd) {
     btnTwAdd.onclick = async () => {
@@ -66,11 +72,6 @@ function renderTimeWindows(list) {
         log(String(e.message || e));
       }
     };
-  }
-  const arr = list || [];
-  if (!arr.length) {
-    box.innerHTML += "<span class=\"muted\">まだありません。上のフォームから追加してください。</span>";
-    return;
   }
   for (const w of arr) {
     const row = document.createElement("div");

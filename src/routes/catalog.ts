@@ -40,6 +40,92 @@ async function validateCourseMenuItemIds(
   return base;
 }
 
+type CourseMenuLinkIn = { menuItemId: string; minGuestCount: number };
+
+async function validateCourseMenuLinks(
+  storeId: string,
+  raw: unknown,
+): Promise<{ ok: false; error: string } | { ok: true; links: CourseMenuLinkIn[] }> {
+  if (!Array.isArray(raw)) return { ok: false, error: "includedMenuLinks must be an array" };
+  const links: CourseMenuLinkIn[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < raw.length; i++) {
+    const row = raw[i];
+    if (!row || typeof row !== "object" || Array.isArray(row)) {
+      return { ok: false, error: `includedMenuLinks[${i}] must be an object` };
+    }
+    const o = row as Record<string, unknown>;
+    const mid = o.menuItemId;
+    if (typeof mid !== "string" || !mid.trim()) {
+      return { ok: false, error: `includedMenuLinks[${i}].menuItemId invalid` };
+    }
+    if (seen.has(mid)) return { ok: false, error: "duplicate menuItemId in includedMenuLinks" };
+    seen.add(mid);
+    let mg = 1;
+    if ("minGuestCount" in o && o.minGuestCount !== undefined) {
+      const v = o.minGuestCount;
+      if (typeof v !== "number" || !Number.isInteger(v) || v < 1 || v > 99) {
+        return { ok: false, error: `includedMenuLinks[${i}].minGuestCount must be integer 1-99` };
+      }
+      mg = v;
+    }
+    links.push({ menuItemId: mid, minGuestCount: mg });
+  }
+  if (links.length === 0) return { ok: true, links: [] };
+  const ids = links.map((l) => l.menuItemId);
+  const found = await prisma.menuItem.findMany({
+    where: { id: { in: ids }, category: { storeId } },
+    select: { id: true, sellKind: true },
+  });
+  if (found.length !== ids.length) return { ok: false, error: "invalid menuItemIds in includedMenuLinks" };
+  const sets = found.filter((x) => x.sellKind === "set");
+  if (sets.length > 0) {
+    return {
+      ok: false,
+      error: "コース対象にセット商品は含められません（通常商品のみ選択してください）",
+    };
+  }
+  return { ok: true, links };
+}
+
+type CourseOptionPackIn = {
+  name: string;
+  extraPrice: number;
+  sortOrder: number;
+  menuItemIds: string[];
+};
+
+async function validateCourseOptionPacks(
+  storeId: string,
+  raw: unknown,
+): Promise<{ ok: false; error: string } | { ok: true; packs: CourseOptionPackIn[] }> {
+  if (!Array.isArray(raw)) return { ok: false, error: "optionPacks must be an array" };
+  const packs: CourseOptionPackIn[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const row = raw[i];
+    if (!row || typeof row !== "object" || Array.isArray(row)) {
+      return { ok: false, error: `optionPacks[${i}] must be an object` };
+    }
+    const o = row as Record<string, unknown>;
+    const name = typeof o.name === "string" ? o.name.trim() : "";
+    if (!name) return { ok: false, error: `optionPacks[${i}].name required` };
+    const ep = o.extraPrice;
+    if (typeof ep !== "number" || !Number.isInteger(ep) || ep < 0 || ep > 1_000_000) {
+      return { ok: false, error: `optionPacks[${i}].extraPrice must be integer 0-1000000` };
+    }
+    const sortOrder =
+      typeof o.sortOrder === "number" && Number.isInteger(o.sortOrder) ? o.sortOrder : i;
+    const midRaw = o.menuItemIds;
+    if (!Array.isArray(midRaw)) {
+      return { ok: false, error: `optionPacks[${i}].menuItemIds must be an array` };
+    }
+    const vIds = await validateCourseMenuItemIds(storeId, midRaw);
+    if (!vIds.ok) return { ok: false, error: `optionPacks[${i}]: ${vIds.error}` };
+    packs.push({ name, extraPrice: ep, sortOrder, menuItemIds: vIds.ids });
+  }
+  return { ok: true, packs };
+}
+
 function readIfMasterVersion(body: Record<string, unknown>): number | undefined {
   if (!("ifMasterVersion" in body)) return undefined;
   const v = body.ifMasterVersion;
@@ -277,25 +363,53 @@ type CourseTierRow = {
 
 function mapCourseWithItems<
   T extends {
-    includedItems: { menuItemId: string }[];
+    includedItems: { menuItemId: string; minGuestCount?: number }[];
     priceTiers?: CourseTierRow[];
+    optionPacks?: Array<{
+      id: string;
+      name: string;
+      extraPrice: number;
+      sortOrder: number;
+      menuItems: { menuItemId: string }[];
+    }>;
   },
 >(
   c: T,
-): Omit<T, "includedItems" | "priceTiers"> & {
+): Omit<T, "includedItems" | "priceTiers" | "optionPacks"> & {
   includedMenuItemIds: string[];
+  includedMenuLinks: { menuItemId: string; minGuestCount: number }[];
   priceTiers: CourseTierRow[];
+  optionPacks: {
+    id: string;
+    name: string;
+    extraPrice: number;
+    sortOrder: number;
+    menuItemIds: string[];
+  }[];
 } {
-  const { includedItems, priceTiers, ...rest } = c;
+  const { includedItems, priceTiers, optionPacks, ...rest } = c;
+  const links = includedItems.map((x) => ({
+    menuItemId: x.menuItemId,
+    minGuestCount: typeof x.minGuestCount === "number" ? x.minGuestCount : 1,
+  }));
+  const packs = optionPacks ?? [];
   return {
     ...rest,
     includedMenuItemIds: includedItems.map((x) => x.menuItemId),
+    includedMenuLinks: links,
     priceTiers: (priceTiers || []).map((t) => ({
       id: t.id,
       durationMinutes: t.durationMinutes,
       pricePerPerson: t.pricePerPerson,
       childPricePerPerson: t.childPricePerPerson,
       sortOrder: t.sortOrder,
+    })),
+    optionPacks: packs.map((p) => ({
+      id: p.id,
+      name: p.name,
+      extraPrice: p.extraPrice,
+      sortOrder: p.sortOrder,
+      menuItemIds: p.menuItems.map((m) => m.menuItemId),
     })),
   };
 }
@@ -1527,8 +1641,12 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       where: includeInactive ? { storeId: store.id } : { storeId: store.id, active: true },
       orderBy: { name: "asc" },
       include: {
-        includedItems: { select: { menuItemId: true } },
+        includedItems: { select: { menuItemId: true, minGuestCount: true } },
         priceTiers: { orderBy: [{ sortOrder: "asc" }, { durationMinutes: "asc" }] },
+        optionPacks: {
+          orderBy: { sortOrder: "asc" },
+          include: { menuItems: { select: { menuItemId: true } } },
+        },
       },
     });
     return {
@@ -1544,6 +1662,8 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       kind: string;
       priceTiers: unknown;
       menuItemIds?: unknown;
+      includedMenuLinks?: unknown;
+      optionPacks?: unknown;
     };
   }>("/stores/:storeId/courses", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
@@ -1554,11 +1674,26 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     const pt = normalizePriceTiersInput(req.body?.priceTiers);
     if (!pt.ok) return reply.code(400).send({ error: pt.error });
 
-    let linkIds: string[] = [];
-    if (req.body && typeof req.body === "object" && "menuItemIds" in req.body) {
-      const v = await validateCourseMenuItemIds(store.id, req.body.menuItemIds);
+    let linksToCreate: CourseMenuLinkIn[] = [];
+    if (req.body && typeof req.body === "object") {
+      const b = req.body as Record<string, unknown>;
+      if (Array.isArray(b.includedMenuLinks)) {
+        const v = await validateCourseMenuLinks(store.id, b.includedMenuLinks);
+        if (!v.ok) return reply.code(400).send({ error: v.error });
+        linksToCreate = v.links;
+      } else if ("menuItemIds" in b) {
+        const v = await validateCourseMenuItemIds(store.id, b.menuItemIds);
+        if (!v.ok) return reply.code(400).send({ error: v.error });
+        linksToCreate = v.ids.map((menuItemId) => ({ menuItemId, minGuestCount: 1 }));
+      }
+    }
+
+    let optionPacksToCreate: CourseOptionPackIn[] = [];
+    if (req.body && typeof req.body === "object" && "optionPacks" in req.body) {
+      const b = req.body as Record<string, unknown>;
+      const v = await validateCourseOptionPacks(store.id, b.optionPacks);
       if (!v.ok) return reply.code(400).send({ error: v.error });
-      linkIds = v.ids;
+      optionPacksToCreate = v.packs;
     }
 
     const course = await prisma.$transaction(async (tx) => {
@@ -1579,16 +1714,39 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
           sortOrder: t.sortOrder ?? idx,
         })),
       });
-      if (linkIds.length > 0) {
+      if (linksToCreate.length > 0) {
         await tx.courseMenuItem.createMany({
-          data: linkIds.map((menuItemId) => ({ courseId: c.id, menuItemId })),
+          data: linksToCreate.map((l) => ({
+            courseId: c.id,
+            menuItemId: l.menuItemId,
+            minGuestCount: l.minGuestCount,
+          })),
+        });
+      }
+      for (const p of optionPacksToCreate) {
+        await tx.courseOptionPack.create({
+          data: {
+            courseId: c.id,
+            name: p.name,
+            extraPrice: p.extraPrice,
+            sortOrder: p.sortOrder,
+            menuItems: {
+              createMany: {
+                data: p.menuItemIds.map((menuItemId) => ({ menuItemId })),
+              },
+            },
+          },
         });
       }
       return tx.course.findUniqueOrThrow({
         where: { id: c.id },
         include: {
-          includedItems: { select: { menuItemId: true } },
+          includedItems: { select: { menuItemId: true, minGuestCount: true } },
           priceTiers: { orderBy: [{ sortOrder: "asc" }, { durationMinutes: "asc" }] },
+          optionPacks: {
+            orderBy: { sortOrder: "asc" },
+            include: { menuItems: { select: { menuItemId: true } } },
+          },
         },
       });
     });
@@ -1602,7 +1760,9 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       kind?: string;
       active?: boolean;
       menuItemIds?: unknown;
+      includedMenuLinks?: unknown;
       priceTiers?: unknown;
+      optionPacks?: unknown;
     };
   }>("/stores/:storeId/courses/:courseId", async (req, reply) => {
     const course = await prisma.course.findFirst({
@@ -1629,13 +1789,22 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     }
 
     const bodyObj = req.body && typeof req.body === "object" ? req.body : null;
-    const syncMenu = bodyObj !== null && "menuItemIds" in bodyObj;
+    const syncMenu =
+      bodyObj !== null && ("menuItemIds" in bodyObj || "includedMenuLinks" in bodyObj);
     const syncTiers = bodyObj !== null && "priceTiers" in bodyObj;
-    let linkIds: string[] | null = null;
+    const syncOptionPacks = bodyObj !== null && "optionPacks" in bodyObj;
+    let linkPayload: CourseMenuLinkIn[] | null = null;
     if (syncMenu) {
-      const v = await validateCourseMenuItemIds(req.params.storeId, bodyObj!.menuItemIds);
-      if (!v.ok) return reply.code(400).send({ error: v.error });
-      linkIds = v.ids;
+      const b = bodyObj as Record<string, unknown>;
+      if (Array.isArray(b.includedMenuLinks)) {
+        const v = await validateCourseMenuLinks(req.params.storeId, b.includedMenuLinks);
+        if (!v.ok) return reply.code(400).send({ error: v.error });
+        linkPayload = v.links;
+      } else {
+        const v = await validateCourseMenuItemIds(req.params.storeId, b.menuItemIds);
+        if (!v.ok) return reply.code(400).send({ error: v.error });
+        linkPayload = v.ids.map((menuItemId) => ({ menuItemId, minGuestCount: 1 }));
+      }
     }
     let replaceTiers: PriceTierInput[] | null = null;
     if (syncTiers) {
@@ -1643,8 +1812,14 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       if (!tr.ok) return reply.code(400).send({ error: tr.error });
       replaceTiers = tr.tiers;
     }
+    let optionPacksPayload: CourseOptionPackIn[] | null = null;
+    if (syncOptionPacks) {
+      const v = await validateCourseOptionPacks(req.params.storeId, bodyObj!.optionPacks);
+      if (!v.ok) return reply.code(400).send({ error: v.error });
+      optionPacksPayload = v.packs;
+    }
 
-    if (Object.keys(data).length === 0 && !syncMenu && !syncTiers) {
+    if (Object.keys(data).length === 0 && !syncMenu && !syncTiers && !syncOptionPacks) {
       return reply.code(400).send({ error: "no fields to update" });
     }
 
@@ -1688,11 +1863,33 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       if (Object.keys(data).length > 0) {
         await tx.course.update({ where: { id: course.id }, data });
       }
-      if (linkIds !== null) {
+      if (linkPayload !== null) {
         await tx.courseMenuItem.deleteMany({ where: { courseId: course.id } });
-        if (linkIds.length > 0) {
+        if (linkPayload.length > 0) {
           await tx.courseMenuItem.createMany({
-            data: linkIds.map((menuItemId) => ({ courseId: course.id, menuItemId })),
+            data: linkPayload.map((l) => ({
+              courseId: course.id,
+              menuItemId: l.menuItemId,
+              minGuestCount: l.minGuestCount,
+            })),
+          });
+        }
+      }
+      if (syncOptionPacks && optionPacksPayload !== null) {
+        await tx.courseOptionPack.deleteMany({ where: { courseId: course.id } });
+        for (const p of optionPacksPayload) {
+          await tx.courseOptionPack.create({
+            data: {
+              courseId: course.id,
+              name: p.name,
+              extraPrice: p.extraPrice,
+              sortOrder: p.sortOrder,
+              menuItems: {
+                createMany: {
+                  data: p.menuItemIds.map((menuItemId) => ({ menuItemId })),
+                },
+              },
+            },
           });
         }
       }
@@ -1701,8 +1898,12 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     const updated = await prisma.course.findUniqueOrThrow({
       where: { id: course.id },
       include: {
-        includedItems: { select: { menuItemId: true } },
+        includedItems: { select: { menuItemId: true, minGuestCount: true } },
         priceTiers: { orderBy: [{ sortOrder: "asc" }, { durationMinutes: "asc" }] },
+        optionPacks: {
+          orderBy: { sortOrder: "asc" },
+          include: { menuItems: { select: { menuItemId: true } } },
+        },
       },
     });
     return mapCourseWithItems(updated);

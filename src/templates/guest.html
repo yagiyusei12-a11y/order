@@ -561,6 +561,33 @@
       cursor: pointer;
     }
     .agegate-card .primary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* コース＋オプション（有料で対象拡大） */
+    .course-pack-strip {
+      padding: 0.5rem 0.75rem 0.35rem;
+      background: linear-gradient(180deg, rgba(249, 115, 22, 0.12), transparent);
+      border-bottom: 1px solid var(--line);
+    }
+    .course-pack-strip-inner {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    .course-pack-btn {
+      width: 100%;
+      text-align: left;
+      font-family: inherit;
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 0.55rem 0.65rem;
+      border-radius: 10px;
+      border: 1px solid rgba(249, 115, 22, 0.45);
+      background: var(--surface2);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .course-pack-btn:active { background: var(--surface); }
+    .course-pack-btn strong { color: var(--accent); font-weight: 800; }
   </style>
 </head>
 <body>
@@ -588,6 +615,7 @@
 
   <div id="err"></div>
   <div id="safetyNote" class="safety-note" style="display:none"></div>
+  <div id="courseOptionPacksStrip" class="course-pack-strip" style="display:none" aria-live="polite"></div>
 
   <div class="go-profile" id="profileCard">
     <p>お客様情報（任意）<br /><span style="font-size:0.68rem;opacity:0.9">端末でお客様をお繋ぎします。お名前・電話は空でもご注文いただけます。</span></p>
@@ -1414,6 +1442,51 @@
         sn.textContent = alcoholRestricted
           ? "安全確認により、酒類の注文を制限しています。スタッフへご相談ください。"
           : "";
+      }
+
+      const packStrip = document.getElementById("courseOptionPacksStrip");
+      if (packStrip) {
+        packStrip.innerHTML = "";
+        const op = s.course && s.course.optionPacks;
+        if (op && op.length) {
+          const unw = op.filter(function (x) {
+            return !x.purchased;
+          });
+          if (unw.length > 0) {
+            packStrip.style.display = "block";
+            const wrap = document.createElement("div");
+            wrap.className = "course-pack-strip-inner";
+            for (const p of unw) {
+              const b = document.createElement("button");
+              b.type = "button";
+              b.className = "course-pack-btn";
+              b.innerHTML =
+                escapeHtml(p.name) +
+                " <strong>+¥" +
+                Number(p.extraPrice || 0).toLocaleString("ja-JP") +
+                "</strong>（税込）で対象メニューが広がります";
+              b.onclick = async function () {
+                try {
+                  await api("/guest/" + encodeURIComponent(TOKEN) + "/course-option-packs/purchase", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ packId: p.id }),
+                  });
+                  toast("追加しました");
+                  await loadMenu();
+                } catch (e) {
+                  toast(String(e.message || e));
+                }
+              };
+              wrap.appendChild(b);
+            }
+            packStrip.appendChild(wrap);
+          } else {
+            packStrip.style.display = "none";
+          }
+        } else {
+          packStrip.style.display = "none";
+        }
       }
 
       const cp = data.customerProfile;

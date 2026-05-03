@@ -176,8 +176,33 @@ model Course {
   sessions    DiningSession[]
   includedItems CourseMenuItem[]
   priceTiers  CoursePriceTier[]
+  optionPacks CourseOptionPack[]
 
   @@index([storeId])
+}
+
+/// コースに上乗せする「＋オプション」（例: +500円）。卓が購入すると紐づく単品がコース対象に追加される。
+model CourseOptionPack {
+  id         String   @id @default(cuid())
+  courseId   String
+  name       String
+  /// 卓につき1回の上乗せ（税込円・整数）
+  extraPrice Int
+  sortOrder  Int      @default(0)
+  course     Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  menuItems  CourseOptionPackMenuItem[]
+
+  @@index([courseId])
+}
+
+model CourseOptionPackMenuItem {
+  packId     String
+  menuItemId String
+  pack       CourseOptionPack @relation(fields: [packId], references: [id], onDelete: Cascade)
+  menuItem   MenuItem         @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  @@id([packId, menuItemId])
+  @@index([menuItemId])
 }
 
 /// コースの時間（分）・単価パターン（例: 60分・90分で金額を分ける）
@@ -199,6 +224,8 @@ model CoursePriceTier {
 model CourseMenuItem {
   courseId   String
   menuItemId String
+  /// 延べ人数がこの値以上のとき、この商品をコース対象（単品本体0円）に含める。1=全人数で対象。
+  minGuestCount Int      @default(1)
   course     Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
   menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
 
@@ -258,6 +285,7 @@ model MenuItem {
   kitchenStation    KitchenStation? @relation(fields: [kitchenStationId], references: [id], onDelete: SetNull)
   orderLines        OrderLine[]
   courseLinks       CourseMenuItem[]
+  courseOptionPackItems CourseOptionPackMenuItem[]
   optionLinks       MenuItemOptionGroup[]
   timeDiscounts     MenuItemTimeDiscount[]
   setSteps          MenuSetStep[]   @relation("MenuSetOfItem")
@@ -358,6 +386,8 @@ model DiningSession {
   table      Table        @relation(fields: [tableId], references: [id], onDelete: Cascade)
   course          Course?          @relation(fields: [courseId], references: [id], onDelete: SetNull)
   coursePriceTier CoursePriceTier? @relation(fields: [coursePriceTierId], references: [id], onDelete: SetNull)
+  /// 支払い済みのコース＋オプション（CourseOptionPack.id の JSON 配列）
+  purchasedCourseOptionPackIds Json @default("[]")
   orders          SalesOrder[]
   bill       Bill?
 

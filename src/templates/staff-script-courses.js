@@ -180,7 +180,8 @@ function openCourseItemsModal(course) {
   const draftChecked = new Map();
   for (const it of flatMenuItems()) {
     if ((it.sellKind || "single") === "set") continue;
-    draftChecked.set(it.id, (course.includedMenuItemIds || []).includes(it.id));
+    const on = (course.includedMenuItemIds || []).includes(it.id);
+    draftChecked.set(it.id, on);
   }
 
   let filterCatId = defaultCourseFilterCategoryId();
@@ -197,7 +198,7 @@ function openCourseItemsModal(course) {
     "<div style=\"font-weight:800;font-size:1rem\">対象商品の選択</div>" +
     "<p class=\"muted\" style=\"font-size:.72rem;margin:.35rem 0 0;line-height:1.45\">" +
     escapeHtml(course.name) +
-    " に含める単品を選びます（セット商品は選べません）。カテゴリで絞り込みできます。</p>" +
+    " に最初から含める単品です（セットは選べません）。高単価品などは下の「＋オプション」で有料追加後に対象にできます。</p>" +
     "<div id=\"courseModalCountLine\" class=\"muted\" style=\"font-size:.75rem;margin-top:.4rem\"></div></div>" +
     "<div style=\"padding:0 1rem .5rem\">" +
     "<label class=\"muted\" style=\"font-size:.72rem;display:block;margin-bottom:.25rem\">カテゴリで絞り込み</label>" +
@@ -292,9 +293,10 @@ function openCourseItemsModal(course) {
   panel.querySelector("#courseModalCancel").onclick = () => closeModal();
   panel.querySelector("#courseModalSave").onclick = async () => {
     log("");
-    const menuItemIds = [];
+    const includedMenuLinks = [];
     for (const [id, ok] of draftChecked) {
-      if (ok) menuItemIds.push(id);
+      if (!ok) continue;
+      includedMenuLinks.push({ menuItemId: id, minGuestCount: 1 });
     }
     const btn = panel.querySelector("#courseModalSave");
     btn.disabled = true;
@@ -302,9 +304,9 @@ function openCourseItemsModal(course) {
       await api("/stores/" + encodeURIComponent(STORE) + "/courses/" + encodeURIComponent(course.id), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ menuItemIds }),
+        body: JSON.stringify({ includedMenuLinks }),
       });
-      log("対象商品を保存しました（" + menuItemIds.length + "件）");
+      log("対象商品を保存しました（" + includedMenuLinks.length + "件）");
       closeModal();
       await loadAll();
     } catch (e) {
@@ -316,6 +318,299 @@ function openCourseItemsModal(course) {
 
   backdrop.appendChild(panel);
   backdrop.addEventListener("click", (ev) => {
+    if (ev.target === backdrop) closeModal();
+  });
+  document.body.appendChild(backdrop);
+}
+
+/**
+ * 卓が追加料金を支払うとコース対象に含まれる単品を増やす「＋オプション」設定
+ */
+function openCourseOptionPacksModal(course) {
+  if (document.getElementById("courseOptPackModalBackdrop")) return;
+
+  const draft = (course.optionPacks || []).map(function (p) {
+    return {
+      name: String(p.name || ""),
+      extraPrice: Number(p.extraPrice) || 0,
+      menuItemIds: Array.isArray(p.menuItemIds) ? p.menuItemIds.slice() : [],
+    };
+  });
+
+  const backdrop = document.createElement("div");
+  backdrop.id = "courseOptPackModalBackdrop";
+  backdrop.style.cssText =
+    "position:fixed;inset:0;z-index:8000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:1rem;";
+  const panel = document.createElement("div");
+  panel.style.cssText =
+    "background:#fafafa;color:var(--text);width:100%;max-width:36rem;max-height:92vh;overflow:hidden;display:flex;flex-direction:column;border-radius:12px;border:1px solid var(--border);box-shadow:0 8px 32px rgba(0,0,0,.2)";
+  const cardsHost = document.createElement("div");
+  cardsHost.style.cssText = "flex:1;min-height:8rem;max-height:56vh;overflow:auto;padding:0 1rem .75rem";
+
+  function openPackItemPicker(packIdx) {
+    if (document.getElementById("packItemPickerBackdrop")) return;
+    const pb = document.createElement("div");
+    pb.id = "packItemPickerBackdrop";
+    pb.style.cssText =
+      "position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:1rem;";
+    const pp = document.createElement("div");
+    pp.style.cssText =
+      "background:#fff;color:var(--text);width:100%;max-width:32rem;max-height:85vh;display:flex;flex-direction:column;border-radius:12px;border:1px solid var(--border)";
+    const draftChecked = new Map();
+    for (const it of flatMenuItems()) {
+      if ((it.sellKind || "single") === "set") continue;
+      draftChecked.set(it.id, draft[packIdx].menuItemIds.indexOf(it.id) >= 0);
+    }
+    let filterCatId = defaultCourseFilterCategoryId();
+    pp.innerHTML =
+      "<div style=\"padding:.65rem 1rem;border-bottom:1px solid var(--border)\">" +
+      "<div style=\"font-weight:700;font-size:.9rem\">オプションで増やす単品</div>" +
+      "<p class=\"muted\" style=\"font-size:.72rem;margin:.35rem 0 0\">チェックした単品が、このオプション追加後にコース内（本体0円）扱いになります。</p></div>" +
+      "<div style=\"padding:.5rem 1rem\"><label class=\"muted\" style=\"font-size:.72rem\">カテゴリ</label><br/><select id=\"packPickCat\" style=\"width:100%\"></select></div>" +
+      "<div id=\"packPickList\" style=\"flex:1;min-height:10rem;max-height:46vh;overflow:auto;padding:0 1rem\"></div>" +
+      "<div style=\"padding:.65rem 1rem;border-top:1px solid var(--border);display:flex;gap:.5rem;justify-content:flex-end;background:#f0f1f3\">" +
+      "<button type=\"button\" class=\"btn-ghost\" id=\"packPickCancel\">戻る</button>" +
+      "<button type=\"button\" class=\"btn-primary\" id=\"packPickOk\">決定</button></div>";
+
+    function fillCat() {
+      const sel = pp.querySelector("#packPickCat");
+      if (!sel) return;
+      sel.innerHTML = "";
+      for (const row of buildCourseCategoryRows()) {
+        const n = pickableCourseItemsInCategory(row.cat.id).length;
+        const o = document.createElement("option");
+        o.value = row.cat.id;
+        o.textContent = row.label + (n === 0 ? "（単品なし）" : "");
+        sel.appendChild(o);
+      }
+      if (!menuCategoriesCache.some(function (x) {
+        return x.id === filterCatId;
+      })) {
+        filterCatId = defaultCourseFilterCategoryId();
+      }
+      sel.value = filterCatId;
+    }
+
+    function renderPick() {
+      const list = pp.querySelector("#packPickList");
+      if (!list) return;
+      const items = pickableCourseItemsInCategory(filterCatId);
+      list.innerHTML = "";
+      for (const it of items) {
+        const checked = draftChecked.get(it.id) || false;
+        const lab = document.createElement("label");
+        lab.style.cssText =
+          "font-size:.78rem;margin:.15rem 0;display:flex;align-items:center;gap:.4rem;border-radius:6px;padding:.2rem .35rem;border:1px solid var(--border)";
+        const inp = document.createElement("input");
+        inp.type = "checkbox";
+        inp.checked = checked;
+        inp.disabled = !it.isAvailable;
+        const span = document.createElement("span");
+        span.style.flex = "1";
+        span.textContent = it.name + (!it.isAvailable ? "（販売停止）" : "");
+        inp.addEventListener("change", function () {
+          if (!it.isAvailable) return;
+          draftChecked.set(it.id, inp.checked);
+        });
+        lab.appendChild(inp);
+        lab.appendChild(span);
+        list.appendChild(lab);
+      }
+    }
+
+    fillCat();
+    renderPick();
+    const selCat = pp.querySelector("#packPickCat");
+    if (selCat) {
+      selCat.addEventListener("change", function () {
+        filterCatId = selCat.value;
+        renderPick();
+      });
+    }
+    pp.querySelector("#packPickCancel").onclick = function () {
+      if (pb.parentNode) pb.parentNode.removeChild(pb);
+    };
+    pp.querySelector("#packPickOk").onclick = function () {
+      const ids = [];
+      for (const [id, ok] of draftChecked) if (ok) ids.push(id);
+      draft[packIdx].menuItemIds = ids;
+      if (pb.parentNode) pb.parentNode.removeChild(pb);
+      renderPackCards();
+    };
+    pb.appendChild(pp);
+    pb.addEventListener("click", function (ev) {
+      if (ev.target === pb) {
+        if (pb.parentNode) pb.parentNode.removeChild(pb);
+      }
+    });
+    document.body.appendChild(pb);
+  }
+
+  function renderPackCards() {
+    cardsHost.innerHTML = "";
+    draft.forEach(function (pack, idx) {
+      const card = document.createElement("div");
+      card.style.cssText =
+        "border:1px solid var(--border);border-radius:8px;padding:.55rem;margin-bottom:.5rem;background:#fff";
+      const row1 = document.createElement("div");
+      row1.style.cssText = "display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:.35rem";
+      const nameInp = document.createElement("input");
+      nameInp.type = "text";
+      nameInp.placeholder = "オプション名（例: プレミアム）";
+      nameInp.value = pack.name;
+      nameInp.style.flex = "1";
+      nameInp.style.minWidth = "8rem";
+      nameInp.addEventListener("input", function () {
+        draft[idx].name = nameInp.value;
+      });
+      const labPrice = document.createElement("span");
+      labPrice.className = "muted";
+      labPrice.style.fontSize = "0.72rem";
+      labPrice.textContent = "追加（税込円・卓1回）";
+      const priceInp = document.createElement("input");
+      priceInp.type = "number";
+      priceInp.min = "0";
+      priceInp.step = "1";
+      priceInp.style.width = "5.5rem";
+      priceInp.value = String(pack.extraPrice);
+      priceInp.addEventListener("input", function () {
+        draft[idx].extraPrice = Math.max(0, Math.floor(parseInt(priceInp.value, 10) || 0));
+      });
+      row1.appendChild(nameInp);
+      row1.appendChild(labPrice);
+      row1.appendChild(priceInp);
+      const row2 = document.createElement("div");
+      row2.style.cssText = "display:flex;flex-wrap:wrap;gap:.35rem;align-items:center";
+      const pickBtn = document.createElement("button");
+      pickBtn.type = "button";
+      pickBtn.className = "btn-primary";
+      pickBtn.style.fontSize = "0.78rem";
+      pickBtn.textContent = "対象の単品を選ぶ…（" + pack.menuItemIds.length + "件）";
+      pickBtn.onclick = function () {
+        openPackItemPicker(idx);
+      };
+      const rm = document.createElement("button");
+      rm.type = "button";
+      rm.className = "btn-ghost";
+      rm.style.fontSize = "0.78rem";
+      rm.style.color = "#b91c1c";
+      rm.textContent = "削除";
+      rm.onclick = function () {
+        draft.splice(idx, 1);
+        renderPackCards();
+      };
+      row2.appendChild(pickBtn);
+      row2.appendChild(rm);
+      card.appendChild(row1);
+      card.appendChild(row2);
+      cardsHost.appendChild(card);
+    });
+  }
+
+  panel.innerHTML =
+    "<div style=\"padding:.75rem 1rem;border-bottom:1px solid var(--border)\">" +
+    "<div style=\"font-weight:800;font-size:1rem\">コース＋オプション（有料で対象拡大）</div>" +
+    "<p class=\"muted\" style=\"font-size:.72rem;margin:.35rem 0 0;line-height:1.45\">" +
+    escapeHtml(course.name) +
+    " のゲストが、ここで設定した金額を追加すると、そのオプションに紐づく単品がコース内（本体追加0円）の対象に広がります。</p></div>";
+
+  const addBar = document.createElement("div");
+  addBar.style.cssText = "padding:0 1rem .5rem";
+  const addBtn = document.createElement("button");
+  addBtn.type = "button";
+  addBtn.className = "btn-ghost";
+  addBtn.textContent = "＋ オプションを追加";
+  addBtn.onclick = function () {
+    draft.push({ name: "", extraPrice: 500, menuItemIds: [] });
+    renderPackCards();
+  };
+  addBar.appendChild(addBtn);
+
+  const footer = document.createElement("div");
+  footer.style.cssText =
+    "padding:.65rem 1rem;border-top:1px solid var(--border);display:flex;gap:.5rem;justify-content:flex-end;background:#f0f1f3";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "btn-ghost";
+  cancel.id = "optPackModalCancel";
+  cancel.textContent = "キャンセル";
+  const save = document.createElement("button");
+  save.type = "button";
+  save.className = "btn-primary";
+  save.id = "optPackModalSave";
+  save.textContent = "保存";
+  footer.appendChild(cancel);
+  footer.appendChild(save);
+
+  panel.appendChild(addBar);
+  panel.appendChild(cardsHost);
+  panel.appendChild(footer);
+
+  function closeModal() {
+    if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
+  }
+
+  renderPackCards();
+
+  cancel.onclick = function () {
+    closeModal();
+  };
+  save.onclick = async function () {
+    log("");
+    if (draft.length === 0) {
+      save.disabled = true;
+      try {
+        await api("/stores/" + encodeURIComponent(STORE) + "/courses/" + encodeURIComponent(course.id), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ optionPacks: [] }),
+        });
+        log("＋オプションをすべて削除しました");
+        closeModal();
+        await loadAll();
+      } catch (e) {
+        log(String(e.message || e));
+      } finally {
+        save.disabled = false;
+      }
+      return;
+    }
+    for (let i = 0; i < draft.length; i++) {
+      const p = draft[i];
+      if (!String(p.name || "").trim()) {
+        return log("オプション名が空の行があります（" + (i + 1) + "行目）");
+      }
+      if (p.menuItemIds.length === 0) {
+        return log("「" + String(p.name).trim() + "」の対象単品を1件以上選んでください");
+      }
+    }
+    const optionPacks = draft.map(function (p, i) {
+      return {
+        name: String(p.name).trim(),
+        extraPrice: Math.max(0, Math.floor(Number(p.extraPrice) || 0)),
+        sortOrder: i,
+        menuItemIds: p.menuItemIds.slice(),
+      };
+    });
+    save.disabled = true;
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/courses/" + encodeURIComponent(course.id), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ optionPacks }),
+      });
+      log("＋オプションを保存しました（" + optionPacks.length + "件）");
+      closeModal();
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    } finally {
+      save.disabled = false;
+    }
+  };
+
+  backdrop.appendChild(panel);
+  backdrop.addEventListener("click", function (ev) {
     if (ev.target === backdrop) closeModal();
   });
   document.body.appendChild(backdrop);
@@ -356,6 +651,7 @@ function render() {
     mid.className = "pm-mid";
     mid.style.flex = "2";
     const nSel = (c.includedMenuItemIds && c.includedMenuItemIds.length) || 0;
+    const nPack = (c.optionPacks && c.optionPacks.length) || 0;
     mid.innerHTML =
       "<div style=\"font-weight:700\">" +
       escapeHtml(c.name) +
@@ -364,8 +660,10 @@ function render() {
       escapeHtml(c.kind) +
       " · " +
       escapeHtml(formatTiersSummary(c.priceTiers || [])) +
-      " · 対象商品 " +
+      " · 基本対象 " +
       nSel +
+      "件 · ＋オプション " +
+      nPack +
       "件" +
       (c.active ? "" : " · <strong>無効</strong>") +
       "</div>";
@@ -520,7 +818,7 @@ function render() {
     sum.style.cursor = "pointer";
     sum.style.fontWeight = "600";
     sum.style.fontSize = "0.82rem";
-    sum.textContent = "対象商品（ダイアログで選択 · 通常商品のみ）";
+    sum.textContent = "基本の対象商品（ダイアログで選択 · 通常商品のみ）";
     details.appendChild(sum);
 
     const pickHint = document.createElement("p");
@@ -554,6 +852,47 @@ function render() {
     pickRow.appendChild(pickSummary);
     details.appendChild(pickRow);
     row.appendChild(details);
+
+    const detailsOpt = document.createElement("details");
+    detailsOpt.style.marginTop = "0.65rem";
+    detailsOpt.style.paddingTop = "0.65rem";
+    detailsOpt.style.borderTop = "1px dashed var(--border)";
+    const sumOpt = document.createElement("summary");
+    sumOpt.style.cursor = "pointer";
+    sumOpt.style.fontWeight = "600";
+    sumOpt.style.fontSize = "0.82rem";
+    sumOpt.textContent = "＋オプション（追加料金で対象を広げる · 税込・卓1回）";
+    detailsOpt.appendChild(sumOpt);
+    const hintOpt = document.createElement("p");
+    hintOpt.className = "muted";
+    hintOpt.style.fontSize = "0.72rem";
+    hintOpt.style.margin = "0.5rem 0 0";
+    hintOpt.style.lineHeight = "1.45";
+    hintOpt.textContent =
+      "例: 「プレミアム」と500円を設定し、単品をチェックすると、ゲストが500円を追加するとその単品もコース内（本体0円）の対象になります。";
+    detailsOpt.appendChild(hintOpt);
+    const optRow = document.createElement("div");
+    optRow.className = "row";
+    optRow.style.marginTop = "0.55rem";
+    optRow.style.alignItems = "center";
+    optRow.style.gap = "0.65rem";
+    optRow.style.flexWrap = "wrap";
+    const openOptBtn = document.createElement("button");
+    openOptBtn.type = "button";
+    openOptBtn.className = "btn-primary";
+    openOptBtn.textContent = "＋オプションを編集…";
+    openOptBtn.onclick = function () {
+      openCourseOptionPacksModal(c);
+    };
+    const optSummary = document.createElement("span");
+    optSummary.className = "muted";
+    optSummary.style.fontSize = "0.78rem";
+    optSummary.textContent = "現在 " + nPack + "件";
+    optRow.appendChild(openOptBtn);
+    optRow.appendChild(optSummary);
+    detailsOpt.appendChild(optRow);
+    row.appendChild(detailsOpt);
+
     box.appendChild(row);
   }
 }

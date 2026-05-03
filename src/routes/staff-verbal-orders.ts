@@ -4,6 +4,12 @@ import { applyGuestItemTimeDiscounts } from "../lib/guest-time-pricing.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
 import { prisma } from "../db.js";
 
+function parsePurchasedCourseOptionPackIds(raw: unknown): string[] {
+  if (raw == null) return [];
+  if (Array.isArray(raw)) return raw.filter((x): x is string => typeof x === "string" && x.length > 0);
+  return [];
+}
+
 /**
  * 口頭・電話などスタッフが代行する注文。ゲスト向け表示制限（visibleToGuest / 時間帯）を通さない。
  * オプション必須の商品・セット商品は非対応（会計/ゲスト画面で注文）。
@@ -63,9 +69,30 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
             where: { courseId: sess.courseId },
             include: { menuItem: { select: { id: true, sellKind: true } } },
           });
+          const gcv = sess.guestCount;
           allowedIds = new Set(
-            linkRows.filter((x) => x.menuItem && x.menuItem.sellKind !== "set").map((x) => x.menuItemId),
+            linkRows
+              .filter(
+                (x) =>
+                  x.menuItem &&
+                  x.menuItem.sellKind !== "set" &&
+                  gcv >= x.minGuestCount,
+              )
+              .map((x) => x.menuItemId),
           );
+          const pids = parsePurchasedCourseOptionPackIds(sess.purchasedCourseOptionPackIds);
+          if (pids.length > 0 && sess.courseId) {
+            const extras = await tx.courseOptionPackMenuItem.findMany({
+              where: {
+                packId: { in: pids },
+                pack: { courseId: sess.courseId },
+              },
+              include: { menuItem: { select: { sellKind: true } } },
+            });
+            for (const ex of extras) {
+              if (ex.menuItem && ex.menuItem.sellKind !== "set") allowedIds.add(ex.menuItemId);
+            }
+          }
         }
 
         type Resolved = {

@@ -258,6 +258,12 @@ function mapGuestSetMenuItem(
 
 const DEVICE_ID_RE = /^[a-zA-Z0-9_-]{8,128}$/;
 
+function parsePurchasedCourseOptionPackIds(raw: unknown): string[] {
+  if (raw == null) return [];
+  if (Array.isArray(raw)) return raw.filter((x): x is string => typeof x === "string" && x.length > 0);
+  return [];
+}
+
 function normalizeOptionalProfile(
   name: unknown,
   phone: unknown,
@@ -284,13 +290,33 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     }
 
     const includedSingleIds = new Set<string>();
+    const gcForCourse = session.guestCount;
     if (session.courseId) {
       const linkRows = await prisma.courseMenuItem.findMany({
         where: { courseId: session.courseId },
         include: { menuItem: { select: { id: true, sellKind: true } } },
       });
       for (const row of linkRows) {
-        if (row.menuItem && row.menuItem.sellKind !== "set") includedSingleIds.add(row.menuItemId);
+        if (
+          row.menuItem &&
+          row.menuItem.sellKind !== "set" &&
+          gcForCourse >= row.minGuestCount
+        ) {
+          includedSingleIds.add(row.menuItemId);
+        }
+      }
+      const purchasedPackIds = parsePurchasedCourseOptionPackIds(session.purchasedCourseOptionPackIds);
+      if (purchasedPackIds.length > 0) {
+        const pim = await prisma.courseOptionPackMenuItem.findMany({
+          where: {
+            packId: { in: purchasedPackIds },
+            pack: { courseId: session.courseId },
+          },
+          include: { menuItem: { select: { sellKind: true } } },
+        });
+        for (const r of pim) {
+          if (r.menuItem && r.menuItem.sellKind !== "set") includedSingleIds.add(r.menuItemId);
+        }
       }
     }
 
@@ -300,6 +326,26 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     });
     const st = mergeStoreSettings(storeRow?.settings);
     const nowMin = minutesSinceMidnightInTimeZone(new Date(), st.timezone);
+
+    const purchasedSet = new Set(parsePurchasedCourseOptionPackIds(session.purchasedCourseOptionPackIds));
+    let courseOptionPacksOut:
+      | { id: string; name: string; extraPrice: number; purchased: boolean }[]
+      | undefined;
+    if (session.courseId) {
+      const packRows = await prisma.courseOptionPack.findMany({
+        where: { courseId: session.courseId },
+        orderBy: { sortOrder: "asc" },
+        select: { id: true, name: true, extraPrice: true },
+      });
+      if (packRows.length > 0) {
+        courseOptionPacksOut = packRows.map((p) => ({
+          id: p.id,
+          name: p.name,
+          extraPrice: p.extraPrice,
+          purchased: purchasedSet.has(p.id),
+        }));
+      }
+    }
 
     const tierForLo = session.coursePriceTier;
     const lastOrder =
@@ -389,6 +435,9 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
             includedSingleIds.size > 0
               ? "コース対象の単品はコース料に含まれます。対象外の単品・セットは追加料金です。"
               : "コース対象の単品が未設定のため、メニュー表記上はすべて追加料金扱いです。",
+          ...(courseOptionPacksOut && courseOptionPacksOut.length > 0
+            ? { optionPacks: courseOptionPacksOut }
+            : {}),
         }
       : null;
 
@@ -588,13 +637,33 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
           },
         });
         const includedSingles = new Set<string>();
+        const gcOrd = sess?.guestCount ?? 0;
         if (sess?.courseId) {
           const linkRows = await tx.courseMenuItem.findMany({
             where: { courseId: sess.courseId },
             include: { menuItem: { select: { sellKind: true } } },
           });
           for (const row of linkRows) {
-            if (row.menuItem && row.menuItem.sellKind !== "set") includedSingles.add(row.menuItemId);
+            if (
+              row.menuItem &&
+              row.menuItem.sellKind !== "set" &&
+              gcOrd >= row.minGuestCount
+            ) {
+              includedSingles.add(row.menuItemId);
+            }
+          }
+          const purchasedOrd = parsePurchasedCourseOptionPackIds(sess?.purchasedCourseOptionPackIds);
+          if (purchasedOrd.length > 0 && sess.courseId) {
+            const pim = await tx.courseOptionPackMenuItem.findMany({
+              where: {
+                packId: { in: purchasedOrd },
+                pack: { courseId: sess.courseId },
+              },
+              include: { menuItem: { select: { sellKind: true } } },
+            });
+            for (const r of pim) {
+              if (r.menuItem && r.menuItem.sellKind !== "set") includedSingles.add(r.menuItemId);
+            }
           }
         }
 
@@ -953,6 +1022,96 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       if (msg === "BAD_OPTIONS") {
         return reply.code(400).send({ error: "オプションの選択内容が正しくありません" });
       }
+      throw e;
+    }
+  });
+
+  app.post<{
+    Params: { token: string };
+    Body: { packId?: string };
+  }>("/guest/:token/course-option-packs/purchase", async (req, reply) => {
+    const packId = req.body && typeof req.body === "object" ? (req.body as { packId?: string }).packId : undefined;
+    if (typeof packId !== "string" || !packId.trim()) {
+      return reply.code(400).send({ error: "packId required" });
+    }
+    const session = await prisma.diningSession.findUnique({
+      where: { guestToken: req.params.token },
+      include: { course: true, coursePriceTier: true },
+    });
+    if (!session || session.status !== "open") {
+      return reply.code(404).send({ error: "session not found or closed" });
+    }
+    if (!session.courseId) {
+      return reply.code(400).send({ error: "no course on this session" });
+    }
+    const pack = await prisma.courseOptionPack.findFirst({
+      where: { id: packId.trim(), courseId: session.courseId },
+    });
+    if (!pack) {
+      return reply.code(404).send({ error: "option pack not found" });
+    }
+    const storeRow0 = await prisma.store.findUnique({
+      where: { id: session.storeId },
+      select: { settings: true },
+    });
+    const st0 = mergeStoreSettings(storeRow0?.settings);
+    if (session.courseId && session.course && session.coursePriceTier) {
+      const lo = computeGuestLastOrderPayload(
+        session.openedAt,
+        session.coursePriceTier.durationMinutes,
+        st0.guestCourseLastOrderMinutesBeforeEnd,
+        st0.guestEnforceLastOrder,
+      );
+      if (lo?.orderingClosed) {
+        return reply.code(403).send({ error: "ラストオーダーの時間を過ぎています" });
+      }
+    }
+    const current = parsePurchasedCourseOptionPackIds(session.purchasedCourseOptionPackIds);
+    if (current.includes(pack.id)) {
+      return reply.code(409).send({ error: "すでに追加済みです" });
+    }
+    try {
+      const order = await prisma.$transaction(async (tx) => {
+        const sess = await tx.diningSession.findUnique({ where: { id: session.id } });
+        if (!sess || sess.status !== "open") throw new Error("SESSION_GONE");
+        const cur = parsePurchasedCourseOptionPackIds(sess.purchasedCourseOptionPackIds);
+        if (cur.includes(pack.id)) throw new Error("ALREADY");
+        const so = await tx.salesOrder.create({
+          data: {
+            sessionId: sess.id,
+            status: "submitted",
+            note: null,
+          },
+        });
+        const lineExtra = { kind: "courseOptionPack", courseOptionPackId: pack.id };
+        await tx.orderLine.create({
+          data: {
+            orderId: so.id,
+            menuItemId: null,
+            nameSnapshot: `[コース＋オプション] ${pack.name}`,
+            unitPrice: pack.extraPrice,
+            qty: 1,
+            note: null,
+            lineExtra: lineExtra as Prisma.InputJsonValue,
+            status: "queued",
+          },
+        });
+        await tx.diningSession.update({
+          where: { id: sess.id },
+          data: {
+            purchasedCourseOptionPackIds: [...cur, pack.id],
+          },
+        });
+        return tx.salesOrder.findUnique({
+          where: { id: so.id },
+          include: { lines: true },
+        });
+      });
+      return order;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      if (msg === "SESSION_GONE") return reply.code(404).send({ error: "session not found or closed" });
+      if (msg === "ALREADY") return reply.code(409).send({ error: "すでに追加済みです" });
       throw e;
     }
   });

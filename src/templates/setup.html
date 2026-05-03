@@ -5,19 +5,73 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>初回セットアップ</title>
   <style>
-    :root { --bg: #0f1218; --card: #181f2a; --line: #2a3344; --text: #e8edf4; --muted: #8b97a8; --gold: #d4a84b; }
+    :root {
+      --bg: #e8eef5;
+      --card: #ffffff;
+      --line: #c5d0df;
+      --text: #152232;
+      --muted: #4a5d72;
+      --accent: #1565c0;
+      --accent-hover: #0d47a1;
+      --btn-text: #ffffff;
+    }
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem; }
-    .card { width: 100%; max-width: 22rem; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 1.25rem; }
-    h1 { font-size: 1.1rem; margin: 0 0 0.35rem; }
-    p { color: var(--muted); font-size: 0.85rem; margin: 0 0 1rem; line-height: 1.45; }
-    label { display: block; font-size: 0.78rem; color: var(--muted); margin-bottom: 0.25rem; }
-    input { width: 100%; padding: 0.55rem 0.65rem; border-radius: 8px; border: 1px solid var(--line); background: #0f141c; color: var(--text); margin-bottom: 0.75rem; }
-    button { width: 100%; padding: 0.65rem; border: none; border-radius: 10px; background: var(--gold); color: #1a1408; font-weight: 800; cursor: pointer; margin-top: 0.25rem; }
-    #err { color: #ff8a8a; font-size: 0.85rem; margin-top: 0.75rem; display: none; }
-    .hint { font-size: 0.75rem; color: var(--muted); margin-top: 1rem; }
-    code { background: #0f141c; padding: 0.1rem 0.35rem; border-radius: 4px; }
-    a { color: var(--gold); }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: linear-gradient(165deg, #f5f8fc 0%, var(--bg) 45%, #dce6f2 100%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .card {
+      width: 100%;
+      max-width: 22rem;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 1.35rem 1.25rem;
+      box-shadow: 0 10px 40px rgba(21, 34, 50, 0.08), 0 1px 3px rgba(21, 34, 50, 0.06);
+    }
+    h1 { font-size: 1.15rem; margin: 0 0 0.35rem; font-weight: 700; color: var(--text); }
+    p { color: var(--muted); font-size: 0.875rem; margin: 0 0 1rem; line-height: 1.55; }
+    label { display: block; font-size: 0.8rem; font-weight: 600; color: var(--text); margin-bottom: 0.25rem; }
+    input {
+      width: 100%;
+      padding: 0.6rem 0.7rem;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fafbfd;
+      color: var(--text);
+      margin-bottom: 0.75rem;
+    }
+    input:focus {
+      outline: 2px solid rgba(21, 101, 192, 0.35);
+      outline-offset: 1px;
+      border-color: var(--accent);
+      background: #fff;
+    }
+    button {
+      width: 100%;
+      padding: 0.68rem;
+      border: none;
+      border-radius: 10px;
+      background: var(--accent);
+      color: var(--btn-text);
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 0.25rem;
+      letter-spacing: 0.02em;
+    }
+    button:hover { background: var(--accent-hover); }
+    #err { color: #b71c1c; font-size: 0.85rem; margin-top: 0.75rem; display: none; font-weight: 600; }
+    .hint { font-size: 0.78rem; color: var(--muted); margin-top: 1rem; }
+    code { background: #e9eef5; color: var(--text); padding: 0.12rem 0.4rem; border-radius: 4px; font-size: 0.85em; border: 1px solid #d5dde8; }
+    a { color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+    a:hover { color: var(--accent-hover); }
     #closed { display: none; }
     #formWrap { display: none; }
   </style>

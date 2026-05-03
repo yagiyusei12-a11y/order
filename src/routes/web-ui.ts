@@ -79,7 +79,11 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
   });
 
   app.get("/staff-app/login", async (_req, reply) => {
-    return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(html("login.html"));
+    return reply
+      .type("text/html; charset=utf-8")
+      .header("Cache-Control", "no-store, no-cache, must-revalidate")
+      .header("Pragma", "no-cache")
+      .send(html("login.html"));
   });
 
   app.get("/staff-app/setup", async (_req, reply) => {

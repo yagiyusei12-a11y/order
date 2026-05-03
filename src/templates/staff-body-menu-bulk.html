@@ -23,6 +23,7 @@
           <th style="padding:0.5rem 0.6rem">カテゴリ</th>
           <th style="padding:0.5rem 0.6rem;width:5.5rem">価格</th>
           <th style="padding:0.5rem 0.6rem">調理場</th>
+          <th style="padding:0.5rem 0.6rem;width:4.5rem">形態</th>
           <th style="padding:0.5rem 0.6rem;width:5rem">店内表示</th>
         </tr>
       </thead>
@@ -133,6 +134,25 @@
         </label>
         <input id="bulkCook2" type="number" min="1" max="86400" step="1" style="margin:0" placeholder="空欄＝なし" />
       </div>
+    </div>
+
+    <div class="bulk-field" style="margin-bottom:0.65rem">
+      <label class="row" style="align-items:center;gap:0.45rem;margin:0 0 0.35rem">
+        <input type="checkbox" id="applySellKind" /> 販売形態
+      </label>
+      <select id="bulkSellKind" style="margin:0;max-width:12rem">
+        <option value="single">通常商品</option>
+        <option value="set">セット商品</option>
+      </select>
+      <p class="muted" style="font-size:0.7rem;margin:0.35rem 0 0">セットにするには各商品にあらかじめセット構成が必要です。通常に戻すとセット構成は削除されます。</p>
+    </div>
+
+    <div class="bulk-field" style="margin-bottom:0.65rem">
+      <label class="row" style="align-items:center;gap:0.45rem;margin:0 0 0.35rem">
+        <input type="checkbox" id="applyTimeDisc" /> 時間帯ディスカウント（全選択商品を同じ内容に置き換え。行なし＝すべてクリア）
+      </label>
+      <div id="bulkTimeDiscRoot" style="margin-bottom:0.35rem"></div>
+      <button type="button" class="btn-ghost" id="bulkAddTimeDisc" style="font-size:0.82rem">行を追加</button>
     </div>
 
     <div class="bulk-field" style="margin-bottom:0.65rem">

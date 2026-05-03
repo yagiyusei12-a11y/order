@@ -215,6 +215,57 @@ type MenuItemPatchData = {
   sellKind?: string;
 };
 
+type ValidatedTimeDiscountRow = {
+  timeWindowId: string;
+  discountKind: string;
+  value: number;
+};
+
+/** 時間帯ディスカウント行の検証（単体 PUT と一括 PATCH 共通） */
+async function validateMenuItemTimeDiscountRows(
+  storeId: string,
+  raw: unknown,
+  arrayError: string,
+): Promise<{ error: string } | { rows: ValidatedTimeDiscountRow[] }> {
+  if (!Array.isArray(raw)) return { error: arrayError };
+  const seenTw = new Set<string>();
+  const rows: ValidatedTimeDiscountRow[] = [];
+  for (const row of raw) {
+    if (!row || typeof row !== "object" || Array.isArray(row)) {
+      return { error: "invalid time discount row" };
+    }
+    const r = row as Record<string, unknown>;
+    if (typeof r.timeWindowId !== "string") {
+      return { error: "each row needs timeWindowId" };
+    }
+    if (r.discountKind !== "percent" && r.discountKind !== "fixed_yen") {
+      return { error: "discountKind must be percent or fixed_yen" };
+    }
+    if (typeof r.value !== "number" || !Number.isInteger(r.value)) {
+      return { error: "value must be integer" };
+    }
+    if (r.discountKind === "percent" && (r.value < 0 || r.value > 100)) {
+      return { error: "percent value must be 0-100" };
+    }
+    if (r.discountKind === "fixed_yen" && r.value < 0) {
+      return { error: "fixed_yen value must be non-negative" };
+    }
+    const twid = r.timeWindowId.trim();
+    if (seenTw.has(twid)) return { error: "duplicate timeWindowId" };
+    seenTw.add(twid);
+    const tw = await prisma.storeTimeWindow.findFirst({
+      where: { id: twid, storeId },
+    });
+    if (!tw) return { error: "time window not found" };
+    rows.push({
+      timeWindowId: twid,
+      discountKind: r.discountKind as string,
+      value: r.value,
+    });
+  }
+  return { rows };
+}
+
 /** 単体 PATCH と一括 PATCH で共通の入力検証（optionGroupIds は含めない） */
 async function buildMenuItemPatchData(
   storeId: string,
@@ -1380,6 +1431,17 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     const built = await buildMenuItemPatchData(storeId, patch);
     if ("error" in built) return reply.code(400).send({ error: built.error });
 
+    let timeDiscountRows: ValidatedTimeDiscountRow[] | undefined;
+    if ("timeDiscounts" in patch) {
+      const td = await validateMenuItemTimeDiscountRows(
+        storeId,
+        patch.timeDiscounts,
+        "timeDiscounts must be an array (empty array clears all rows)",
+      );
+      if ("error" in td) return reply.code(400).send({ error: td.error });
+      timeDiscountRows = td.rows;
+    }
+
     let optionGroupIds: string[] | undefined;
     if ("optionGroupIds" in patch) {
       const og = await validateOptionGroupIdsForStore(storeId, patch.optionGroupIds);
@@ -1389,7 +1451,8 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
 
     const hasFieldUpdates = Object.keys(built.data).length > 0;
     const hasOptionsUpdate = optionGroupIds !== undefined;
-    if (!hasFieldUpdates && !hasOptionsUpdate) {
+    const hasTimeDiscountUpdate = timeDiscountRows !== undefined;
+    if (!hasFieldUpdates && !hasOptionsUpdate && !hasTimeDiscountUpdate) {
       return reply.code(400).send({ error: "no fields to update" });
     }
 
@@ -1439,14 +1502,38 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
             data.sortOrder = appendBase + i;
           }
 
-          if (Object.keys(data).length > 0) {
+          const didFieldUpdate = Object.keys(data).length > 0;
+          if (didFieldUpdate) {
             if (data.sellKind === "single") {
               await tx.menuSetStep.deleteMany({ where: { setMenuItemId: id } });
             }
             if ("imageUrl" in data && data.imageUrl !== row.imageUrl && row.imageUrl) {
               imageUrlsToDeleteAfterTx.add(row.imageUrl);
             }
-            await tx.menuItem.update({ where: { id }, data });
+            await tx.menuItem.update({
+              where: { id },
+              data: { ...data, masterVersion: { increment: 1 } },
+            });
+          }
+
+          if (hasTimeDiscountUpdate && timeDiscountRows !== undefined) {
+            await tx.menuItemTimeDiscount.deleteMany({ where: { menuItemId: id } });
+            if (timeDiscountRows.length > 0) {
+              await tx.menuItemTimeDiscount.createMany({
+                data: timeDiscountRows.map((r) => ({
+                  menuItemId: id,
+                  timeWindowId: r.timeWindowId,
+                  discountKind: r.discountKind,
+                  value: r.value,
+                })),
+              });
+            }
+            if (!didFieldUpdate) {
+              await tx.menuItem.update({
+                where: { id },
+                data: { masterVersion: { increment: 1 } },
+              });
+            }
           }
 
           if (hasOptionsUpdate && optionGroupIds !== undefined) {
@@ -1487,40 +1574,20 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     const ifM = readIfMasterVersion(bodyObj);
     if (!(await assertMenuItemMasterVersion(item, ifM, reply))) return;
     const raw = req.body?.discounts;
-    if (!Array.isArray(raw)) return reply.code(400).send({ error: "discounts[] required (empty array clears)" });
-    const seenTw = new Set<string>();
-    for (const row of raw) {
-      if (!row || typeof row.timeWindowId !== "string") {
-        return reply.code(400).send({ error: "each row needs timeWindowId" });
-      }
-      if (row.discountKind !== "percent" && row.discountKind !== "fixed_yen") {
-        return reply.code(400).send({ error: "discountKind must be percent or fixed_yen" });
-      }
-      if (typeof row.value !== "number" || !Number.isInteger(row.value)) {
-        return reply.code(400).send({ error: "value must be integer" });
-      }
-      if (row.discountKind === "percent" && (row.value < 0 || row.value > 100)) {
-        return reply.code(400).send({ error: "percent value must be 0-100" });
-      }
-      if (row.discountKind === "fixed_yen" && row.value < 0) {
-        return reply.code(400).send({ error: "fixed_yen value must be non-negative" });
-      }
-      const twid = row.timeWindowId.trim();
-      if (seenTw.has(twid)) return reply.code(400).send({ error: "duplicate timeWindowId" });
-      seenTw.add(twid);
-      const tw = await prisma.storeTimeWindow.findFirst({
-        where: { id: twid, storeId },
-      });
-      if (!tw) return reply.code(400).send({ error: "time window not found" });
-    }
+    const validated = await validateMenuItemTimeDiscountRows(
+      storeId,
+      raw,
+      "discounts[] required (empty array clears)",
+    );
+    if ("error" in validated) return reply.code(400).send({ error: validated.error });
 
     await prisma.$transaction(async (tx) => {
       await tx.menuItemTimeDiscount.deleteMany({ where: { menuItemId: item.id } });
-      if (raw.length > 0) {
+      if (validated.rows.length > 0) {
         await tx.menuItemTimeDiscount.createMany({
-          data: raw.map((r) => ({
+          data: validated.rows.map((r) => ({
             menuItemId: item.id,
-            timeWindowId: r.timeWindowId.trim(),
+            timeWindowId: r.timeWindowId,
             discountKind: r.discountKind,
             value: r.value,
           })),

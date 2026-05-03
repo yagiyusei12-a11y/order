@@ -9,7 +9,85 @@ function escapeHtml(s) {
 let categoriesCache = [];
 let stationsCache = [];
 let optionGroupsCache = [];
+let timeWindowsCache = [];
 let flatRows = [];
+
+function formatTwLabel(w) {
+  const z = (n) => String(n).padStart(2, "0");
+  const sh = Math.floor(w.startMin / 60);
+  const sm = w.startMin % 60;
+  const eh = Math.floor(w.endMin / 60);
+  const em = w.endMin % 60;
+  return w.name + " (" + z(sh) + ":" + z(sm) + "〜" + z(eh) + ":" + z(em) + ")";
+}
+
+function buildTimeWinOptionsForBulkTdisc(selectedId) {
+  let h = "<option value=\"\">（時間帯）</option>";
+  for (const w of timeWindowsCache) {
+    h +=
+      "<option value=\"" +
+      escapeHtml(w.id) +
+      "\"" +
+      (w.id === selectedId ? " selected" : "") +
+      ">" +
+      escapeHtml(formatTwLabel(w)) +
+      "</option>";
+  }
+  return h;
+}
+
+function addBulkTdiscRow(preset) {
+  const root = $("bulkTimeDiscRoot");
+  if (!root) return;
+  const d = preset || {};
+  const twid = d.timeWindowId || "";
+  const kind = d.discountKind === "fixed_yen" ? "fixed_yen" : "percent";
+  const val = typeof d.value === "number" ? d.value : kind === "percent" ? 10 : 100;
+  const wrap = document.createElement("div");
+  wrap.className = "row";
+  wrap.style.cssText = "gap:.35rem;flex-wrap:wrap;margin:.3rem 0;align-items:flex-end";
+  wrap.setAttribute("data-bulk-tdisc-row", "1");
+  wrap.innerHTML =
+    "<select data-twin style=\"margin:0;min-width:170px\">" +
+    buildTimeWinOptionsForBulkTdisc(twid) +
+    "</select>" +
+    "<select data-tkind style=\"margin:0;width:100px\"><option value=\"percent\"" +
+    (kind === "percent" ? " selected" : "") +
+    ">％引き</option><option value=\"fixed_yen\"" +
+    (kind === "fixed_yen" ? " selected" : "") +
+    ">円引き</option></select>" +
+    "<input data-tval type=\"number\" min=\"0\" max=\"1000000\" step=\"1\" style=\"margin:0;width:88px\" value=\"" +
+    escapeHtml(String(val)) +
+    "\" title=\"％は0〜100、円は税込からの減算\" />" +
+    "<button type=\"button\" class=\"btn-ghost\" data-bulk-tdisc-del style=\"color:#b91c1c\">削除</button>";
+  wrap.querySelector("[data-bulk-tdisc-del]").onclick = () => wrap.remove();
+  root.appendChild(wrap);
+}
+
+function collectBulkTimeDiscountsForPatch() {
+  const rows = [];
+  document.querySelectorAll("[data-bulk-tdisc-row]").forEach((wrap) => {
+    const twin = wrap.querySelector("[data-twin]");
+    const tkind = wrap.querySelector("[data-tkind]");
+    const tval = wrap.querySelector("[data-tval]");
+    if (!twin || !tkind || !tval) return;
+    const timeWindowId = twin.value.trim();
+    if (!timeWindowId) return;
+    const discountKind = tkind.value === "fixed_yen" ? "fixed_yen" : "percent";
+    const value = Number(tval.value);
+    if (!Number.isInteger(value)) {
+      throw new Error("時間帯ディスカウントの値は整数で入力してください");
+    }
+    if (discountKind === "percent" && (value < 0 || value > 100)) {
+      throw new Error("％引きは0〜100の整数です");
+    }
+    if (discountKind === "fixed_yen" && value < 0) {
+      throw new Error("円引きは0以上の整数です");
+    }
+    rows.push({ timeWindowId, discountKind, value });
+  });
+  return rows;
+}
 
 function $(id) {
   return document.getElementById(id);
@@ -56,6 +134,10 @@ function renderTable() {
     html += "<td style=\"padding:0.45rem 0.6rem;color:var(--muted)\">" + escapeHtml(catLab) + "</td>";
     html += "<td style=\"padding:0.45rem 0.6rem\">¥" + escapeHtml(String(Number(item.price || 0).toLocaleString("ja-JP"))) + "</td>";
     html += "<td style=\"padding:0.45rem 0.6rem;font-size:0.78rem\">" + escapeHtml(stationCell(item)) + "</td>";
+    html +=
+      "<td style=\"padding:0.45rem 0.6rem;font-size:0.78rem\">" +
+      (item.sellKind === "set" ? "セット" : "通常") +
+      "</td>";
     html +=
       "<td style=\"padding:0.45rem 0.6rem;font-size:0.78rem\">" +
       (item.isAvailable ? "表示" : "非表示") +
@@ -125,14 +207,16 @@ function fillBulkSelects() {
 }
 
 async function loadAll() {
-  const [mRes, sRes, oRes] = await Promise.all([
+  const [mRes, sRes, oRes, twRes] = await Promise.all([
     api("/stores/" + encodeURIComponent(STORE) + "/menu/full"),
     api("/stores/" + encodeURIComponent(STORE) + "/kitchen-stations?all=1"),
     api("/stores/" + encodeURIComponent(STORE) + "/options/groups"),
+    api("/stores/" + encodeURIComponent(STORE) + "/time-windows"),
   ]);
   categoriesCache = mRes.categories || [];
   stationsCache = sRes.stations || [];
   optionGroupsCache = oRes.groups || [];
+  timeWindowsCache = twRes.timeWindows || [];
   rebuildFlatRows();
   fillBulkSelects();
   renderTable();
@@ -218,6 +302,16 @@ async function applyBulk() {
       patch.cookTimerSec2 = n;
     }
   }
+  if ($("applySellKind").checked) {
+    patch.sellKind = $("bulkSellKind").value === "set" ? "set" : "single";
+  }
+  if ($("applyTimeDisc").checked) {
+    try {
+      patch.timeDiscounts = collectBulkTimeDiscountsForPatch();
+    } catch (e) {
+      return log(String(e.message || e));
+    }
+  }
   if ($("applyOpts").checked) {
     patch.optionGroupIds = [...document.querySelectorAll(".bulk-opt-chk:checked")].map((x) => x.value);
   }
@@ -248,5 +342,8 @@ $("bulkSelNone").onclick = () => {
   updateSelCount();
 };
 $("btnBulkApply").onclick = () => applyBulk().catch((e) => log(String(e.message || e)));
+
+const bulkAddTimeDiscBtn = $("bulkAddTimeDisc");
+if (bulkAddTimeDiscBtn) bulkAddTimeDiscBtn.onclick = () => addBulkTdiscRow(null);
 
 loadAll().catch((e) => log(String(e.message || e)));

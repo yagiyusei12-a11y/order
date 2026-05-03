@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 <#
-  Push origin/main, then on VPS: git pull, npm run build, restart systemd service.
+  Push origin/main, then on VPS: git pull, prisma migrate deploy, npm run build, restart systemd service.
   Configure via .env.deploy (copy from .env.deploy.example) or env vars:
   ORDER_VPS_HOST, ORDER_VPS_USER, ORDER_VPS_KEY, ORDER_VPS_PATH, ORDER_VPS_SERVICE
 #>
@@ -53,7 +53,7 @@ git push origin main
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # Single-line remote script avoids CRLF breaking bash on Windows.
-$remote = "set -e; cd $remotePath; git pull; npm run build; sudo systemctl restart $service; sleep 2; curl -sS http://127.0.0.1:3000/health"
+$remote = "set -e; cd $remotePath; git pull; npx prisma migrate deploy; npm run build; sudo systemctl restart $service; sleep 2; curl -sS http://127.0.0.1:3000/health"
 
 Write-Host "SSH $user@${hostName}: pull, build, restart $service ..." -ForegroundColor Cyan
 & ssh -i $key -o BatchMode=yes -o StrictHostKeyChecking=accept-new "$user@$hostName" $remote

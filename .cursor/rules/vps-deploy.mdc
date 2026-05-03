@@ -23,7 +23,7 @@ alwaysApply: true
    - 未設定なら `.env.deploy.example` を `.env.deploy` にコピーし、`ORDER_VPS_*` を埋めるようユーザーに一度だけ案内する。
 3. 失敗したら **push / SSH / build / restart** のどこで落ちたかを直して再実行する。
 
-`deploy:vps` は **ローカルで `git push origin main` のあと、VPS で `git pull` → `npm run build` → `sudo systemctl restart order-app`** まで行う。
+`deploy:vps` は **ローカルで `git push origin main` のあと、VPS で `git pull` → `npx prisma migrate deploy` → `npm run build` → `sudo systemctl restart order-app`** まで行う。
 
 HTML テンプレだけの変更でも **ビルド＋再起動** でよい（スクリプト既定のまま）。
 

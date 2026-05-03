@@ -11,6 +11,7 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "import:menu-csv": "tsx prisma/import-menu-csv.ts",
+    "seed:harunoyukoto-tables": "tsx prisma/seed-harunoyukoto-tables.ts",
     "db:setup": "prisma generate && prisma db push",
     "db:local:up": "docker compose up -d",
     "db:local:down": "docker compose down",

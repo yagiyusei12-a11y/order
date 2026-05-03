@@ -1,15 +1,19 @@
-# ローカルで Postgres を動かし Neon との速度差を試す用。
+# Postgres（Docker）。環境変数はプロジェクト直下の .env から読み込む。
 # 起動: docker compose up -d
 # 止める: docker compose down（データを残す）
 # データごと消す: docker compose down -v
+#
+# POSTGRES_PASSWORD は .env に必ず設定すること（本番では強いパスワードを）。
+# DATABASE_URL のユーザー・パスワード・DB名は compose の値と一致させる。
 services:
   postgres:
     image: postgres:16-alpine
     ports:
-      - "5432:5432"
+      #  localhost のみ（インターネットから 5432 を塞ぐ）
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: order
-      POSTGRES_PASSWORD: order_local_dev
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-order_local_dev}
       POSTGRES_DB: order
     volumes:
       - order_pgdata:/var/lib/postgresql/data

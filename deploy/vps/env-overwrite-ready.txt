@@ -1,0 +1,18 @@
+# このファイルをそのまま ~/order/.env にコピーして使える（Docker の Postgres 既定パスワードに合わせた例）
+# 上書き前: cp ~/order/.env ~/order/.env.bak
+#
+# JWT_SECRET の x はプレースホルダ（本番では次で差し替え推奨）:
+#   openssl rand -base64 48 | tr -dc 'a-zA-Z0-9' | head -c48
+
+POSTGRES_PASSWORD=order_local_dev
+DATABASE_URL="postgresql://order:order_local_dev@localhost:5432/order?schema=public"
+JWT_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+NODE_ENV=production
+TRUST_PROXY=1
+COOKIE_SECURE=1
+BOOTSTRAP_DISABLED=0
+AUTH_LOGIN_MAX_PER_MINUTE=30
+
+HTTPS_KEY_PATH=
+HTTPS_CERT_PATH=

@@ -13,6 +13,13 @@ if [[ "$(id -u)" -ne 0 ]]; then
   exit 1
 fi
 
+if [[ ! -f "${ORDER_HOME}/dist/index.js" ]]; then
+  echo "ERROR: ${ORDER_HOME}/dist/index.js がありません（TypeScript のビルドが未実行です）。"
+  echo "先に実行: cd ${ORDER_HOME} && bash deploy/vps/bootstrap.sh"
+  echo "または: cd ${ORDER_HOME} && npm ci && npm run build"
+  exit 1
+fi
+
 UNIT="/etc/systemd/system/${SERVICE_NAME}.service"
 cat >"$UNIT" <<EOF
 [Unit]

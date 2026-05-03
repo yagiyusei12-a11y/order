@@ -15,4 +15,4 @@ docker_cmd() {
 
 docker_cmd compose -f docker-compose.proxy.yml up -d
 docker_cmd compose -f docker-compose.proxy.yml ps
-echo "Proxy up. Check https://moder.harunoyukoto.jp (DNS must point here first)"
+echo "Proxy up. Check https://morder.harunoyukoto.jp (DNS must point here first)"

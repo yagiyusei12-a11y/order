@@ -1,5 +1,5 @@
 # DNS がこのサーバの IP を向いてから起動すること。
 # 証明書は Caddy が自動取得（Let's Encrypt）。
-moder.harunoyukoto.jp {
+morder.harunoyukoto.jp {
 	reverse_proxy host.docker.internal:3000
 }

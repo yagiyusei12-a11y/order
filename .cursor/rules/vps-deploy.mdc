@@ -1,0 +1,33 @@
+---
+description: After code changes, push and deploy to KAGOYA VPS until live
+alwaysApply: true
+---
+
+# VPS への反映（order / morder）
+
+このリポジトリの本番は **VPS 上の systemd（`order-app`）** で動いています。ユーザーは **修正のたびに本番へ反映するまで** を求めています。
+
+## エージェントがやること
+
+対象が **次のいずれか** に触れた場合、ユーザーに「手動でデプロイして」と渡さず、こちらで完了まで行う。
+
+- `src/`（アプリ・テンプレ HTML を含む）
+- `prisma/`
+- `package.json` / `package-lock.json`
+- `deploy/vps/`（Caddy など本番設定）
+
+手順の型:
+
+1. 変更を **コミット** する（未コミットのままにしない）。
+2. **`npm run deploy:vps`** を実行する（Windows / PowerShell）。  
+   - 未設定なら `.env.deploy.example` を `.env.deploy` にコピーし、`ORDER_VPS_*` を埋めるようユーザーに一度だけ案内する。
+3. 失敗したら **push / SSH / build / restart** のどこで落ちたかを直して再実行する。
+
+`deploy:vps` は **ローカルで `git push origin main` のあと、VPS で `git pull` → `npm run build` → `sudo systemctl restart order-app`** まで行う。
+
+HTML テンプレだけの変更でも **ビルド＋再起動** でよい（スクリプト既定のまま）。
+
+## やらないこと
+
+- 本番反映が必要な変更を **コミット・プッシュだけで終わらせない**。
+- ユーザーに「サーバーでこれを実行」とだけ言って終わらない（SSH・鍵がエージェントから使えるなら `npm run deploy:vps` を使う）。

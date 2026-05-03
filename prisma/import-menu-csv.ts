@@ -13,10 +13,32 @@
  *   --merge: 既存データは消さず、安定IDで upsert（同名同カテゴリは上書き）
  */
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { mergeStoreSettings } from "../src/lib/store-settings.js";
 
+function loadDotEnv(): void {
+  const p = join(process.cwd(), ".env");
+  if (!existsSync(p)) return;
+  for (const line of readFileSync(p, "utf8").split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t || t.startsWith("#")) continue;
+    const eq = t.indexOf("=");
+    if (eq <= 0) continue;
+    const k = t.slice(0, eq).trim();
+    let v = t.slice(eq + 1).trim();
+    if (
+      (v.startsWith('"') && v.endsWith('"')) ||
+      (v.startsWith("'") && v.endsWith("'"))
+    ) {
+      v = v.slice(1, -1);
+    }
+    if (process.env[k] === undefined) process.env[k] = v;
+  }
+}
+
+loadDotEnv();
 const prisma = new PrismaClient();
 
 function stableId(prefix: string, parts: string[]): string {

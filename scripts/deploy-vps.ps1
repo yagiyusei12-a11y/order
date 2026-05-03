@@ -52,17 +52,11 @@ Write-Host "git push origin main ..." -ForegroundColor Cyan
 git push origin main
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-$remote = @"
-set -e
-cd $remotePath
-git pull
-npm run build
-sudo systemctl restart $service
-curl -sS http://127.0.0.1:3000/health || true
-"@
+# Single-line remote script avoids CRLF breaking bash on Windows.
+$remote = "set -e; cd $remotePath; git pull; npm run build; sudo systemctl restart $service; curl -sS http://127.0.0.1:3000/health || true"
 
 Write-Host "SSH $user@${hostName}: pull, build, restart $service ..." -ForegroundColor Cyan
-ssh -i $key -o BatchMode=yes -o StrictHostKeyChecking=accept-new "$user@$hostName" $remote
+& ssh -i $key -o BatchMode=yes -o StrictHostKeyChecking=accept-new "$user@$hostName" $remote
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "Deploy finished." -ForegroundColor Green

@@ -66,8 +66,8 @@ CREATE TABLE "DiningSession" (
     "courseId" TEXT,
     "guestCount" INTEGER NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'open',
-    "openedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "closedAt" DATETIME,
+    "openedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "closedAt" TIMESTAMP(3),
     CONSTRAINT "DiningSession_storeId_fkey" FOREIGN KEY ("storeId") REFERENCES "Store" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT "DiningSession_tableId_fkey" FOREIGN KEY ("tableId") REFERENCES "Table" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT "DiningSession_courseId_fkey" FOREIGN KEY ("courseId") REFERENCES "Course" ("id") ON DELETE SET NULL ON UPDATE CASCADE
@@ -83,7 +83,7 @@ CREATE TABLE "SalesOrder" (
     "sessionId" TEXT NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'submitted',
     "note" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "SalesOrder_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES "DiningSession" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 

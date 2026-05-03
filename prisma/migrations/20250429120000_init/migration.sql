@@ -2,7 +2,7 @@
 CREATE TABLE "Store" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- CreateTable
@@ -31,8 +31,8 @@ CREATE TABLE "Bill" (
     "label" TEXT,
     "totalAmount" INTEGER NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'open',
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "settledAt" DATETIME,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "settledAt" TIMESTAMP(3),
     CONSTRAINT "Bill_storeId_fkey" FOREIGN KEY ("storeId") REFERENCES "Store" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
@@ -43,7 +43,7 @@ CREATE TABLE "Payment" (
     "methodCode" TEXT NOT NULL,
     "amount" INTEGER NOT NULL,
     "note" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "Payment_billId_fkey" FOREIGN KEY ("billId") REFERENCES "Bill" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 

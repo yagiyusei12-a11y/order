@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { PrismaClient } from "@prisma/client";
@@ -25,21 +24,21 @@ function loadDotEnv(): void {
 
 loadDotEnv();
 const prisma = new PrismaClient();
-
-async function cols(table: string): Promise<string[]> {
-  if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(table)) throw new Error("invalid table");
-  const rows = await prisma.$queryRawUnsafe<{ column_name: string }[]>(
-    `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '${table}' ORDER BY ordinal_position`,
-  );
-  return rows.map((r) => r.column_name);
-}
+const storeId = process.argv[2] || "harunoyukoto";
 
 async function main() {
-  console.log("MenuCategory:", (await cols("MenuCategory")).join(", "));
-  console.log("MenuItem:", (await cols("MenuItem")).join(", "));
-  console.log("StoreTimeWindow:", (await cols("StoreTimeWindow")).join(", "));
+  const n = await prisma.menuCategory.count({ where: { storeId } });
+  const withWin = await prisma.menuCategory.findMany({
+    where: { storeId },
+    take: 1,
+    include: { guestVisibleTimeWindow: true, items: { take: 1 } },
+  });
+  console.log("ok count=", n, "sample=", withWin.length);
 }
 
 main()
-  .catch(console.error)
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
   .finally(() => prisma.$disconnect());

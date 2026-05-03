@@ -26,13 +26,17 @@ function loadDotEnv(): void {
 loadDotEnv();
 const prisma = new PrismaClient();
 
+async function cols(table: string): Promise<string[]> {
+  if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(table)) throw new Error("invalid table");
+  const rows = await prisma.$queryRawUnsafe<{ column_name: string }[]>(
+    `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '${table}' ORDER BY ordinal_position`,
+  );
+  return rows.map((r) => r.column_name);
+}
+
 async function main() {
-  const rows = await prisma.$queryRaw<{ column_name: string }[]>`
-    SELECT column_name
-    FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'MenuCategory'
-    ORDER BY ordinal_position`;
-  console.log(rows.map((r) => r.column_name).join(", "));
+  console.log("MenuCategory:", (await cols("MenuCategory")).join(", "));
+  console.log("MenuItem:", (await cols("MenuItem")).join(", "));
 }
 
 main()

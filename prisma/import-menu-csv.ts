@@ -190,6 +190,12 @@ async function main(): Promise<void> {
 
     const catIdByName = new Map<string, string>();
     let sort = 0;
+    /** 旧設定のままだと guest の時間帯フィルタでカテゴリが丸ごと消えるため CSV 取り込みでクリアする */
+    const guestVisibilityClear = {
+      guestVisibleTimeWindowId: null as string | null,
+      guestVisibleStartMin: null as number | null,
+      guestVisibleEndMin: null as number | null,
+    };
     for (const catName of categoryOrder) {
       const catId = stableId("csvcat", [storeId, catName]);
       catIdByName.set(catName, catId);
@@ -201,8 +207,16 @@ async function main(): Promise<void> {
           name: catName,
           sortOrder: sort++,
           visibleToGuest: true,
+          parentId: null,
+          ...guestVisibilityClear,
         },
-        update: { name: catName, sortOrder: sort - 1, visibleToGuest: true },
+        update: {
+          name: catName,
+          sortOrder: sort - 1,
+          visibleToGuest: true,
+          ...(merge ? {} : { parentId: null }),
+          ...guestVisibilityClear,
+        },
       });
     }
 

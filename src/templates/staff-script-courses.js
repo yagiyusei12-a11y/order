@@ -333,6 +333,7 @@ function openCourseOptionPacksModal(course) {
     return {
       name: String(p.name || ""),
       extraPrice: Number(p.extraPrice) || 0,
+      extraPriceTaxMode: p.extraPriceTaxMode === "exclusive" ? "exclusive" : "inclusive",
       menuItemIds: Array.isArray(p.menuItemIds) ? p.menuItemIds.slice() : [],
     };
   });
@@ -466,19 +467,37 @@ function openCourseOptionPacksModal(course) {
       const labPrice = document.createElement("span");
       labPrice.className = "muted";
       labPrice.style.fontSize = "0.72rem";
-      labPrice.textContent = "追加（税込円・卓1回）";
+      labPrice.textContent = "追加額（卓1回）";
       const priceInp = document.createElement("input");
       priceInp.type = "number";
       priceInp.min = "0";
       priceInp.step = "1";
+      priceInp.placeholder = "例: 500";
       priceInp.style.width = "5.5rem";
       priceInp.value = String(pack.extraPrice);
       priceInp.addEventListener("input", function () {
         draft[idx].extraPrice = Math.max(0, Math.floor(parseInt(priceInp.value, 10) || 0));
       });
+      const taxSel = document.createElement("select");
+      taxSel.style.fontSize = "0.78rem";
+      taxSel.style.maxWidth = "5rem";
+      taxSel.title = "左の金額を税込か税抜か";
+      const oIn = document.createElement("option");
+      oIn.value = "inclusive";
+      oIn.textContent = "税込";
+      const oEx = document.createElement("option");
+      oEx.value = "exclusive";
+      oEx.textContent = "税抜";
+      taxSel.appendChild(oIn);
+      taxSel.appendChild(oEx);
+      taxSel.value = pack.extraPriceTaxMode === "exclusive" ? "exclusive" : "inclusive";
+      taxSel.addEventListener("change", function () {
+        draft[idx].extraPriceTaxMode = taxSel.value === "exclusive" ? "exclusive" : "inclusive";
+      });
       row1.appendChild(nameInp);
       row1.appendChild(labPrice);
       row1.appendChild(priceInp);
+      row1.appendChild(taxSel);
       const row2 = document.createElement("div");
       row2.style.cssText = "display:flex;flex-wrap:wrap;gap:.35rem;align-items:center";
       const pickBtn = document.createElement("button");
@@ -512,7 +531,7 @@ function openCourseOptionPacksModal(course) {
     "<div style=\"font-weight:800;font-size:1rem\">コース＋オプション（有料で対象拡大）</div>" +
     "<p class=\"muted\" style=\"font-size:.72rem;margin:.35rem 0 0;line-height:1.45\">" +
     escapeHtml(course.name) +
-    " のゲストが、ここで設定した金額を追加すると、そのオプションに紐づく単品がコース内（本体追加0円）の対象に広がります。</p></div>";
+    " のゲストが追加料金を支払うと、そのオプションに紐づく単品がコース内（本体追加0円）の対象に広がります。金額・税込/税抜は任意で設定してください。</p></div>";
 
   const addBar = document.createElement("div");
   addBar.style.cssText = "padding:0 1rem .5rem";
@@ -521,7 +540,7 @@ function openCourseOptionPacksModal(course) {
   addBtn.className = "btn-ghost";
   addBtn.textContent = "＋ オプションを追加";
   addBtn.onclick = function () {
-    draft.push({ name: "", extraPrice: 500, menuItemIds: [] });
+    draft.push({ name: "", extraPrice: 0, extraPriceTaxMode: "inclusive", menuItemIds: [] });
     renderPackCards();
   };
   addBar.appendChild(addBtn);
@@ -588,6 +607,7 @@ function openCourseOptionPacksModal(course) {
       return {
         name: String(p.name).trim(),
         extraPrice: Math.max(0, Math.floor(Number(p.extraPrice) || 0)),
+        extraPriceTaxMode: p.extraPriceTaxMode === "exclusive" ? "exclusive" : "inclusive",
         sortOrder: i,
         menuItemIds: p.menuItemIds.slice(),
       };
@@ -861,7 +881,7 @@ function render() {
     sumOpt.style.cursor = "pointer";
     sumOpt.style.fontWeight = "600";
     sumOpt.style.fontSize = "0.82rem";
-    sumOpt.textContent = "＋オプション（追加料金で対象を広げる · 税込・卓1回）";
+    sumOpt.textContent = "＋オプション（追加料金で対象を広げる · 卓1回）";
     detailsOpt.appendChild(sumOpt);
     const hintOpt = document.createElement("p");
     hintOpt.className = "muted";
@@ -869,7 +889,7 @@ function render() {
     hintOpt.style.margin = "0.5rem 0 0";
     hintOpt.style.lineHeight = "1.45";
     hintOpt.textContent =
-      "例: 「プレミアム」と500円を設定し、単品をチェックすると、ゲストが500円を追加するとその単品もコース内（本体0円）の対象になります。";
+      "オプション名・追加額（税込または税抜を選択）・対象単品を設定します。ゲストのお支払いは税込に換算された金額です。";
     detailsOpt.appendChild(hintOpt);
     const optRow = document.createElement("div");
     optRow.className = "row";

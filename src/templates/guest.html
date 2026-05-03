@@ -1457,14 +1457,23 @@
             const wrap = document.createElement("div");
             wrap.className = "course-pack-strip-inner";
             for (const p of unw) {
+              const pay =
+                typeof p.chargeTaxIncluded === "number" && Number.isFinite(p.chargeTaxIncluded)
+                  ? p.chargeTaxIncluded
+                  : Number(p.extraPrice || 0);
               const b = document.createElement("button");
               b.type = "button";
               b.className = "course-pack-btn";
+              const taxNote =
+                p.extraPriceTaxMode === "exclusive"
+                  ? "<span style=\"font-size:0.65rem;opacity:0.85;display:block;margin-top:0.2rem\">※追加額は税抜入力 → お支払いは税込です</span>"
+                  : "";
               b.innerHTML =
                 escapeHtml(p.name) +
                 " <strong>+¥" +
-                Number(p.extraPrice || 0).toLocaleString("ja-JP") +
-                "</strong>（税込）で対象メニューが広がります";
+                pay.toLocaleString("ja-JP") +
+                "</strong>（税込・お支払い）で対象メニューが広がります" +
+                taxNote;
               b.onclick = async function () {
                 try {
                   await api("/guest/" + encodeURIComponent(TOKEN) + "/course-option-packs/purchase", {

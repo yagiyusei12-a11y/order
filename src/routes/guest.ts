@@ -264,6 +264,18 @@ function parsePurchasedCourseOptionPackIds(raw: unknown): string[] {
   return [];
 }
 
+/** コース＋オプションの表示・注文行は税込円に統一（税抜入力時は店舗税率で換算） */
+function courseOptionPackChargeTaxIncluded(
+  extraPrice: number,
+  extraPriceTaxMode: string,
+  taxRatePercent: number,
+): number {
+  if (extraPriceTaxMode === "exclusive") {
+    return Math.round(extraPrice * (1 + taxRatePercent / 100));
+  }
+  return extraPrice;
+}
+
 function normalizeOptionalProfile(
   name: unknown,
   phone: unknown,
@@ -329,21 +341,33 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
 
     const purchasedSet = new Set(parsePurchasedCourseOptionPackIds(session.purchasedCourseOptionPackIds));
     let courseOptionPacksOut:
-      | { id: string; name: string; extraPrice: number; purchased: boolean }[]
+      | {
+          id: string;
+          name: string;
+          extraPrice: number;
+          extraPriceTaxMode: "inclusive" | "exclusive";
+          chargeTaxIncluded: number;
+          purchased: boolean;
+        }[]
       | undefined;
     if (session.courseId) {
       const packRows = await prisma.courseOptionPack.findMany({
         where: { courseId: session.courseId },
         orderBy: { sortOrder: "asc" },
-        select: { id: true, name: true, extraPrice: true },
+        select: { id: true, name: true, extraPrice: true, extraPriceTaxMode: true },
       });
       if (packRows.length > 0) {
-        courseOptionPacksOut = packRows.map((p) => ({
-          id: p.id,
-          name: p.name,
-          extraPrice: p.extraPrice,
-          purchased: purchasedSet.has(p.id),
-        }));
+        courseOptionPacksOut = packRows.map((p) => {
+          const tm = p.extraPriceTaxMode === "exclusive" ? "exclusive" : "inclusive";
+          return {
+            id: p.id,
+            name: p.name,
+            extraPrice: p.extraPrice,
+            extraPriceTaxMode: tm,
+            chargeTaxIncluded: courseOptionPackChargeTaxIncluded(p.extraPrice, tm, st.taxRatePercent),
+            purchased: purchasedSet.has(p.id),
+          };
+        });
       }
     }
 
@@ -1076,6 +1100,22 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         if (!sess || sess.status !== "open") throw new Error("SESSION_GONE");
         const cur = parsePurchasedCourseOptionPackIds(sess.purchasedCourseOptionPackIds);
         if (cur.includes(pack.id)) throw new Error("ALREADY");
+        if (!sess.courseId) throw new Error("NO_COURSE");
+        const packRow = await tx.courseOptionPack.findFirst({
+          where: { id: pack.id, courseId: sess.courseId },
+        });
+        if (!packRow) throw new Error("PACK_GONE");
+        const storeRowTx = await tx.store.findUnique({
+          where: { id: sess.storeId },
+          select: { settings: true },
+        });
+        const stTx = mergeStoreSettings(storeRowTx?.settings);
+        const tm = packRow.extraPriceTaxMode === "exclusive" ? "exclusive" : "inclusive";
+        const unitPrice = courseOptionPackChargeTaxIncluded(
+          packRow.extraPrice,
+          tm,
+          stTx.taxRatePercent,
+        );
         const so = await tx.salesOrder.create({
           data: {
             sessionId: sess.id,
@@ -1083,13 +1123,13 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
             note: null,
           },
         });
-        const lineExtra = { kind: "courseOptionPack", courseOptionPackId: pack.id };
+        const lineExtra = { kind: "courseOptionPack", courseOptionPackId: packRow.id };
         await tx.orderLine.create({
           data: {
             orderId: so.id,
             menuItemId: null,
-            nameSnapshot: `[コース＋オプション] ${pack.name}`,
-            unitPrice: pack.extraPrice,
+            nameSnapshot: `[コース＋オプション] ${packRow.name}`,
+            unitPrice,
             qty: 1,
             note: null,
             lineExtra: lineExtra as Prisma.InputJsonValue,
@@ -1112,6 +1152,9 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       const msg = e instanceof Error ? e.message : "";
       if (msg === "SESSION_GONE") return reply.code(404).send({ error: "session not found or closed" });
       if (msg === "ALREADY") return reply.code(409).send({ error: "すでに追加済みです" });
+      if (msg === "PACK_GONE" || msg === "NO_COURSE") {
+        return reply.code(404).send({ error: "オプションが見つかりません" });
+      }
       throw e;
     }
   });

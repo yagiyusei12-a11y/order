@@ -91,6 +91,7 @@ async function validateCourseMenuLinks(
 type CourseOptionPackIn = {
   name: string;
   extraPrice: number;
+  extraPriceTaxMode: "inclusive" | "exclusive";
   sortOrder: number;
   menuItemIds: string[];
 };
@@ -121,7 +122,18 @@ async function validateCourseOptionPacks(
     }
     const vIds = await validateCourseMenuItemIds(storeId, midRaw);
     if (!vIds.ok) return { ok: false, error: `optionPacks[${i}]: ${vIds.error}` };
-    packs.push({ name, extraPrice: ep, sortOrder, menuItemIds: vIds.ids });
+    let extraPriceTaxMode: "inclusive" | "exclusive" = "inclusive";
+    if ("extraPriceTaxMode" in o && o.extraPriceTaxMode !== undefined) {
+      const tm = o.extraPriceTaxMode;
+      if (tm !== "inclusive" && tm !== "exclusive") {
+        return {
+          ok: false,
+          error: `optionPacks[${i}].extraPriceTaxMode must be "inclusive" or "exclusive"`,
+        };
+      }
+      extraPriceTaxMode = tm;
+    }
+    packs.push({ name, extraPrice: ep, extraPriceTaxMode, sortOrder, menuItemIds: vIds.ids });
   }
   return { ok: true, packs };
 }
@@ -369,6 +381,7 @@ function mapCourseWithItems<
       id: string;
       name: string;
       extraPrice: number;
+      extraPriceTaxMode?: string;
       sortOrder: number;
       menuItems: { menuItemId: string }[];
     }>;
@@ -383,6 +396,7 @@ function mapCourseWithItems<
     id: string;
     name: string;
     extraPrice: number;
+    extraPriceTaxMode: "inclusive" | "exclusive";
     sortOrder: number;
     menuItemIds: string[];
   }[];
@@ -408,6 +422,7 @@ function mapCourseWithItems<
       id: p.id,
       name: p.name,
       extraPrice: p.extraPrice,
+      extraPriceTaxMode: p.extraPriceTaxMode === "exclusive" ? "exclusive" : "inclusive",
       sortOrder: p.sortOrder,
       menuItemIds: p.menuItems.map((m) => m.menuItemId),
     })),
@@ -1729,6 +1744,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
             courseId: c.id,
             name: p.name,
             extraPrice: p.extraPrice,
+            extraPriceTaxMode: p.extraPriceTaxMode,
             sortOrder: p.sortOrder,
             menuItems: {
               createMany: {
@@ -1883,6 +1899,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
               courseId: course.id,
               name: p.name,
               extraPrice: p.extraPrice,
+              extraPriceTaxMode: p.extraPriceTaxMode,
               sortOrder: p.sortOrder,
               menuItems: {
                 createMany: {

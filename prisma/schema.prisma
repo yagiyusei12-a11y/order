@@ -181,13 +181,15 @@ model Course {
   @@index([storeId])
 }
 
-/// コースに上乗せする「＋オプション」（例: +500円）。卓が購入すると紐づく単品がコース対象に追加される。
+/// コースに上乗せする「＋オプション」。卓が購入すると紐づく単品がコース対象に追加される。
 model CourseOptionPack {
   id         String   @id @default(cuid())
   courseId   String
   name       String
-  /// 卓につき1回の上乗せ（税込円・整数）
+  /// 卓につき1回の上乗せ（円・整数。税込/税抜は extraPriceTaxMode）
   extraPrice Int
+  /// inclusive=税込入力, exclusive=税抜入力（会計行は店舗税率で税込に換算）
+  extraPriceTaxMode String @default("inclusive")
   sortOrder  Int      @default(0)
   course     Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
   menuItems  CourseOptionPackMenuItem[]

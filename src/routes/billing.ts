@@ -564,6 +564,13 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
         where: { id: bill.id },
         data: { status, settledAt },
       });
+      if (status === "settled" && bill.sessionId) {
+        // 会計が完了したら自動でバッシング待ちへ（レジの「完了」押し忘れ防止）
+        await tx.diningSession.updateMany({
+          where: { id: bill.sessionId, storeId: bill.storeId, status: "open" },
+          data: { status: "bashing_waiting" },
+        });
+      }
       return payments;
     }).catch((e: Error) => {
       if (e.message === "OVERPAY") return null;

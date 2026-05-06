@@ -557,11 +557,8 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
       document.getElementById("btnPrintReceipt").onclick = () => printHtml(buildReceiptDoc(refreshed));
       document.getElementById("btnPrintInvoice").onclick = () => printHtml(buildInvoiceDoc(refreshed, change));
       document.getElementById("btnFinishCashier").onclick = async () => {
-        await api(
-          "/stores/" + encodeURIComponent(STORE) + "/sessions/" + encodeURIComponent(session.id) + "/bashing",
-          { method: "PATCH" }
-        );
-        log("バッシング待ちにしました");
+        // 会計完了時にサーバ側で自動でバッシング待ちへ遷移するため、ここでは画面更新のみ
+        log("完了しました");
         await loadAll();
         selectedTableId = table.id;
         renderGrid();

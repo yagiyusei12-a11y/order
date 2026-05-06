@@ -7,12 +7,27 @@ let shiftUpdatedAt = 0;
 let seatOrder = [];
 
 function seatLabel(id) {
-  const raw = String(id || "").trim().toUpperCase();
+  const raw0 = String(id || "").trim();
+  const raw = raw0.toUpperCase();
+
+  // Supported forms:
+  // - "C1" / "T31"
+  // - "31" (legacy numeric)
+  // - "store-c01" / "store-t31" (prefixed ids from DB)
+  // - "store-C01" (case-insensitive, leading zeros)
+  const m = raw.match(/(?:^|[^A-Z0-9])(C|T)0*(\d+)\s*$/i);
+  if (m) {
+    const kind = String(m[1]).toUpperCase();
+    const n = parseInt(m[2], 10);
+    if (Number.isFinite(n)) return kind + n;
+  }
+
   if (/^\d+$/.test(raw)) {
     const n = parseInt(raw, 10);
     if (n >= 1 && n <= 10) return "C" + n;
     if (n >= 21) return "T" + n;
   }
+
   return raw;
 }
 

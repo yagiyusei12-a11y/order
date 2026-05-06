@@ -283,6 +283,8 @@ model MenuItem {
   cookTimerSec      Int?
   /// 同一商品の2つ目の調理タイマー（秒）。null / 0 = 未使用
   cookTimerSec2     Int?
+  /// 酒類（未成年・運転者向けの注文制限の対象。マスタで指定）
+  containsAlcohol   Boolean         @default(false)
   /// メニュー保存の楽観ロック（PATCH 時 ifMasterVersion と照合）
   masterVersion     Int             @default(1)
   category          MenuCategory    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
@@ -381,6 +383,8 @@ model DiningSession {
   guestCount Int
   /// 子供の人数（0〜guestCount）。残りは大人としてコース単価を適用。
   childCount Int          @default(0)
+  /// ゲストの飲酒確認（null=未送信・酒類注文は不可。true=可、false=不可）
+  guestAlcoholAllowed Boolean?
   status     String       @default("open")
   openedAt   DateTime     @default(now())
   closedAt   DateTime?

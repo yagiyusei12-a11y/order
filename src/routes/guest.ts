@@ -31,6 +31,7 @@ function mapGuestMenuItem(
     imageUrl: string | null;
     price: number;
     priceTaxMode: string;
+    containsAlcohol?: boolean;
     stockQty: number | null;
     stockLowThreshold: number | null;
     timeDiscounts?: {
@@ -69,6 +70,7 @@ function mapGuestMenuItem(
     taxIncludedPrice: discounted,
     stockQty: it.stockQty,
     lowStock,
+    containsAlcohol: it.containsAlcohol === true,
   };
   if (applied && discounted !== taxIncludedPrice) {
     out.originalTaxIncludedPrice = taxIncludedPrice;
@@ -161,6 +163,7 @@ function mapGuestSetMenuItem(
     imageUrl: string | null;
     price: number;
     priceTaxMode: string;
+    containsAlcohol?: boolean;
     stockQty: number | null;
     stockLowThreshold: number | null;
     sellKind: string;
@@ -194,6 +197,7 @@ function mapGuestSetMenuItem(
           id: string;
           name: string;
           isAvailable: boolean;
+          containsAlcohol?: boolean;
           stockQty: number | null;
           stockLowThreshold: number | null;
           category: {
@@ -220,6 +224,7 @@ function mapGuestSetMenuItem(
       extraTaxIncluded: number;
       stockQty: number | null;
       soldOut: boolean;
+      containsAlcohol: boolean;
     }[] = [];
     for (const ch of st.choices) {
       const comp = ch.componentMenuItem;
@@ -235,6 +240,7 @@ function mapGuestSetMenuItem(
         extraTaxIncluded: Math.round(ex * (1 + taxRatePercent / 100)),
         stockQty: comp.stockQty,
         soldOut,
+        containsAlcohol: comp.containsAlcohol === true,
       });
     }
     const selectable = choices.filter((c) => !c.soldOut).length;
@@ -523,6 +529,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         id: session.id,
         guestCount: session.guestCount,
         childCount: session.childCount,
+        guestAlcoholAllowed: session.guestAlcoholAllowed,
         course: courseOut,
       },
       lastOrder,
@@ -567,6 +574,29 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       })),
     };
   });
+
+  /** 飲酒確認の結果をセッションに保存（酒類注文のサーバ側検証に使用） */
+  app.post<{ Params: { token: string }; Body: { allowAlcohol?: unknown } }>(
+    "/guest/:token/alcohol-ack",
+    async (req, reply) => {
+      const v = req.body?.allowAlcohol;
+      if (typeof v !== "boolean") {
+        return reply.code(400).send({ error: "allowAlcohol must be boolean" });
+      }
+      const sess = await prisma.diningSession.findUnique({
+        where: { guestToken: req.params.token },
+        select: { id: true, status: true },
+      });
+      if (!sess || sess.status !== "open") {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+      await prisma.diningSession.update({
+        where: { id: sess.id },
+        data: { guestAlcoholAllowed: v },
+      });
+      return { ok: true };
+    },
+  );
 
   /**
    * 端末IDで匿名会員を紐づけ。初回紐づけで visitCount 加算。名前・電話は任意。
@@ -808,6 +838,9 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
             const gw0 = sc.guestVisibleTimeWindow;
             const sl0 = gw0 ? { startMin: gw0.startMin, endMin: gw0.endMin } : null;
             if (!categoryGuestVisibleAt(sc, sl0, nowMin)) throw new Error("BAD_ITEM_TIME");
+            if (setItem.containsAlcohol && sess?.guestAlcoholAllowed !== true) {
+              throw new Error("ALCOHOL_DENIED");
+            }
 
             const stepsVal: SetStepForValidation[] = setItem.setSteps.map((st) => ({
               id: st.id,
@@ -836,6 +869,9 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                 const slice = gw ? { startMin: gw.startMin, endMin: gw.endMin } : null;
                 if (!categoryGuestVisibleAt(comp.category, slice, nowMin)) {
                   throw new Error("BAD_ITEM_TIME");
+                }
+                if (comp.containsAlcohol && sess?.guestAlcoholAllowed !== true) {
+                  throw new Error("ALCOHOL_DENIED");
                 }
               }
             }
@@ -922,6 +958,9 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
             const gw0 = cat0.guestVisibleTimeWindow;
             const sl0 = gw0 ? { startMin: gw0.startMin, endMin: gw0.endMin } : null;
             if (!categoryGuestVisibleAt(cat0, sl0, nowMin)) throw new Error("BAD_ITEM_TIME");
+            if (plainItem.containsAlcohol && sess?.guestAlcoholAllowed !== true) {
+              throw new Error("ALCOHOL_DENIED");
+            }
 
             const linkedGroups = plainItem.optionLinks
               .map((ol) => ol.optionGroup)
@@ -1095,6 +1134,9 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       }
       if (msg === "BAD_SET") {
         return reply.code(400).send({ error: "セットの選択内容が正しくありません" });
+      }
+      if (msg === "ALCOHOL_DENIED") {
+        return reply.code(403).send({ error: "酒類をご注文いただけません（確認が必要です）" });
       }
       if (msg === "BAD_OPTIONS") {
         return reply.code(400).send({ error: "オプションの選択内容が正しくありません" });

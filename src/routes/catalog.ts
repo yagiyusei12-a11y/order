@@ -213,6 +213,7 @@ type MenuItemPatchData = {
   cookTimerSec?: number | null;
   cookTimerSec2?: number | null;
   sellKind?: string;
+  containsAlcohol?: boolean;
 };
 
 type ValidatedTimeDiscountRow = {
@@ -354,6 +355,10 @@ async function buildMenuItemPatchData(
     const sk = body.sellKind;
     if (sk !== "single" && sk !== "set") return { error: "sellKind must be single or set" };
     data.sellKind = sk;
+  }
+  if (body && "containsAlcohol" in body) {
+    if (typeof body.containsAlcohol !== "boolean") return { error: "containsAlcohol must be boolean" };
+    data.containsAlcohol = body.containsAlcohol;
   }
   return { data };
 }
@@ -621,6 +626,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
                         name: true,
                         sellKind: true,
                         isAvailable: true,
+                        containsAlcohol: true,
                         price: true,
                         priceTaxMode: true,
                       },
@@ -720,6 +726,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       stockLowThreshold?: number | null;
       cookTimerSec?: number | null;
       cookTimerSec2?: number | null;
+      containsAlcohol?: boolean;
     };
   }>("/stores/:storeId/menu/items", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
@@ -787,6 +794,12 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
         imageUrl = u || null;
       } else return reply.code(400).send({ error: "imageUrl must be string or null" });
     }
+    let containsAlcoholFlag = false;
+    if (req.body && typeof req.body === "object" && "containsAlcohol" in req.body) {
+      const ca = (req.body as { containsAlcohol?: unknown }).containsAlcohol;
+      if (typeof ca !== "boolean") return reply.code(400).send({ error: "containsAlcohol must be boolean" });
+      containsAlcoholFlag = ca;
+    }
     const item = await prisma.menuItem.create({
       data: {
         categoryId: cat.id,
@@ -801,6 +814,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
         ...(stockLowThreshold !== undefined ? { stockLowThreshold } : {}),
         ...(cookTimerSec !== undefined ? { cookTimerSec } : {}),
         ...(cookTimerSec2 !== undefined ? { cookTimerSec2 } : {}),
+        containsAlcohol: containsAlcoholFlag,
       },
     });
     return item;
@@ -1280,6 +1294,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       cookTimerSec?: number | null;
       cookTimerSec2?: number | null;
       sellKind?: "single" | "set";
+      containsAlcohol?: boolean;
     };
   }>("/stores/:storeId/menu/items/:itemId", async (req, reply) => {
     const item = await prisma.menuItem.findFirst({
@@ -1639,6 +1654,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
           kitchenStationId: src.kitchenStationId,
           cookTimerSec: src.cookTimerSec,
           cookTimerSec2: src.cookTimerSec2,
+          containsAlcohol: src.containsAlcohol,
         },
       });
       if (src.sellKind === "set" && src.setSteps.length > 0) {

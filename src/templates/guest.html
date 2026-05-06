@@ -798,7 +798,8 @@
     let menuPriceTaxMode = "inclusive";
     let taxRatePercent = 10;
     let alcoholRestricted = false;
-    const alcoholById = new Map();
+    /** @type {Map<string, object>} */
+    let menuItemById = new Map();
     let lastOrderTimer = null;
     let lastOrderDeadlineTs = 0;
     let lastOrderClosedFlag = false;
@@ -852,9 +853,38 @@
       return Number(item.price || 0);
     }
 
-    function isAlcoholItem(item, categoryName) {
-      const text = ((item.name || "") + " " + (item.description || "") + " " + (categoryName || "")).toLowerCase();
-      return /ビール|ワイン|焼酎|日本酒|ウイスキー|ハイボール|サワー|酎ハイ|カクテル|梅酒|酒|beer|wine|whisky|whiskey|cocktail|alcohol/.test(text);
+    function itemShowsAlcoholBadge(it) {
+      if (it.containsAlcohol) return true;
+      if (it.sellKind === "set" && it.setSteps) {
+        for (const st of it.setSteps) {
+          for (const ch of st.choices || []) {
+            if (ch.containsAlcohol) return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    function setSelectionHasAlcohol(item, setSelections) {
+      if (item.containsAlcohol) return true;
+      const sel = setSelections || [];
+      for (const st of item.setSteps || []) {
+        const row = sel.find((x) => x.stepId === st.id);
+        if (!row || !row.menuItemIds) continue;
+        for (const mid of row.menuItemIds) {
+          const ch = (st.choices || []).find((c) => c.menuItemId === mid);
+          if (ch && ch.containsAlcohol) return true;
+        }
+      }
+      return false;
+    }
+
+    function cartLineBlocksAlcohol(line) {
+      if (!alcoholRestricted) return false;
+      const it = menuItemById.get(line.menuItemId);
+      if (!it) return false;
+      if (it.sellKind === "set") return setSelectionHasAlcohol(it, line.setSelections);
+      return it.containsAlcohol === true;
     }
 
     function cartSumLabel(n) {
@@ -1108,7 +1138,7 @@
     }
 
     function openProductDetail(item) {
-      if (alcoholRestricted && alcoholById.get(item.id)) {
+      if (alcoholRestricted && item.containsAlcohol) {
         toast("酒類はご注文いただけません");
         return;
       }
@@ -1149,7 +1179,9 @@
             st.maxPick +
             "品</span></div>";
           for (const ch of st.choices || []) {
-            const soldX = ch.soldOut === true || (ch.stockQty != null && ch.stockQty <= 0);
+            const blockedAlcohol = alcoholRestricted && ch.containsAlcohol;
+            const soldX =
+              ch.soldOut === true || (ch.stockQty != null && ch.stockQty <= 0) || blockedAlcohol;
             const ex = Number(ch.extraPrice || 0);
             const incl = choiceExtraInclusive(ch);
             const priceTxt =
@@ -1173,7 +1205,7 @@
               (soldX ? " disabled" : "") +
               " /><span class=\"opt-name\">" +
               escapeHtml(ch.name) +
-              (soldX ? " · 売切" : "") +
+              (blockedAlcohol ? " · 酒類（選択不可）" : soldX ? " · 売切" : "") +
               "</span><span class=\"opt-price\">" +
               priceTxt +
               "</span></label>";
@@ -1314,6 +1346,10 @@
           const q = getQty();
           if (!setStockAllows(item, setSelections, q)) {
             toast("在庫が不足しています");
+            return;
+          }
+          if (alcoholRestricted && setSelectionHasAlcohol(item, setSelections)) {
+            toast("酒類はご注文いただけません");
             return;
           }
           const cartKey = "s:" + item.id + ":" + stableSetKey(setSelections);
@@ -1534,14 +1570,14 @@
             "円";
         }
       }
-      if (alcoholRestricted) hdr += " · 酒類は制限中";
+      if (alcoholRestricted) hdr += " · アルコール商品は制限中";
       document.getElementById("hdr").textContent = hdr;
       startLastOrderTicker(data.lastOrder);
       const sn = document.getElementById("safetyNote");
       if (sn) {
         sn.style.display = alcoholRestricted ? "block" : "none";
         sn.textContent = alcoholRestricted
-          ? "安全確認により、酒類の注文を制限しています。スタッフへご相談ください。"
+          ? "安全確認により、アルコール商品の注文を制限しています。スタッフへご相談ください。"
           : "";
       }
 
@@ -1711,7 +1747,13 @@
       } catch (_) {}
 
       const cats = data.categories || [];
-      alcoholById.clear();
+      menuItemById = new Map();
+      for (const c of cats) {
+        for (const it of c.items || []) menuItemById.set(it.id, it);
+      }
+      const gs = data.session;
+      if (gs && gs.guestAlcoholAllowed === true) alcoholRestricted = false;
+      else if (gs && gs.guestAlcoholAllowed === false) alcoholRestricted = true;
       clampCartToStock(cats);
       renderCart();
 
@@ -1749,13 +1791,12 @@
       root.innerHTML = "";
       for (const c of cats) {
         for (const it of c.items || []) {
-          const isAlcohol = isAlcoholItem(it, c.name);
-          alcoholById.set(it.id, isAlcohol);
+          const sold = it.stockQty != null && it.stockQty <= 0;
+          const showAlcoholBadge = itemShowsAlcoholBadge(it);
+          const blocked = sold || (it.containsAlcohol === true && alcoholRestricted);
           const card = document.createElement("article");
           card.className = "go-card";
           card.dataset.cat = c.id;
-          const sold = it.stockQty != null && it.stockQty <= 0;
-          const blocked = sold || (isAlcohol && alcoholRestricted);
           if (blocked) card.classList.add("is-dim");
 
           const media = document.createElement("div");
@@ -1780,7 +1821,7 @@
             b.textContent = "セット";
             badgeStack.appendChild(b);
           }
-          if (isAlcohol) {
+          if (showAlcoholBadge) {
             const b = document.createElement("span");
             b.className = "go-card-badge";
             b.style.background = "rgba(124,45,18,.75)";
@@ -1824,7 +1865,7 @@
             b.textContent = "残りわずか";
             badges.appendChild(b);
           }
-          if (isAlcohol && alcoholRestricted) {
+          if (it.containsAlcohol && alcoholRestricted) {
             const b = document.createElement("span");
             b.className = "badge-sold";
             b.textContent = "注文不可";
@@ -1840,7 +1881,7 @@
           card.onclick = () => {
             if (!blocked) addLine(it);
             else if (sold) toast("売り切れです");
-            else if (isAlcohol && alcoholRestricted) toast("酒類はご注文いただけません");
+            else if (it.containsAlcohol && alcoholRestricted) toast("酒類はご注文いただけません");
           };
           root.appendChild(card);
         }
@@ -1878,8 +1919,10 @@
         });
       if (lines.length === 0) return;
       if (alcoholRestricted) {
-        const alcoholLine = lines.find((l) => alcoholById.get(l.menuItemId));
-        if (alcoholLine) {
+        const bad = Object.values(cart)
+          .filter((x) => x.qty > 0)
+          .find((line) => cartLineBlocksAlcohol(line));
+        if (bad) {
           toast("酒類が含まれているため送信できません");
           return;
         }
@@ -1935,13 +1978,23 @@
       }
     };
 
+    async function syncAlcoholAckToServer(allowAlcohol) {
+      await api("/guest/" + encodeURIComponent(TOKEN) + "/alcohol-ack", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowAlcohol }),
+      });
+    }
+
     async function ensureSafetyGate() {
       const key = "guest-safety:" + TOKEN;
       try {
         const raw = sessionStorage.getItem(key);
         if (raw) {
           const parsed = JSON.parse(raw);
-          alcoholRestricted = parsed && parsed.allowAlcohol === false;
+          const allowAlcohol = !(parsed && parsed.allowAlcohol === false);
+          alcoholRestricted = !allowAlcohol;
+          await syncAlcoholAckToServer(allowAlcohol);
           return;
         }
       } catch (_) {}
@@ -1951,7 +2004,7 @@
       if (!gate || !btnDeny || !btnAllow) return;
       gate.style.display = "flex";
       await new Promise((resolve) => {
-        const finish = (allowAlcohol) => {
+        const finish = async (allowAlcohol) => {
           alcoholRestricted = !allowAlcohol;
           try {
             sessionStorage.setItem(key, JSON.stringify({ allowAlcohol, at: Date.now() }));
@@ -1959,10 +2012,13 @@
           gate.style.display = "none";
           btnDeny.onclick = null;
           btnAllow.onclick = null;
+          try {
+            await syncAlcoholAckToServer(allowAlcohol);
+          } catch (_) {}
           resolve();
         };
-        btnDeny.onclick = () => finish(false);
-        btnAllow.onclick = () => finish(true);
+        btnDeny.onclick = () => void finish(false);
+        btnAllow.onclick = () => void finish(true);
       });
     }
 

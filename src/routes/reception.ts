@@ -248,6 +248,7 @@ async function computeDefaultSeatsForShift(storeId: string): Promise<
     orderBy: { sortOrder: "asc" },
     select: { id: true, publicCode: true, capacity: true, mergeWith: true },
   });
+  const rxSeatCode = /^(C\d+|T\d+)$/;
   const sessions = await prisma.diningSession.findMany({
     where: { storeId, status: { in: ["open", "bashing_waiting"] } },
     select: { id: true, tableId: true, status: true, guestCount: true, openedAt: true },
@@ -263,6 +264,7 @@ async function computeDefaultSeatsForShift(storeId: string): Promise<
     mergeWith: string[];
   }[] = [];
   for (const t of tables) {
+    if (!rxSeatCode.test(t.publicCode)) continue;
     const s = sessByTableId.get(t.id);
     const mergeWith = Array.isArray(t.mergeWith)
       ? (t.mergeWith as unknown[]).filter((x) => typeof x === "string") as string[]
@@ -408,13 +410,14 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         orderBy: { sortOrder: "asc" },
         select: { publicCode: true, capacity: true, mergeWith: true, name: true },
       });
+      const rxSeatCode = /^(C\d+|T\d+)$/;
 
       return {
         config: conf ? conf.data : { staff: 6, override: false, manualWait: 30 },
         callReserved: Boolean(st?.callReserved),
         callType: st?.callType ?? "",
         entryQueue: (st?.entryQueue ?? []) as unknown,
-        tableMaster: tableMaster.map((t) => ({
+        tableMaster: tableMaster.filter((t) => rxSeatCode.test(t.publicCode)).map((t) => ({
           code: t.publicCode,
           name: t.name,
           capacity: Math.max(1, Number.isFinite(Number(t.capacity)) ? Number(t.capacity) : 2),
@@ -644,6 +647,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
             }),
             tx.receptionShift.findUnique({ where: { storeId_shiftKey: { storeId: store.id, shiftKey } } }),
           ]);
+          const rxSeatCode = /^(C\d+|T\d+)$/;
 
           const used = new Set<string>();
           const locks = await tx.receptionReservationSeat.findMany({
@@ -662,7 +666,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
             if (st && st !== "vacant") used.add(id);
           }
 
-          const tableMaster = tables.map((t) => ({
+          const tableMaster = tables.filter((t) => rxSeatCode.test(t.publicCode)).map((t) => ({
             code: t.publicCode,
             capacity: Number(t.capacity || 2),
             mergeWith: Array.isArray(t.mergeWith) ? t.mergeWith.filter((x) => typeof x === "string") as string[] : [],

@@ -2,7 +2,7 @@
 const API_URL = "/reception/" + encodeURIComponent(STORE);
 let seatStates = {}; let currentShiftKey = ""; let audioCtx = null;
 let selectedResSeats = []; let existingReservations = [];
-const masterIds = ["C1","C2","C3","C4","C5","C6","C7","C8","C9","C10","T31","T32","T33","T34","T35","T36","T37","T21","T23","T22","T24","T52","T53","T54","T61","T62","T63","T64"];
+let tableMaster = [];
 
 const initAudio = () => {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -51,10 +51,12 @@ function getFormattedDate(dateObj) {
 
 function getSafeShiftData(data, shiftKey) {
   let sd = (data.shifts || {})[shiftKey];
-  if (!sd || !sd.seats || sd.seats.length === 0) {
-    sd = { seats: masterIds.map((id) => ({ id, status: "vacant", current: 0 })), waiting: [] };
-  }
   return sd;
+}
+
+function getMasterIds() {
+  if (Array.isArray(tableMaster) && tableMaster.length > 0) return tableMaster.map((t) => t.code);
+  return Object.keys(seatStates).sort();
 }
 
 function changeViewShift() {
@@ -86,7 +88,7 @@ function updateReserveSeatSelector() {
   });
   const selArea = document.getElementById("seatSelectorArea");
   selArea.innerHTML = "";
-  masterIds.forEach((id) => {
+  getMasterIds().forEach((id) => {
     if (!usedSeats.has(id)) {
       const btn = document.createElement("div");
       btn.className = "seat-check-btn";
@@ -176,9 +178,16 @@ function processCSV(text) {
     const key = res.date + "_" + res.shift; if (!usedSeats[key]) usedSeats[key] = new Set(); const used = usedSeats[key];
     const ex = existingReservations.find((er) => er.resId === res.resId);
     if (ex && ex.seats && ex.seats.length > 0) { res.seats = ex.seats; res.seats.forEach((s) => used.add(s)); return; }
-    const available = masterIds.filter((id) => !used.has(id) && !id.startsWith("C")); let assigned = [];
-    if (res.num <= 4) { const t = ["T32","T34","T36","T33","T35","T37","T21","T23","T22","T24"].find((id) => available.includes(id)); if (t) assigned = [t]; }
-    if (assigned.length === 0 && res.num >= 5 && res.num <= 8) { const t = ["T31","T53","T62","T63"].find((id) => available.includes(id)); if (t) assigned = [t]; }
+    const available = getMasterIds().filter((id) => !used.has(id) && !id.startsWith("C")); let assigned = [];
+    // fallback: smallest capacity table (non-counter)
+    if (assigned.length === 0) {
+      const by = new Map((tableMaster || []).map((t) => [t.code, t]));
+      const cand = available
+        .map((id) => ({ id, cap: Number(by.get(id)?.capacity || 2) }))
+        .filter((x) => Number.isFinite(x.cap))
+        .sort((a, b) => a.cap - b.cap);
+      if (cand.length) assigned = [cand[0].id];
+    }
     res.seats = assigned; assigned.forEach((s) => used.add(s));
   });
   openCsvModal(parsed);
@@ -254,6 +263,7 @@ async function loadData() {
     const res = await fetch(API_URL + "/state?shiftKey=" + encodeURIComponent(currentShiftKey) + "&t=" + Date.now(), { cache: "no-store" });
     if (res.status === 304) return;
     const data = await res.json();
+    tableMaster = Array.isArray(data.tableMaster) ? data.tableMaster : [];
     if (data.config) {
       document.getElementById("staffCount").value = data.config.staff || 6;
       document.getElementById("waitOverride").checked = data.config.override || false;
@@ -296,24 +306,38 @@ async function loadData() {
 
 function render(waiting, staffCount, resList) {
   const map = document.getElementById("map"); map.innerHTML = "";
-  const sList = [
-    { id: "C1", pos: "grid-column:2;grid-row:1;" }, { id: "C2", pos: "grid-column:3;grid-row:1;" }, { id: "C3", pos: "grid-column:4;grid-row:1;" }, { id: "C4", pos: "grid-column:5;grid-row:2;" }, { id: "C5", pos: "grid-column:5;grid-row:3;" }, { id: "C6", pos: "grid-column:5;grid-row:4;" }, { id: "C7", pos: "grid-column:5;grid-row:5;" }, { id: "C8", pos: "grid-column:4;grid-row:6;" }, { id: "C9", pos: "grid-column:3;grid-row:6;" }, { id: "C10", pos: "grid-column:2;grid-row:6;" },
-    { id: "T31", pos: "grid-column:8/11;grid-row:1;" }, { id: "T32", pos: "grid-column:8/11;grid-row:2;" }, { id: "T33", pos: "grid-column:8/11;grid-row:3;" }, { id: "T34", pos: "grid-column:8/11;grid-row:4;" }, { id: "T35", pos: "grid-column:8/11;grid-row:5;" }, { id: "T36", pos: "grid-column:8/11;grid-row:6;" }, { id: "T37", pos: "grid-column:8/11;grid-row:7;" },
-    { id: "T21", pos: "grid-column:2/4;grid-row:8;" }, { id: "T23", pos: "grid-column:4/6;grid-row:8;" }, { id: "T22", pos: "grid-column:2/4;grid-row:9;" }, { id: "T24", pos: "grid-column:4/6;grid-row:9;" },
-    { id: "T52", pos: "grid-column:2/4;grid-row:11;" }, { id: "T53", pos: "grid-column:4/7;grid-row:11;" }, { id: "T54", pos: "grid-column:7/9;grid-row:11;" },
-    { id: "T61", pos: "grid-column:1/3;grid-row:13;" }, { id: "T62", pos: "grid-column:3/6;grid-row:13;" }, { id: "T63", pos: "grid-column:6/9;grid-row:13;" }, { id: "T64", pos: "grid-column:9/11;grid-row:13;" }
-  ];
-  sList.forEach((s) => {
-    const st = seatStates[s.id] || { status: "vacant" };
+  const posMap = new Map([
+    ["C1", "grid-column:2;grid-row:1;"], ["C2", "grid-column:3;grid-row:1;"], ["C3", "grid-column:4;grid-row:1;"], ["C4", "grid-column:5;grid-row:2;"], ["C5", "grid-column:5;grid-row:3;"], ["C6", "grid-column:5;grid-row:4;"], ["C7", "grid-column:5;grid-row:5;"], ["C8", "grid-column:4;grid-row:6;"], ["C9", "grid-column:3;grid-row:6;"], ["C10", "grid-column:2;grid-row:6;"],
+    ["T31", "grid-column:8/11;grid-row:1;"], ["T32", "grid-column:8/11;grid-row:2;"], ["T33", "grid-column:8/11;grid-row:3;"], ["T34", "grid-column:8/11;grid-row:4;"], ["T35", "grid-column:8/11;grid-row:5;"], ["T36", "grid-column:8/11;grid-row:6;"], ["T37", "grid-column:8/11;grid-row:7;"],
+    ["T21", "grid-column:2/4;grid-row:8;"], ["T23", "grid-column:4/6;grid-row:8;"], ["T22", "grid-column:2/4;grid-row:9;"], ["T24", "grid-column:4/6;grid-row:9;"],
+    ["T52", "grid-column:2/4;grid-row:11;"], ["T53", "grid-column:4/7;grid-row:11;"], ["T54", "grid-column:7/9;grid-row:11;"],
+    ["T61", "grid-column:1/3;grid-row:13;"], ["T62", "grid-column:3/6;grid-row:13;"], ["T63", "grid-column:6/9;grid-row:13;"], ["T64", "grid-column:9/11;grid-row:13;"],
+  ]);
+
+  const ids = getMasterIds();
+  const placed = new Set();
+  const unknown = [];
+  for (const id of ids) {
+    if (posMap.has(id)) placed.add(id);
+    else unknown.push(id);
+  }
+  // auto place unknown at bottom row
+  let autoCol = 1;
+  const autoRow = 15;
+
+  for (const id of [...Array.from(placed), ...unknown]) {
+    const st = seatStates[id] || { status: "vacant" };
     let status = st.status;
-    if (["T52","T53","T54","T61","T62","T63","T64"].includes(s.id) && staffCount <= 5 && status === "vacant") status = "closed";
+    if (["T52","T53","T54","T61","T62","T63","T64"].includes(id) && staffCount <= 5 && status === "vacant") status = "closed";
     const div = document.createElement("div");
     div.className = `seat ${status}`;
-    div.style = s.pos;
-    div.innerHTML = s.id;
-    div.onclick = () => { if (status !== "closed") toggleSeat(s.id); };
+    const pos = posMap.get(id) || `grid-column:${autoCol}/${autoCol + 1};grid-row:${autoRow};`;
+    if (!posMap.has(id)) { autoCol = autoCol >= 12 ? 1 : (autoCol + 1); }
+    div.style = pos;
+    div.innerHTML = id;
+    div.onclick = () => { if (status !== "closed") toggleSeat(id); };
     map.appendChild(div);
-  });
+  }
   document.getElementById("totalGuestCount").innerText = Object.values(seatStates).reduce((acc, s) => acc + (((s.status === "occupied" || s.status === "reserved") ? (s.current || 0) : 0)), 0);
 
   const resBody = document.getElementById("reservationListBody"); resBody.innerHTML = "";

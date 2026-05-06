@@ -216,24 +216,43 @@ async function ensureShift(storeId: string, shiftKey: string): Promise<void> {
 }
 
 async function computeDefaultSeatsForShift(storeId: string): Promise<
-  { id: string; status: SeatStatus; current: number; cleanStart: number | null; entryTime: number | null }[]
+  {
+    id: string;
+    status: SeatStatus;
+    current: number;
+    cleanStart: number | null;
+    entryTime: number | null;
+    capacity: number;
+    mergeWith: string[];
+  }[]
 > {
   const tables = await prisma.table.findMany({
     where: { storeId, active: true },
     orderBy: { sortOrder: "asc" },
-    select: { id: true, publicCode: true },
+    select: { id: true, publicCode: true, capacity: true, mergeWith: true },
   });
   const sessions = await prisma.diningSession.findMany({
     where: { storeId, status: { in: ["open", "bashing_waiting"] } },
     select: { id: true, tableId: true, status: true, guestCount: true, openedAt: true },
   });
   const sessByTableId = new Map(sessions.map((s) => [s.tableId, s]));
-  const out: { id: string; status: SeatStatus; current: number; cleanStart: number | null; entryTime: number | null }[] =
-    [];
+  const out: {
+    id: string;
+    status: SeatStatus;
+    current: number;
+    cleanStart: number | null;
+    entryTime: number | null;
+    capacity: number;
+    mergeWith: string[];
+  }[] = [];
   for (const t of tables) {
     const s = sessByTableId.get(t.id);
+    const mergeWith = Array.isArray(t.mergeWith)
+      ? (t.mergeWith as unknown[]).filter((x) => typeof x === "string") as string[]
+      : [];
+    const capacity = Math.max(1, Number.isFinite(Number(t.capacity)) ? Number(t.capacity) : 2);
     if (!s) {
-      out.push({ id: t.publicCode, status: "vacant", current: 0, cleanStart: null, entryTime: null });
+      out.push({ id: t.publicCode, status: "vacant", current: 0, cleanStart: null, entryTime: null, capacity, mergeWith });
       continue;
     }
     if (s.status === "bashing_waiting") {
@@ -243,6 +262,8 @@ async function computeDefaultSeatsForShift(storeId: string): Promise<
         current: Number(s.guestCount || 0),
         cleanStart: Date.now(),
         entryTime: s.openedAt ? s.openedAt.getTime() : null,
+        capacity,
+        mergeWith,
       });
     } else {
       out.push({
@@ -251,6 +272,8 @@ async function computeDefaultSeatsForShift(storeId: string): Promise<
         current: Number(s.guestCount || 0),
         cleanStart: null,
         entryTime: s.openedAt ? s.openedAt.getTime() : null,
+        capacity,
+        mergeWith,
       });
     }
   }
@@ -354,11 +377,23 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         reservations: reservations.map((r) => r.data) as unknown[],
       });
 
+      const tableMaster = await prisma.table.findMany({
+        where: { storeId: store.id, active: true },
+        orderBy: { sortOrder: "asc" },
+        select: { publicCode: true, capacity: true, mergeWith: true, name: true },
+      });
+
       return {
         config: conf ? conf.data : { staff: 6, override: false, manualWait: 30 },
         callReserved: Boolean(st?.callReserved),
         callType: st?.callType ?? "",
         entryQueue: (st?.entryQueue ?? []) as unknown,
+        tableMaster: tableMaster.map((t) => ({
+          code: t.publicCode,
+          name: t.name,
+          capacity: Math.max(1, Number.isFinite(Number(t.capacity)) ? Number(t.capacity) : 2),
+          mergeWith: Array.isArray(t.mergeWith) ? (t.mergeWith as unknown[]).filter((x) => typeof x === "string") : [],
+        })),
         shifts: {
           [shiftKey]: { seats: seatsWithBlocks, waiting },
         },

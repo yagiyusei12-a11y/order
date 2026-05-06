@@ -62,7 +62,7 @@
     let activeShiftKey = "";
     let autoCloseTimeout = null;
 
-    const masterIds = ["C1","C2","C3","C4","C5","C6","C7","C8","C9","C10","T31","T32","T33","T34","T35","T36","T37","T21","T23","T22","T24","T52","T53","T54","T61","T62","T63","T64"];
+    let tableMaster = [];
 
     function syncFullscreenButton() {
       const btn = document.getElementById("btnFullscreen");
@@ -159,6 +159,7 @@
     async function loadData() {
       activeShiftKey = getActiveShiftKey();
       const data = await apiGetState(activeShiftKey);
+      tableMaster = Array.isArray(data.tableMaster) ? data.tableMaster : [];
       const conf = data.config || {};
       const staff = parseInt(conf.staff) || 6;
       const isOverride = conf.override === true || conf.override === "true";
@@ -193,41 +194,68 @@
       const wait = parseInt(document.getElementById("viewWaitTime").innerText || "0", 10) || 0;
 
       // 旧 front.html の席割りAI（完全空席→それ以外）
-      function findSeats(n, type, requirePure) {
-        let ids = [];
-        const isVacant = (id) => {
-          const s = seatStates[id];
-          if (!s || s.status !== "vacant") return false;
-          if (requirePure && s.hasFutureRes) return false;
-          return true;
-        };
-
-        if (n <= 3 && (type === "any" || type === "counter")) {
-          const sets = [["C1","C2","C3"], ["C4","C5","C6","C7"], ["C8","C9","C10"]];
-          const ordered = [...sets.filter((s) => s.every(isVacant)), ...sets.filter((s) => !s.every(isVacant))];
-          for (const set of ordered) {
-            for (let i = 0; i <= set.length - n; i++) {
-              const combo = set.slice(i, i + n);
-              if (combo.every(isVacant)) { ids = combo; break; }
-            }
-            if (ids.length > 0) break;
-          }
-        }
-
-        if (ids.length === 0 && (type === "any" || type === "table")) {
-          if (n <= 4) {
-            const priority = ["T32","T34","T36","T33","T35","T37","T21","T23","T22","T24"];
-            for (const id of priority) { if (isVacant(id)) { ids = [id]; break; } }
-          } else {
-            const largeSeats = ["T31","T53","T62","T63"];
-            for (const id of largeSeats) { if (isVacant(id)) { ids = [id]; break; } }
-          }
-        }
-        return ids;
+      function getMasterTables(type) {
+        const all = (Array.isArray(tableMaster) ? tableMaster : []).map((t) => ({
+          code: String(t.code || ""),
+          capacity: Number(t.capacity || 2),
+          mergeWith: Array.isArray(t.mergeWith) ? t.mergeWith.filter((x) => typeof x === "string").map(String) : [],
+        })).filter((t) => t.code);
+        if (type === "counter") return all.filter((t) => t.code.startsWith("C"));
+        if (type === "table") return all.filter((t) => !t.code.startsWith("C"));
+        return all;
       }
 
-      let foundIds = findSeats(num, selectedType, true);
-      if (foundIds.length === 0) foundIds = findSeats(num, selectedType, false);
+      function pickSeats(n, type, requirePure) {
+        const tables = getMasterTables(type);
+        const by = new Map(tables.map((t) => [t.code, t]));
+        const used = new Set();
+        for (const [id, s] of Object.entries(seatStates || {})) {
+          if (!s || s.status !== "vacant") used.add(id);
+          if (requirePure && s && s.hasFutureRes) used.add(id);
+        }
+        const free = tables.filter((t) => !used.has(t.code));
+
+        const single = free.filter((t) => t.capacity >= n).sort((a, b) => a.capacity - b.capacity)[0];
+        if (single) return [single.code];
+
+        const pairs = [];
+        for (const t of free) {
+          for (const o of (t.mergeWith || [])) {
+            const ot = by.get(String(o));
+            if (!ot) continue;
+            if (used.has(ot.code)) continue;
+            const ids = [t.code, ot.code].sort();
+            const cap = (by.get(ids[0])?.capacity || 0) + (by.get(ids[1])?.capacity || 0);
+            if (cap >= n) pairs.push({ ids, cap });
+          }
+        }
+        if (pairs.length) {
+          pairs.sort((a, b) => a.cap - b.cap || a.ids.join(",").localeCompare(b.ids.join(",")));
+          return pairs[0].ids;
+        }
+
+        const freeSet = new Set(free.map((t) => t.code));
+        const triples = [];
+        for (const a of free) {
+          for (const b of (a.mergeWith || []).map(String).filter((x) => freeSet.has(x))) {
+            const tb = by.get(b); if (!tb) continue;
+            for (const c of (tb.mergeWith || []).map(String).filter((x) => freeSet.has(x))) {
+              if (c === a.code || c === b) continue;
+              const ids = [a.code, b, c].sort();
+              const cap = (by.get(ids[0])?.capacity || 0) + (by.get(ids[1])?.capacity || 0) + (by.get(ids[2])?.capacity || 0);
+              if (cap >= n) triples.push({ ids, cap });
+            }
+          }
+        }
+        if (triples.length) {
+          triples.sort((a, b) => a.cap - b.cap || a.ids.join(",").localeCompare(b.ids.join(",")));
+          return triples[0].ids;
+        }
+        return [];
+      }
+
+      let foundIds = pickSeats(num, selectedType, true);
+      if (foundIds.length === 0) foundIds = pickSeats(num, selectedType, false);
       if (foundIds.length === 0) {
         await triggerStaffCall("お席の確認をいたします。", "normal");
         return;

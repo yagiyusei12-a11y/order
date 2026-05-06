@@ -55,6 +55,7 @@
     let selectedNum = 2;
     let seatStates = {};
     let activeShiftKey = "";
+    let autoCloseTimeout = null;
 
     const masterIds = ["C1","C2","C3","C4","C5","C6","C7","C8","C9","C10","T31","T32","T33","T34","T35","T36","T37","T21","T23","T22","T24","T52","T53","T54","T61","T62","T63","T64"];
 
@@ -116,16 +117,18 @@
       grid.appendChild(big);
     }
 
-    function showOverlay(title, msg) {
+    function showOverlay(html) {
       const ov = document.getElementById("navOverlay");
       const box = document.getElementById("overlayContent");
-      box.innerHTML = `<h2>${title}</h2><p>${msg}</p><button class="btn-checkin" onclick="location.reload()">閉じる</button>`;
+      box.innerHTML = html;
       ov.style.display = "flex";
     }
 
-    function findFirstVacantSeatId() {
-      const ids = masterIds.filter((id) => seatStates[id] && seatStates[id].status === "vacant");
-      return ids[0] || null;
+    async function triggerStaffCall(msg, callType = "normal") {
+      try {
+        await apiEvent({ type: "callReserved", callType: callType });
+      } catch (_) {}
+      showOverlay(`<h2>${msg}</h2><p>スタッフが参ります。</p><button onclick="location.reload()" class="btn-checkin">閉じる</button>`);
     }
 
     async function loadData() {
@@ -138,7 +141,10 @@
 
       const shiftData = (data.shifts || {})[activeShiftKey] || { seats: [], waiting: [] };
       seatStates = {};
-      (shiftData.seats || []).forEach((s) => (seatStates[s.id] = s));
+      (shiftData.seats || []).forEach((s) => {
+        // 旧システム互換: hasFutureRes は予約ブロック実装時に使う（現状は false）
+        seatStates[s.id] = { ...s, hasFutureRes: false };
+      });
 
       const waitCount = (shiftData.waiting || []).length;
       const finalWait = isOverride ? manualWait : waitCount * 10;
@@ -158,35 +164,103 @@
 
     async function handleCheckIn() {
       await loadData();
-      const seatId = findFirstVacantSeatId();
-      if (!seatId) {
-        showOverlay("満席です", "スタッフが対応します。");
+      const num = selectedNum;
+      const wait = parseInt(document.getElementById("viewWaitTime").innerText || "0", 10) || 0;
+
+      // 旧 front.html の席割りAI（完全空席→それ以外）
+      function findSeats(n, type, requirePure) {
+        let ids = [];
+        const isVacant = (id) => {
+          const s = seatStates[id];
+          if (!s || s.status !== "vacant") return false;
+          if (requirePure && s.hasFutureRes) return false;
+          return true;
+        };
+
+        if (n <= 3 && (type === "any" || type === "counter")) {
+          const sets = [["C1","C2","C3"], ["C4","C5","C6","C7"], ["C8","C9","C10"]];
+          const ordered = [...sets.filter((s) => s.every(isVacant)), ...sets.filter((s) => !s.every(isVacant))];
+          for (const set of ordered) {
+            for (let i = 0; i <= set.length - n; i++) {
+              const combo = set.slice(i, i + n);
+              if (combo.every(isVacant)) { ids = combo; break; }
+            }
+            if (ids.length > 0) break;
+          }
+        }
+
+        if (ids.length === 0 && (type === "any" || type === "table")) {
+          if (n <= 4) {
+            const priority = ["T32","T34","T36","T33","T35","T37","T21","T23","T22","T24"];
+            for (const id of priority) { if (isVacant(id)) { ids = [id]; break; } }
+          } else {
+            const largeSeats = ["T31","T53","T62","T63"];
+            for (const id of largeSeats) { if (isVacant(id)) { ids = [id]; break; } }
+          }
+        }
+        return ids;
+      }
+
+      let foundIds = findSeats(num, selectedType, true);
+      if (foundIds.length === 0) foundIds = findSeats(num, selectedType, false);
+      if (foundIds.length === 0) {
+        await triggerStaffCall("お席の確認をいたします。", "normal");
         return;
       }
-      // 受付の最小実装：空席1つを occupied にしてサーバへ反映（サーバが DiningSession を開く）
+
+      const seatText = foundIds.join("、");
+      const st =
+        wait > 0
+          ? new Date(Date.now() + wait * 60000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+          : "";
+      const html =
+        `<h1 style="font-size:3.2em;margin:0 0 8px">${seatText}番</h1>` +
+        `<h2 style="margin:0 0 10px">へどうぞ！</h2>` +
+        (st
+          ? `<div class="time-alert" style="color:var(--error-red);font-size:2.2em;font-weight:900;margin:12px 0">注文開始予定：${st}～</div>` +
+            `<p style="font-size:1.1em; font-weight:900; color:var(--wood-dark); margin:10px 0 12px;">お時間になりましたらスタッフが<br>お席までご案内に参ります。</p>`
+          : "") +
+        `<button id="finalOk" class="btn-checkin">確定</button>` +
+        `<p style="margin-top:16px; color:#888;">10秒後に自動確定します...</p>`;
+
+      showOverlay(html);
+      document.getElementById("finalOk").onclick = () => doFinalFlow(foundIds.join(","), num, st, wait > 0).catch(() => location.reload());
+      autoCloseTimeout = setTimeout(() => { const b = document.getElementById("finalOk"); if (b) b.click(); }, 10000);
+    }
+
+    async function doFinalFlow(idsStr, num, time, isReserved) {
+      if (autoCloseTimeout) clearTimeout(autoCloseTimeout);
+      const ids = String(idsStr || "").split(",").map((x) => x.trim()).filter(Boolean);
+      const btn = document.getElementById("finalOk"); if (btn) btn.disabled = true;
+
       const shiftKey = activeShiftKey;
       const data = await apiGetState(shiftKey);
       const shiftData = (data.shifts || {})[shiftKey] || { seats: [], waiting: [] };
-      const seats = (shiftData.seats || []).map((s) => {
-        if (s.id !== seatId) return s;
-        return { ...s, status: "occupied", current: selectedNum, entryTime: Date.now() };
+
+      const perSeatNum = Math.ceil(num / ids.length);
+      const updatedSeats = (shiftData.seats || []).map((s) => {
+        if (!ids.includes(s.id)) return s;
+        if (isReserved) return { ...s, status: "reserved" };
+        return { ...s, status: "occupied", current: perSeatNum, entryTime: Date.now() };
       });
-      await apiEvent({ type: "updateAll", shiftKey, seats, waiting: shiftData.waiting || [], newEntry: { seatId, num: selectedNum, type: selectedType, at: Date.now() } });
-      showOverlay("ご案内します", "スタッフが席へご案内します。");
+      const updatedWaiting = shiftData.waiting || [];
+      if (isReserved) updatedWaiting.push({ seat: ids.join(","), name: "案内済み", num: num, startTime: time, alerted: false });
+
+      await apiEvent({ type: "updateAll", shiftKey, seats: updatedSeats, waiting: updatedWaiting, newEntry: { seat: ids.join("、"), num: num } });
+      location.reload();
     }
 
     document.getElementById("type-any").onclick = () => selectType("any");
     document.getElementById("type-counter").onclick = () => selectType("counter");
     document.getElementById("type-table").onclick = () => selectType("table");
-    document.getElementById("btnCheckIn").onclick = () => handleCheckIn().catch(() => showOverlay("エラー", "スタッフにお声がけください。"));
+    document.getElementById("btnCheckIn").onclick = () => handleCheckIn().catch(() => triggerStaffCall("エラーが発生しました。", "normal"));
     document.getElementById("btnReserved").onclick = async () => {
-      await apiEvent({ type: "callReserved", callType: "reserved" }).catch(() => {});
-      showOverlay("ご予約のお客様", "スタッフが参ります。");
+      await triggerStaffCall("ご予約のお客様", "reserved");
     };
 
     renderNums();
     loadData().catch(() => {});
-    setInterval(() => loadData().catch(() => {}), 8000);
+    setInterval(() => loadData().catch(() => {}), 3000);
   </script>
 </body>
 </html>

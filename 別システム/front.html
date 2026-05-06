@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>はるのゆこと 受付</title>
+    <style>
+        :root { --wood-dark: #5d4037; --accent: #d4a373; --bg: #fdfaf5; --reserved-blue: #0056b3; --error-red: #d90429; }
+        body { font-family: sans-serif; background: var(--bg); margin: 0; padding: 20px; text-align: center; }
+        .customer-side { background: white; padding: 30px; border-radius: 30px; border-top: 15px solid var(--wood-dark); max-width: 500px; margin: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        .wait-display { margin: 20px 0; padding: 15px; border-radius: 15px; background: #fff; border: 2px dashed #ccc; }
+        .wait-label { font-size: 1.1em; color: #666; margin-bottom: 5px; }
+        .wait-value { font-size: 3em; font-weight: bold; }
+        .wait-zero { color: var(--wood-dark); }
+        .wait-busy { color: var(--error-red); animation: pulse 2s infinite; }
+        .type-selector, .num-selector { display: grid; gap: 8px; margin: 15px 0; }
+        .type-selector { grid-template-columns: 1fr 1fr 1fr; }
+        .num-selector { grid-template-columns: repeat(3, 1fr); }
+        .type-btn, .num-btn { padding: 15px; border: 2px solid #ddd; border-radius: 12px; background: white; font-weight: bold; cursor: pointer; font-size: 1.2em; }
+        .type-btn.active, .num-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+        .btn-checkin { width: 100%; background: var(--wood-dark); color: white; padding: 25px; font-size: 1.8em; border: none; border-radius: 60px; font-weight: bold; cursor: pointer; }
+        .btn-reserved { width: 100%; background: var(--reserved-blue); color: white; padding: 25px 10px; font-size: 1.8em; border: 5px solid #fff; border-radius: 50px; margin-top: 30px; font-weight: bold; cursor: pointer; box-shadow: 0 6px 12px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; gap: 10px; }
+        .btn-reserved::before { content: '📅'; }
+        .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 1000; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
+        .time-alert { color: var(--error-red); font-size: 2.5em; font-weight: bold; margin: 15px 0; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+<div class="customer-side">
+    <h1 style="color:var(--wood-dark); margin:0 0 20px 0;">居酒屋 はるのゆこと</h1>
+    <div style="background:#f8f9fa; padding:20px; border-radius:20px; text-align:left;">
+        <p style="margin:0 0 10px 0; font-weight:bold;">1. お席の希望</p>
+        <div class="type-selector">
+            <button class="type-btn active" id="type-any" onclick="selectType('any')">どこでも</button>
+            <button class="type-btn" id="type-counter" onclick="selectType('counter')">カウンター</button>
+            <button class="type-btn" id="type-table" onclick="selectType('table')">テーブル</button>
+        </div>
+        <p style="margin:20px 0 10px 0; font-weight:bold;">2. ご来店人数</p>
+        <div class="num-selector">
+            <button class="num-btn" id="num-1" onclick="selectNum(1)">1名</button>
+            <button class="num-btn active" id="num-2" onclick="selectNum(2)">2名</button>
+            <button class="num-btn" id="num-3" onclick="selectNum(3)">3名</button>
+            <button class="num-btn" id="num-4" onclick="selectNum(4)">4名</button>
+            <button class="num-btn" id="num-5" onclick="selectNum(5)">5名</button>
+            <button class="num-btn" id="num-6" onclick="selectNum(6)">6名</button>
+            <button class="num-btn" style="grid-column: span 3; font-size: 1em; background:#fff;" onclick="triggerStaffCall('お席の確認をいたします。', 'normal')">7名様以上はこちら</button>
+        </div>
+        <div class="wait-display" id="waitContainer">
+            <div class="wait-label" id="waitLabel">ただいまの待ち時間</div>
+            <div id="waitValueWrapper">
+                <span id="viewWaitTime" class="wait-value wait-zero">0</span><span id="waitUnit" style="font-size:1.5em; margin-left:5px;">分</span>
+            </div>
+        </div>
+        <button class="btn-checkin" onclick="handleCheckIn()">上記の内容で確定する</button>
+    </div>
+    <button class="btn-reserved" onclick="callReserved()">ご予約の方はこちら</button>
+</div>
+<div id="navOverlay" class="overlay"><div id="overlayContent"></div></div>
+
+<script>
+    const API_URL = 'api.php';
+    let selectedType = 'any', selectedNum = 2, seatStates = {}, autoCloseTimeout = null;
+    let activeShiftKey = '';
+    const masterIds = ['C1','C2','C3','C4','C5','C6','C7','C8','C9','C10','T31','T32','T33','T34','T35','T36','T37','T21','T23','T22','T24','T52','T53','T54','T61','T62','T63','T64'];
+
+    function getFormattedDate(dateObj) {
+        const y = dateObj.getFullYear();
+        const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const d = String(dateObj.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }
+
+    function getSafeShiftData(data, shiftKey) {
+        let sd = (data.shifts || {})[shiftKey];
+        if (!sd || !sd.seats || sd.seats.length === 0) {
+            sd = { seats: masterIds.map(id => ({id, status:'vacant', current:0})), waiting: [] };
+        }
+        return sd;
+    }
+
+    function getActiveShiftKey() {
+        const now = new Date();
+        const dateStr = getFormattedDate(now);
+        const shift = now.getHours() < 15 ? 'lunch' : 'dinner';
+        return dateStr + '_' + shift;
+    }
+
+    async function loadData() {
+        activeShiftKey = getActiveShiftKey();
+        try {
+            let headers = {};
+            if (Object.keys(seatStates).length > 0 && localStorage.getItem('etag_front')) {
+                headers['If-None-Match'] = localStorage.getItem('etag_front');
+            }
+            const res = await fetch(API_URL + '?t=' + Date.now(), { headers: headers });
+            if (res.status === 304) return;
+            const newEtag = res.headers.get('Etag'); if (newEtag) localStorage.setItem('etag_front', newEtag);
+
+            const data = await res.json();
+            const conf = data.config || {};
+            const staff = parseInt(conf.staff) || 6;
+            const isOverride = conf.override === true || conf.override === "true";
+            const manualWait = parseInt(conf.manualWait) || 30;
+            
+            const now = new Date();
+            const nowMs = now.getTime();
+            const shiftData = getSafeShiftData(data, activeShiftKey);
+            
+            const recent = (shiftData.seats || []).reduce((acc, s) => (s.status === 'occupied' && s.entryTime && (nowMs - s.entryTime < 900000)) ? acc+s.current : acc, 0);
+            let autoWait = (recent / staff > 2.5) ? 15 : 0;
+            const finalWait = isOverride ? manualWait : (autoWait + (shiftData.waiting || []).length * 10);
+            
+            const waitEl = document.getElementById('viewWaitTime');
+            const waitContainer = document.getElementById('waitContainer');
+            waitEl.innerText = finalWait;
+            if (finalWait > 0) { waitEl.className = 'wait-value wait-busy'; waitContainer.style.borderColor = 'var(--error-red)'; waitContainer.style.background = '#fff0f0'; } 
+            else { waitEl.className = 'wait-value wait-zero'; waitContainer.style.borderColor = '#ccc'; waitContainer.style.background = '#fff'; }
+
+            seatStates = {};
+            (shiftData.seats || []).forEach(s => {
+                let seat = {...s};
+                if(['T52','T53','T54','T61','T62','T63','T64'].includes(seat.id) && staff <= 5 && seat.status === 'vacant') {
+                    seat.status = 'closed';
+                }
+                // ★あとで予約が入っているかどうかの目印を追加
+                seat.hasFutureRes = false; 
+                seatStates[seat.id] = seat;
+            });
+
+            const existingReservations = data.reservations || [];
+            const d = getFormattedDate(now);
+            const s = now.getHours() < 15 ? 'lunch' : 'dinner';
+            
+            const resList = existingReservations.filter(r => r.date === d && r.shift === s && r.status !== 'キャンセル');
+            
+            resList.forEach(r => {
+                if (r.status === '予約確定') {
+                    let blockSeat = false;
+                    if (r.time) {
+                        const [hr, min] = r.time.split(':');
+                        const resDate = new Date();
+                        resDate.setHours(parseInt(hr), parseInt(min), 0, 0);
+                        const diffHours = (resDate.getTime() - nowMs) / (1000 * 60 * 60);
+                        
+                        if (diffHours < 2.5 && diffHours > -2) { 
+                            blockSeat = true; // 2.5時間以内の予約は案内をブロック
+                        } else if (diffHours >= 2.5) {
+                            // ★2.5時間以上先の予約の場合、案内はできるが「後で予約がある席」としてマーク
+                            blockSeat = false;
+                            r.seats.forEach(seatId => {
+                                if(seatStates[seatId]) seatStates[seatId].hasFutureRes = true;
+                            });
+                        }
+                    } else {
+                        blockSeat = true; 
+                    }
+
+                    if (blockSeat) {
+                        r.seats.forEach(seatId => {
+                            if(seatStates[seatId] && seatStates[seatId].status === 'vacant') {
+                                seatStates[seatId].status = 'reserved'; 
+                            }
+                        });
+                    }
+                }
+            });
+        } catch(e) { console.error(e); }
+    }
+
+    function selectType(t) { selectedType = t; document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active')); document.getElementById('type-'+t).classList.add('active'); }
+    function selectNum(n) { selectedNum = n; document.querySelectorAll('.num-btn').forEach(b => b.classList.remove('active')); document.getElementById('num-'+n).classList.add('active'); }
+    async function triggerStaffCall(msg, callType = 'normal') { await fetch(API_URL,{method:'POST',body:JSON.stringify({type:'callReserved', callType: callType})}); document.getElementById('overlayContent').innerHTML = `<h2>${msg}</h2><p>スタッフが参ります。</p><button onclick="location.reload()" class="btn-checkin">閉じる</button>`; document.getElementById('navOverlay').style.display = 'flex'; }
+    async function callReserved() { await triggerStaffCall("ご予約のお客様", "reserved"); }
+
+    async function handleCheckIn() {
+        await loadData(); 
+        const num = selectedNum, wait = parseInt(document.getElementById('viewWaitTime').innerText);
+        
+        // ★新機能：完全空席（requirePure=true）を優先して探すAI
+        function findSeats(n, type, requirePure) {
+            let ids = [];
+            let isVacant = (id) => {
+                let s = seatStates[id];
+                if (!s || s.status !== 'vacant') return false;
+                // 完全空席が求められているのに、後で予約が入っている席ならNG
+                if (requirePure && s.hasFutureRes) return false;
+                return true;
+            };
+
+            if (n <= 3 && (type === 'any' || type === 'counter')) {
+                const sets = [['C1','C2','C3'], ['C4','C5','C6','C7'], ['C8','C9','C10']];
+                let ordered = [...sets.filter(s => s.every(isVacant)), ...sets.filter(s => !s.every(isVacant))];
+                for (const set of ordered) { 
+                    for (let i = 0; i <= set.length - n; i++) { 
+                        let combo = set.slice(i, i + n); 
+                        if (combo.every(isVacant)) { ids = combo; break; } 
+                    } 
+                    if (ids.length > 0) break; 
+                }
+            }
+            
+            if (ids.length === 0 && (type === 'any' || type === 'table')) {
+                if (n <= 4) { 
+                    const priority = ['T32', 'T34', 'T36', 'T33', 'T35', 'T37', 'T21', 'T23', 'T22', 'T24']; 
+                    for (const id of priority) { if (isVacant(id)) { ids = [id]; break; } } 
+                } else { 
+                    const largeSeats = ['T31', 'T53', 'T62', 'T63']; 
+                    for (const id of largeSeats) { if (isVacant(id)) { ids = [id]; break; } } 
+                }
+            }
+            return ids;
+        }
+
+        // 1. まず「今日1日まったく予約が入っていない完全な空席」を探す
+        let foundIds = findSeats(num, selectedType, true);
+        
+        // 2. もし完全な空席がなければ、「今は空いているが後で予約がある席」を探す
+        if (foundIds.length === 0) {
+            foundIds = findSeats(num, selectedType, false);
+        }
+        
+        if(foundIds.length === 0) { await triggerStaffCall("お席の確認をいたします。", "normal"); return; }
+        
+        const seatText = foundIds.join('、'); document.getElementById('navOverlay').style.display = 'flex';
+        const st = (wait > 0) ? new Date(Date.now() + wait * 60000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
+        document.getElementById('overlayContent').innerHTML = `<h1 style="font-size:3.5em;">${seatText}番</h1><h2>へどうぞ！</h2>${st ? `<div class="time-alert">注文開始予定：${st}～</div><p style="font-size:1.2em; font-weight:bold; color:var(--wood-dark); margin:15px 0;">お時間になりましたらスタッフが<br>お席までご案内に参ります。</p>` : ''}<button id="finalOk" onclick="doFinalFlow('${foundIds.join(',')}', ${num}, '${st}', ${wait>0})" class="btn-checkin">確定</button><p style="margin-top:20px; color:#888;">10秒後に自動確定します...</p>`;
+        autoCloseTimeout = setTimeout(() => { document.getElementById('finalOk').click(); }, 10000);
+    }
+
+    async function doFinalFlow(idsStr, num, time, isReserved) {
+        if(autoCloseTimeout) clearTimeout(autoCloseTimeout);
+        const ids = idsStr.split(',');
+        const btn = document.getElementById('finalOk'); if(btn) btn.disabled = true; 
+        
+        const res = await fetch(API_URL+'?t='+Date.now()); const data = await res.json();
+        
+        const shiftData = getSafeShiftData(data, activeShiftKey);
+        
+        const perSeatNum = Math.ceil(num / ids.length);
+        const updatedSeats = shiftData.seats.map(s => ids.includes(s.id) ? (isReserved ? {...s, status:'reserved'} : {...s, status:'occupied', current: perSeatNum, entryTime:Date.now()}) : s);
+        const updatedWaiting = shiftData.waiting || []; if(isReserved) updatedWaiting.push({seat: ids.join(','), name: "案内済み", num: num, startTime: time, alerted: false});
+        
+        await fetch(API_URL,{method:'POST',body:JSON.stringify({type:'updateAll', shiftKey: activeShiftKey, seats:updatedSeats, waiting:updatedWaiting, newEntry: {seat:ids.join('、'), num:num}})});
+        location.reload();
+    }
+
+    loadData(); setInterval(loadData, 3000);
+</script>
+</body>
+</html>

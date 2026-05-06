@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>はるのゆこと 管理画面</title>
+    <style>
+        :root { 
+            --wood-dark: #5d4037; --accent: #d4a373; --bg: #fdfaf5; --staff-bg: #2c2c2c; 
+            --vacant-green: #8fa382; --reserved-yellow: #f1c40f; --occupied-blue: #4a90e2; --cleaning-red: #ff4d4f; --error-alert: #d90429;
+        }
+        html, body { height: 100vh; overflow: hidden; font-family: sans-serif; background: var(--bg); margin: 0; padding: 0; }
+        .container { height: 100vh; display: flex; flex-direction: column; padding: 5px; box-sizing: border-box; }
+        .main-content { display: flex; flex: 1; gap: 8px; overflow: hidden; }
+        
+        /* マップエリア */
+        .map-section { background: var(--staff-bg); padding: 8px; border-radius: 12px; flex: 3.5; display: flex; flex-direction: column; }
+        
+        /* ★14行に細分化して、60番台まで1画面に収まるよう調整 */
+        .shop-map { 
+            display: grid; 
+            grid-template-columns: repeat(12, 1fr); 
+            grid-auto-rows: minmax(25px, 6vh); /* 1つ1つの高さを微調整 */
+            gap: 3px; 
+            background: #444; 
+            padding: 8px; 
+            border-radius: 10px; 
+            flex: 1;
+            overflow-y: auto; /* 万が一の時はスクロール可能に */
+        }
+        
+        .seat { 
+            background: #666; color: white; border-radius: 4px; 
+            display: flex; align-items: center; justify-content: center; 
+            font-size: 14px; 
+            cursor: pointer; border: 1px solid rgba(255,255,255,0.1); 
+            font-weight: bold; position: relative; 
+        }
+        .seat:active { transform: scale(0.95); }
+        .seat.vacant { background-color: var(--vacant-green) !important; }
+        .seat.reserved { background-color: var(--reserved-yellow) !important; color: #333 !important; }
+        .seat.occupied { background-color: var(--occupied-blue) !important; }
+        .seat.cleaning { background-color: var(--cleaning-red) !important; animation: blink 1.2s infinite; border: 2px solid white; }
+        .seat.closed { background-color: #111 !important; color: #444 !important; }
+
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+
+        .side-section { flex: 1; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; max-width: 260px; }
+        .control-panel { background: #3d3d3d; padding: 10px; border-radius: 10px; color: white; font-size: 0.8em; }
+        .wait-table { width: 100%; border-collapse: collapse; color: white; font-size: 0.85em; }
+        .wait-table td { border-bottom: 1px solid #555; padding: 6px 4px; }
+        .btn-action { background: #fff; color: #333; border: none; padding: 6px 10px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+
+        #reservedAlertBar { display:none; background: var(--error-alert); color: white; padding: 10px; text-align: center; font-weight: bold; font-size: 1.2em; border-radius: 8px; margin-bottom: 5px; }
+        #entryPopup { display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:var(--occupied-blue); color:white; padding:30px; border-radius:20px; box-shadow:0 0 50px rgba(0,0,0,0.6); z-index:10000; text-align:center; cursor:pointer; border: 4px solid white; }
+        #audioBoot { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); color:white; z-index:9999; display:flex; align-items:center; justify-content:center; font-size:1.5em; cursor:pointer; }
+    </style>
+</head>
+<body onclick="initAudio()">
+<div id="audioBoot" onclick="this.style.display='none'">タップして開始</div>
+<div id="entryPopup" onclick="clearEntry()">
+    <h2 id="entryText" style="font-size:3em; margin:10px 0;">---</h2>
+    <div style="background:white; color:var(--occupied-blue); padding:10px; border-radius:50px; font-weight:bold;">確認</div>
+</div>
+
+<div class="container">
+    <div id="reservedAlertBar"></div>
+    <div class="main-content">
+        <section class="map-section">
+            <div id="map" class="shop-map"></div>
+        </section>
+        <section class="side-section">
+            <div class="control-panel">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span>スタッフ: <input type="number" id="staffCount" value="6" style="width:35px; text-align:center;" onchange="saveConfig()"></span>
+                    <span>客数: <span id="totalGuestCount" style="color:var(--accent); font-weight:bold;">0</span>名</span>
+                </div>
+            </div>
+            <div class="control-panel" style="flex:1;">
+                <strong>案内・清掃リスト</strong>
+                <table class="wait-table"><tbody id="waitListBody"></tbody></table>
+            </div>
+        </section>
+    </div>
+</div>
+
+<script>
+    const API_URL = 'api.php';
+    let seatStates = {};
+    let audioCtx = null;
+    const initAudio = () => { if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); if(audioCtx.state==='suspended') audioCtx.resume(); };
+    const playChime = (type = 'high') => { 
+        if(!audioCtx) return; const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        let freq = (type === 'mid') ? 554 : (type === 'low' ? 330 : 880);
+        o.type = (type === 'low') ? 'sawtooth' : 'triangle'; o.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        g.gain.setValueAtTime(0.1, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 1.5);
+        o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + 1.5);
+    };
+
+    async function clearEntry() { document.getElementById('entryPopup').style.display='none'; await fetch(API_URL, {method:'POST', body:JSON.stringify({type:'popEntry'})}); loadData(); }
+    async function resetReservedCall() { await fetch(API_URL, {method:'POST', body:JSON.stringify({type:'resetCall'})}); }
+    async function saveConfig() { const p = { staff: parseInt(document.getElementById('staffCount').value), override: false, manualWait: 30 }; await fetch(API_URL, {method:'POST', body:JSON.stringify({type:'updateConfig', payload:p})}); }
+
+    async function loadData() {
+        try {
+            const res = await fetch(API_URL + '?t=' + Date.now(), { headers: { 'If-None-Match': localStorage.getItem('etag_index') || '' } });
+            if (res.status === 304) return;
+            const newEtag = res.headers.get('Etag'); if (newEtag) localStorage.setItem('etag_index', newEtag);
+            const data = await res.json();
+            const alertBar = document.getElementById('reservedAlertBar');
+            if (data.callReserved) { playChime('low'); alertBar.style.display = 'block'; alertBar.innerHTML = `⚠️ 来店あり <button class="btn-ack" onclick="resetReservedCall()">確認</button>`; } else { alertBar.style.display = 'none'; }
+            if (data.entryQueue && data.entryQueue.length > 0) {
+                document.getElementById('entryText').innerText = `${data.entryQueue[0].seat}番に${data.entryQueue[0].num}名`;
+                if (document.getElementById('entryPopup').style.display !== 'block') { document.getElementById('entryPopup').style.display = 'block'; playChime('mid'); }
+            }
+            if (data.seats) { data.seats.forEach(s => { seatStates[s.id] = s; }); }
+            render(data.waiting || [], parseInt(data.config.staff));
+        } catch(e) { console.error(e); }
+    }
+
+    function render(waiting, staffCount) {
+        const map = document.getElementById('map'); map.innerHTML = '';
+        /* ★グリッド配置の完全調整 */
+        const sList = [
+            {id:'C1',pos:'grid-column:2;grid-row:1;'},{id:'C2',pos:'grid-column:3;grid-row:1;'},{id:'C3',pos:'grid-column:4;grid-row:1;'},
+            {id:'C4',pos:'grid-column:5;grid-row:2;'},{id:'C5',pos:'grid-column:5;grid-row:3;'},{id:'C6',pos:'grid-column:5;grid-row:4;'},{id:'C7',pos:'grid-column:5;grid-row:5;'},
+            {id:'C8',pos:'grid-column:4;grid-row:6;'},{id:'C9',pos:'grid-column:3;grid-row:6;'},{id:'C10',pos:'grid-column:2;grid-row:6;'},
+            /* 30番台テーブル：縦並びを維持 */
+            {id:'T31',pos:'grid-column:8/11;grid-row:1;'},{id:'T32',pos:'grid-column:8/11;grid-row:2;'},{id:'T33',pos:'grid-column:8/11;grid-row:3;'},
+            {id:'T34',pos:'grid-column:8/11;grid-row:4;'},{id:'T35',pos:'grid-column:8/11;grid-row:5;'},{id:'T36',pos:'grid-column:8/11;grid-row:6;'},{id:'T37',pos:'grid-column:8/11;grid-row:7;'},
+            /* 20番台テーブル */
+            {id:'T21',pos:'grid-column:2/4;grid-row:8;'},{id:'T23',pos:'grid-column:4/6;grid-row:8;'},
+            {id:'T22',pos:'grid-column:2/4;grid-row:9;'},{id:'T24',pos:'grid-column:4/6;grid-row:9;'},
+            /* 堀ごたつ：ここが隠れないよう位置を再計算 */
+            {id:'T52',pos:'grid-column:2/4;grid-row:11;'},{id:'T53',pos:'grid-column:4/7;grid-row:11;'},{id:'T54',pos:'grid-column:7/9;grid-row:11;'},
+            {id:'T61',pos:'grid-column:1/3;grid-row:13;'},{id:'T62',pos:'grid-column:3/6;grid-row:13;'},{id:'T63',pos:'grid-column:6/9;grid-row:13;'},{id:'T64',pos:'grid-column:9/11;grid-row:13;'}
+        ];
+        sList.forEach(s => {
+            let st = seatStates[s.id] || {status:'vacant'}; let status = st.status;
+            if(['T52','T53','T54','T61','T62','T63','T64'].includes(s.id) && staffCount <= 5 && status === 'vacant') status = 'closed';
+            const div = document.createElement('div'); div.className = `seat ${status}`; div.style = s.pos; div.innerHTML = s.id;
+            div.onclick = () => { if(status !== 'closed') toggleSeat(s.id); }; map.appendChild(div);
+        });
+        document.getElementById('totalGuestCount').innerText = Object.values(seatStates).reduce((acc, s) => acc + ((s.status === 'occupied'||s.status === 'reserved') ? (s.current || 0) : 0), 0);
+        const body = document.getElementById('waitListBody'); body.innerHTML = '';
+        Object.values(seatStates).filter(s => s.status === 'cleaning').forEach(s => {
+            body.innerHTML += `<tr><td>${s.id}</td><td>清掃</td><td><button class="btn-action" onclick="toggleSeat('${s.id}')">完了</button></td></tr>`;
+        });
+        waiting.forEach((w, i) => {
+            body.innerHTML += `<tr><td>${w.seat}</td><td>${w.startTime}</td><td><button class="btn-action" onclick="startOrder(${i},'${w.seat}')">入店</button></td></tr>`;
+        });
+    }
+    async function toggleSeat(id) {
+        initAudio(); let s = seatStates[id];
+        if(s.status === 'vacant') s.status = 'reserved';
+        else if(s.status === 'reserved') { s.status = 'occupied'; s.current = 2; s.entryTime = Date.now(); }
+        else if(s.status === 'occupied') { s.status = 'cleaning'; s.cleanStart = Date.now(); s.current = 0; }
+        else { s.status = 'vacant'; s.current = 0; }
+        await fetch(API_URL, {method:'POST', body:JSON.stringify({type:'updateSeats', payload:Object.values(seatStates)})}); loadData();
+    }
+    async function startOrder(i, sid) { 
+        const res = await fetch(API_URL), data = await res.json(); 
+        const updatedW = data.waiting || []; const waitInfo = updatedW.splice(i,1)[0]; 
+        const updatedS = data.seats.map(s => sid.split(',').includes(s.id) ? {...s, status: 'occupied', current: Math.ceil(waitInfo.num / sid.split(',').length), entryTime: Date.now()} : s); 
+        await fetch(API_URL,{method:'POST',body:JSON.stringify({type:'updateAll', seats: updatedS, waiting: updatedW})}); loadData(); 
+    }
+    loadData(); setInterval(loadData, 3000);
+</script>
+</body>
+</html>

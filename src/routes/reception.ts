@@ -411,18 +411,24 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         select: { publicCode: true, capacity: true, mergeWith: true, name: true },
       });
       const rxSeatCode = /^(C\d+|T\d+|\d+)$/;
+      const filteredMaster = tableMaster.filter((t) => rxSeatCode.test(t.publicCode));
+      const fallbackMaster =
+        seatsWithBlocks
+          .map((x) => (x && typeof x === "object" && !Array.isArray(x) ? (x as any).id : ""))
+          .filter((x) => typeof x === "string" && x)
+          .map((id) => ({ code: id, name: id, capacity: 2, mergeWith: [] }));
 
       return {
         config: conf ? conf.data : { staff: 6, override: false, manualWait: 30 },
         callReserved: Boolean(st?.callReserved),
         callType: st?.callType ?? "",
         entryQueue: (st?.entryQueue ?? []) as unknown,
-        tableMaster: tableMaster.filter((t) => rxSeatCode.test(t.publicCode)).map((t) => ({
+        tableMaster: (filteredMaster.length > 0 ? filteredMaster.map((t) => ({
           code: t.publicCode,
           name: t.name,
           capacity: Math.max(1, Number.isFinite(Number(t.capacity)) ? Number(t.capacity) : 2),
           mergeWith: Array.isArray(t.mergeWith) ? (t.mergeWith as unknown[]).filter((x) => typeof x === "string") : [],
-        })),
+        })) : fallbackMaster),
         shifts: {
           [shiftKey]: { seats: seatsWithBlocks, waiting, updatedAt: sh?.updatedAt ? sh.updatedAt.getTime() : 0 },
         },

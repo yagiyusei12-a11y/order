@@ -4,6 +4,7 @@ let seatStates = {}; let currentShiftKey = ""; let audioCtx = null;
 let selectedResSeats = []; let existingReservations = [];
 let tableMaster = [];
 let shiftUpdatedAt = 0;
+let seatOrder = [];
 
 function seatLabel(id) {
   const raw = String(id || "").trim().toUpperCase();
@@ -68,7 +69,7 @@ function getSafeShiftData(data, shiftKey) {
 function getMasterIds() {
   const codes = Array.isArray(tableMaster) && tableMaster.length > 0
     ? tableMaster.map((t) => t.code)
-    : Object.keys(seatStates);
+    : (Array.isArray(seatOrder) && seatOrder.length > 0 ? seatOrder : Object.keys(seatStates));
 
   // legacy index.html の表示順を最優先（並びが崩れないようにする）
   const legacyOrder = [
@@ -326,6 +327,7 @@ async function loadData() {
 
     seatStates = {};
     shiftData.seats.forEach((s) => seatStates[s.id] = { ...s });
+    seatOrder = (shiftData.seats || []).map((s) => s && s.id).filter(Boolean);
 
     const d = document.getElementById("viewDate").value, s = document.getElementById("viewShift").value;
     const resList = existingReservations.filter((r) => r.date === d && r.shift === s && r.status !== "キャンセル").sort((a, b) => a.time.localeCompare(b.time));

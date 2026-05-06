@@ -1434,17 +1434,17 @@ if (saveTaxModeBtn) {
   };
 }
 
-// 価格入力モードは通常は畳む（必要な時だけ開く）
+// 上部の設定ブロックは通常は畳む（必要な時だけ開く）
 const taxToggleBtn = document.getElementById("btnToggleMenuTaxMode");
-const taxBlock = document.getElementById("menuTaxModeBlock");
-function setTaxBlockOpen(open) {
-  if (!taxBlock || !taxToggleBtn) return;
-  taxBlock.style.display = open ? "" : "none";
-  taxToggleBtn.textContent = open ? "価格入力モードを閉じる" : "価格入力モードを開く";
+const topControlsBlock = document.getElementById("menuTopControlsBlock");
+function setTopControlsOpen(open) {
+  if (!topControlsBlock || !taxToggleBtn) return;
+  topControlsBlock.style.display = open ? "" : "none";
+  taxToggleBtn.textContent = open ? "閉じる" : "開く";
 }
-if (taxToggleBtn && taxBlock) {
-  setTaxBlockOpen(false);
-  taxToggleBtn.onclick = () => setTaxBlockOpen(taxBlock.style.display === "none");
+if (taxToggleBtn && topControlsBlock) {
+  setTopControlsOpen(false);
+  taxToggleBtn.onclick = () => setTopControlsOpen(topControlsBlock.style.display === "none");
 }
 document.getElementById("btnAddCat").onclick = async () => {
   log("");

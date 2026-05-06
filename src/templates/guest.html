@@ -540,38 +540,96 @@
     }
     .agegate-card {
       width: 100%;
-      max-width: 30rem;
-      background: #12161f;
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 1.1rem;
+      max-width: 22.5rem;
+      background: #ffffff;
+      color: #0f172a;
+      border: none;
+      border-radius: 18px;
+      padding: 1.25rem 1.1rem 1.15rem;
+      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.28);
     }
-    .agegate-card h2 { margin: 0 0 0.45rem; font-size: 1rem; }
-    .agegate-card p { margin: 0 0 0.85rem; color: var(--muted); font-size: 0.82rem; line-height: 1.45; }
-    .age-q { margin-bottom: 0.75rem; }
-    .age-q strong { display: block; font-size: 0.85rem; margin-bottom: 0.35rem; }
-    .age-q .row { display: flex; gap: 0.4rem; flex-wrap: wrap; }
-    .age-q button {
-      border: 1px solid var(--line);
-      background: var(--surface2);
-      color: var(--text);
-      border-radius: 10px;
-      padding: 0.45rem 0.7rem;
-      cursor: pointer;
-      font-size: 0.82rem;
+    .agegate-sr {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
     }
-    .age-q button.on { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
-    .agegate-card .primary {
+    .agegate-icons {
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .agegate-ico {
+      flex: 0 0 auto;
+      width: 88px;
+      height: 88px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .agegate-ico svg {
       width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .agegate-lead {
+      margin: 0 0 0.65rem;
+      font-size: 0.9rem;
+      font-weight: 800;
+      line-height: 1.55;
+      text-align: center;
+      color: #0f172a;
+    }
+    .agegate-q {
+      margin: 0 0 1.05rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      line-height: 1.55;
+      text-align: center;
+      color: #334155;
+    }
+    .agegate-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.55rem;
+    }
+    .agegate-btn {
       border: none;
       border-radius: 12px;
-      padding: 0.7rem;
+      padding: 0.78rem 0.4rem;
       font-weight: 800;
-      background: linear-gradient(180deg, #fb923c, var(--accent));
-      color: #fff;
+      font-size: 0.78rem;
+      line-height: 1.35;
       cursor: pointer;
+      font-family: inherit;
+      transition: transform 0.1s ease, filter 0.12s;
     }
-    .agegate-card .primary:disabled { opacity: 0.45; cursor: not-allowed; }
+    .agegate-btn:active {
+      transform: scale(0.98);
+    }
+    .agegate-btn--deny {
+      background: #dc2626;
+      color: #ffffff;
+    }
+    .agegate-btn--deny:hover {
+      filter: brightness(1.05);
+    }
+    .agegate-btn--allow {
+      background: #facc15;
+      color: #0f172a;
+    }
+    .agegate-btn--allow:hover {
+      filter: brightness(1.03);
+    }
 
     /* コース＋オプション（有料で対象拡大） */
     .course-pack-strip {
@@ -676,25 +734,36 @@
 
   <div id="detailSheet" aria-hidden="true"></div>
 
-  <div class="agegate" id="ageGate" style="display:none">
+  <div class="agegate" id="ageGate" style="display:none" role="dialog" aria-modal="true" aria-labelledby="ageGateQuestion">
     <div class="agegate-card">
-      <h2>ご注文前の確認</h2>
-      <p>飲酒運転防止・未成年者飲酒防止のため、酒類注文前に確認が必要です。</p>
-      <div class="age-q" id="qDrive">
-        <strong>本日、車・バイク・自転車を運転する予定はありますか？</strong>
-        <div class="row">
-          <button type="button" data-v="yes">はい（予定あり）</button>
-          <button type="button" data-v="no">いいえ（予定なし）</button>
-        </div>
+      <h2 class="agegate-sr">飲酒に関する確認</h2>
+      <div class="agegate-icons" aria-hidden="true">
+        <svg class="agegate-ico" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="50" cy="50" r="48" fill="#fef08a" stroke="#ca8a04" stroke-width="2" />
+          <text x="50" y="36" text-anchor="middle" font-size="14" font-weight="800" fill="#713f12" font-family="system-ui,sans-serif">STOP!</text>
+          <text x="50" y="52" text-anchor="middle" font-size="8.2" font-weight="700" fill="#854d0e" font-family="system-ui,sans-serif">20歳未満飲酒</text>
+          <path
+            fill="#fde047"
+            stroke="#a16207"
+            stroke-width="1.2"
+            d="M46 56c-6 0-9-4-8-10l2-9c1-4 5-7 10-7 5 0 9 3 10 7l2 9c1 6-2 10-8 10h-8z"
+          />
+          <path d="M42 54h12M45 48v10M51 48v10" stroke="#a16207" stroke-width="1.6" stroke-linecap="round" />
+        </svg>
+        <svg class="agegate-ico" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="50" cy="50" r="48" fill="#fef2f2" stroke="#dc2626" stroke-width="2.5" />
+          <ellipse cx="48" cy="36" rx="11" ry="5.5" fill="#fef9c3" stroke="#991b1b" stroke-width="1" />
+          <path d="M39 44H53V56Q53 58 51 58H41Q39 58 39 56V44Z" fill="#fff" stroke="#991b1b" stroke-width="1.3" />
+          <line x1="22" y1="78" x2="78" y2="22" stroke="#dc2626" stroke-width="5.5" stroke-linecap="round" />
+          <text x="50" y="93" text-anchor="middle" font-size="6.8" font-weight="700" fill="#991b1b" font-family="system-ui,sans-serif">飲酒運転禁止</text>
+        </svg>
       </div>
-      <div class="age-q" id="qAge">
-        <strong>20歳以上ですか？</strong>
-        <div class="row">
-          <button type="button" data-v="yes">はい（20歳以上）</button>
-          <button type="button" data-v="no">いいえ（20歳未満）</button>
-        </div>
+      <p class="agegate-lead">20歳未満の方、および車でご来店の方の飲酒はお断りしております。</p>
+      <p class="agegate-q" id="ageGateQuestion">あなたと同席者は全員20歳以上であり、運転の予定はございませんか？</p>
+      <div class="agegate-actions">
+        <button type="button" class="agegate-btn agegate-btn--deny" id="ageGateDeny">いいえ (飲酒不可)</button>
+        <button type="button" class="agegate-btn agegate-btn--allow" id="ageGateAllow">はい (飲酒OK)</button>
       </div>
-      <button type="button" class="primary" id="ageGateOk" disabled>確認して進む</button>
     </div>
   </div>
 
@@ -1877,40 +1946,23 @@
         }
       } catch (_) {}
       const gate = document.getElementById("ageGate");
-      const qDrive = document.getElementById("qDrive");
-      const qAge = document.getElementById("qAge");
-      const okBtn = document.getElementById("ageGateOk");
-      if (!gate || !qDrive || !qAge || !okBtn) return;
+      const btnDeny = document.getElementById("ageGateDeny");
+      const btnAllow = document.getElementById("ageGateAllow");
+      if (!gate || !btnDeny || !btnAllow) return;
       gate.style.display = "flex";
-      let drive = "";
-      let age = "";
-      function refreshBtn() {
-        okBtn.disabled = !(drive && age);
-      }
-      qDrive.querySelectorAll("button").forEach((b) => {
-        b.onclick = () => {
-          drive = b.getAttribute("data-v") || "";
-          qDrive.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
-          refreshBtn();
-        };
-      });
-      qAge.querySelectorAll("button").forEach((b) => {
-        b.onclick = () => {
-          age = b.getAttribute("data-v") || "";
-          qAge.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
-          refreshBtn();
-        };
-      });
       await new Promise((resolve) => {
-        okBtn.onclick = () => {
-          const allowAlcohol = drive === "no" && age === "yes";
+        const finish = (allowAlcohol) => {
           alcoholRestricted = !allowAlcohol;
           try {
             sessionStorage.setItem(key, JSON.stringify({ allowAlcohol, at: Date.now() }));
           } catch (_) {}
           gate.style.display = "none";
+          btnDeny.onclick = null;
+          btnAllow.onclick = null;
           resolve();
         };
+        btnDeny.onclick = () => finish(false);
+        btnAllow.onclick = () => finish(true);
       });
     }
 

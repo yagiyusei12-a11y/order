@@ -5,6 +5,16 @@ let selectedResSeats = []; let existingReservations = [];
 let tableMaster = [];
 let shiftUpdatedAt = 0;
 
+function seatLabel(id) {
+  const raw = String(id || "").trim().toUpperCase();
+  if (/^\d+$/.test(raw)) {
+    const n = parseInt(raw, 10);
+    if (n >= 1 && n <= 10) return "C" + n;
+    if (n >= 21) return "T" + n;
+  }
+  return raw;
+}
+
 const initAudio = () => {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   if (audioCtx.state === "suspended") audioCtx.resume();
@@ -69,11 +79,20 @@ function getMasterIds() {
     "T61","T62","T63","T64",
   ];
 
-  const set = new Set(codes.filter((x) => typeof x === "string" && x));
+  const items = codes
+    .filter((x) => typeof x === "string" && x)
+    .map((id) => ({ id, label: seatLabel(id) }));
+
+  const used = new Set();
   const out = [];
-  for (const id of legacyOrder) if (set.delete(id)) out.push(id);
-  // legacy 外は末尾（安定のためソート）
-  out.push(...Array.from(set).sort());
+  for (const key of legacyOrder) {
+    const hit = items.find((x) => x.label === key && !used.has(x.id));
+    if (hit) { used.add(hit.id); out.push(hit.id); }
+  }
+  const rest = items
+    .filter((x) => !used.has(x.id))
+    .sort((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id));
+  out.push(...rest.map((x) => x.id));
   return out;
 }
 
@@ -343,16 +362,17 @@ function render(waiting, staffCount, resList) {
   for (const id of [...placedIds, ...unknownIds]) {
     const st = seatStates[id] || { status: "vacant" };
     let status = st.status;
-    if (["T52","T53","T54","T61","T62","T63","T64"].includes(id) && staffCount <= 5 && status === "vacant") status = "closed";
+    const labelKey = seatLabel(id);
+    if (["T52","T53","T54","T61","T62","T63","T64"].includes(labelKey) && staffCount <= 5 && status === "vacant") status = "closed";
     const div = document.createElement("div");
     div.className = `seat ${status}`;
-    const pos = posMap.get(id) || `grid-column:${autoCol}/${autoCol + 1};grid-row:${autoRow};`;
-    if (!posMap.has(id)) {
+    const pos = posMap.get(labelKey) || `grid-column:${autoCol}/${autoCol + 1};grid-row:${autoRow};`;
+    if (!posMap.has(labelKey)) {
       autoCol += 1;
       if (autoCol > 12) { autoCol = 1; autoRow += 1; }
     }
     div.style = pos;
-    div.innerHTML = id;
+    div.textContent = labelKey;
     div.onclick = () => { if (status !== "closed") toggleSeat(id); };
     map.appendChild(div);
   }

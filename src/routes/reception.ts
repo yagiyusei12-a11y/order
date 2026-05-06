@@ -248,7 +248,7 @@ async function computeDefaultSeatsForShift(storeId: string): Promise<
     orderBy: { sortOrder: "asc" },
     select: { id: true, publicCode: true, capacity: true, mergeWith: true },
   });
-  const rxSeatCode = /^(C\d+|T\d+)$/;
+  const rxSeatCode = /^(C\d+|T\d+|\d+)$/;
   const sessions = await prisma.diningSession.findMany({
     where: { storeId, status: { in: ["open", "bashing_waiting"] } },
     select: { id: true, tableId: true, status: true, guestCount: true, openedAt: true },
@@ -410,7 +410,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         orderBy: { sortOrder: "asc" },
         select: { publicCode: true, capacity: true, mergeWith: true, name: true },
       });
-      const rxSeatCode = /^(C\d+|T\d+)$/;
+      const rxSeatCode = /^(C\d+|T\d+|\d+)$/;
 
       return {
         config: conf ? conf.data : { staff: 6, override: false, manualWait: 30 },
@@ -647,7 +647,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
             }),
             tx.receptionShift.findUnique({ where: { storeId_shiftKey: { storeId: store.id, shiftKey } } }),
           ]);
-          const rxSeatCode = /^(C\d+|T\d+)$/;
+          const rxSeatCode = /^(C\d+|T\d+|\d+)$/;
 
           const used = new Set<string>();
           const locks = await tx.receptionReservationSeat.findMany({

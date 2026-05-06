@@ -333,8 +333,12 @@ async function loadData() {
     }
     const alertBar = document.getElementById("reservedAlertBar");
     const callReserved = Boolean(data.callReserved);
+    const callType = typeof data.callType === "string" ? data.callType : "";
+
+    // "呼出"（guest）は全ページ共通バナーで出すので、reception 画面では反応しない
+    const ignoreHere = callType === "guest" || callType.startsWith("guest:");
     if (alertBar) {
-      if (callReserved) {
+      if (callReserved && !ignoreHere) {
         alertBar.classList.add("is-on");
         if (!lastCallReserved) {
           // first time: try to enable audio and play immediately
@@ -368,7 +372,7 @@ async function loadData() {
         if (callAnnounceTimer) { clearInterval(callAnnounceTimer); callAnnounceTimer = null; }
       }
     }
-    lastCallReserved = callReserved;
+    lastCallReserved = callReserved && !ignoreHere;
     if (data.entryQueue && data.entryQueue.length > 0) {
       document.getElementById("entryText").innerText = `${data.entryQueue[0].seat}番に${data.entryQueue[0].num}名`;
       if (document.getElementById("entryPopup").style.display !== "block") { document.getElementById("entryPopup").style.display = "block"; playChime("mid"); }

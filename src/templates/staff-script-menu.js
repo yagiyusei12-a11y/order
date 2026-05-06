@@ -1433,6 +1433,19 @@ if (saveTaxModeBtn) {
     }
   };
 }
+
+// 価格入力モードは通常は畳む（必要な時だけ開く）
+const taxToggleBtn = document.getElementById("btnToggleMenuTaxMode");
+const taxBlock = document.getElementById("menuTaxModeBlock");
+function setTaxBlockOpen(open) {
+  if (!taxBlock || !taxToggleBtn) return;
+  taxBlock.style.display = open ? "" : "none";
+  taxToggleBtn.textContent = open ? "価格入力モードを閉じる" : "価格入力モードを開く";
+}
+if (taxToggleBtn && taxBlock) {
+  setTaxBlockOpen(false);
+  taxToggleBtn.onclick = () => setTaxBlockOpen(taxBlock.style.display === "none");
+}
 document.getElementById("btnAddCat").onclick = async () => {
   log("");
   const name = document.getElementById("newCatName").value.trim();

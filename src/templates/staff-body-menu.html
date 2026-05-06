@@ -8,15 +8,21 @@
     <button type="button" id="tab-kitchens">調理場</button>
   </div>
   <div class="card" style="padding:0.75rem">
-    <div class="row" style="gap:0.6rem;align-items:flex-end;margin-bottom:0.55rem;flex-wrap:wrap">
-      <div style="display:flex;flex-direction:column;gap:0.2rem">
-        <label for="menuTaxMode" style="font-size:0.72rem;color:var(--muted);margin:0">価格入力モード</label>
-        <select id="menuTaxMode" style="margin:0;min-width:180px">
-          <option value="inclusive">税込価格で入力</option>
-          <option value="exclusive">税抜価格で入力</option>
-        </select>
+    <div class="row" style="gap:0.6rem;align-items:center;margin-bottom:0.55rem;flex-wrap:wrap">
+      <button type="button" class="btn-ghost" id="btnToggleMenuTaxMode">価格入力モードを開く</button>
+      <span class="muted" style="font-size:0.72rem">（通常は非表示）</span>
+    </div>
+    <div id="menuTaxModeBlock" style="display:none">
+      <div class="row" style="gap:0.6rem;align-items:flex-end;margin-bottom:0.55rem;flex-wrap:wrap">
+        <div style="display:flex;flex-direction:column;gap:0.2rem">
+          <label for="menuTaxMode" style="font-size:0.72rem;color:var(--muted);margin:0">価格入力モード</label>
+          <select id="menuTaxMode" style="margin:0;min-width:180px">
+            <option value="inclusive">税込価格で入力</option>
+            <option value="exclusive">税抜価格で入力</option>
+          </select>
+        </div>
+        <button type="button" class="btn-ghost" id="btnSaveMenuTaxMode">保存</button>
       </div>
-      <button type="button" class="btn-ghost" id="btnSaveMenuTaxMode">保存</button>
     </div>
     <p class="muted" style="font-size:0.72rem;margin:0 0 0.5rem">左：カテゴリの一括追加。右：ゲストメニューにそのカテゴリを出すか。</p>
     <div class="row" style="justify-content:space-between;gap:0.5rem;align-items:flex-end;flex-wrap:wrap">

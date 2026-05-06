@@ -8,6 +8,8 @@
     :root { --wood-dark:#5d4037; --accent:#d4a373; --bg:#fdfaf5; --reserved-blue:#0056b3; --error-red:#d90429; }
     body { font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", sans-serif; background:var(--bg); margin:0; padding:18px; text-align:center; }
     .card { background:#fff; padding:22px; border-radius:22px; border-top:12px solid var(--wood-dark); max-width:520px; margin:auto; box-shadow:0 10px 30px rgba(0,0,0,0.1); }
+    .head-row { display:flex; align-items:center; justify-content:center; gap:10px; position: relative; }
+    .btn-full { position:absolute; right:0; top:0; background:#111; color:#fff; border:none; border-radius:10px; padding:8px 12px; font-weight:900; cursor:pointer; font-size:0.95em; }
     .wait-display { margin: 14px 0; padding: 14px; border-radius: 14px; background:#fff; border: 2px dashed #ccc; }
     .wait-label { font-size: 1.05em; color:#666; margin-bottom:6px; }
     .wait-value { font-size: 3em; font-weight: 900; }
@@ -27,7 +29,10 @@
 </head>
 <body>
   <div class="card">
-    <h1 style="color:var(--wood-dark); margin:0 0 14px 0;">受付</h1>
+    <div class="head-row" style="margin:0 0 14px 0;">
+      <h1 style="color:var(--wood-dark); margin:0;">受付</h1>
+      <button id="btnFullscreen" class="btn-full" type="button" title="全画面表示">全画面</button>
+    </div>
     <div style="background:#f8f9fa; padding:16px; border-radius:18px; text-align:left;">
       <p style="margin:0 0 10px 0; font-weight:900;">1. お席の希望</p>
       <div class="type-selector">
@@ -58,6 +63,26 @@
     let autoCloseTimeout = null;
 
     const masterIds = ["C1","C2","C3","C4","C5","C6","C7","C8","C9","C10","T31","T32","T33","T34","T35","T36","T37","T21","T23","T22","T24","T52","T53","T54","T61","T62","T63","T64"];
+
+    function syncFullscreenButton() {
+      const btn = document.getElementById("btnFullscreen");
+      if (!btn) return;
+      btn.textContent = document.fullscreenElement ? "解除" : "全画面";
+    }
+
+    async function toggleFullscreen() {
+      try {
+        if (!document.fullscreenElement) {
+          await document.documentElement.requestFullscreen?.();
+        } else {
+          await document.exitFullscreen?.();
+        }
+      } catch (_) {
+        // ignore (browser policy etc.)
+      } finally {
+        syncFullscreenButton();
+      }
+    }
 
     function getFormattedDate(dateObj) {
       const y = dateObj.getFullYear();
@@ -253,6 +278,9 @@
     document.getElementById("type-any").onclick = () => selectType("any");
     document.getElementById("type-counter").onclick = () => selectType("counter");
     document.getElementById("type-table").onclick = () => selectType("table");
+    document.getElementById("btnFullscreen").onclick = () => toggleFullscreen();
+    document.addEventListener("fullscreenchange", () => syncFullscreenButton());
+    syncFullscreenButton();
     document.getElementById("btnCheckIn").onclick = () => handleCheckIn().catch(() => triggerStaffCall("エラーが発生しました。", "normal"));
     document.getElementById("btnReserved").onclick = async () => {
       await triggerStaffCall("ご予約のお客様", "reserved");

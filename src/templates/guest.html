@@ -1953,7 +1953,18 @@
       if (box && box.innerHTML.trim()) box.scrollIntoView({ behavior: "smooth", block: "start" });
       else toast("まだ注文履歴がありません");
     };
-    document.getElementById("btnStaff").onclick = () => toast("スタッフをお呼びしています。少々お待ちください。");
+    document.getElementById("btnStaff").onclick = async () => {
+      try {
+        await api("/guest/" + encodeURIComponent(TOKEN) + "/call-staff", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+        toast("スタッフをお呼びしました。少々お待ちください。");
+      } catch (e) {
+        toast(String(e.message || e));
+      }
+    };
     document.getElementById("btnCartScroll").onclick = () => {
       document.getElementById("cartFooter").scrollIntoView({ behavior: "smooth", block: "end" });
     };

@@ -575,6 +575,31 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     };
   });
 
+  /**
+   * スタッフ呼出（ゲスト端末→受付/管理画面へアナウンス）
+   * - 受付システムの callReserved を立てる（確認されるまで表示/鳴動）
+   */
+  app.post<{ Params: { token: string } }>("/guest/:token/call-staff", async (req, reply) => {
+    const sess = await prisma.diningSession.findUnique({
+      where: { guestToken: req.params.token },
+      select: { storeId: true, status: true },
+    });
+    if (!sess || sess.status !== "open") {
+      return reply.code(404).send({ error: "session not found or closed" });
+    }
+    await prisma.receptionConfig.upsert({
+      where: { storeId: sess.storeId },
+      create: { storeId: sess.storeId },
+      update: {},
+    });
+    await prisma.receptionState.upsert({
+      where: { storeId: sess.storeId },
+      create: { storeId: sess.storeId, callReserved: true, callType: "guest" },
+      update: { callReserved: true, callType: "guest" },
+    });
+    return { ok: true };
+  });
+
   /** 飲酒確認の結果をセッションに保存（酒類注文のサーバ側検証に使用） */
   app.post<{ Params: { token: string }; Body: { allowAlcohol?: unknown } }>(
     "/guest/:token/alcohol-ack",

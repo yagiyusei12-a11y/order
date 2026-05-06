@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>ネット予約</title>
+  <style>
+    :root { --wood-dark:#5d4037; --accent:#d4a373; --bg:#fdfaf5; --error:#d90429; }
+    body { font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", sans-serif; background:var(--bg); margin:0; padding:18px; }
+    .card { background:#fff; padding:22px; border-radius:22px; border-top:12px solid var(--wood-dark); max-width:620px; margin:auto; box-shadow:0 10px 30px rgba(0,0,0,0.08); }
+    .head-row { display:flex; align-items:center; justify-content:center; gap:10px; position: relative; margin-bottom: 12px; }
+    .btn-full { position:absolute; right:0; top:0; background:#111; color:#fff; border:none; border-radius:10px; padding:8px 12px; font-weight:900; cursor:pointer; font-size:0.95em; }
+    h1 { color: var(--wood-dark); margin:0; }
+    label { display:block; font-weight: 900; margin-top: 12px; }
+    input, select, textarea { width:100%; box-sizing:border-box; padding:12px; border-radius:12px; border:1px solid #ddd; font: inherit; margin-top: 6px; }
+    textarea { min-height: 96px; resize: vertical; }
+    .row { display:grid; gap:10px; grid-template-columns: 1fr; }
+    @media (min-width: 620px) { .row { grid-template-columns: 1fr 1fr; } }
+    .btn { width:100%; background: var(--wood-dark); color:#fff; padding: 16px; font-size: 1.25em; border: none; border-radius: 56px; font-weight: 900; cursor:pointer; margin-top: 16px; }
+    .muted { color:#666; font-size:0.9em; line-height:1.5; margin: 8px 0 0; }
+    .ok { background:#ecfdf5; border:1px solid #bbf7d0; color:#065f46; padding: 12px; border-radius: 12px; margin-top: 12px; font-weight: 900; }
+    .err { background:#fff1f2; border:1px solid #fecdd3; color:#9f1239; padding: 12px; border-radius: 12px; margin-top: 12px; font-weight: 900; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="head-row">
+      <h1>ネット予約</h1>
+      <button id="btnFullscreen" class="btn-full" type="button">全画面</button>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>日付</label>
+        <input type="date" id="rDate" required>
+      </div>
+      <div>
+        <label>時間</label>
+        <input type="time" id="rTime" required>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>お名前</label>
+        <input type="text" id="rName" placeholder="例: 山田 太郎" required>
+      </div>
+      <div>
+        <label>人数</label>
+        <input type="number" id="rNum" min="1" max="20" value="2" required>
+      </div>
+    </div>
+
+    <div id="noteWrap">
+      <label>備考</label>
+      <textarea id="rNote" placeholder="アレルギー等（任意）"></textarea>
+    </div>
+
+    <button class="btn" id="btnSubmit">予約する</button>
+    <p class="muted" id="ruleText"></p>
+
+    <div id="msg"></div>
+  </div>
+
+  <script>
+    const STORE_ID = __STORE_ID_JS__;
+
+    function syncFullscreenButton() {
+      const btn = document.getElementById("btnFullscreen");
+      if (!btn) return;
+      btn.textContent = document.fullscreenElement ? "解除" : "全画面";
+    }
+    async function toggleFullscreen() {
+      try {
+        if (!document.fullscreenElement) await document.documentElement.requestFullscreen?.();
+        else await document.exitFullscreen?.();
+      } catch (_) {}
+      syncFullscreenButton();
+    }
+
+    function jstTodayStr() {
+      const now = new Date();
+      const jst = new Date(now.getTime() + (9 * 60 - now.getTimezoneOffset()) * 60 * 1000);
+      const y = jst.getUTCFullYear();
+      const m = String(jst.getUTCMonth() + 1).padStart(2, "0");
+      const d = String(jst.getUTCDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+
+    async function apiGetConfig() {
+      const res = await fetch(`/reception/${encodeURIComponent(STORE_ID)}/net/config?t=${Date.now()}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(await res.text());
+      return await res.json();
+    }
+    async function apiReserve(body) {
+      const res = await fetch(`/reception/${encodeURIComponent(STORE_ID)}/net/reservations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const txt = await res.text();
+      if (!res.ok) throw new Error(txt);
+      try { return JSON.parse(txt); } catch { return {}; }
+    }
+
+    function showMsg(kind, html) {
+      const el = document.getElementById("msg");
+      el.innerHTML = `<div class="${kind === "ok" ? "ok" : "err"}">${html}</div>`;
+    }
+
+    let cfg = { daysAhead: 30, enableNote: true };
+    async function boot() {
+      document.getElementById("btnFullscreen").onclick = () => toggleFullscreen();
+      document.addEventListener("fullscreenchange", () => syncFullscreenButton());
+      syncFullscreenButton();
+
+      cfg = await apiGetConfig();
+      const days = Number(cfg.daysAhead ?? 30);
+      const enableNote = Boolean(cfg.enableNote ?? true);
+
+      const today = jstTodayStr();
+      document.getElementById("rDate").min = today;
+      // naive max: today + days
+      const max = new Date(Date.parse(today + "T00:00:00+09:00") + days * 86400000);
+      const y = max.getUTCFullYear(), m = String(max.getUTCMonth()+1).padStart(2,"0"), d = String(max.getUTCDate()).padStart(2,"0");
+      document.getElementById("rDate").max = `${y}-${m}-${d}`;
+      document.getElementById("rDate").value = today;
+
+      document.getElementById("noteWrap").style.display = enableNote ? "" : "none";
+      document.getElementById("ruleText").textContent = `本日から ${days} 日先まで予約可能です。`;
+
+      document.getElementById("btnSubmit").onclick = async () => {
+        const date = document.getElementById("rDate").value;
+        const time = document.getElementById("rTime").value;
+        const name = document.getElementById("rName").value.trim();
+        const num = Number(document.getElementById("rNum").value);
+        const note = document.getElementById("rNote").value.trim();
+        if (!date || !time || !name || !Number.isFinite(num) || num < 1) {
+          showMsg("err", "入力内容を確認してください。");
+          return;
+        }
+        try {
+          const out = await apiReserve({ date, time, name, num, note });
+          const seats = Array.isArray(out.seats) ? out.seats.join(", ") : "";
+          showMsg("ok", `予約を受け付けました。<br>予約番号: ${out.resId || "—"}<br>席: ${seats || "未指定"}`);
+        } catch (e) {
+          showMsg("err", String(e.message || e));
+        }
+      };
+    }
+    boot().catch((e) => showMsg("err", String(e.message || e)));
+  </script>
+</body>
+</html>
+

@@ -102,6 +102,95 @@ function applyReservationBlocksToSeats(input: {
   return seats;
 }
 
+function jstTodayDateStr(): string {
+  return jstNowParts().date;
+}
+
+function dayDiffJst(fromDate: string, toDate: string): number | null {
+  // from/to: YYYY-MM-DD in JST
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || !/^\d{4}-\d{2}-\d{2}$/.test(toDate)) return null;
+  const fromMs = new Date(`${fromDate}T00:00:00.000+09:00`).getTime();
+  const toMs = new Date(`${toDate}T00:00:00.000+09:00`).getTime();
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) return null;
+  return Math.floor((toMs - fromMs) / (1000 * 60 * 60 * 24));
+}
+
+function shiftFromTimeHHMM(time: string): "lunch" | "dinner" | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(time.trim());
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+  return hh < 15 ? "lunch" : "dinner";
+}
+
+function pickReservationSeats(input: {
+  tables: { code: string; capacity: number; mergeWith: string[] }[];
+  used: Set<string>;
+  num: number;
+}): string[] | null {
+  const { tables, used, num } = input;
+  const byCode = new Map<string, { code: string; capacity: number; mergeWith: string[] }>();
+  for (const t of tables) byCode.set(t.code, t);
+
+  const freeTables = tables.filter((t) => !used.has(t.code));
+  // 1) single
+  const single = freeTables
+    .filter((t) => t.capacity >= num)
+    .sort((a, b) => a.capacity - b.capacity)[0];
+  if (single) return [single.code];
+
+  // 2) pair merges
+  type Pair = { a: string; b: string; cap: number };
+  const pairs: Pair[] = [];
+  for (const t of freeTables) {
+    for (const otherCode of t.mergeWith || []) {
+      const o = byCode.get(otherCode);
+      if (!o) continue;
+      if (used.has(o.code)) continue;
+      if (o.code === t.code) continue;
+      // avoid duplicates (a<b)
+      const a = t.code < o.code ? t.code : o.code;
+      const b = t.code < o.code ? o.code : t.code;
+      const cap = (byCode.get(a)?.capacity || 0) + (byCode.get(b)?.capacity || 0);
+      if (cap >= num) pairs.push({ a, b, cap });
+    }
+  }
+  if (pairs.length) {
+    pairs.sort((x, y) => x.cap - y.cap || x.a.localeCompare(y.a) || x.b.localeCompare(y.b));
+    return [pairs[0].a, pairs[0].b];
+  }
+
+  // 3) triple (limited) via naive expansion
+  type Triple = { ids: string[]; cap: number };
+  const triples: Triple[] = [];
+  const freeCodes = freeTables.map((t) => t.code);
+  const freeSet = new Set(freeCodes);
+  for (const a of freeCodes) {
+    const ta = byCode.get(a);
+    if (!ta) continue;
+    const neighbors = (ta.mergeWith || []).filter((c) => freeSet.has(c));
+    for (const b of neighbors) {
+      if (b === a) continue;
+      const tb = byCode.get(b);
+      if (!tb) continue;
+      const neigh2 = (tb.mergeWith || []).filter((c) => freeSet.has(c));
+      for (const c of neigh2) {
+        if (c === a || c === b) continue;
+        const ids = [a, b, c].sort();
+        const cap = (byCode.get(ids[0])?.capacity || 0) + (byCode.get(ids[1])?.capacity || 0) + (byCode.get(ids[2])?.capacity || 0);
+        if (cap >= num) triples.push({ ids, cap });
+      }
+    }
+  }
+  if (triples.length) {
+    triples.sort((x, y) => x.cap - y.cap || x.ids.join(",").localeCompare(y.ids.join(",")));
+    return triples[0].ids;
+  }
+  return null;
+}
+
 async function ensureReceptionRows(storeId: string): Promise<void> {
   await prisma.receptionConfig.upsert({
     where: { storeId },
@@ -410,5 +499,114 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "unknown type" });
     },
   );
+
+  /**
+   * ネット予約: 設定取得（公開）
+   */
+  app.get<{ Params: { storeId: string } }>("/reception/:storeId/net/config", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    await ensureReceptionRows(store.id);
+    const conf = await prisma.receptionConfig.findUnique({ where: { storeId: store.id } });
+    const c = (conf?.data as any) || {};
+    const daysAhead = Number.isFinite(Number(c.netReserveDaysAhead)) ? Number(c.netReserveDaysAhead) : 30;
+    const enableNote = c.netReserveEnableNote === undefined ? true : Boolean(c.netReserveEnableNote);
+    return { storeId: store.id, daysAhead, enableNote };
+  });
+
+  /**
+   * ネット予約: 予約登録（公開）
+   */
+  app.post<{
+    Params: { storeId: string };
+    Body: { date?: unknown; time?: unknown; name?: unknown; num?: unknown; note?: unknown };
+  }>("/reception/:storeId/net/reservations", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    await ensureReceptionRows(store.id);
+
+    const conf = await prisma.receptionConfig.findUnique({ where: { storeId: store.id } });
+    const c = (conf?.data as any) || {};
+    const daysAhead = Number.isFinite(Number(c.netReserveDaysAhead)) ? Number(c.netReserveDaysAhead) : 30;
+    const enableNote = c.netReserveEnableNote === undefined ? true : Boolean(c.netReserveEnableNote);
+
+    const date = typeof req.body?.date === "string" ? req.body.date.trim() : "";
+    const time = typeof req.body?.time === "string" ? req.body.time.trim() : "";
+    const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    const num = typeof req.body?.num === "number" ? req.body.num : Number(req.body?.num);
+    const noteRaw = typeof req.body?.note === "string" ? req.body.note.trim() : "";
+    const note = enableNote ? noteRaw : "";
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return reply.code(400).send({ error: "invalid date" });
+    const shift = shiftFromTimeHHMM(time);
+    if (!shift) return reply.code(400).send({ error: "invalid time" });
+    if (!name) return reply.code(400).send({ error: "name required" });
+    if (!Number.isFinite(num) || num < 1 || num > 20) return reply.code(400).send({ error: "num must be 1..20" });
+
+    const diff = dayDiffJst(jstTodayDateStr(), date);
+    if (diff === null) return reply.code(400).send({ error: "invalid date" });
+    if (diff < 0) return reply.code(400).send({ error: "past date not allowed" });
+    if (diff > daysAhead) return reply.code(403).send({ error: "date exceeds reservable range" });
+
+    const shiftKey = `${date}_${shift}`;
+    await ensureShift(store.id, shiftKey);
+
+    const [tables, reservations, sh] = await Promise.all([
+      prisma.table.findMany({
+        where: { storeId: store.id, active: true },
+        select: { publicCode: true, capacity: true, mergeWith: true },
+        orderBy: { sortOrder: "asc" },
+      }),
+      prisma.receptionReservation.findMany({ where: { storeId: store.id, date, shift } }),
+      prisma.receptionShift.findUnique({ where: { storeId_shiftKey: { storeId: store.id, shiftKey } } }),
+    ]);
+
+    const used = new Set<string>();
+    for (const r of reservations) {
+      const d = r.data as any;
+      if (d?.status === "キャンセル") continue;
+      const seats = Array.isArray(d?.seats) ? d.seats : [];
+      for (const s of seats) if (typeof s === "string" && s) used.add(s);
+    }
+    // 同日同シフトで既に occupied/cleaning/reserved になっている席は使用不可にする
+    const seatsNow = Array.isArray((sh?.seats as unknown) as unknown[]) ? ((sh?.seats as unknown[]) ?? []) : [];
+    for (const row of seatsNow) {
+      if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+      const o = row as Record<string, unknown>;
+      const id = typeof o.id === "string" ? o.id : "";
+      const st = typeof o.status === "string" ? o.status : "";
+      if (!id) continue;
+      if (st && st !== "vacant") used.add(id);
+    }
+
+    const tableMaster = tables.map((t) => ({
+      code: t.publicCode,
+      capacity: Number(t.capacity || 2),
+      mergeWith: Array.isArray(t.mergeWith) ? t.mergeWith.filter((x) => typeof x === "string") as string[] : [],
+    }));
+    const seats = pickReservationSeats({ tables: tableMaster, used, num: Math.floor(num) });
+    if (!seats) return reply.code(409).send({ error: "no available seats" });
+
+    const resId = "N" + Date.now();
+    const reservation = {
+      resId,
+      date,
+      shift,
+      time,
+      name,
+      num: Math.floor(num),
+      status: "予約確定",
+      seats,
+      note,
+    };
+
+    await prisma.receptionReservation.upsert({
+      where: { storeId_resKey: { storeId: store.id, resKey: resId } },
+      create: { storeId: store.id, resKey: resId, data: reservation as never, date, shift, status: "予約確定" },
+      update: { data: reservation as never, date, shift, status: "予約確定" },
+    });
+
+    return { ok: true, resId, seats };
+  });
 }
 

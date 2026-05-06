@@ -162,6 +162,10 @@ model Table {
   name       String
   publicCode String            @unique
   sortOrder  Int               @default(0)
+  /// 収容人数（ネット予約/受付の席割りに使用）
+  capacity   Int               @default(2)
+  /// 合体可能な席（publicCode の配列を JSON で保持）
+  mergeWith  Json              @default("[]")
   active     Boolean           @default(true)
   store      Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
   sessions   DiningSession[]

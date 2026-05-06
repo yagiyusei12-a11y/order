@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { newPublicCode } from "../lib/token.js";
+import type { Prisma } from "@prisma/client";
 
 export async function registerTables(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { storeId: string } }>("/stores/:storeId/tables", async (req, reply) => {
@@ -83,13 +84,13 @@ export async function registerTables(app: FastifyInstance): Promise<void> {
 
   app.patch<{
     Params: { storeId: string; tableId: string };
-    Body: { name?: string; active?: boolean; sortOrder?: number };
+    Body: { name?: string; active?: boolean; sortOrder?: number; capacity?: unknown; mergeWith?: unknown };
   }>("/stores/:storeId/tables/:tableId", async (req, reply) => {
     const t = await prisma.table.findFirst({
       where: { id: req.params.tableId, storeId: req.params.storeId },
     });
     if (!t) return reply.code(404).send({ error: "table not found" });
-    const data: { name?: string; active?: boolean; sortOrder?: number } = {};
+    const data: { name?: string; active?: boolean; sortOrder?: number; capacity?: number; mergeWith?: Prisma.InputJsonValue } = {};
     if (req.body?.name !== undefined) {
       const n = req.body.name.trim();
       if (!n) return reply.code(400).send({ error: "name cannot be empty" });
@@ -97,6 +98,17 @@ export async function registerTables(app: FastifyInstance): Promise<void> {
     }
     if (typeof req.body?.active === "boolean") data.active = req.body.active;
     if (typeof req.body?.sortOrder === "number") data.sortOrder = req.body.sortOrder;
+    if (req.body?.capacity !== undefined) {
+      const cap = typeof req.body.capacity === "number" ? req.body.capacity : Number(req.body.capacity);
+      if (!Number.isFinite(cap) || cap < 1 || cap > 99) return reply.code(400).send({ error: "capacity must be 1..99" });
+      data.capacity = Math.floor(cap);
+    }
+    if (req.body?.mergeWith !== undefined) {
+      // Expect array of publicCodes (strings). Stored as JSON.
+      const arr = Array.isArray(req.body.mergeWith) ? req.body.mergeWith : [];
+      const cleaned = arr.filter((x) => typeof x === "string").map((s) => s.trim()).filter((s) => s);
+      data.mergeWith = cleaned as Prisma.InputJsonValue;
+    }
     const updated = await prisma.table.update({ where: { id: t.id }, data });
     return updated;
   });

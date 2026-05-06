@@ -105,5 +105,20 @@ async function saveAll() {
 $("btnNrReload").onclick = () => loadAll().catch((e) => alert(String(e.message || e)));
 $("btnNrSave").onclick = () => saveAll().catch((e) => alert(String(e.message || e)));
 
+const copyBtn = document.getElementById("btnNrCopyUrl");
+if (copyBtn) {
+  copyBtn.onclick = async () => {
+    const v = document.getElementById("nrPublicUrl")?.value || "";
+    const full = location.origin + v;
+    try {
+      await navigator.clipboard.writeText(full);
+      alert("コピーしました:\n" + full);
+    } catch (_) {
+      // fallback
+      prompt("このURLをコピーしてください:", full);
+    }
+  };
+}
+
 loadAll().catch((e) => alert(String(e.message || e)));
 

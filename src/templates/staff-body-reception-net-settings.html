@@ -15,6 +15,8 @@
     .nr-table input { width: 100%; }
     .nr-code { font-weight: 900; }
     .nr-actions { display:flex; justify-content:flex-end; gap:0.6rem; }
+    .nr-url { display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; }
+    .nr-url input { flex: 1; min-width: min(560px, 90vw); }
   </style>
 
   <div class="row" style="justify-content:space-between;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.75rem">
@@ -25,6 +27,18 @@
   </div>
 
   <div class="nr-wrap">
+    <section class="nr-card">
+      <div class="nr-head"><strong>ネット予約ページURL</strong></div>
+      <div class="nr-body">
+        <div class="nr-url">
+          <input type="text" id="nrPublicUrl" readonly value="/reserve-app/__STORE_PATH__">
+          <button type="button" class="btn-ghost" id="btnNrCopyUrl" style="width:auto">コピー</button>
+          <a class="btn-ghost" href="/reserve-app/__STORE_PATH__" target="_blank" rel="noopener noreferrer" style="text-decoration:none;display:inline-flex;align-items:center;width:auto">開く</a>
+        </div>
+        <p class="nr-muted">LINE/Instagram/Googleビジネス等に貼るURLです。</p>
+      </div>
+    </section>
+
     <section class="nr-card">
       <div class="nr-head"><strong>予約の基本設定</strong></div>
       <div class="nr-body">

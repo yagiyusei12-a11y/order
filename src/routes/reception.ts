@@ -16,6 +16,92 @@ function todayShiftKeyInJst(): string {
   return `${y}-${m}-${d}_${shift}`;
 }
 
+function parseShiftKey(shiftKey: string): { date: string; shift: "lunch" | "dinner" } | null {
+  const m = /^(\d{4}-\d{2}-\d{2})_(lunch|dinner)$/.exec(shiftKey);
+  if (!m) return null;
+  return { date: m[1], shift: m[2] === "dinner" ? "dinner" : "lunch" };
+}
+
+function jstNowParts(): { date: string; timeHHMM: string; nowMs: number } {
+  const now = new Date();
+  const jst = new Date(now.getTime() + (9 * 60 - now.getTimezoneOffset()) * 60 * 1000);
+  const y = jst.getUTCFullYear();
+  const m = String(jst.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(jst.getUTCDate()).padStart(2, "0");
+  const hh = String(jst.getUTCHours()).padStart(2, "0");
+  const mm = String(jst.getUTCMinutes()).padStart(2, "0");
+  return { date: `${y}-${m}-${d}`, timeHHMM: `${hh}:${mm}`, nowMs: now.getTime() };
+}
+
+function applyReservationBlocksToSeats(input: {
+  shiftKey: string;
+  seats: unknown[];
+  reservations: unknown[];
+}): unknown[] {
+  const parsed = parseShiftKey(input.shiftKey);
+  if (!parsed) return input.seats;
+  const { date, shift } = parsed;
+  const now = jstNowParts();
+  const seats = input.seats.map((x) => (x && typeof x === "object" && !Array.isArray(x) ? { ...(x as Record<string, unknown>) } : x));
+  const seatById = new Map<string, Record<string, unknown>>();
+  for (const s of seats) {
+    if (!s || typeof s !== "object" || Array.isArray(s)) continue;
+    const o = s as Record<string, unknown>;
+    const id = typeof o.id === "string" ? o.id : "";
+    if (!id) continue;
+    seatById.set(id, o);
+    // 既定で false を付ける（旧 front.html の requirePure 用）
+    if (!("hasFutureRes" in o)) o.hasFutureRes = false;
+  }
+
+  // 旧ロジック:
+  // - 予約確定で同日同シフト
+  // - time が無い→ブロック
+  // - diffHours < 2.5 && diffHours > -2 → reserved でブロック
+  // - diffHours >= 2.5 → hasFutureRes=true（ブロックしない）
+  for (const row of input.reservations) {
+    if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+    const r = row as Record<string, unknown>;
+    if (r.status !== "予約確定") continue;
+    if (r.date !== date) continue;
+    if (r.shift !== shift) continue;
+    const seatsArr = Array.isArray(r.seats) ? (r.seats as unknown[]) : [];
+    const timeStr = typeof r.time === "string" ? r.time : "";
+
+    let blockSeat = false;
+    let hasFuture = false;
+    if (!timeStr) {
+      blockSeat = true;
+    } else {
+      const m = /^(\d{1,2}):(\d{2})$/.exec(timeStr.trim());
+      if (!m) {
+        blockSeat = true;
+      } else {
+        const hr = Number(m[1]);
+        const min = Number(m[2]);
+        // JST の今日の日付と予約日付の差分を作る（予約日のローカル時刻と比較）
+        const base = new Date(`${date}T00:00:00.000+09:00`).getTime();
+        const resMs = base + (hr * 60 + min) * 60 * 1000;
+        const diffHours = (resMs - now.nowMs) / (1000 * 60 * 60);
+        if (diffHours < 2.5 && diffHours > -2) blockSeat = true;
+        else if (diffHours >= 2.5) hasFuture = true;
+      }
+    }
+
+    for (const sidRaw of seatsArr) {
+      const sid = typeof sidRaw === "string" ? sidRaw : "";
+      if (!sid) continue;
+      const seat = seatById.get(sid);
+      if (!seat) continue;
+      if (hasFuture) seat.hasFutureRes = true;
+      if (blockSeat) {
+        if (seat.status === "vacant") seat.status = "reserved";
+      }
+    }
+  }
+  return seats;
+}
+
 async function ensureReceptionRows(storeId: string): Promise<void> {
   await prisma.receptionConfig.upsert({
     where: { storeId },
@@ -161,13 +247,19 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         });
       }
 
+      const seatsWithBlocks = applyReservationBlocksToSeats({
+        shiftKey,
+        seats: seats as unknown[],
+        reservations: reservations.map((r) => r.data) as unknown[],
+      });
+
       return {
         config: conf ? conf.data : { staff: 6, override: false, manualWait: 30 },
         callReserved: Boolean(st?.callReserved),
         callType: st?.callType ?? "",
         entryQueue: (st?.entryQueue ?? []) as unknown,
         shifts: {
-          [shiftKey]: { seats, waiting },
+          [shiftKey]: { seats: seatsWithBlocks, waiting },
         },
         reservations: reservations.map((r) => r.data),
       };

@@ -129,66 +129,127 @@ function pickReservationSeats(input: {
   tables: { code: string; capacity: number; mergeWith: string[] }[];
   used: Set<string>;
   num: number;
+  maxMergeSize?: number;
+  allOrNothingGroups?: string[][];
 }): string[] | null {
   const { tables, used, num } = input;
+  const maxMergeSize = Math.max(1, Number.isFinite(Number(input.maxMergeSize)) ? Math.floor(Number(input.maxMergeSize)) : 10);
+  const allOrNothingGroups = Array.isArray(input.allOrNothingGroups) ? input.allOrNothingGroups : [];
+
   const byCode = new Map<string, { code: string; capacity: number; mergeWith: string[] }>();
   for (const t of tables) byCode.set(t.code, t);
 
-  const freeTables = tables.filter((t) => !used.has(t.code));
-  // 1) single
-  const single = freeTables
-    .filter((t) => t.capacity >= num)
-    .sort((a, b) => a.capacity - b.capacity)[0];
-  if (single) return [single.code];
+  const freeCodes = tables.map((t) => t.code).filter((c) => c && !used.has(c));
+  const freeSet = new Set(freeCodes);
 
-  // 2) pair merges
-  type Pair = { a: string; b: string; cap: number };
-  const pairs: Pair[] = [];
-  for (const t of freeTables) {
-    for (const otherCode of t.mergeWith || []) {
-      const o = byCode.get(otherCode);
-      if (!o) continue;
-      if (used.has(o.code)) continue;
-      if (o.code === t.code) continue;
-      // avoid duplicates (a<b)
-      const a = t.code < o.code ? t.code : o.code;
-      const b = t.code < o.code ? o.code : t.code;
-      const cap = (byCode.get(a)?.capacity || 0) + (byCode.get(b)?.capacity || 0);
-      if (cap >= num) pairs.push({ a, b, cap });
+  // adjacency graph (undirected)
+  const adj = new Map<string, Set<string>>();
+  for (const c of freeCodes) adj.set(c, new Set());
+  for (const t of tables) {
+    if (!freeSet.has(t.code)) continue;
+    for (const o of (t.mergeWith || [])) {
+      if (!freeSet.has(o)) continue;
+      adj.get(t.code)?.add(o);
+      adj.get(o)?.add(t.code);
     }
   }
-  if (pairs.length) {
-    pairs.sort((x, y) => x.cap - y.cap || x.a.localeCompare(y.a) || x.b.localeCompare(y.b));
-    return [pairs[0].a, pairs[0].b];
+
+  const groups: { set: Set<string>; arr: string[] }[] = allOrNothingGroups
+    .filter((g) => Array.isArray(g) && g.every((x) => typeof x === "string"))
+    .map((g) => g.map(String).filter((x) => freeSet.has(x)))
+    .filter((g) => g.length >= 2)
+    .map((arr) => ({ arr, set: new Set(arr) }));
+
+  function violatesAllOrNothing(sub: Set<string>): boolean {
+    for (const g of groups) {
+      let hit = false;
+      for (const x of g.arr) { if (sub.has(x)) { hit = true; break; } }
+      if (!hit) continue;
+      for (const x of g.arr) { if (!sub.has(x)) return true; }
+    }
+    return false;
   }
 
-  // 3) triple (limited) via naive expansion
-  type Triple = { ids: string[]; cap: number };
-  const triples: Triple[] = [];
-  const freeCodes = freeTables.map((t) => t.code);
-  const freeSet = new Set(freeCodes);
-  for (const a of freeCodes) {
-    const ta = byCode.get(a);
-    if (!ta) continue;
-    const neighbors = (ta.mergeWith || []).filter((c) => freeSet.has(c));
-    for (const b of neighbors) {
-      if (b === a) continue;
-      const tb = byCode.get(b);
-      if (!tb) continue;
-      const neigh2 = (tb.mergeWith || []).filter((c) => freeSet.has(c));
-      for (const c of neigh2) {
-        if (c === a || c === b) continue;
-        const ids = [a, b, c].sort();
-        const cap = (byCode.get(ids[0])?.capacity || 0) + (byCode.get(ids[1])?.capacity || 0) + (byCode.get(ids[2])?.capacity || 0);
-        if (cap >= num) triples.push({ ids, cap });
+  function isConnected(subArr: string[]): boolean {
+    if (subArr.length <= 1) return true;
+    const sub = new Set(subArr);
+    const q: string[] = [subArr[0]];
+    const seen = new Set<string>([subArr[0]]);
+    while (q.length) {
+      const cur = q.pop()!;
+      for (const nx of (adj.get(cur) || [])) {
+        if (!sub.has(nx) || seen.has(nx)) continue;
+        seen.add(nx);
+        q.push(nx);
       }
     }
+    return seen.size === sub.size;
   }
-  if (triples.length) {
-    triples.sort((x, y) => x.cap - y.cap || x.ids.join(",").localeCompare(y.ids.join(",")));
-    return triples[0].ids;
+
+  let bestIds: string[] | null = null;
+  let bestCap = Infinity;
+  let bestLen = Infinity;
+  const visited = new Set<string>();
+
+  for (const start of freeCodes) {
+    if (visited.has(start)) continue;
+    // build component
+    const comp: string[] = [];
+    const stack = [start];
+    visited.add(start);
+    while (stack.length) {
+      const cur = stack.pop()!;
+      comp.push(cur);
+      for (const nx of (adj.get(cur) || [])) {
+        if (visited.has(nx)) continue;
+        visited.add(nx);
+        stack.push(nx);
+      }
+    }
+    if (comp.length === 0) continue;
+
+    // enumerate subsets up to maxMergeSize (cap-aware pruning)
+    const compSorted = comp.slice().sort();
+    const nComp = compSorted.length;
+    const limit = Math.min(maxMergeSize, nComp);
+
+    // simple subset enumeration for up to ~13 seats is fine (2^13=8192)
+    // For larger comps, we still cap by maxMergeSize so enumerations stay reasonable.
+    function backtrack(idx: number, chosen: string[]) {
+      if (chosen.length > 0) {
+        const subSet = new Set(chosen);
+        if (!violatesAllOrNothing(subSet) && isConnected(chosen)) {
+          const cap = chosen.reduce((acc, id) => acc + (byCode.get(id)?.capacity || 0), 0);
+          if (cap >= num) {
+            const ids = chosen.slice().sort();
+            const key = ids.join(",");
+            const bestKey = bestIds ? bestIds.join(",") : "";
+            if (
+              cap < bestCap ||
+              (cap === bestCap && ids.length < bestLen) ||
+              (cap === bestCap && ids.length === bestLen && key.localeCompare(bestKey) < 0)
+            ) {
+              bestIds = ids;
+              bestCap = cap;
+              bestLen = ids.length;
+            }
+          }
+        }
+      }
+      if (idx >= nComp) return;
+      if (chosen.length >= limit) return;
+
+      // choose idx
+      chosen.push(compSorted[idx]);
+      backtrack(idx + 1, chosen);
+      chosen.pop();
+      // skip idx
+      backtrack(idx + 1, chosen);
+    }
+    backtrack(0, []);
   }
-  return null;
+
+  return bestIds;
 }
 
 async function syncReservationSeatLocks(input: {
@@ -677,7 +738,15 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
             capacity: Number(t.capacity || 2),
             mergeWith: Array.isArray(t.mergeWith) ? t.mergeWith.filter((x) => typeof x === "string") as string[] : [],
           }));
-          const seats = pickReservationSeats({ tables: tableMaster, used, num: Math.floor(num) });
+          const maxMergeSize = Number.isFinite(Number(c.maxMergeSize)) ? Number(c.maxMergeSize) : 10;
+          const allOrNothingGroups = Array.isArray(c.mergeAllOrNothingGroups) ? c.mergeAllOrNothingGroups : [];
+          const seats = pickReservationSeats({
+            tables: tableMaster,
+            used,
+            num: Math.floor(num),
+            maxMergeSize,
+            allOrNothingGroups,
+          });
           if (!seats) return { ok: false as const };
 
           const reservation = {

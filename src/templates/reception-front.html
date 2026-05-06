@@ -213,45 +213,101 @@
           if (!s || s.status !== "vacant") used.add(id);
           if (requirePure && s && s.hasFutureRes) used.add(id);
         }
-        const free = tables.filter((t) => !used.has(t.code));
+        const freeCodes = tables.map((t) => t.code).filter((c) => c && !used.has(c));
+        const freeSet = new Set(freeCodes);
 
-        const single = free.filter((t) => t.capacity >= n).sort((a, b) => a.capacity - b.capacity)[0];
-        if (single) return [single.code];
+        const allOrNothingGroups = Array.isArray(conf.mergeAllOrNothingGroups) ? conf.mergeAllOrNothingGroups : [];
+        const groups = allOrNothingGroups
+          .filter((g) => Array.isArray(g) && g.every((x) => typeof x === "string"))
+          .map((g) => g.map(String).filter((x) => freeSet.has(x)))
+          .filter((g) => g.length >= 2)
+          .map((arr) => ({ arr, set: new Set(arr) }));
 
-        const pairs = [];
-        for (const t of free) {
-          for (const o of (t.mergeWith || [])) {
-            const ot = by.get(String(o));
-            if (!ot) continue;
-            if (used.has(ot.code)) continue;
-            const ids = [t.code, ot.code].sort();
-            const cap = (by.get(ids[0])?.capacity || 0) + (by.get(ids[1])?.capacity || 0);
-            if (cap >= n) pairs.push({ ids, cap });
+        function violatesAllOrNothing(sub) {
+          for (const g of groups) {
+            let hit = false;
+            for (const x of g.arr) { if (sub.has(x)) { hit = true; break; } }
+            if (!hit) continue;
+            for (const x of g.arr) { if (!sub.has(x)) return true; }
+          }
+          return false;
+        }
+
+        // adjacency graph (undirected)
+        const adj = new Map();
+        for (const c of freeCodes) adj.set(c, new Set());
+        for (const t of tables) {
+          if (!freeSet.has(t.code)) continue;
+          for (const o of (t.mergeWith || []).map(String)) {
+            if (!freeSet.has(o)) continue;
+            adj.get(t.code).add(o);
+            adj.get(o).add(t.code);
           }
         }
-        if (pairs.length) {
-          pairs.sort((a, b) => a.cap - b.cap || a.ids.join(",").localeCompare(b.ids.join(",")));
-          return pairs[0].ids;
-        }
 
-        const freeSet = new Set(free.map((t) => t.code));
-        const triples = [];
-        for (const a of free) {
-          for (const b of (a.mergeWith || []).map(String).filter((x) => freeSet.has(x))) {
-            const tb = by.get(b); if (!tb) continue;
-            for (const c of (tb.mergeWith || []).map(String).filter((x) => freeSet.has(x))) {
-              if (c === a.code || c === b) continue;
-              const ids = [a.code, b, c].sort();
-              const cap = (by.get(ids[0])?.capacity || 0) + (by.get(ids[1])?.capacity || 0) + (by.get(ids[2])?.capacity || 0);
-              if (cap >= n) triples.push({ ids, cap });
+        function isConnected(subArr) {
+          if (subArr.length <= 1) return true;
+          const sub = new Set(subArr);
+          const q = [subArr[0]];
+          const seen = new Set([subArr[0]]);
+          while (q.length) {
+            const cur = q.pop();
+            for (const nx of (adj.get(cur) || [])) {
+              if (!sub.has(nx) || seen.has(nx)) continue;
+              seen.add(nx);
+              q.push(nx);
             }
           }
+          return seen.size === sub.size;
         }
-        if (triples.length) {
-          triples.sort((a, b) => a.cap - b.cap || a.ids.join(",").localeCompare(b.ids.join(",")));
-          return triples[0].ids;
+
+        const maxMergeSize = Number.isFinite(Number(conf.maxMergeSize)) ? Math.floor(Number(conf.maxMergeSize)) : 10;
+
+        let best = null;
+        const visited = new Set();
+        for (const start of freeCodes) {
+          if (visited.has(start)) continue;
+          const comp = [];
+          const stack = [start];
+          visited.add(start);
+          while (stack.length) {
+            const cur = stack.pop();
+            comp.push(cur);
+            for (const nx of (adj.get(cur) || [])) {
+              if (visited.has(nx)) continue;
+              visited.add(nx);
+              stack.push(nx);
+            }
+          }
+          const compSorted = comp.slice().sort();
+          const limit = Math.min(maxMergeSize, compSorted.length);
+
+          function backtrack(idx, chosen) {
+            if (chosen.length > 0) {
+              const sub = new Set(chosen);
+              if (!violatesAllOrNothing(sub) && isConnected(chosen)) {
+                const cap = chosen.reduce((acc, id) => acc + (by.get(id)?.capacity || 0), 0);
+                if (cap >= n) {
+                  const ids = chosen.slice().sort();
+                  const cand = { ids, cap };
+                  if (!best || cand.cap < best.cap || (cand.cap === best.cap && cand.ids.length < best.ids.length) ||
+                      (cand.cap === best.cap && cand.ids.length === best.ids.length && cand.ids.join(",").localeCompare(best.ids.join(",")) < 0)) {
+                    best = cand;
+                  }
+                }
+              }
+            }
+            if (idx >= compSorted.length) return;
+            if (chosen.length >= limit) return;
+            chosen.push(compSorted[idx]);
+            backtrack(idx + 1, chosen);
+            chosen.pop();
+            backtrack(idx + 1, chosen);
+          }
+          backtrack(0, []);
         }
-        return [];
+
+        return best ? best.ids : [];
       }
 
       let foundIds = pickSeats(num, selectedType, true);

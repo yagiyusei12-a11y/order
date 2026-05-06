@@ -9,6 +9,7 @@ import { registerGuest } from "./routes/guest.js";
 import { registerProtectedStaffRoutes } from "./routes/protected-staff.js";
 import { isDbDiagEnabled, registerDbDiag } from "./routes/db-diag.js";
 import { registerPublicApi } from "./routes/public-api.js";
+import { registerReception } from "./routes/reception.js";
 import { registerWebUi } from "./routes/web-ui.js";
 
 async function main(): Promise<void> {
@@ -52,6 +53,7 @@ async function main(): Promise<void> {
 
   await app.register(registerAuth);
   await app.register(registerPublicApi);
+  await app.register(registerReception);
   await app.register(registerGuest);
   /** 子スコープに限定し、ゲストAPIに JWT を要求しない */
   await app.register(async (scope) => {

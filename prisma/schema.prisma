@@ -24,6 +24,10 @@ model Store {
   sessions         DiningSession[]
   timeWindows      StoreTimeWindow[]
   customers        Customer[]
+  receptionConfig  ReceptionConfig?
+  receptionState   ReceptionState?
+  receptionShifts  ReceptionShift[]
+  receptionReservations ReceptionReservation[]
   createdAt        DateTime             @default(now())
 }
 
@@ -402,6 +406,62 @@ model DiningSession {
   @@index([storeId])
   @@index([tableId])
   @@index([customerId])
+}
+
+/// 受付：設定（店舗ごとに1行）
+model ReceptionConfig {
+  storeId    String @id
+  /// { staff: number, override: boolean, manualWait: number } 互換の JSON
+  data       Json   @default("{\"staff\":6,\"override\":false,\"manualWait\":30}")
+  updatedAt  DateTime @updatedAt
+  store      Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+}
+
+/// 受付：システム状態（店舗ごとに1行）
+model ReceptionState {
+  storeId     String @id
+  callReserved Boolean @default(false)
+  callType    String  @default("")
+  /// 呼び出し・入店受付のキュー（互換 JSON）
+  entryQueue  Json    @default("[]")
+  updatedAt   DateTime @updatedAt
+  store       Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+}
+
+/// 受付：日付＋シフト単位の席状態（店舗スコープ）
+model ReceptionShift {
+  id        String @id @default(cuid())
+  storeId   String
+  /// 例: 2026-05-06_lunch / 2026-05-06_dinner
+  shiftKey  String
+  seats     Json   @default("[]")
+  waiting   Json   @default("[]")
+  updatedAt DateTime @updatedAt
+  store     Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, shiftKey])
+  @@index([storeId])
+}
+
+/// 受付：予約（店舗スコープ）
+model ReceptionReservation {
+  id        String @id @default(cuid())
+  storeId   String
+  /// 旧システム互換キー（resId）
+  resKey    String
+  /// 予約データ JSON（旧システム互換）
+  data      Json
+  /// 検索用（data から冗長に保持）
+  date      String
+  shift     String
+  status    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  store     Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, resKey])
+  @@index([storeId])
+  @@index([storeId, date])
 }
 
 model SalesOrder {

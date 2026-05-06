@@ -2,6 +2,7 @@ import { createReadStream, existsSync, readFileSync } from "node:fs";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { join } from "node:path";
 import { templatePath } from "../lib/paths.js";
+import { prisma } from "../db.js";
 
 function loadTemplate(name: string): string {
   return readFileSync(templatePath(name), "utf8");
@@ -117,6 +118,27 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
       "staff-body-reception.html",
       "staff-script-reception.js"
     );
+  });
+
+  app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/reception/full", async (req, reply) => {
+    if (!(await assertStaffStore(req, reply))) return;
+    return staffHtml(
+      reply,
+      req.params.storeId,
+      "受付（予約・待ち）",
+      "staff-body-reception-full.html",
+      "staff-script-reception-full.js"
+    );
+  });
+
+  app.get<{ Params: { storeId: string } }>("/reception-app/:storeId/front", async (req, reply) => {
+    // 受付端末用（認証なし）
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).type("text/plain; charset=utf-8").send("store not found");
+    const body = html("reception-front.html")
+      .replace(/__STORE_ID_JS__/g, JSON.stringify(req.params.storeId))
+      .replace(/__API_URL_JS__/g, JSON.stringify(`/reception/${encodeURIComponent(req.params.storeId)}`));
+    return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(body);
   });
 
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/handy", async (req, reply) => {

@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>受付</title>
+  <style>
+    :root { --wood-dark:#5d4037; --accent:#d4a373; --bg:#fdfaf5; --reserved-blue:#0056b3; --error-red:#d90429; }
+    body { font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", sans-serif; background:var(--bg); margin:0; padding:18px; text-align:center; }
+    .card { background:#fff; padding:22px; border-radius:22px; border-top:12px solid var(--wood-dark); max-width:520px; margin:auto; box-shadow:0 10px 30px rgba(0,0,0,0.1); }
+    .wait-display { margin: 14px 0; padding: 14px; border-radius: 14px; background:#fff; border: 2px dashed #ccc; }
+    .wait-label { font-size: 1.05em; color:#666; margin-bottom:6px; }
+    .wait-value { font-size: 3em; font-weight: 900; }
+    .wait-zero { color: var(--wood-dark); }
+    .wait-busy { color: var(--error-red); animation: pulse 2s infinite; }
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.72; } 100% { opacity: 1; } }
+    .type-selector, .num-selector { display:grid; gap:8px; margin: 14px 0; }
+    .type-selector { grid-template-columns: 1fr 1fr 1fr; }
+    .num-selector { grid-template-columns: repeat(3, 1fr); }
+    .btn { padding: 14px; border: 2px solid #ddd; border-radius: 12px; background:#fff; font-weight: 800; cursor: pointer; font-size: 1.12em; }
+    .btn.active { background: var(--accent); color:#fff; border-color: var(--accent); }
+    .btn-checkin { width:100%; background: var(--wood-dark); color:#fff; padding: 22px; font-size: 1.6em; border: none; border-radius: 56px; font-weight: 900; cursor:pointer; }
+    .btn-reserved { width:100%; background: var(--reserved-blue); color:#fff; padding: 20px 10px; font-size: 1.35em; border: 5px solid #fff; border-radius: 50px; margin-top: 16px; font-weight: 900; cursor:pointer; box-shadow:0 6px 12px rgba(0,0,0,0.1); }
+    .overlay { display:none; position:fixed; inset:0; background:#fff; z-index:1000; flex-direction:column; align-items:center; justify-content:center; padding:20px; }
+    .overlay h2 { margin:0 0 8px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1 style="color:var(--wood-dark); margin:0 0 14px 0;">受付</h1>
+    <div style="background:#f8f9fa; padding:16px; border-radius:18px; text-align:left;">
+      <p style="margin:0 0 10px 0; font-weight:900;">1. お席の希望</p>
+      <div class="type-selector">
+        <button class="btn active" id="type-any">どこでも</button>
+        <button class="btn" id="type-counter">カウンター</button>
+        <button class="btn" id="type-table">テーブル</button>
+      </div>
+      <p style="margin:16px 0 10px 0; font-weight:900;">2. ご来店人数</p>
+      <div class="num-selector" id="numGrid"></div>
+      <div class="wait-display" id="waitContainer">
+        <div class="wait-label" id="waitLabel">ただいまの待ち時間</div>
+        <div><span id="viewWaitTime" class="wait-value wait-zero">0</span><span style="font-size:1.5em; margin-left:5px;">分</span></div>
+      </div>
+      <button class="btn-checkin" id="btnCheckIn">上記の内容で確定する</button>
+    </div>
+    <button class="btn-reserved" id="btnReserved">ご予約の方はこちら</button>
+  </div>
+  <div id="navOverlay" class="overlay"><div id="overlayContent"></div></div>
+
+  <script>
+    const STORE_ID = __STORE_ID_JS__;
+    const API_BASE = __API_URL_JS__;
+
+    let selectedType = "any";
+    let selectedNum = 2;
+    let seatStates = {};
+    let activeShiftKey = "";
+
+    const masterIds = ["C1","C2","C3","C4","C5","C6","C7","C8","C9","C10","T31","T32","T33","T34","T35","T36","T37","T21","T23","T22","T24","T52","T53","T54","T61","T62","T63","T64"];
+
+    function getFormattedDate(dateObj) {
+      const y = dateObj.getFullYear();
+      const m = String(dateObj.getMonth() + 1).padStart(2, "0");
+      const d = String(dateObj.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+    function getActiveShiftKey() {
+      const now = new Date();
+      const dateStr = getFormattedDate(now);
+      const shift = now.getHours() < 15 ? "lunch" : "dinner";
+      return dateStr + "_" + shift;
+    }
+
+    async function apiGetState(shiftKey) {
+      const res = await fetch(API_BASE + "/state?shiftKey=" + encodeURIComponent(shiftKey) + "&t=" + Date.now(), { cache: "no-store" });
+      if (!res.ok) throw new Error(await res.text());
+      return await res.json();
+    }
+    async function apiEvent(body) {
+      const res = await fetch(API_BASE + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!res.ok) throw new Error(await res.text());
+      return await res.json().catch(() => ({}));
+    }
+
+    function selectType(t) {
+      selectedType = t;
+      ["any","counter","table"].forEach((k) => document.getElementById("type-" + k).classList.toggle("active", k === t));
+    }
+    function selectNum(n) {
+      selectedNum = n;
+      document.querySelectorAll("[data-num]").forEach((b) => b.classList.toggle("active", Number(b.getAttribute("data-num")) === n));
+    }
+
+    function renderNums() {
+      const grid = document.getElementById("numGrid");
+      grid.innerHTML = "";
+      for (let i = 1; i <= 6; i++) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "btn" + (i === selectedNum ? " active" : "");
+        b.textContent = i + "名";
+        b.setAttribute("data-num", String(i));
+        b.onclick = () => selectNum(i);
+        grid.appendChild(b);
+      }
+      const big = document.createElement("button");
+      big.type = "button";
+      big.className = "btn";
+      big.style.gridColumn = "span 3";
+      big.style.fontSize = "1em";
+      big.textContent = "7名様以上はこちら";
+      big.onclick = async () => {
+        await apiEvent({ type: "callReserved", callType: "normal" }).catch(() => {});
+        showOverlay("お席の確認をいたします。", "スタッフが参ります。");
+      };
+      grid.appendChild(big);
+    }
+
+    function showOverlay(title, msg) {
+      const ov = document.getElementById("navOverlay");
+      const box = document.getElementById("overlayContent");
+      box.innerHTML = `<h2>${title}</h2><p>${msg}</p><button class="btn-checkin" onclick="location.reload()">閉じる</button>`;
+      ov.style.display = "flex";
+    }
+
+    function findFirstVacantSeatId() {
+      const ids = masterIds.filter((id) => seatStates[id] && seatStates[id].status === "vacant");
+      return ids[0] || null;
+    }
+
+    async function loadData() {
+      activeShiftKey = getActiveShiftKey();
+      const data = await apiGetState(activeShiftKey);
+      const conf = data.config || {};
+      const staff = parseInt(conf.staff) || 6;
+      const isOverride = conf.override === true || conf.override === "true";
+      const manualWait = parseInt(conf.manualWait) || 30;
+
+      const shiftData = (data.shifts || {})[activeShiftKey] || { seats: [], waiting: [] };
+      seatStates = {};
+      (shiftData.seats || []).forEach((s) => (seatStates[s.id] = s));
+
+      const waitCount = (shiftData.waiting || []).length;
+      const finalWait = isOverride ? manualWait : waitCount * 10;
+      const waitEl = document.getElementById("viewWaitTime");
+      const waitContainer = document.getElementById("waitContainer");
+      waitEl.textContent = String(finalWait);
+      if (finalWait > 0) {
+        waitEl.className = "wait-value wait-busy";
+        waitContainer.style.borderColor = "var(--error-red)";
+        waitContainer.style.background = "#fff0f0";
+      } else {
+        waitEl.className = "wait-value wait-zero";
+        waitContainer.style.borderColor = "#ccc";
+        waitContainer.style.background = "#fff";
+      }
+    }
+
+    async function handleCheckIn() {
+      await loadData();
+      const seatId = findFirstVacantSeatId();
+      if (!seatId) {
+        showOverlay("満席です", "スタッフが対応します。");
+        return;
+      }
+      // 受付の最小実装：空席1つを occupied にしてサーバへ反映（サーバが DiningSession を開く）
+      const shiftKey = activeShiftKey;
+      const data = await apiGetState(shiftKey);
+      const shiftData = (data.shifts || {})[shiftKey] || { seats: [], waiting: [] };
+      const seats = (shiftData.seats || []).map((s) => {
+        if (s.id !== seatId) return s;
+        return { ...s, status: "occupied", current: selectedNum, entryTime: Date.now() };
+      });
+      await apiEvent({ type: "updateAll", shiftKey, seats, waiting: shiftData.waiting || [], newEntry: { seatId, num: selectedNum, type: selectedType, at: Date.now() } });
+      showOverlay("ご案内します", "スタッフが席へご案内します。");
+    }
+
+    document.getElementById("type-any").onclick = () => selectType("any");
+    document.getElementById("type-counter").onclick = () => selectType("counter");
+    document.getElementById("type-table").onclick = () => selectType("table");
+    document.getElementById("btnCheckIn").onclick = () => handleCheckIn().catch(() => showOverlay("エラー", "スタッフにお声がけください。"));
+    document.getElementById("btnReserved").onclick = async () => {
+      await apiEvent({ type: "callReserved", callType: "reserved" }).catch(() => {});
+      showOverlay("ご予約のお客様", "スタッフが参ります。");
+    };
+
+    renderNums();
+    loadData().catch(() => {});
+    setInterval(() => loadData().catch(() => {}), 8000);
+  </script>
+</body>
+</html>
+

@@ -1,0 +1,155 @@
+<main>
+  <style>
+    :root {
+      --wood-dark: #5d4037;
+      --accent: #d4a373;
+      --bg: #fdfaf5;
+      --staff-bg: #2c2c2c;
+      --vacant-green: #8fa382;
+      --reserved-yellow: #f1c40f;
+      --occupied-blue: #4a90e2;
+      --cleaning-red: #ff4d4f;
+      --error-alert: #d90429;
+    }
+    .rc2-top { display:flex; gap:0.55rem; flex-wrap:wrap; align-items:center; }
+    .rc2-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow:hidden; }
+    .rc2-nav { background: var(--wood-dark); color:#fff; padding: 0.55rem 0.8rem; border-radius: 12px; display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap; }
+    .rc2-nav input, .rc2-nav select { padding: 0.35rem 0.5rem; border-radius: 8px; border: none; font-weight: 700; }
+    .rc2-main { display:grid; grid-template-columns: 1fr; gap:0.85rem; margin-top:0.85rem; }
+    @media (min-width: 980px) { .rc2-main { grid-template-columns: 1.35fr 0.65fr; } }
+    .rc2-map { background: var(--staff-bg); padding: 0.75rem; border-radius: 14px; }
+    .rc2-grid { display:grid; grid-template-columns: repeat(12, 1fr); grid-auto-rows: minmax(20px, 6vh); gap: 4px; background:#444; padding: 8px; border-radius: 12px; overflow:auto; max-height: min(62vh, 560px); }
+    .rc2-seat { border-radius: 6px; border: 1px solid rgba(255,255,255,0.12); font-weight: 900; color:#fff; background:#666; cursor:pointer; display:flex; align-items:center; justify-content:center; position:relative; user-select:none; }
+    .rc2-seat:active { transform: scale(0.97); }
+    .rc2-seat.vacant { background: var(--vacant-green); }
+    .rc2-seat.reserved { background: var(--reserved-yellow); color:#333; }
+    .rc2-seat.occupied { background: var(--occupied-blue); }
+    .rc2-seat.cleaning { background: var(--cleaning-red); animation: blink 1.2s infinite; border: 2px solid #fff; }
+    .rc2-seat.closed { background:#111; color:#444; }
+    @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.72; } 100% { opacity: 1; } }
+    .rc2-side { display:flex; flex-direction:column; gap:0.7rem; }
+    .rc2-panel { padding: 0.8rem; }
+    .rc2-panel h3 { margin:0 0 0.35rem; font-size:0.95rem; }
+    .rc2-table { width:100%; border-collapse:collapse; font-size:0.82rem; }
+    .rc2-table td, .rc2-table th { border-bottom: 1px solid var(--border); padding: 0.45rem 0.35rem; text-align:left; }
+    .rc2-table th { background:#f7f8fa; position:sticky; top:0; z-index:1; }
+    .rc2-list { max-height: min(30vh, 260px); overflow:auto; border:1px solid var(--border); border-radius: 12px; }
+    .rc2-alert { display:none; background: var(--error-alert); color:#fff; padding: 0.55rem 0.75rem; border-radius: 12px; font-weight: 900; }
+    .rc2-row { display:flex; gap:0.45rem; flex-wrap:wrap; align-items:center; }
+    .rc2-muted { color: var(--muted); font-size: 0.8rem; }
+    dialog.rc2-dialog { border:none; border-radius: 14px; padding:0; width:min(720px, 94vw); box-shadow: 0 20px 60px rgba(0,0,0,0.35); }
+    .rc2-dialog-head { background: var(--wood-dark); color:#fff; padding: 0.65rem 0.85rem; font-weight: 900; }
+    .rc2-dialog-body { padding: 0.85rem; background:#fff; }
+    .rc2-dialog-body input, .rc2-dialog-body select, .rc2-dialog-body textarea { width:100%; padding:0.55rem 0.6rem; border-radius: 10px; border:1px solid #d1d5db; font: inherit; }
+  </style>
+
+  <div class="rc2-top">
+    <h2 class="page-title" style="margin:0">受付（予約・待ち・座席）</h2>
+    <a class="btn-ghost" href="/staff-app/__STORE_PATH__/reception" style="text-decoration:none;display:inline-flex;align-items:center">簡易表示へ</a>
+  </div>
+
+  <div id="reservedAlertBar" class="rc2-alert"></div>
+
+  <div class="rc2-nav">
+    表示：<input type="date" id="viewDate">
+    <select id="viewShift">
+      <option value="lunch">ランチ (〜15:00)</option>
+      <option value="dinner">ディナー (〜23:00)</option>
+    </select>
+    <button type="button" class="btn-ghost" id="btnSetToday" style="background:var(--accent);border:none;color:#fff">当日</button>
+    <button type="button" class="btn-ghost" id="btnRefRc2" style="background:#fff;border:none;color:#111">再読込</button>
+    <button type="button" class="btn-ghost" id="btnAddRes" style="margin-left:auto;background:var(--accent);border:none;color:#fff">＋ 手動予約</button>
+  </div>
+
+  <div class="rc2-main">
+    <section class="rc2-map">
+      <div id="map" class="rc2-grid"></div>
+    </section>
+    <section class="rc2-side">
+      <div class="rc2-card">
+        <div class="rc2-panel">
+          <div class="rc2-row" style="justify-content:space-between">
+            <strong>スタッフ/待ち</strong>
+            <span class="rc2-muted">客数: <span id="totalGuestCount" style="font-weight:900;color:var(--accent)">0</span>名</span>
+          </div>
+          <div class="rc2-row" style="margin-top:0.5rem;align-items:flex-end">
+            <label style="flex:1">
+              <span class="rc2-muted">スタッフ数</span>
+              <input type="number" id="staffCount" value="6" style="margin-top:0.15rem">
+            </label>
+            <label style="flex:1">
+              <span class="rc2-muted">待ち強制</span>
+              <select id="waitOverride" style="margin-top:0.15rem">
+                <option value="false">自動</option>
+                <option value="true">強制</option>
+              </select>
+            </label>
+            <label style="flex:1">
+              <span class="rc2-muted">強制待ち(分)</span>
+              <input type="number" id="manualWaitValue" value="30" style="margin-top:0.15rem">
+            </label>
+          </div>
+          <div class="rc2-row" style="margin-top:0.5rem;justify-content:flex-end">
+            <button type="button" class="btn-primary" id="btnSaveConfig" style="width:auto">設定を保存</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="rc2-card">
+        <div class="rc2-panel">
+          <h3>予約リスト</h3>
+          <div class="rc2-list">
+            <table class="rc2-table">
+              <thead><tr><th>時間</th><th>氏名</th><th>人数</th><th>席</th><th>状況</th></tr></thead>
+              <tbody id="reservationListBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="rc2-card">
+        <div class="rc2-panel">
+          <h3>案内・清掃リスト</h3>
+          <div class="rc2-list">
+            <table class="rc2-table">
+              <tbody id="waitListBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="log"></div>
+    </section>
+  </div>
+
+  <dialog class="rc2-dialog" id="reserveModal">
+    <div class="rc2-dialog-head">手動予約登録</div>
+    <div class="rc2-dialog-body">
+      <div class="rc2-row">
+        <input type="date" id="resDate">
+        <select id="resShift">
+          <option value="lunch">ランチ(～15:00)</option>
+          <option value="dinner">ディナー(～23:00)</option>
+        </select>
+      </div>
+      <div class="rc2-row" style="margin-top:0.45rem">
+        <input type="time" id="resTime" style="flex:1">
+        <input type="number" id="resNum" placeholder="人数" min="1" style="flex:1">
+      </div>
+      <div class="rc2-row" style="margin-top:0.45rem">
+        <input type="text" id="resName" placeholder="お名前">
+      </div>
+      <div class="rc2-row" style="margin-top:0.45rem">
+        <input type="text" id="resNote" placeholder="備考（任意）">
+      </div>
+      <div class="rc2-row" style="margin-top:0.55rem">
+        <input type="text" id="resSeats" placeholder="席（カンマ区切り。例: T21,T22）">
+      </div>
+      <div class="rc2-row" style="margin-top:0.75rem;justify-content:flex-end">
+        <button type="button" class="btn-ghost" id="btnResCancel" style="width:auto">キャンセル</button>
+        <button type="button" class="btn-primary" id="btnResSubmit" style="width:auto">登録する</button>
+      </div>
+    </div>
+  </dialog>
+</main>
+

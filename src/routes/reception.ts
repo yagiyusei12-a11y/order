@@ -421,7 +421,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           mergeWith: Array.isArray(t.mergeWith) ? (t.mergeWith as unknown[]).filter((x) => typeof x === "string") : [],
         })),
         shifts: {
-          [shiftKey]: { seats: seatsWithBlocks, waiting },
+          [shiftKey]: { seats: seatsWithBlocks, waiting, updatedAt: sh?.updatedAt ? sh.updatedAt.getTime() : 0 },
         },
         reservations: reservations.map((r) => r.data),
       };
@@ -520,6 +520,17 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         // 旧 api.php / index.html 互換: updateSeats は payload に seats が入る
         const seats = Array.isArray(b.seats) ? (b.seats as unknown[]) : (Array.isArray(b.payload) ? (b.payload as unknown[]) : null);
         const waiting = Array.isArray(b.waiting) ? (b.waiting as unknown[]) : null;
+        const ifShiftUpdatedAt = typeof b.ifShiftUpdatedAt === "number" ? b.ifShiftUpdatedAt : null;
+        if (ifShiftUpdatedAt !== null) {
+          const cur = await prisma.receptionShift.findUnique({
+            where: { storeId_shiftKey: { storeId: store.id, shiftKey } },
+            select: { updatedAt: true },
+          });
+          const curMs = cur?.updatedAt ? cur.updatedAt.getTime() : 0;
+          if (curMs && curMs !== ifShiftUpdatedAt) {
+            return reply.code(409).send({ error: "STALE_SHIFT", currentUpdatedAt: curMs });
+          }
+        }
         if (type === "updateAll") {
           if (seats && seats.length > 0) {
             await prisma.receptionShift.update({

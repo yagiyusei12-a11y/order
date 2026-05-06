@@ -3,6 +3,7 @@ const API_URL = "/reception/" + encodeURIComponent(STORE);
 let seatStates = {}; let currentShiftKey = ""; let audioCtx = null;
 let selectedResSeats = []; let existingReservations = [];
 let tableMaster = [];
+let shiftUpdatedAt = 0;
 
 const initAudio = () => {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -277,6 +278,7 @@ async function loadData() {
     }
     existingReservations = data.reservations || [];
     const shiftData = getSafeShiftData(data, currentShiftKey);
+    shiftUpdatedAt = Number(shiftData?.updatedAt || 0) || 0;
 
     let needsUpdate = false;
     shiftData.seats.forEach((s) => {
@@ -339,47 +341,128 @@ function render(waiting, staffCount, resList) {
   }
   document.getElementById("totalGuestCount").innerText = Object.values(seatStates).reduce((acc, s) => acc + (((s.status === "occupied" || s.status === "reserved") ? (s.current || 0) : 0)), 0);
 
-  const resBody = document.getElementById("reservationListBody"); resBody.innerHTML = "";
-  if (resList.length === 0) resBody.innerHTML = '<tr><td style="color:#aaa;" colspan="4">予約はありません</td></tr>';
-  resList.forEach((r) => {
-    const noteHtml = r.note ? `<br><span style="font-size:0.8em; color:#d4a373;">※${String(r.note).replace(/\\n/g, " ")}</span>` : "";
-    const actionBtn = r.status === "予約確定"
-      ? `<button class="btn-action" style="background:var(--occupied-blue); color:white; padding:6px 12px;" onclick="markArrived('${r.resId}')">来店</button>`
-      : `<span style="color:#aaa; font-size:0.85em; font-weight:bold;">来店済</span>`;
-    resBody.innerHTML += `<tr><td>${r.time}</td><td>${r.name}(${r.num}名)${noteHtml}</td><td style="color:var(--reserved-yellow); font-weight:bold;">${(r.seats || []).join(",")}</td><td style="text-align:right;">${actionBtn}</td></tr>`;
-  });
+  const resBody = document.getElementById("reservationListBody");
+  resBody.innerHTML = "";
+  if (!resList || resList.length === 0) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 4;
+    td.style.color = "#aaa";
+    td.textContent = "予約はありません";
+    tr.appendChild(td);
+    resBody.appendChild(tr);
+  } else {
+    resList.forEach((r) => {
+      const tr = document.createElement("tr");
 
-  const body = document.getElementById("waitListBody"); body.innerHTML = "";
-  Object.values(seatStates).filter((s) => s.status === "cleaning").forEach((s) => { body.innerHTML += `<tr><td>${s.id}</td><td>清掃</td><td><button class="btn-action" onclick="toggleSeat('${s.id}')">完了</button></td></tr>`; });
-  waiting.forEach((w, i) => { body.innerHTML += `<tr><td>${w.seat}</td><td>${w.startTime}</td><td><button class="btn-action" onclick="startOrder(${i},'${w.seat}')">入店</button></td></tr>`; });
+      const tdTime = document.createElement("td");
+      tdTime.textContent = String(r.time || "");
+
+      const tdName = document.createElement("td");
+      tdName.textContent = `${String(r.name || "")}(${String(r.num || "")}名)`;
+      if (r.note) {
+        const br = document.createElement("br");
+        const span = document.createElement("span");
+        span.style.fontSize = "0.8em";
+        span.style.color = "#d4a373";
+        span.textContent = `※${String(r.note).replace(/\n/g, " ")}`;
+        tdName.appendChild(br);
+        tdName.appendChild(span);
+      }
+
+      const tdSeats = document.createElement("td");
+      tdSeats.style.color = "var(--reserved-yellow)";
+      tdSeats.style.fontWeight = "bold";
+      tdSeats.textContent = Array.isArray(r.seats) ? r.seats.join(",") : "";
+
+      const tdAction = document.createElement("td");
+      tdAction.style.textAlign = "right";
+      if (r.status === "予約確定") {
+        const btn = document.createElement("button");
+        btn.className = "btn-action";
+        btn.style.background = "var(--occupied-blue)";
+        btn.style.color = "white";
+        btn.style.padding = "6px 12px";
+        btn.textContent = "来店";
+        btn.addEventListener("click", () => markArrived(String(r.resId || "")));
+        tdAction.appendChild(btn);
+      } else {
+        const span = document.createElement("span");
+        span.style.color = "#aaa";
+        span.style.fontSize = "0.85em";
+        span.style.fontWeight = "bold";
+        span.textContent = "来店済";
+        tdAction.appendChild(span);
+      }
+
+      tr.appendChild(tdTime);
+      tr.appendChild(tdName);
+      tr.appendChild(tdSeats);
+      tr.appendChild(tdAction);
+      resBody.appendChild(tr);
+    });
+  }
+
+  const body = document.getElementById("waitListBody");
+  body.innerHTML = "";
+  Object.values(seatStates).filter((s) => s.status === "cleaning").forEach((s) => {
+    const tr = document.createElement("tr");
+    const td1 = document.createElement("td"); td1.textContent = String(s.id || "");
+    const td2 = document.createElement("td"); td2.textContent = "清掃";
+    const td3 = document.createElement("td");
+    const btn = document.createElement("button");
+    btn.className = "btn-action";
+    btn.textContent = "完了";
+    btn.addEventListener("click", () => toggleSeat(String(s.id || "")));
+    td3.appendChild(btn);
+    tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
+    body.appendChild(tr);
+  });
+  (waiting || []).forEach((w, i) => {
+    const tr = document.createElement("tr");
+    const td1 = document.createElement("td"); td1.textContent = String(w.seat || "");
+    const td2 = document.createElement("td"); td2.textContent = String(w.startTime || "");
+    const td3 = document.createElement("td");
+    const btn = document.createElement("button");
+    btn.className = "btn-action";
+    btn.textContent = "入店";
+    btn.addEventListener("click", () => startOrder(i, String(w.seat || "")));
+    td3.appendChild(btn);
+    tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
+    body.appendChild(tr);
+  });
 }
 
 async function toggleSeat(id) {
   initAudio();
   const res = await fetch(API_URL + "/state?shiftKey=" + encodeURIComponent(currentShiftKey) + "&t=" + Date.now()); const data = await res.json();
   const shiftData = getSafeShiftData(data, currentShiftKey);
+  const ifShiftUpdatedAt = Number(shiftData?.updatedAt || 0) || 0;
   let realSeat = shiftData.seats.find((x) => x.id === id) || seatStates[id];
   if (realSeat.status === "vacant") { realSeat.status = "reserved"; }
   else if (realSeat.status === "reserved") { realSeat.status = "occupied"; realSeat.current = 2; realSeat.entryTime = Date.now(); }
   else if (realSeat.status === "occupied") { realSeat.status = "cleaning"; realSeat.cleanStart = Date.now(); realSeat.current = 0; playChime("low"); }
   else { realSeat.status = "vacant"; realSeat.current = 0; }
-  await fetch(API_URL + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "updateSeats", shiftKey: currentShiftKey, payload: shiftData.seats }) });
+  const wr = await fetch(API_URL + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "updateSeats", shiftKey: currentShiftKey, ifShiftUpdatedAt, payload: shiftData.seats }) });
+  if (wr.status === 409) { alert("他の端末で更新がありました。再読込します。"); }
   loadData();
 }
 
 async function startOrder(i, sid) {
   const res = await fetch(API_URL + "/state?shiftKey=" + encodeURIComponent(currentShiftKey) + "&t=" + Date.now()), data = await res.json();
   const shiftData = getSafeShiftData(data, currentShiftKey);
+  const ifShiftUpdatedAt = Number(shiftData?.updatedAt || 0) || 0;
   const updatedW = shiftData.waiting || []; const waitInfo = updatedW.splice(i, 1)[0];
   const updatedS = shiftData.seats.map((s) => sid.split(",").includes(s.id) ? { ...s, status: "occupied", current: Math.ceil(waitInfo.num / sid.split(",").length), entryTime: Date.now() } : s);
-  await fetch(API_URL + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "updateAll", shiftKey: currentShiftKey, seats: updatedS, waiting: updatedW }) });
+  const wr = await fetch(API_URL + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "updateAll", shiftKey: currentShiftKey, ifShiftUpdatedAt, seats: updatedS, waiting: updatedW }) });
+  if (wr.status === 409) { alert("他の端末で更新がありました。再読込します。"); }
   loadData();
 }
 
 window.setToday = function setToday() {
   const now = new Date();
   document.getElementById("viewDate").value = getFormattedDate(now);
-  document.getElementById("viewShift").value = now.getHours() < 16 ? "lunch" : "dinner";
+  document.getElementById("viewShift").value = now.getHours() < 15 ? "lunch" : "dinner";
   changeViewShift();
 };
 
@@ -390,7 +473,7 @@ setInterval(() => {
   if (Date.now() - lastActiveTime > 60000) {
     const now = new Date();
     const expectedDate = getFormattedDate(now);
-    const expectedShift = now.getHours() < 16 ? "lunch" : "dinner";
+    const expectedShift = now.getHours() < 15 ? "lunch" : "dinner";
     if (document.getElementById("viewDate").value !== expectedDate || document.getElementById("viewShift").value !== expectedShift) {
       window.setToday();
     }

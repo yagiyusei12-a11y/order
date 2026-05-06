@@ -289,6 +289,7 @@
       const shiftKey = activeShiftKey;
       const data = await apiGetState(shiftKey);
       const shiftData = (data.shifts || {})[shiftKey] || { seats: [], waiting: [] };
+      const ifShiftUpdatedAt = Number(shiftData.updatedAt || 0) || 0;
 
       const perSeatNum = Math.ceil(num / ids.length);
       const updatedSeats = (shiftData.seats || []).map((s) => {
@@ -299,8 +300,13 @@
       const updatedWaiting = shiftData.waiting || [];
       if (isReserved) updatedWaiting.push({ seat: ids.join(","), name: "案内済み", num: num, startTime: time, alerted: false });
 
-      await apiEvent({ type: "updateAll", shiftKey, seats: updatedSeats, waiting: updatedWaiting, newEntry: { seat: ids.join("、"), num: num } });
-      location.reload();
+      try {
+        await apiEvent({ type: "updateAll", shiftKey, ifShiftUpdatedAt, seats: updatedSeats, waiting: updatedWaiting, newEntry: { seat: ids.join("、"), num: num } });
+        location.reload();
+      } catch (e) {
+        // stale shift etc.
+        location.reload();
+      }
     }
 
     document.getElementById("type-any").onclick = () => selectType("any");

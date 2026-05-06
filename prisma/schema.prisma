@@ -468,6 +468,19 @@ model ReceptionReservation {
   @@index([storeId, date])
 }
 
+/// 受付：予約座席ロック（同一 seatId の二重予約防止）
+model ReceptionReservationSeat {
+  id       String @id @default(cuid())
+  storeId  String
+  shiftKey String
+  seatId   String
+  resKey   String
+
+  @@unique([storeId, shiftKey, seatId])
+  @@index([storeId, resKey])
+  @@index([storeId, shiftKey])
+}
+
 model SalesOrder {
   id        String      @id @default(cuid())
   sessionId String

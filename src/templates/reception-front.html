@@ -168,8 +168,8 @@
       const shiftData = (data.shifts || {})[activeShiftKey] || { seats: [], waiting: [] };
       seatStates = {};
       (shiftData.seats || []).forEach((s) => {
-        // 旧システム互換: hasFutureRes は予約ブロック実装時に使う（現状は false）
-        seatStates[s.id] = { ...s, hasFutureRes: false };
+        // hasFutureRes はサーバ側（予約ブロック）で付与されるので上書きしない
+        seatStates[s.id] = { ...s };
       });
 
       const waitCount = (shiftData.waiting || []).length;

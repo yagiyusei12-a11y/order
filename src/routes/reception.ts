@@ -191,6 +191,23 @@ function pickReservationSeats(input: {
   return null;
 }
 
+async function syncReservationSeatLocks(input: {
+  storeId: string;
+  resKey: string;
+  shiftKey: string;
+  seats: string[];
+  status: string | null | undefined;
+}): Promise<void> {
+  const { storeId, resKey, shiftKey, seats, status } = input;
+  await prisma.receptionReservationSeat.deleteMany({ where: { storeId, resKey } });
+  if (status === "キャンセル") return;
+  const uniqueSeats = [...new Set(seats.filter((s) => typeof s === "string" && s))];
+  if (uniqueSeats.length === 0) return;
+  await prisma.receptionReservationSeat.createMany({
+    data: uniqueSeats.map((seatId) => ({ storeId, resKey, shiftKey, seatId })),
+  });
+}
+
 async function ensureReceptionRows(storeId: string): Promise<void> {
   await prisma.receptionConfig.upsert({
     where: { storeId },
@@ -297,16 +314,25 @@ async function syncSeatToSessions(storeId: string, seatId: string, next: SeatSta
   });
 
   if (next === "occupied") {
+    const nextCount = Math.max(1, Number.isFinite(current) ? Math.floor(current) : 1);
+    // If bashing_waiting exists, reuse it (avoid creating 2 sessions per table)
+    if (!open && bash) {
+      await prisma.diningSession.update({ where: { id: bash.id }, data: { status: "open", guestCount: nextCount, closedAt: null } });
+      return;
+    }
     if (!open) {
       await openSessionForTable({
         tableId: table.id,
         storeId,
-        guestCount: Math.max(1, Number.isFinite(current) ? Math.floor(current) : 1),
+        guestCount: nextCount,
         childCount: 0,
         courseId: null,
         mode: "reuseIfOpen",
       });
+      return;
     }
+    // Keep guestCount in sync
+    await prisma.diningSession.update({ where: { id: open.id }, data: { guestCount: nextCount } });
     return;
   }
   if (next === "cleaning") {
@@ -465,6 +491,8 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           create: { storeId: store.id, resKey: resId, data: res as never, date, shift, status },
           update: { data: res as never, date, shift, status },
         });
+        const seats = Array.isArray((res as any)?.seats) ? ((res as any).seats as unknown[]).filter((x) => typeof x === "string") as string[] : [];
+        await syncReservationSeatLocks({ storeId: store.id, resKey: resId, shiftKey: `${date}_${shift}`, seats, status });
         return { status: "success" };
       }
       if (type === "bulkUpdateReservations") {
@@ -482,6 +510,8 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
             create: { storeId: store.id, resKey: resId, data: r as never, date, shift, status },
             update: { data: r as never, date, shift, status },
           });
+          const seats = Array.isArray((r as any)?.seats) ? ((r as any).seats as unknown[]).filter((x) => typeof x === "string") as string[] : [];
+          await syncReservationSeatLocks({ storeId: store.id, resKey: resId, shiftKey: `${date}_${shift}`, seats, status });
         }
         return { status: "success" };
       }
@@ -586,62 +616,82 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
     const shiftKey = `${date}_${shift}`;
     await ensureShift(store.id, shiftKey);
 
-    const [tables, reservations, sh] = await Promise.all([
-      prisma.table.findMany({
-        where: { storeId: store.id, active: true },
-        select: { publicCode: true, capacity: true, mergeWith: true },
-        orderBy: { sortOrder: "asc" },
-      }),
-      prisma.receptionReservation.findMany({ where: { storeId: store.id, date, shift } }),
-      prisma.receptionShift.findUnique({ where: { storeId_shiftKey: { storeId: store.id, shiftKey } } }),
-    ]);
+    // Concurrency-safe seat assignment:
+    // - Compute candidate seats
+    // - Create reservation and per-seat locks in a transaction
+    // - If a lock conflicts, retry by recomputing
+    const maxAttempts = 3;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const resId = "N" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
+      try {
+        const out = await prisma.$transaction(async (tx) => {
+          const [tables, sh] = await Promise.all([
+            tx.table.findMany({
+              where: { storeId: store.id, active: true },
+              select: { publicCode: true, capacity: true, mergeWith: true },
+              orderBy: { sortOrder: "asc" },
+            }),
+            tx.receptionShift.findUnique({ where: { storeId_shiftKey: { storeId: store.id, shiftKey } } }),
+          ]);
 
-    const used = new Set<string>();
-    for (const r of reservations) {
-      const d = r.data as any;
-      if (d?.status === "キャンセル") continue;
-      const seats = Array.isArray(d?.seats) ? d.seats : [];
-      for (const s of seats) if (typeof s === "string" && s) used.add(s);
+          const used = new Set<string>();
+          const locks = await tx.receptionReservationSeat.findMany({
+            where: { storeId: store.id, shiftKey },
+            select: { seatId: true },
+          });
+          for (const l of locks) used.add(l.seatId);
+
+          const seatsNow = Array.isArray((sh?.seats as unknown) as unknown[]) ? ((sh?.seats as unknown[]) ?? []) : [];
+          for (const row of seatsNow) {
+            if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+            const o = row as Record<string, unknown>;
+            const id = typeof o.id === "string" ? o.id : "";
+            const st = typeof o.status === "string" ? o.status : "";
+            if (!id) continue;
+            if (st && st !== "vacant") used.add(id);
+          }
+
+          const tableMaster = tables.map((t) => ({
+            code: t.publicCode,
+            capacity: Number(t.capacity || 2),
+            mergeWith: Array.isArray(t.mergeWith) ? t.mergeWith.filter((x) => typeof x === "string") as string[] : [],
+          }));
+          const seats = pickReservationSeats({ tables: tableMaster, used, num: Math.floor(num) });
+          if (!seats) return { ok: false as const };
+
+          const reservation = {
+            resId,
+            date,
+            shift,
+            time,
+            name,
+            num: Math.floor(num),
+            status: "予約確定",
+            seats,
+            note,
+          };
+
+          await tx.receptionReservation.upsert({
+            where: { storeId_resKey: { storeId: store.id, resKey: resId } },
+            create: { storeId: store.id, resKey: resId, data: reservation as never, date, shift, status: "予約確定" },
+            update: { data: reservation as never, date, shift, status: "予約確定" },
+          });
+          await tx.receptionReservationSeat.createMany({
+            data: seats.map((seatId) => ({ storeId: store.id, shiftKey, seatId, resKey: resId })),
+          });
+          return { ok: true as const, resId, seats };
+        });
+
+        if (!out.ok) return reply.code(409).send({ error: "no available seats" });
+        return { ok: true, resId: out.resId, seats: out.seats };
+      } catch (e: any) {
+        const msg = String(e?.message || e);
+        // Unique constraint hit means seat already locked; retry
+        if (msg.includes("ReceptionReservationSeat_storeId_shiftKey_seatId_key")) continue;
+        throw e;
+      }
     }
-    // 同日同シフトで既に occupied/cleaning/reserved になっている席は使用不可にする
-    const seatsNow = Array.isArray((sh?.seats as unknown) as unknown[]) ? ((sh?.seats as unknown[]) ?? []) : [];
-    for (const row of seatsNow) {
-      if (!row || typeof row !== "object" || Array.isArray(row)) continue;
-      const o = row as Record<string, unknown>;
-      const id = typeof o.id === "string" ? o.id : "";
-      const st = typeof o.status === "string" ? o.status : "";
-      if (!id) continue;
-      if (st && st !== "vacant") used.add(id);
-    }
-
-    const tableMaster = tables.map((t) => ({
-      code: t.publicCode,
-      capacity: Number(t.capacity || 2),
-      mergeWith: Array.isArray(t.mergeWith) ? t.mergeWith.filter((x) => typeof x === "string") as string[] : [],
-    }));
-    const seats = pickReservationSeats({ tables: tableMaster, used, num: Math.floor(num) });
-    if (!seats) return reply.code(409).send({ error: "no available seats" });
-
-    const resId = "N" + Date.now();
-    const reservation = {
-      resId,
-      date,
-      shift,
-      time,
-      name,
-      num: Math.floor(num),
-      status: "予約確定",
-      seats,
-      note,
-    };
-
-    await prisma.receptionReservation.upsert({
-      where: { storeId_resKey: { storeId: store.id, resKey: resId } },
-      create: { storeId: store.id, resKey: resId, data: reservation as never, date, shift, status: "予約確定" },
-      update: { data: reservation as never, date, shift, status: "予約確定" },
-    });
-
-    return { ok: true, resId, seats };
+    return reply.code(409).send({ error: "no available seats" });
   });
 }
 

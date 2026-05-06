@@ -315,24 +315,23 @@ function render(waiting, staffCount, resList) {
   ]);
 
   const ids = getMasterIds();
-  const placed = new Set();
-  const unknown = [];
-  for (const id of ids) {
-    if (posMap.has(id)) placed.add(id);
-    else unknown.push(id);
-  }
-  // auto place unknown at bottom row
+  const placedIds = ids.filter((id) => posMap.has(id));
+  const unknownIds = ids.filter((id) => !posMap.has(id));
+  // auto place unknown at bottom rows (stable order)
   let autoCol = 1;
-  const autoRow = 15;
+  let autoRow = 15;
 
-  for (const id of [...Array.from(placed), ...unknown]) {
+  for (const id of [...placedIds, ...unknownIds]) {
     const st = seatStates[id] || { status: "vacant" };
     let status = st.status;
     if (["T52","T53","T54","T61","T62","T63","T64"].includes(id) && staffCount <= 5 && status === "vacant") status = "closed";
     const div = document.createElement("div");
     div.className = `seat ${status}`;
     const pos = posMap.get(id) || `grid-column:${autoCol}/${autoCol + 1};grid-row:${autoRow};`;
-    if (!posMap.has(id)) { autoCol = autoCol >= 12 ? 1 : (autoCol + 1); }
+    if (!posMap.has(id)) {
+      autoCol += 1;
+      if (autoCol > 12) { autoCol = 1; autoRow += 1; }
+    }
     div.style = pos;
     div.innerHTML = id;
     div.onclick = () => { if (status !== "closed") toggleSeat(id); };

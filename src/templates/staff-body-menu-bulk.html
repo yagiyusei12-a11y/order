@@ -149,6 +149,16 @@
 
     <div class="bulk-field" style="margin-bottom:0.65rem">
       <label class="row" style="align-items:center;gap:0.45rem;margin:0 0 0.35rem">
+        <input type="checkbox" id="applyAlcohol" /> アルコール商品（飲酒不可のお客様はゲストから注文できません）
+      </label>
+      <select id="bulkAlcohol" style="margin:0;max-width:12rem">
+        <option value="false">アルコールではない</option>
+        <option value="true">アルコール</option>
+      </select>
+    </div>
+
+    <div class="bulk-field" style="margin-bottom:0.65rem">
+      <label class="row" style="align-items:center;gap:0.45rem;margin:0 0 0.35rem">
         <input type="checkbox" id="applyTimeDisc" /> 時間帯ディスカウント（全選択商品を同じ内容に置き換え。行なし＝すべてクリア）
       </label>
       <div id="bulkTimeDiscRoot" style="margin-bottom:0.35rem"></div>

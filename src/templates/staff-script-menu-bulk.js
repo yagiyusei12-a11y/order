@@ -305,6 +305,9 @@ async function applyBulk() {
   if ($("applySellKind").checked) {
     patch.sellKind = $("bulkSellKind").value === "set" ? "set" : "single";
   }
+  if ($("applyAlcohol").checked) {
+    patch.containsAlcohol = $("bulkAlcohol").value === "true";
+  }
   if ($("applyTimeDisc").checked) {
     try {
       patch.timeDiscounts = collectBulkTimeDiscountsForPatch();

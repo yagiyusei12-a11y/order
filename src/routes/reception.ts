@@ -235,6 +235,18 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         prisma.receptionReservation.findMany({ where: { storeId: store.id } }),
       ]);
 
+      // 旧 index.html の Etag キャッシュ互換（内容が変わらなければ 304）
+      const maxResUpdatedAt = reservations.reduce((acc, r) => Math.max(acc, r.updatedAt?.getTime?.() ?? 0), 0);
+      const etag = `W/"${[
+        conf?.updatedAt?.getTime?.() ?? 0,
+        st?.updatedAt?.getTime?.() ?? 0,
+        sh?.updatedAt?.getTime?.() ?? 0,
+        maxResUpdatedAt,
+      ].join("-")}"`;
+      const inm = (req.headers["if-none-match"] || "").toString();
+      reply.header("Etag", etag);
+      if (inm === etag) return reply.code(304).send();
+
       // seats が空なら、卓/セッションから初期化（互換維持）
       let seats = Array.isArray((sh?.seats as unknown) as unknown[]) ? (sh?.seats as unknown[]) : [];
       let waiting = Array.isArray((sh?.waiting as unknown) as unknown[]) ? (sh?.waiting as unknown[]) : [];
@@ -351,7 +363,8 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
       }
 
       if (type === "updateAll" || type === "updateSeats") {
-        const seats = Array.isArray(b.seats) ? (b.seats as unknown[]) : null;
+        // 旧 api.php / index.html 互換: updateSeats は payload に seats が入る
+        const seats = Array.isArray(b.seats) ? (b.seats as unknown[]) : (Array.isArray(b.payload) ? (b.payload as unknown[]) : null);
         const waiting = Array.isArray(b.waiting) ? (b.waiting as unknown[]) : null;
         if (type === "updateAll") {
           if (seats && seats.length > 0) {

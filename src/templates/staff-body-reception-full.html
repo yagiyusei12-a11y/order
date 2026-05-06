@@ -1,155 +1,117 @@
-<main>
+<main onclick="initAudio()">
   <style>
-    :root {
-      --wood-dark: #5d4037;
-      --accent: #d4a373;
-      --bg: #fdfaf5;
-      --staff-bg: #2c2c2c;
-      --vacant-green: #8fa382;
-      --reserved-yellow: #f1c40f;
-      --occupied-blue: #4a90e2;
-      --cleaning-red: #ff4d4f;
-      --error-alert: #d90429;
-    }
-    .rc2-top { display:flex; gap:0.55rem; flex-wrap:wrap; align-items:center; }
-    .rc2-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow:hidden; }
-    .rc2-nav { background: var(--wood-dark); color:#fff; padding: 0.55rem 0.8rem; border-radius: 12px; display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap; }
-    .rc2-nav input, .rc2-nav select { padding: 0.35rem 0.5rem; border-radius: 8px; border: none; font-weight: 700; }
-    .rc2-main { display:grid; grid-template-columns: 1fr; gap:0.85rem; margin-top:0.85rem; }
-    @media (min-width: 980px) { .rc2-main { grid-template-columns: 1.35fr 0.65fr; } }
-    .rc2-map { background: var(--staff-bg); padding: 0.75rem; border-radius: 14px; }
-    .rc2-grid { display:grid; grid-template-columns: repeat(12, 1fr); grid-auto-rows: minmax(20px, 6vh); gap: 4px; background:#444; padding: 8px; border-radius: 12px; overflow:auto; max-height: min(62vh, 560px); }
-    .rc2-seat { border-radius: 6px; border: 1px solid rgba(255,255,255,0.12); font-weight: 900; color:#fff; background:#666; cursor:pointer; display:flex; align-items:center; justify-content:center; position:relative; user-select:none; }
-    .rc2-seat:active { transform: scale(0.97); }
-    .rc2-seat.vacant { background: var(--vacant-green); }
-    .rc2-seat.reserved { background: var(--reserved-yellow); color:#333; }
-    .rc2-seat.occupied { background: var(--occupied-blue); }
-    .rc2-seat.cleaning { background: var(--cleaning-red); animation: blink 1.2s infinite; border: 2px solid #fff; }
-    .rc2-seat.closed { background:#111; color:#444; }
-    @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.72; } 100% { opacity: 1; } }
-    .rc2-side { display:flex; flex-direction:column; gap:0.7rem; }
-    .rc2-panel { padding: 0.8rem; }
-    .rc2-panel h3 { margin:0 0 0.35rem; font-size:0.95rem; }
-    .rc2-table { width:100%; border-collapse:collapse; font-size:0.82rem; }
-    .rc2-table td, .rc2-table th { border-bottom: 1px solid var(--border); padding: 0.45rem 0.35rem; text-align:left; }
-    .rc2-table th { background:#f7f8fa; position:sticky; top:0; z-index:1; }
-    .rc2-list { max-height: min(30vh, 260px); overflow:auto; border:1px solid var(--border); border-radius: 12px; }
-    .rc2-alert { display:none; background: var(--error-alert); color:#fff; padding: 0.55rem 0.75rem; border-radius: 12px; font-weight: 900; }
-    .rc2-row { display:flex; gap:0.45rem; flex-wrap:wrap; align-items:center; }
-    .rc2-muted { color: var(--muted); font-size: 0.8rem; }
-    dialog.rc2-dialog { border:none; border-radius: 14px; padding:0; width:min(720px, 94vw); box-shadow: 0 20px 60px rgba(0,0,0,0.35); }
-    .rc2-dialog-head { background: var(--wood-dark); color:#fff; padding: 0.65rem 0.85rem; font-weight: 900; }
-    .rc2-dialog-body { padding: 0.85rem; background:#fff; }
-    .rc2-dialog-body input, .rc2-dialog-body select, .rc2-dialog-body textarea { width:100%; padding:0.55rem 0.6rem; border-radius: 10px; border:1px solid #d1d5db; font: inherit; }
+    :root { --wood-dark: #5d4037; --accent: #d4a373; --bg: #fdfaf5; --staff-bg: #2c2c2c; --vacant-green: #8fa382; --reserved-yellow: #f1c40f; --occupied-blue: #4a90e2; --cleaning-red: #ff4d4f; --error-alert: #d90429; }
+    html, body { height: 100vh; overflow: hidden; }
+    .container { height: 100vh; display: flex; flex-direction: column; padding: 5px; box-sizing: border-box; }
+    .top-nav { background: var(--wood-dark); color: white; padding: 8px 15px; border-radius: 8px; margin-bottom: 5px; display: flex; align-items: center; gap: 15px; font-weight: bold; }
+    .top-nav input[type="date"], .top-nav select { padding: 5px; font-size: 1.1em; border-radius: 5px; border: none; }
+    .btn-reserve-add { background: var(--accent); color: white; border: none; padding: 6px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 1.1em; margin-left: auto; }
+    .btn-csv { background: #4a90e2; color: white; border: none; padding: 6px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 1.1em; }
+    .main-content { display: flex; flex: 1; gap: 8px; overflow: hidden; }
+    .map-section { background: var(--staff-bg); padding: 8px; border-radius: 12px; flex: 3.5; display: flex; flex-direction: column; min-height: 0; }
+    .shop-map { display: grid; grid-template-columns: repeat(12, 1fr); grid-auto-rows: minmax(20px, 6vh); gap: 3px; background: #444; padding: 8px; border-radius: 10px; flex: 1; overflow-y: auto; }
+    .seat { background: #666; color: white; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 14px; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); font-weight: bold; position: relative; }
+    .seat:active { transform: scale(0.95); }
+    .seat.vacant { background-color: var(--vacant-green) !important; }
+    .seat.reserved { background-color: var(--reserved-yellow) !important; color: #333 !important; }
+    .seat.occupied { background-color: var(--occupied-blue) !important; }
+    .seat.cleaning { background-color: var(--cleaning-red) !important; animation: blink 1.2s infinite; border: 2px solid white; }
+    .seat.closed { background-color: #111 !important; color: #444 !important; }
+    @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+    .side-section { flex: 1; display: flex; flex-direction: column; gap: 5px; overflow: hidden; max-width: 300px; min-width: 250px; }
+    .control-panel { background: #3d3d3d; padding: 8px; border-radius: 10px; color: white; font-size: 0.85em; display: flex; flex-direction: column; }
+    .list-panel { flex: 1; overflow-y: auto; min-height: 0; padding-top: 0; }
+    .wait-table { width: 100%; border-collapse: collapse; color: white; font-size: 0.85em; }
+    .wait-table td { border-bottom: 1px solid #555; padding: 6px 4px; }
+    .btn-action { background: #fff; color: #333; border: none; padding: 4px 8px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+    #reservedAlertBar { display:none; background: var(--error-alert); color: white; padding: 8px; text-align: center; font-weight: bold; font-size: 1.2em; border-radius: 8px; margin-bottom: 5px; }
+    #entryPopup { display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:var(--occupied-blue); color:white; padding:30px; border-radius:20px; box-shadow:0 0 50px rgba(0,0,0,0.6); z-index:10000; text-align:center; cursor:pointer; border: 4px solid white; }
+    #reserveModal, #csvModal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:10001; justify-content:center; align-items:center; }
+    .modal-content { background:white; padding:20px; border-radius:15px; width:450px; max-width:90%; color:#333; }
+    .modal-content input, .modal-content select { width:100%; padding:10px; margin-bottom:15px; border:1px solid #ccc; border-radius:5px; box-sizing:border-box; font-size:1.1em; }
+    .seat-selector { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:15px; max-height:150px; overflow-y:auto; padding:5px; background:#f0f0f0; border-radius:5px; }
+    .seat-check-btn { background:#fff; border:1px solid #aaa; padding:5px 10px; border-radius:3px; cursor:pointer; }
+    .seat-check-btn.selected { background:var(--reserved-yellow); font-weight:bold; border-color:#d4ac0d; }
+    .csv-content { background:white; padding:20px; border-radius:15px; width:95%; max-width:1200px; height:85%; display:flex; flex-direction:column; color:#333; }
+    .csv-table-wrap { flex:1; overflow:auto; margin-bottom:15px; border:1px solid #ddd; }
+    .csv-table { width:100%; border-collapse:collapse; font-size:0.95em; }
+    .csv-table th, .csv-table td { border:1px solid #ccc; padding:8px; text-align:center; }
+    .csv-table th { background:#f5f5f5; position:sticky; top:0; z-index:1; }
+    .csv-table input, .csv-table select { width:100%; padding:5px; border:1px solid #ccc; box-sizing:border-box; }
+    .csv-table .input-seats { background:#fffbea; border:1px solid #d4ac0d; font-weight:bold; }
   </style>
 
-  <div class="rc2-top">
-    <h2 class="page-title" style="margin:0">受付（予約・待ち・座席）</h2>
-    <a class="btn-ghost" href="/staff-app/__STORE_PATH__/reception" style="text-decoration:none;display:inline-flex;align-items:center">簡易表示へ</a>
-  </div>
+  <div id="entryPopup" onclick="clearEntry()"><h2 id="entryText" style="font-size:3em; margin:10px 0;">---</h2><div style="background:white; color:var(--occupied-blue); padding:10px; border-radius:50px; font-weight:bold;">確認</div></div>
 
-  <div id="reservedAlertBar" class="rc2-alert"></div>
-
-  <div class="rc2-nav">
-    表示：<input type="date" id="viewDate">
-    <select id="viewShift">
-      <option value="lunch">ランチ (〜15:00)</option>
-      <option value="dinner">ディナー (〜23:00)</option>
-    </select>
-    <button type="button" class="btn-ghost" id="btnSetToday" style="background:var(--accent);border:none;color:#fff">当日</button>
-    <button type="button" class="btn-ghost" id="btnRefRc2" style="background:#fff;border:none;color:#111">再読込</button>
-    <button type="button" class="btn-ghost" id="btnAddRes" style="margin-left:auto;background:var(--accent);border:none;color:#fff">＋ 手動予約</button>
-  </div>
-
-  <div class="rc2-main">
-    <section class="rc2-map">
-      <div id="map" class="rc2-grid"></div>
-    </section>
-    <section class="rc2-side">
-      <div class="rc2-card">
-        <div class="rc2-panel">
-          <div class="rc2-row" style="justify-content:space-between">
-            <strong>スタッフ/待ち</strong>
-            <span class="rc2-muted">客数: <span id="totalGuestCount" style="font-weight:900;color:var(--accent)">0</span>名</span>
-          </div>
-          <div class="rc2-row" style="margin-top:0.5rem;align-items:flex-end">
-            <label style="flex:1">
-              <span class="rc2-muted">スタッフ数</span>
-              <input type="number" id="staffCount" value="6" style="margin-top:0.15rem">
-            </label>
-            <label style="flex:1">
-              <span class="rc2-muted">待ち強制</span>
-              <select id="waitOverride" style="margin-top:0.15rem">
-                <option value="false">自動</option>
-                <option value="true">強制</option>
-              </select>
-            </label>
-            <label style="flex:1">
-              <span class="rc2-muted">強制待ち(分)</span>
-              <input type="number" id="manualWaitValue" value="30" style="margin-top:0.15rem">
-            </label>
-          </div>
-          <div class="rc2-row" style="margin-top:0.5rem;justify-content:flex-end">
-            <button type="button" class="btn-primary" id="btnSaveConfig" style="width:auto">設定を保存</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="rc2-card">
-        <div class="rc2-panel">
-          <h3>予約リスト</h3>
-          <div class="rc2-list">
-            <table class="rc2-table">
-              <thead><tr><th>時間</th><th>氏名</th><th>人数</th><th>席</th><th>状況</th></tr></thead>
-              <tbody id="reservationListBody"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <div class="rc2-card">
-        <div class="rc2-panel">
-          <h3>案内・清掃リスト</h3>
-          <div class="rc2-list">
-            <table class="rc2-table">
-              <tbody id="waitListBody"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <div id="log"></div>
-    </section>
-  </div>
-
-  <dialog class="rc2-dialog" id="reserveModal">
-    <div class="rc2-dialog-head">手動予約登録</div>
-    <div class="rc2-dialog-body">
-      <div class="rc2-row">
-        <input type="date" id="resDate">
-        <select id="resShift">
-          <option value="lunch">ランチ(～15:00)</option>
-          <option value="dinner">ディナー(～23:00)</option>
-        </select>
-      </div>
-      <div class="rc2-row" style="margin-top:0.45rem">
-        <input type="time" id="resTime" style="flex:1">
-        <input type="number" id="resNum" placeholder="人数" min="1" style="flex:1">
-      </div>
-      <div class="rc2-row" style="margin-top:0.45rem">
-        <input type="text" id="resName" placeholder="お名前">
-      </div>
-      <div class="rc2-row" style="margin-top:0.45rem">
-        <input type="text" id="resNote" placeholder="備考（任意）">
-      </div>
-      <div class="rc2-row" style="margin-top:0.55rem">
-        <input type="text" id="resSeats" placeholder="席（カンマ区切り。例: T21,T22）">
-      </div>
-      <div class="rc2-row" style="margin-top:0.75rem;justify-content:flex-end">
-        <button type="button" class="btn-ghost" id="btnResCancel" style="width:auto">キャンセル</button>
-        <button type="button" class="btn-primary" id="btnResSubmit" style="width:auto">登録する</button>
+  <div id="reserveModal">
+    <div class="modal-content">
+      <h2 style="margin-top:0;">手動予約登録</h2>
+      <div style="display:flex; gap:10px;"><input type="date" id="resDate" required onchange="updateReserveSeatSelector()"><select id="resShift" onchange="updateReserveSeatSelector()"><option value="lunch">ランチ(～15:00)</option><option value="dinner">ディナー(～23:00)</option></select></div>
+      <div style="display:flex; gap:10px;"><input type="time" id="resTime" required style="flex:1;"><input type="number" id="resNum" placeholder="人数" min="1" required style="flex:1;"></div>
+      <input type="text" id="resName" placeholder="お名前" required>
+      <input type="text" id="resNote" placeholder="備考（任意）">
+      <p style="margin:0 0 5px 0; font-weight:bold;">席を選択（※予約済の席は隠れます）</p>
+      <div class="seat-selector" id="seatSelectorArea"></div>
+      <div style="display:flex; gap:10px; margin-top:10px;">
+        <button onclick="closeReserveModal()" style="flex:1; padding:12px; border-radius:8px; border:none; background:#ccc; font-weight:bold;">キャンセル</button>
+        <button onclick="submitReservation()" style="flex:1; padding:12px; border-radius:8px; border:none; background:var(--wood-dark); color:white; font-weight:bold;">登録する</button>
       </div>
     </div>
-  </dialog>
+  </div>
+
+  <div id="csvModal">
+    <div class="csv-content">
+      <h2 style="margin-top:0;">予約 一括確認・修正</h2>
+      <div class="csv-table-wrap">
+        <table class="csv-table">
+          <thead><tr><th>予約番号</th><th>日付</th><th>シフト</th><th>時間</th><th>氏名</th><th>人数</th><th>状況</th><th>備考</th><th>席（カンマ区切り）</th></tr></thead>
+          <tbody id="csvTableBody"></tbody>
+        </table>
+      </div>
+      <div style="display:flex; gap:15px; justify-content:flex-end;">
+        <button onclick="closeCsvModal()" style="padding:15px 30px; border-radius:8px; border:none; background:#ccc; font-weight:bold; font-size:1.1em; cursor:pointer;">キャンセル</button>
+        <button onclick="submitBulkCsv()" style="padding:15px 30px; border-radius:8px; border:none; background:var(--occupied-blue); color:white; font-weight:bold; font-size:1.1em; cursor:pointer;">内容を一括保存する</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="top-nav">
+      表示：<input type="date" id="viewDate" onchange="changeViewShift()">
+      <select id="viewShift" onchange="changeViewShift()"><option value="lunch">ランチ (〜15:00)</option><option value="dinner">ディナー (〜23:00)</option></select>
+      <button class="btn-csv" onclick="setToday()" style="background:var(--accent);">当日</button>
+      <button class="btn-csv" onclick="openBulkEditModal()">予約一括編集</button>
+      <button class="btn-csv" onclick="document.getElementById('csvFileInput').click()" style="background:#555;">CSV読込</button><input type="file" id="csvFileInput" accept=".csv" style="display:none;" onchange="handleCsvUpload(event)">
+      <button class="btn-reserve-add" onclick="openReserveModal()">＋ 手動予約</button>
+    </div>
+    <div id="reservedAlertBar"></div>
+    <div class="main-content">
+      <section class="map-section"><div id="map" class="shop-map"></div></section>
+      <section class="side-section">
+        <div class="control-panel" style="flex: none;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span>スタッフ: <input type="number" id="staffCount" value="6" style="width:40px; text-align:center; font-size:1.1em;" onchange="saveConfig()"></span>
+            <span>客数: <span id="totalGuestCount" style="color:var(--accent); font-weight:bold;">0</span>名</span>
+          </div>
+          <hr style="border:0.5px solid #555; margin:8px 0;">
+          <label style="display:flex; align-items:center; gap:5px;"><input type="checkbox" id="waitOverride" style="transform:scale(1.3);" onchange="saveConfig()"> 待ち強制表示</label>
+          <div style="margin-top:8px;"><input type="number" id="manualWaitValue" value="30" style="width:50px; font-size:1.1em; text-align:center;" onchange="saveConfig()">分に固定</div>
+        </div>
+        <div class="control-panel list-panel" style="background:#4e342e;">
+          <strong style="color:var(--reserved-yellow); position:sticky; top:0; background:#4e342e; padding:8px 0; border-bottom:1px solid #77554c; z-index:1; display:block;">
+            予約リスト (<span id="viewShiftLabel"></span>)
+          </strong>
+          <table class="wait-table"><tbody id="reservationListBody"></tbody></table>
+        </div>
+        <div class="control-panel list-panel">
+          <strong style="position:sticky; top:0; background:#3d3d3d; padding:8px 0; border-bottom:1px solid #666; z-index:1; display:block;">
+            案内・清掃リスト
+          </strong>
+          <table class="wait-table"><tbody id="waitListBody"></tbody></table>
+        </div>
+      </section>
+    </div>
+  </div>
+  <div id="log"></div>
 </main>
 

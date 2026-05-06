@@ -114,9 +114,9 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
     return staffHtml(
       reply,
       req.params.storeId,
-      "受付",
-      "staff-body-reception.html",
-      "staff-script-reception.js"
+      "受付（予約・待ち）",
+      "staff-body-reception-full.html",
+      "staff-script-reception-full.js"
     );
   });
 

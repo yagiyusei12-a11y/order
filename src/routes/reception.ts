@@ -309,7 +309,7 @@ async function computeDefaultSeatsForShift(storeId: string): Promise<
     orderBy: { sortOrder: "asc" },
     select: { id: true, publicCode: true, capacity: true, mergeWith: true },
   });
-  const rxSeatCode = /^(C\d+|T\d+|\d+)$/;
+  const rxSeatCode = /^(?:[A-Za-z0-9_-]+-)?(C\d+|T\d+|\d+)$/i;
   const sessions = await prisma.diningSession.findMany({
     where: { storeId, status: { in: ["open", "bashing_waiting"] } },
     select: { id: true, tableId: true, status: true, guestCount: true, openedAt: true },
@@ -471,7 +471,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         orderBy: { sortOrder: "asc" },
         select: { publicCode: true, capacity: true, mergeWith: true, name: true },
       });
-      const rxSeatCode = /^(C\d+|T\d+|\d+)$/;
+      const rxSeatCode = /^(?:[A-Za-z0-9_-]+-)?(C\d+|T\d+|\d+)$/i;
       const filteredMaster = tableMaster.filter((t) => rxSeatCode.test(t.publicCode));
       const fallbackMaster =
         seatsWithBlocks
@@ -714,7 +714,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
             }),
             tx.receptionShift.findUnique({ where: { storeId_shiftKey: { storeId: store.id, shiftKey } } }),
           ]);
-          const rxSeatCode = /^(C\d+|T\d+|\d+)$/;
+          const rxSeatCode = /^(?:[A-Za-z0-9_-]+-)?(C\d+|T\d+|\d+)$/i;
 
           const used = new Set<string>();
           const locks = await tx.receptionReservationSeat.findMany({

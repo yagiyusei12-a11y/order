@@ -195,13 +195,24 @@
 
       // 旧 front.html の席割りAI（完全空席→それ以外）
       function getMasterTables(type) {
+        function labelOf(code) {
+          const raw = String(code || "").trim().toUpperCase();
+          const m = raw.match(/(?:^|[^A-Z0-9])(C|T)0*(\d+)\s*$/i);
+          if (m) return String(m[1]).toUpperCase() + String(parseInt(m[2], 10));
+          if (/^\d+$/.test(raw)) {
+            const n = parseInt(raw, 10);
+            if (n >= 1 && n <= 10) return "C" + n;
+            if (n >= 21) return "T" + n;
+          }
+          return raw;
+        }
         const all = (Array.isArray(tableMaster) ? tableMaster : []).map((t) => ({
           code: String(t.code || ""),
           capacity: Number(t.capacity || 2),
           mergeWith: Array.isArray(t.mergeWith) ? t.mergeWith.filter((x) => typeof x === "string").map(String) : [],
         })).filter((t) => t.code);
-        if (type === "counter") return all.filter((t) => t.code.startsWith("C"));
-        if (type === "table") return all.filter((t) => !t.code.startsWith("C"));
+        if (type === "counter") return all.filter((t) => labelOf(t.code).startsWith("C"));
+        if (type === "table") return all.filter((t) => !labelOf(t.code).startsWith("C"));
         return all;
       }
 

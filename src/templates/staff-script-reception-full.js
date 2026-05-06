@@ -353,8 +353,8 @@ function render(waiting, staffCount, resList) {
   ]);
 
   const ids = getMasterIds();
-  const placedIds = ids.filter((id) => posMap.has(id));
-  const unknownIds = ids.filter((id) => !posMap.has(id));
+  const placedIds = ids.filter((id) => posMap.has(seatLabel(id)));
+  const unknownIds = ids.filter((id) => !posMap.has(seatLabel(id)));
   // auto place unknown at bottom rows (stable order)
   let autoCol = 1;
   let autoRow = 15;

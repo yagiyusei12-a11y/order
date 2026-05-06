@@ -20,6 +20,28 @@ const playChime = (type = "high") => {
   o.start(); o.stop(audioCtx.currentTime + 1.5);
 };
 
+function setKioskMode(on) {
+  document.body.classList.toggle("rc-kiosk", Boolean(on));
+  const btn = document.getElementById("btnFullscreen");
+  if (btn) btn.textContent = document.fullscreenElement ? "全画面解除" : "全画面";
+}
+
+async function toggleFullscreen() {
+  initAudio();
+  try {
+    if (!document.fullscreenElement) {
+      await document.documentElement.requestFullscreen?.();
+      setKioskMode(true);
+    } else {
+      await document.exitFullscreen?.();
+      setKioskMode(false);
+    }
+  } catch (e) {
+    // Fullscreen can be blocked by browser policy; still allow "frame hide" mode.
+    setKioskMode(!document.body.classList.contains("rc-kiosk"));
+  }
+}
+
 function getFormattedDate(dateObj) {
   const y = dateObj.getFullYear();
   const m = String(dateObj.getMonth() + 1).padStart(2, "0");
@@ -367,6 +389,12 @@ window.markArrived = markArrived;
 window.toggleSeat = toggleSeat;
 window.startOrder = startOrder;
 
-window.onload = () => { window.setToday(); };
+window.onload = () => {
+  window.setToday();
+  const btn = document.getElementById("btnFullscreen");
+  if (btn) btn.addEventListener("click", toggleFullscreen);
+  document.addEventListener("fullscreenchange", () => setKioskMode(Boolean(document.fullscreenElement)));
+  setKioskMode(Boolean(document.fullscreenElement));
+};
 setInterval(loadData, 3000);
 

@@ -121,6 +121,22 @@
     }
     .app-footer small { opacity: 0.9; font-weight: 500; }
 
+    .global-call-banner {
+      position: fixed;
+      left: var(--sidebar-w);
+      right: 0;
+      top: 0;
+      z-index: 9999;
+      padding: 0.75rem 1rem;
+      background: #d90429;
+      color: #fff;
+      border-bottom: 2px solid rgba(255,255,255,0.25);
+      box-shadow: 0 10px 28px rgba(0,0,0,0.25);
+      text-align: center;
+    }
+    .global-call-banner.is-on { display: block !important; animation: globalCallPulse 1.2s infinite; }
+    @keyframes globalCallPulse { 0% { filter: brightness(1); } 50% { filter: brightness(0.82); } 100% { filter: brightness(1); } }
+
     /* 共通コンポーネント（各ページ） */
     .page-title { font-size: 1.05rem; font-weight: 800; color: var(--accent); margin: 0 0 0.75rem; letter-spacing: 0.02em; }
     .muted { color: var(--muted); font-size: 0.82rem; }
@@ -489,6 +505,8 @@
     <small>機能は順次ここから増やせます</small>
   </footer>
 
+  <div id="globalCallBanner" class="global-call-banner" style="display:none" role="status" aria-live="assertive"></div>
+
   <script>
     const STORE = __STORE_ID_JS__;
     document.getElementById("sid").textContent = STORE;
@@ -535,6 +553,108 @@
         if (t && !skipScroll) el.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
     }
+
+    // Global reception call announcement (all staff pages)
+    let __callAudio = null;
+    function __initCallAudio() {
+      if (!__callAudio) __callAudio = new (window.AudioContext || window.webkitAudioContext)();
+      if (__callAudio && __callAudio.state === "suspended") __callAudio.resume();
+    }
+    function __playCallChime() {
+      if (!__callAudio) return;
+      const o = __callAudio.createOscillator();
+      const g = __callAudio.createGain();
+      o.type = "triangle";
+      o.frequency.setValueAtTime(660, __callAudio.currentTime);
+      g.gain.setValueAtTime(0.08, __callAudio.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, __callAudio.currentTime + 1.0);
+      o.connect(g); g.connect(__callAudio.destination);
+      o.start(); o.stop(__callAudio.currentTime + 1.0);
+    }
+
+    (function setupGlobalCallBanner() {
+      const banner = document.getElementById("globalCallBanner");
+      if (!banner) return;
+
+      // Avoid double-announcement on reception page (it has its own persistent banner)
+      if (location.pathname.includes("/reception")) return;
+
+      let lastOn = false;
+      let chimeTimer = null;
+
+      function parseSeatFromCallType(callType) {
+        const s = String(callType || "");
+        if (s.startsWith("guest:")) return s.slice("guest:".length);
+        return "";
+      }
+      function show(callType) {
+        const seat = parseSeatFromCallType(callType);
+        banner.style.display = "block";
+        banner.classList.add("is-on");
+        banner.innerHTML = "";
+        const msg = document.createElement("div");
+        msg.style.fontWeight = "900";
+        msg.style.fontSize = "1.02rem";
+        msg.textContent = seat ? `⚠️ ${seat}番席からお呼び出しです。` : "⚠️ お呼び出しがあります。";
+        const row = document.createElement("div");
+        row.className = "row";
+        row.style.cssText = "gap:.5rem;justify-content:center;margin-top:.35rem";
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "btn-ghost";
+        btn.style.cssText = "background:#fff;color:#b91c1c;border-color:#fecaca;font-weight:900";
+        btn.textContent = "確認";
+        btn.onclick = async () => {
+          try {
+            await fetch(`/reception/${encodeURIComponent(STORE)}/event`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ type: "resetCall" }),
+            });
+          } catch (_) {}
+          hide();
+        };
+        row.appendChild(btn);
+        banner.appendChild(msg);
+        banner.appendChild(row);
+
+        if (!lastOn) {
+          try { __initCallAudio(); } catch (_) {}
+          __playCallChime();
+        }
+        if (!chimeTimer) {
+          chimeTimer = setInterval(() => __playCallChime(), 5000);
+        }
+        lastOn = true;
+      }
+      function hide() {
+        banner.classList.remove("is-on");
+        banner.style.display = "none";
+        banner.innerHTML = "";
+        lastOn = false;
+        if (chimeTimer) { clearInterval(chimeTimer); chimeTimer = null; }
+      }
+
+      // Enable audio on first user gesture anywhere
+      window.addEventListener("pointerdown", () => { try { __initCallAudio(); } catch (_) {} }, { once: true });
+      window.addEventListener("keydown", () => { try { __initCallAudio(); } catch (_) {} }, { once: true });
+
+      async function poll() {
+        try {
+          const shiftKey = ""; // server will default to today's shift
+          const url = `/reception/${encodeURIComponent(STORE)}/state?t=${Date.now()}` + (shiftKey ? `&shiftKey=${encodeURIComponent(shiftKey)}` : "");
+          const res = await fetch(url, { cache: "no-store" });
+          if (!res.ok) return;
+          const data = await res.json().catch(() => ({}));
+          const on = Boolean(data && data.callReserved);
+          const callType = data && typeof data.callType === "string" ? data.callType : "";
+          if (on) show(callType);
+          else hide();
+        } catch (_) {}
+      }
+      poll();
+      setInterval(poll, 3000);
+    })();
 
     (function navActive() {
       const p = location.pathname;

@@ -582,11 +582,12 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
   app.post<{ Params: { token: string } }>("/guest/:token/call-staff", async (req, reply) => {
     const sess = await prisma.diningSession.findUnique({
       where: { guestToken: req.params.token },
-      select: { storeId: true, status: true },
+      select: { storeId: true, status: true, table: { select: { publicCode: true } } },
     });
     if (!sess || sess.status !== "open") {
       return reply.code(404).send({ error: "session not found or closed" });
     }
+    const seatCode = typeof sess.table?.publicCode === "string" ? sess.table.publicCode : "";
     await prisma.receptionConfig.upsert({
       where: { storeId: sess.storeId },
       create: { storeId: sess.storeId },
@@ -594,8 +595,8 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     });
     await prisma.receptionState.upsert({
       where: { storeId: sess.storeId },
-      create: { storeId: sess.storeId, callReserved: true, callType: "guest" },
-      update: { callReserved: true, callType: "guest" },
+      create: { storeId: sess.storeId, callReserved: true, callType: seatCode ? `guest:${seatCode}` : "guest" },
+      update: { callReserved: true, callType: seatCode ? `guest:${seatCode}` : "guest" },
     });
     return { ok: true };
   });

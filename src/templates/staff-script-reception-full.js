@@ -5,6 +5,8 @@ let selectedResSeats = []; let existingReservations = [];
 let tableMaster = [];
 let shiftUpdatedAt = 0;
 let seatOrder = [];
+let callAnnounceTimer = null;
+let lastCallReserved = false;
 
 function seatLabel(id) {
   const raw0 = String(id || "").trim();
@@ -119,7 +121,14 @@ function changeViewShift() {
   loadData();
 }
 async function clearEntry() { document.getElementById("entryPopup").style.display = "none"; await fetch(API_URL + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "popEntry" }) }); loadData(); }
-async function resetReservedCall() { document.getElementById("reservedAlertBar").style.display = "none"; await fetch(API_URL + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "resetCall" }) }); loadData(); }
+async function resetReservedCall() {
+  const bar = document.getElementById("reservedAlertBar");
+  if (bar) { bar.classList.remove("is-on"); bar.innerHTML = ""; }
+  lastCallReserved = false;
+  if (callAnnounceTimer) { clearInterval(callAnnounceTimer); callAnnounceTimer = null; }
+  await fetch(API_URL + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "resetCall" }) });
+  loadData();
+}
 async function saveConfig() {
   const p = {
     staff: parseInt(document.getElementById("staffCount").value),
@@ -323,7 +332,43 @@ async function loadData() {
       document.getElementById("manualWaitValue").value = data.config.manualWait || 30;
     }
     const alertBar = document.getElementById("reservedAlertBar");
-    if (data.callReserved) { playChime("low"); alertBar.style.display = "block"; alertBar.innerHTML = `⚠️ 来店あり <button class="btn-action" onclick="resetReservedCall()">確認</button>`; } else { alertBar.style.display = "none"; }
+    const callReserved = Boolean(data.callReserved);
+    if (alertBar) {
+      if (callReserved) {
+        alertBar.classList.add("is-on");
+        if (!lastCallReserved) {
+          // first time: try to enable audio and play immediately
+          try { initAudio(); } catch (_) {}
+          playChime("low");
+        }
+        // keep announcing until acknowledged
+        if (!callAnnounceTimer) {
+          callAnnounceTimer = setInterval(() => {
+            if (!lastCallReserved) return;
+            playChime("low");
+          }, 5000);
+        }
+        // render (DOM, no inline handlers)
+        alertBar.innerHTML = "";
+        const wrap = document.createElement("div");
+        wrap.className = "row";
+        wrap.style.cssText = "gap:.5rem;justify-content:center;align-items:center;flex-wrap:wrap";
+        const msg = document.createElement("span");
+        msg.textContent = "⚠️ 来店あり（呼出）";
+        const btn = document.createElement("button");
+        btn.className = "btn-action";
+        btn.textContent = "確認";
+        btn.addEventListener("click", () => resetReservedCall());
+        wrap.appendChild(msg);
+        wrap.appendChild(btn);
+        alertBar.appendChild(wrap);
+      } else {
+        alertBar.classList.remove("is-on");
+        alertBar.innerHTML = "";
+        if (callAnnounceTimer) { clearInterval(callAnnounceTimer); callAnnounceTimer = null; }
+      }
+    }
+    lastCallReserved = callReserved;
     if (data.entryQueue && data.entryQueue.length > 0) {
       document.getElementById("entryText").innerText = `${data.entryQueue[0].seat}番に${data.entryQueue[0].num}名`;
       if (document.getElementById("entryPopup").style.display !== "block") { document.getElementById("entryPopup").style.display = "block"; playChime("mid"); }

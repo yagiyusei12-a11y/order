@@ -56,8 +56,25 @@ function getSafeShiftData(data, shiftKey) {
 }
 
 function getMasterIds() {
-  if (Array.isArray(tableMaster) && tableMaster.length > 0) return tableMaster.map((t) => t.code);
-  return Object.keys(seatStates).sort();
+  const codes = Array.isArray(tableMaster) && tableMaster.length > 0
+    ? tableMaster.map((t) => t.code)
+    : Object.keys(seatStates);
+
+  // legacy index.html の表示順を最優先（並びが崩れないようにする）
+  const legacyOrder = [
+    "C1","C2","C3","C4","C5","C6","C7","C8","C9","C10",
+    "T31","T32","T33","T34","T35","T36","T37",
+    "T21","T23","T22","T24",
+    "T52","T53","T54",
+    "T61","T62","T63","T64",
+  ];
+
+  const set = new Set(codes.filter((x) => typeof x === "string" && x));
+  const out = [];
+  for (const id of legacyOrder) if (set.delete(id)) out.push(id);
+  // legacy 外は末尾（安定のためソート）
+  out.push(...Array.from(set).sort());
+  return out;
 }
 
 function changeViewShift() {

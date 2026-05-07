@@ -645,6 +645,8 @@
           const url = `/reception/${encodeURIComponent(STORE)}/state?t=${Date.now()}` + (shiftKey ? `&shiftKey=${encodeURIComponent(shiftKey)}` : "");
           const res = await fetch(url, { cache: "no-store" });
           if (!res.ok) return;
+          // 304 では本文が無い。呼出表示を誤って消さない（複数台・ETag 対策）
+          if (res.status === 304) return;
           const data = await res.json().catch(() => ({}));
           const on = Boolean(data && data.callReserved);
           const callType = data && typeof data.callType === "string" ? data.callType : "";

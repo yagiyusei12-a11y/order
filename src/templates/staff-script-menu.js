@@ -642,6 +642,19 @@ function renderSetModalStepsBody(body, item, draft) {
   });
 }
 
+function applyUpdatedItemToCache(updatedItem) {
+  if (!updatedItem || !updatedItem.id) return;
+  for (const c of categoriesCache || []) {
+    const items = c && c.items;
+    if (!Array.isArray(items)) continue;
+    const idx = items.findIndex((x) => x && x.id === updatedItem.id);
+    if (idx >= 0) {
+      items[idx] = updatedItem;
+      return;
+    }
+  }
+}
+
 function openSetConfiguratorModal(item, right, opts) {
   if (document.getElementById("setConfiguratorBackdrop")) return;
   const openedFromCheckbox = Boolean(opts && opts.openedFromCheckbox);
@@ -717,7 +730,7 @@ function openSetConfiguratorModal(item, right, opts) {
     const btn = panel.querySelector("#setModalSave");
     btn.disabled = true;
     try {
-      await api("/stores/" + encodeURIComponent(STORE) + "/menu/items/" + encodeURIComponent(item.id) + "/set-definition", {
+      const updated = await api("/stores/" + encodeURIComponent(STORE) + "/menu/items/" + encodeURIComponent(item.id) + "/set-definition", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -725,6 +738,7 @@ function openSetConfiguratorModal(item, right, opts) {
           ifMasterVersion: Number(item.masterVersion ?? 1),
         }),
       });
+      applyUpdatedItemToCache(updated);
       log("セット構成を保存しました");
       closeModal();
       await loadAll();

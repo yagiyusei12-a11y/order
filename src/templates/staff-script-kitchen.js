@@ -925,6 +925,33 @@ async function setLinesServed(lineIds) {
   }
 }
 
+const KIT_LIST_FS_KEY = "kitKitchenListFullscreen:v1";
+
+function applyKitListFullscreen(on) {
+  const want = !!on;
+  document.body.classList.toggle("kit-list-fullscreen", want);
+  const bar = document.getElementById("kitFullExitBar");
+  if (bar) bar.hidden = !want;
+  try {
+    if (want) sessionStorage.setItem(KIT_LIST_FS_KEY, "1");
+    else sessionStorage.removeItem(KIT_LIST_FS_KEY);
+  } catch (_) {}
+}
+
+function syncSummaryButtonLabels() {
+  const t = summaryMode ? "通常表示" : "まとめ表示";
+  const b1 = document.getElementById("btnKitSummary");
+  const b2 = document.getElementById("btnKitFsSummary");
+  if (b1) b1.textContent = t;
+  if (b2) b2.textContent = t;
+}
+
+function toggleSummaryMode() {
+  summaryMode = !summaryMode;
+  syncSummaryButtonLabels();
+  renderKitList();
+}
+
 document.getElementById("btnRefKit").onclick = () => {
   refreshKitIntervalFromServer()
     .then(() => {
@@ -935,12 +962,24 @@ document.getElementById("btnRefKit").onclick = () => {
   refreshChips().catch(() => {});
 };
 
-document.getElementById("btnKitSummary").onclick = () => {
-  summaryMode = !summaryMode;
-  const btn = document.getElementById("btnKitSummary");
-  if (btn) btn.textContent = summaryMode ? "通常表示" : "まとめ表示";
-  renderKitList();
-};
+document.getElementById("btnKitSummary").onclick = () => toggleSummaryMode();
+
+document.getElementById("btnKitFullList").onclick = () => applyKitListFullscreen(true);
+document.getElementById("btnKitFullExit").onclick = () => applyKitListFullscreen(false);
+{
+  const b = document.getElementById("btnKitFsRef");
+  if (b)
+    b.onclick = () => {
+      document.getElementById("btnRefKit").click();
+    };
+}
+document.getElementById("btnKitFsSummary").onclick = () => toggleSummaryMode();
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && document.body.classList.contains("kit-list-fullscreen")) {
+    applyKitListFullscreen(false);
+  }
+});
 
 document.getElementById("fltClear").onclick = () => {
   saveFilterState([], []);
@@ -964,6 +1003,11 @@ document.getElementById("auto").onchange = scheduleKit;
   const a = document.getElementById("btnKitTimerAck");
   if (a) a.onclick = () => ackCookTimerNotice();
 }
+
+syncSummaryButtonLabels();
+try {
+  if (sessionStorage.getItem(KIT_LIST_FS_KEY) === "1") applyKitListFullscreen(true);
+} catch (_) {}
 
 refreshKitIntervalFromServer()
   .then(() => {

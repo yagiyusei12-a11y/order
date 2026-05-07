@@ -741,13 +741,6 @@ function renderKitList() {
       const extraTxt = orderLineExtraSubtext(ln.lineExtra);
       const actions = document.createElement("div");
       actions.className = "kit-line-actions";
-      if (ln.status === "queued") {
-        const b = document.createElement("button");
-        b.className = "btn-ghost";
-        b.textContent = "調理中";
-        b.onclick = () => setLine(ln.id, "cooking");
-        actions.appendChild(b);
-      }
       if (ln.status === "queued" || ln.status === "cooking") {
         const b2 = document.createElement("button");
         b2.className = "btn-ghost";

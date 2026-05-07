@@ -8,6 +8,11 @@ let allStations = [];
 let summaryMode = false;
 /** @type {"active" | "history"} */
 let kitMainTab = "active";
+/** まとめ表示: 自動更新で合算が変わらないよう凍結する */
+let kitSummaryFrozenLines = null;
+let kitSummaryPendingLines = null;
+let kitSummaryHasPending = false;
+let kitForceApplyLatest = false;
 /** @type {Map<string, { endAt: number; seconds: number; productName: string; stripTag?: string }>} */
 const kitCookDeadlines = new Map();
 let kitCookTick = null;
@@ -455,6 +460,27 @@ function syncKitTabChrome() {
   if (strip) strip.style.display = showActive ? "" : "none";
 }
 
+function summaryViewSignature(lines, st) {
+  try {
+    const ids = (lines || [])
+      .filter((ln) => ln && ln.status !== "done" && ln.status !== "served" && passesFilters(ln, st))
+      .map((ln) => String(ln.id))
+      .sort();
+    return ids.join(",");
+  } catch (_) {
+    return "";
+  }
+}
+
+function syncKitPendingUi() {
+  const has = Boolean(summaryMode && kitMainTab === "active" && kitSummaryFrozenLines && kitSummaryHasPending);
+  const t = has ? "再読込（更新あり）" : "再読込";
+  const b1 = document.getElementById("btnRefKit");
+  const b2 = document.getElementById("btnKitFsRef");
+  if (b1) b1.textContent = t;
+  if (b2) b2.textContent = t;
+}
+
 function kitLineReadyAtMs(ln) {
   if (ln.readyAt) {
     const t = new Date(ln.readyAt).getTime();
@@ -582,7 +608,8 @@ function renderKitHistoryList(box, lines) {
 function renderKitList() {
   const box = document.getElementById("kit");
   if (!box) return;
-  const lines = filterLines(lastLines);
+  const baseLines = summaryMode && kitMainTab === "active" && kitSummaryFrozenLines ? kitSummaryFrozenLines : lastLines;
+  const lines = filterLines(baseLines);
   if (kitMainTab === "history") {
     renderKitHistoryList(box, lines);
     finishCookTimerUi();
@@ -943,11 +970,11 @@ async function refreshKitchen() {
   try {
     await ensureMeta();
     const data = await api("/stores/" + encodeURIComponent(STORE) + "/kitchen/order-lines");
-    lastLines = data.lines || [];
+    const fetchedLines = data.lines || [];
 
     const st = loadFilterState();
     const sig = filterStateSignature(st);
-    const passingQueued = lastLines.filter((ln) => ln.status === "queued" && passesFilters(ln, st));
+    const passingQueued = fetchedLines.filter((ln) => ln.status === "queued" && passesFilters(ln, st));
     const nextIds = new Set(passingQueued.map((ln) => ln.id));
 
     if (!kitKitchenDataInitialized) {
@@ -967,6 +994,22 @@ async function refreshKitchen() {
       }
       kitPrevFilteredQueuedIds = new Set(nextIds);
     }
+
+    const shouldFreeze = Boolean(summaryMode && kitMainTab === "active" && kitSummaryFrozenLines && !kitForceApplyLatest);
+    if (shouldFreeze) {
+      kitSummaryPendingLines = fetchedLines;
+      const prevSig = summaryViewSignature(kitSummaryFrozenLines, st);
+      const nextSig = summaryViewSignature(fetchedLines, st);
+      kitSummaryHasPending = prevSig !== nextSig;
+    } else {
+      lastLines = fetchedLines;
+      if (summaryMode && kitMainTab === "active" && kitSummaryFrozenLines) {
+        kitSummaryFrozenLines = fetchedLines;
+        kitSummaryPendingLines = null;
+        kitSummaryHasPending = false;
+      }
+    }
+    syncKitPendingUi();
 
     renderFilterControls();
     renderKitList();
@@ -1030,7 +1073,18 @@ function syncSummaryButtonLabels() {
 
 function toggleSummaryMode() {
   summaryMode = !summaryMode;
+  if (summaryMode && kitMainTab === "active") {
+    kitSummaryFrozenLines = Array.isArray(lastLines) ? [...lastLines] : [];
+    kitSummaryPendingLines = null;
+    kitSummaryHasPending = false;
+  } else {
+    kitSummaryFrozenLines = null;
+    if (kitSummaryPendingLines) lastLines = kitSummaryPendingLines;
+    kitSummaryPendingLines = null;
+    kitSummaryHasPending = false;
+  }
   syncSummaryButtonLabels();
+  syncKitPendingUi();
   renderKitList();
 }
 
@@ -1038,7 +1092,10 @@ document.getElementById("btnRefKit").onclick = () => {
   refreshKitIntervalFromServer()
     .then(() => {
       scheduleKit();
-      return refreshKitchen();
+      kitForceApplyLatest = true;
+      return refreshKitchen().finally(() => {
+        kitForceApplyLatest = false;
+      });
     })
     .catch((e) => log(String(e.message || e)));
   refreshChips().catch(() => {});
@@ -1054,11 +1111,14 @@ document.getElementById("btnKitFullList").onclick = () => applyKitListFullscreen
   if (th)
     th.onclick = () => {
       kitMainTab = "history";
+      // 履歴は常に最新を表示（凍結は進行中まとめ表示のみ）
       renderKitList();
     };
   if (ta)
     ta.onclick = () => {
       kitMainTab = "active";
+      // タブ復帰時に pending 表示を同期
+      syncKitPendingUi();
       renderKitList();
     };
 }
@@ -1102,6 +1162,7 @@ document.getElementById("auto").onchange = scheduleKit;
 }
 
 syncSummaryButtonLabels();
+syncKitPendingUi();
 try {
   if (sessionStorage.getItem(KIT_LIST_FS_KEY) === "1") applyKitListFullscreen(true);
 } catch (_) {}

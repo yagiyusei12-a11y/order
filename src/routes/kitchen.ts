@@ -37,6 +37,16 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
           include: {
             category: { select: { id: true, name: true, visibleToGuest: true } },
             kitchenStation: { select: { id: true, name: true } },
+            setSteps: {
+              orderBy: { sortOrder: "asc" },
+              include: {
+                choices: {
+                  where: { isFixed: true },
+                  orderBy: { sortOrder: "asc" },
+                  include: { componentMenuItem: { select: { id: true, name: true } } },
+                },
+              },
+            },
           },
         },
         order: {
@@ -67,6 +77,17 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
           l.menuItem?.cookTimerSec != null && l.menuItem.cookTimerSec > 0 ? l.menuItem.cookTimerSec : null,
         cookTimerSec2:
           l.menuItem?.cookTimerSec2 != null && l.menuItem.cookTimerSec2 > 0 ? l.menuItem.cookTimerSec2 : null,
+        setFixedSteps:
+          l.menuItem?.sellKind === "set"
+            ? l.menuItem.setSteps.map((st) => ({
+                stepId: st.id,
+                label: st.label,
+                fixed: (st.choices || []).map((c) => ({
+                  menuItemId: c.componentMenuItemId,
+                  name: c.componentMenuItem?.name ?? "",
+                })),
+              }))
+            : null,
         orderId: l.orderId,
         orderCreatedAt: l.order.createdAt,
         tableName: l.order.session.table.name,

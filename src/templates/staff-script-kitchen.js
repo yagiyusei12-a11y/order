@@ -38,7 +38,7 @@ function lineGroupKey(ln) {
   if (ln && ln.lineExtra && typeof ln.lineExtra === "object") {
     const kind = /** @type {{ kind?: unknown }} */ (ln.lineExtra).kind;
     if (kind === "set" || kind === "single") {
-      const sig = orderLineExtraSubtext(ln.lineExtra);
+      const sig = orderLineExtraSubtext(ln);
       if (sig) return base + "|extra:" + sig;
     }
   }
@@ -62,8 +62,8 @@ function orderLineDisplayName(ln) {
   return String((ln && ln.nameSnapshot) || "");
 }
 
-/** @param {unknown} extra */
-function orderLineExtraSubtext(extra) {
+function orderLineExtraSubtext(ln) {
+  const extra = ln && ln.lineExtra;
   if (extra == null || typeof extra !== "object") return "";
   const o = /** @type {Record<string, unknown>} */ (extra);
   const lines = [];
@@ -72,7 +72,15 @@ function orderLineExtraSubtext(extra) {
       if (!st || typeof st !== "object") continue;
       const label = typeof /** @type {{ label?: string }} */ (st).label === "string" ? /** @type {{ label: string }} */ (st).label : "";
       const picks = /** @type {{ picks?: { name?: string }[] }} */ (st).picks;
-      const names = Array.isArray(picks) ? picks.map((p) => (p && p.name ? String(p.name) : "")).filter(Boolean) : [];
+      const pickedNames = Array.isArray(picks) ? picks.map((p) => (p && p.name ? String(p.name) : "")).filter(Boolean) : [];
+      /** setFixedSteps（DBの isFixed）を足して、古い注文でも標準付属を見えるようにする */
+      const fixedNames =
+        ln && Array.isArray(ln.setFixedSteps)
+          ? (ln.setFixedSteps.find((x) => x && typeof x === "object" && x.label === label)?.fixed || [])
+              .map((x) => (x && x.name ? String(x.name) : ""))
+              .filter(Boolean)
+          : [];
+      const names = [...new Set([...fixedNames, ...pickedNames])];
       if (label && names.length) lines.push(label + ": " + names.join("・"));
       else if (names.length) lines.push(names.join("・"));
     }
@@ -703,7 +711,7 @@ function renderKitHistoryList(box, lines) {
       const meta = document.createElement("div");
       meta.className = "kit-history-done-meta";
       meta.textContent = "調理完了 " + formatKitLineReadyAt(ln);
-      const extraTxt = orderLineExtraSubtext(ln.lineExtra);
+      const extraTxt = orderLineExtraSubtext(ln);
       const wrap = document.createElement("div");
       wrap.className = "kit-line-actions-wrap";
       const statusRow = document.createElement("div");
@@ -769,7 +777,7 @@ function renderKitList() {
         const byTable = new Map();
         const tk = ln.tableName || "卓未設定";
         byTable.set(tk, { qty: Number(ln.qty || 0), lineIds: [ln.id] });
-        const extraTxt = orderLineExtraSubtext(ln.lineExtra);
+        const extraTxt = orderLineExtraSubtext(ln);
         grouped.set(key, {
           key,
           nameSnapshot: orderLineDisplayName(ln),
@@ -1088,7 +1096,7 @@ function renderKitList() {
         };
         nameRow.appendChild(cancelTxt);
       }
-      const extraTxt = orderLineExtraSubtext(ln.lineExtra);
+      const extraTxt = orderLineExtraSubtext(ln);
       const wrap = document.createElement("div");
       wrap.className = "kit-line-actions-wrap";
       const timersRow = document.createElement("div");

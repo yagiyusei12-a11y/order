@@ -2,7 +2,6 @@ const FILTER_KEY = "orderKitchenFilters:v1:" + STORE;
 
 let kitRefreshMs = 10000;
 let lastLines = [];
-let lastDoneLines = [];
 let metaLoaded = false;
 let allCategories = [];
 let allStations = [];
@@ -499,83 +498,37 @@ function renderKitList() {
       }
     }
     const arr = [...grouped.values()].sort((a, b) => a.oldestMs - b.oldestMs || a.nameSnapshot.localeCompare(b.nameSnapshot, "ja"));
-    const doneLines = filterLines(lastDoneLines);
-    const doneByItem = new Map();
-    for (const ln of doneLines) {
-      const key = ln.menuItemId || ("name:" + ln.nameSnapshot);
-      const prev = doneByItem.get(key);
-      const tk = ln.tableName || "卓未設定";
-      const q = Number(ln.qty || 0);
-      if (!prev) {
-        const byTable = new Map();
-        byTable.set(tk, { qty: q, lineIds: [ln.id] });
-        doneByItem.set(key, {
-          key,
-          nameSnapshot: ln.nameSnapshot,
-          categoryName: ln.categoryName,
-          kitchenStationName: ln.kitchenStationName,
-          totalQty: q,
-          byTable,
-        });
-      } else {
-        prev.totalQty += q;
-        const cur = prev.byTable.get(tk);
-        if (!cur) {
-          prev.byTable.set(tk, { qty: q, lineIds: [ln.id] });
-        } else {
-          cur.qty += q;
-          cur.lineIds.push(ln.id);
-        }
-      }
-    }
-    const doneArr = [...doneByItem.values()].sort((a, b) => a.nameSnapshot.localeCompare(b.nameSnapshot, "ja"));
 
-    if (arr.length === 0 && doneArr.length === 0) {
+    if (arr.length === 0) {
       box.className = "card";
       box.innerHTML =
-        "<div class=\"kit-empty\"><div class=\"ico\">✅</div><div>対象の明細がありません</div><p class=\"muted\" style=\"margin:0.5rem 0 0;font-size:0.8rem\">調理中・提供待ちの明細が入るとここに表示されます</p></div>";
+        "<div class=\"kit-empty\"><div class=\"ico\">✅</div><div>まとめ対象の明細がありません</div><p class=\"muted\" style=\"margin:0.5rem 0 0;font-size:0.8rem\">未完了（待ち・調理中）の行がここに並びます。調理済は「調理済・提供」画面で確認できます。</p></div>";
       finishCookTimerUi();
       return;
     }
-    box.className = "card";
+    box.className = "card kit-layout-normal";
     box.innerHTML = "";
-    const headA = document.createElement("div");
-    headA.style.padding = "0.55rem 0.9rem";
-    headA.style.borderBottom = "1px solid var(--border)";
-    headA.style.background = "#fff7ed";
-    headA.style.fontSize = "0.82rem";
-    headA.style.fontWeight = "700";
-    headA.textContent = "作るリスト（未完了・古い注文順）";
-    box.appendChild(headA);
-    if (arr.length === 0) {
-      const e = document.createElement("div");
-      e.className = "muted";
-      e.style.padding = "0.7rem 1rem";
-      e.textContent = "作るべき未完了明細はありません";
-      box.appendChild(e);
-    }
     for (const g of arr) {
       const d = document.createElement("div");
-      d.style.padding = "0.75rem 1rem";
-      d.style.borderBottom = "1px solid var(--border)";
+      d.className = "kit-order-box";
+
+      const head = document.createElement("div");
+      head.className = "kit-order-box-head";
       const tag = g.kitchenStationName ? "〈" + g.kitchenStationName + "〉 " : "";
       const hm = new Date(g.oldestAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-      d.innerHTML =
-        "<div style=\"display:flex;justify-content:space-between;gap:0.5rem;align-items:flex-end\">" +
-        "<div><div style=\"font-size:0.8rem;color:var(--muted)\">" +
-        escapeHtml(tag) +
-        "</div><div style=\"font-size:1rem;font-weight:800\">" +
-        escapeHtml(g.nameSnapshot) +
-        "</div></div>" +
-        "<div style=\"text-align:right\"><div class=\"muted\" style=\"font-size:0.72rem\">合計数量</div><div style=\"font-size:1.25rem;font-weight:900;color:var(--accent)\">×" +
-        g.qty +
-        "</div></div></div>" +
-        "<div class=\"muted\" style=\"font-size:0.74rem;margin-top:0.2rem\">最古注文 " +
-        hm +
-        "</div>";
+      const headT = tag + g.nameSnapshot + " ×" + g.qty + " · " + hm;
+      head.textContent = headT;
+      head.title = headT;
+      d.appendChild(head);
+
+      const bodyEl = document.createElement("div");
+      bodyEl.className = "kit-order-box-body";
+
       const tableButtons = document.createElement("div");
-      tableButtons.className = "row";
-      tableButtons.style.gap = "0.35rem";
+      tableButtons.className = "row kit-summary-table-btns";
+      tableButtons.style.gap = "0.28rem";
+      tableButtons.style.flexDirection = "column";
+      tableButtons.style.alignItems = "stretch";
       for (const [t, info] of [...g.byTable.entries()].sort((a, b) => a[0].localeCompare(b[0], "ja"))) {
         const b = document.createElement("button");
         b.type = "button";
@@ -583,6 +536,9 @@ function renderKitList() {
         b.style.background = "#fff";
         b.style.borderColor = "#fdba74";
         b.style.color = "#c2410c";
+        b.style.width = "100%";
+        b.style.boxSizing = "border-box";
+        b.style.fontSize = "0.68rem";
         b.textContent = t + " ×" + info.qty + " を調理済みにする";
         b.onclick = () => {
           setLinesDone(info.lineIds);
@@ -636,60 +592,8 @@ function renderKitList() {
       doneRow.className = "kit-summary-done-row";
       doneRow.appendChild(tableButtons);
       stack.appendChild(doneRow);
-      d.appendChild(stack);
-      box.appendChild(d);
-    }
-    const headB = document.createElement("div");
-    headB.style.padding = "0.55rem 0.9rem";
-    headB.style.borderTop = "2px solid var(--border)";
-    headB.style.borderBottom = "1px solid var(--border)";
-    headB.style.background = "#ecfdf3";
-    headB.style.fontSize = "0.82rem";
-    headB.style.fontWeight = "700";
-    headB.textContent = "出来上がり（卓別の分け方）";
-    box.appendChild(headB);
-    if (doneArr.length === 0) {
-      const e = document.createElement("div");
-      e.className = "muted";
-      e.style.padding = "0.7rem 1rem";
-      e.textContent = "出来上がり明細はありません";
-      box.appendChild(e);
-      finishCookTimerUi();
-      return;
-    }
-    for (const g of doneArr) {
-      const d = document.createElement("div");
-      d.style.padding = "0.75rem 1rem";
-      d.style.borderBottom = "1px solid var(--border)";
-      const tag = g.kitchenStationName ? "〈" + g.kitchenStationName + "〉 " : "";
-      d.innerHTML =
-        "<div style=\"display:flex;justify-content:space-between;gap:0.5rem;align-items:flex-end\">" +
-        "<div><div style=\"font-size:0.8rem;color:var(--muted)\">" +
-        escapeHtml(tag) +
-        "</div><div style=\"font-size:1rem;font-weight:800\">" +
-        escapeHtml(g.nameSnapshot) +
-        "</div></div>" +
-        "<div style=\"text-align:right\"><div class=\"muted\" style=\"font-size:0.72rem\">出来上がり合計</div><div style=\"font-size:1.15rem;font-weight:900;color:#166534\">×" +
-        g.totalQty +
-        "</div></div></div>";
-      const tableButtons = document.createElement("div");
-      tableButtons.className = "row";
-      tableButtons.style.marginTop = "0.35rem";
-      tableButtons.style.gap = "0.35rem";
-      for (const [t, info] of [...g.byTable.entries()].sort((a, b) => a[0].localeCompare(b[0], "ja"))) {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.className = "btn-ghost";
-        b.style.background = "#fff";
-        b.style.borderColor = "#86efac";
-        b.style.color = "#166534";
-        b.textContent = t + " ×" + info.qty + " を提供済にする";
-        b.onclick = () => {
-          setLinesServed(info.lineIds);
-        };
-        tableButtons.appendChild(b);
-      }
-      d.appendChild(tableButtons);
+      bodyEl.appendChild(stack);
+      d.appendChild(bodyEl);
       box.appendChild(d);
     }
     finishCookTimerUi();
@@ -850,7 +754,6 @@ async function refreshKitchen() {
     await ensureMeta();
     const data = await api("/stores/" + encodeURIComponent(STORE) + "/kitchen/order-lines");
     lastLines = data.lines || [];
-    lastDoneLines = lastLines.filter((ln) => ln.status === "done");
 
     const st = loadFilterState();
     const sig = filterStateSignature(st);
@@ -905,23 +808,6 @@ async function setLinesDone(lineIds) {
         api(
           "/stores/" + encodeURIComponent(STORE) + "/kitchen/order-lines/" + encodeURIComponent(lineId),
           { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "done" }) }
-        )
-      )
-    );
-    await refreshKitchen();
-  } catch (e) {
-    log(String(e.message || e));
-  }
-}
-
-async function setLinesServed(lineIds) {
-  if (!lineIds || lineIds.length === 0) return;
-  try {
-    await Promise.all(
-      lineIds.map((lineId) =>
-        api(
-          "/stores/" + encodeURIComponent(STORE) + "/kitchen/order-lines/" + encodeURIComponent(lineId),
-          { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "served" }) }
         )
       )
     );

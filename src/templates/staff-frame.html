@@ -416,18 +416,35 @@
       min-height: 0;
     }
     .kit-timer-strip:empty { display: none; }
-    .kit-timer-pill {
+    .kit-timer-pill-wrap {
       display: inline-flex;
       align-items: center;
       gap: 0.35rem;
-      padding: 0.42rem 0.72rem;
+      padding: 0.35rem 0.55rem 0.35rem 0.72rem;
       border-radius: 999px;
       background: #fef9c3;
       border: 1px solid #eab308;
+    }
+    .kit-timer-pill {
       font-size: 0.82rem;
       font-weight: 800;
       color: #854d0e;
     }
+    .kit-timer-pill-cancel {
+      flex-shrink: 0;
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 0.22rem 0.5rem;
+      border-radius: 8px;
+      border: 1px solid #ca8a04;
+      background: #fff;
+      color: #713f12;
+      cursor: pointer;
+      font-family: inherit;
+      line-height: 1.2;
+    }
+    .kit-timer-pill-cancel:hover { background: #fffbeb; }
+    .kit-timer-pill-cancel:active { transform: scale(0.98); }
     .kit-timer-toast {
       position: fixed;
       top: calc(var(--topbar-h) + 10px);

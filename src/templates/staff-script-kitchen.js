@@ -25,6 +25,8 @@ let kitPrevFilteredQueuedIds = new Set();
 let kitPrevFilterSig = "";
 
 const KIT_COOK_UI_MS = 250;
+/** ページ遷移後も残す（タブを閉じるまで）。店舗ごとに分離 */
+const KIT_COOK_STORAGE_KEY = "orderKitchenCookTimers:v1:" + STORE;
 
 function normCookTimerSec(v) {
   if (v == null || v <= 0) return null;
@@ -203,13 +205,23 @@ function renderCookTimerStrip() {
   const strip = document.getElementById("kitTimerStrip");
   if (!strip) return;
   strip.innerHTML = "";
-  for (const [, v] of kitCookDeadlines.entries()) {
+  for (const [gk, v] of kitCookDeadlines.entries()) {
     const rem = cookRemainingSec(v.endAt);
+    const wrap = document.createElement("span");
+    wrap.className = "kit-timer-pill-wrap";
     const pill = document.createElement("span");
     pill.className = "kit-timer-pill";
     const mid = v.stripTag ? v.stripTag + " · " : "";
     pill.textContent = v.productName + " · " + mid + "残り " + rem + "秒";
-    strip.appendChild(pill);
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "kit-timer-pill-cancel";
+    cancel.textContent = "キャンセル";
+    cancel.title = "このタイマーを中止";
+    cancel.onclick = () => cancelKitCookTimer(gk);
+    wrap.appendChild(pill);
+    wrap.appendChild(cancel);
+    strip.appendChild(wrap);
   }
 }
 
@@ -234,24 +246,91 @@ function finishCookTimerUi() {
   syncCookTimerButtons();
 }
 
-function fireCookTimerNotice(productName, seconds) {
+/**
+ * @param {string} productName
+ * @param {number} seconds
+ * @param {{ playSound?: boolean } | undefined} opts
+ */
+function fireCookTimerNotice(productName, seconds, opts) {
+  const playSound = !opts || opts.playSound !== false;
   kitCookNoticeQueue.push({ productName: String(productName || ""), seconds });
-  playCookTimerCompleteSound();
+  if (playSound) playCookTimerCompleteSound();
   appendCookTimerNoticeLine(productName);
+}
+
+function persistKitCookTimers() {
+  try {
+    const arr = [...kitCookDeadlines.entries()].map(([groupKey, v]) => ({
+      groupKey,
+      endAt: v.endAt,
+      seconds: v.seconds,
+      productName: v.productName,
+      stripTag: v.stripTag,
+    }));
+    if (arr.length === 0) sessionStorage.removeItem(KIT_COOK_STORAGE_KEY);
+    else sessionStorage.setItem(KIT_COOK_STORAGE_KEY, JSON.stringify(arr));
+  } catch (_) {}
+}
+
+function restoreKitCookTimersFromStorage() {
+  try {
+    const raw = sessionStorage.getItem(KIT_COOK_STORAGE_KEY);
+    if (!raw) return;
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return;
+    const now = Date.now();
+    /** @type {{ productName: string; seconds: number }[]} */
+    const expired = [];
+    for (const row of arr) {
+      if (!row || typeof row.groupKey !== "string") continue;
+      const endAt = Number(row.endAt);
+      if (!Number.isFinite(endAt)) continue;
+      const seconds = Math.round(Number(row.seconds)) || 0;
+      const productName = String(row.productName || "");
+      const stripTag = String(row.stripTag || "");
+      if (endAt <= now) expired.push({ productName, seconds });
+      else kitCookDeadlines.set(row.groupKey, { endAt, seconds, productName, stripTag });
+    }
+    if (expired.length === 1) {
+      fireCookTimerNotice(expired[0].productName, expired[0].seconds);
+    } else if (expired.length > 1) {
+      for (const e of expired) {
+        fireCookTimerNotice(e.productName, e.seconds, { playSound: false });
+      }
+      playCookTimerCompleteSound();
+    }
+    if (kitCookDeadlines.size > 0) ensureKitCookTick();
+    persistKitCookTimers();
+  } catch (_) {}
+}
+
+function cancelKitCookTimer(groupKey) {
+  if (!groupKey) return;
+  kitCookDeadlines.delete(groupKey);
+  persistKitCookTimers();
+  if (kitCookDeadlines.size === 0 && kitCookTick != null) {
+    clearInterval(kitCookTick);
+    kitCookTick = null;
+  }
+  finishCookTimerUi();
 }
 
 function checkKitCookDeadlines() {
   const now = Date.now();
+  let changed = false;
   for (const [k, v] of [...kitCookDeadlines.entries()]) {
     if (now >= v.endAt) {
       kitCookDeadlines.delete(k);
       fireCookTimerNotice(v.productName, v.seconds);
+      changed = true;
     }
   }
   if (kitCookDeadlines.size === 0 && kitCookTick != null) {
     clearInterval(kitCookTick);
     kitCookTick = null;
+    changed = true;
   }
+  if (changed) persistKitCookTimers();
 }
 
 function onCookTimerTick() {
@@ -274,6 +353,7 @@ function armKitCookTimer(groupKey, seconds, productName, stripTag) {
     productName: String(productName || ""),
     stripTag: stripTag ? String(stripTag) : "",
   });
+  persistKitCookTimers();
   ensureKitCookTick();
   finishCookTimerUi();
 }
@@ -1186,6 +1266,8 @@ document.getElementById("auto").onchange = scheduleKit;
 
 syncSummaryButtonLabels();
 syncKitPendingUi();
+restoreKitCookTimersFromStorage();
+finishCookTimerUi();
 try {
   if (sessionStorage.getItem(KIT_LIST_FS_KEY) === "1") applyKitListFullscreen(true);
 } catch (_) {}

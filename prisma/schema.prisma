@@ -332,6 +332,8 @@ model MenuSetChoice {
   componentMenuItemId String
   extraPrice          Int          @default(0)
   sortOrder           Int          @default(0)
+  /// true のときゲストは選べず常にセットに含める（標準付属）
+  isFixed             Boolean      @default(false)
   step                MenuSetStep  @relation(fields: [stepId], references: [id], onDelete: Cascade)
   componentMenuItem   MenuItem     @relation("MenuSetChoiceComponent", fields: [componentMenuItemId], references: [id], onDelete: Cascade)
 

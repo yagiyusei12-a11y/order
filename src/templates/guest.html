@@ -435,6 +435,21 @@
     .opt-row .opt-name { flex: 1; min-width: 0; }
     .opt-row .opt-price { font-size: 0.78rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
     .opt-row.is-disabled { opacity: 0.45; pointer-events: none; }
+    .opt-row-fixed {
+      padding-left: 0.15rem;
+      background: #f8fafc;
+      border-radius: 8px;
+    }
+    .opt-fixed-tag {
+      flex-shrink: 0;
+      font-size: 0.62rem;
+      font-weight: 800;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+      padding: 0.12rem 0.38rem;
+      border-radius: 6px;
+      background: #e2e8f0;
+    }
 
     .detail-footer {
       flex-shrink: 0;
@@ -874,6 +889,9 @@
           for (const ch of st.choices || []) {
             if (ch.containsAlcohol) return true;
           }
+          for (const ch of st.fixedChoices || []) {
+            if (ch.containsAlcohol) return true;
+          }
         }
       }
       return false;
@@ -883,6 +901,9 @@
       if (item.containsAlcohol) return true;
       const sel = setSelections || [];
       for (const st of item.setSteps || []) {
+        for (const ch of st.fixedChoices || []) {
+          if (ch.containsAlcohol) return true;
+        }
         const row = sel.find((x) => x.stepId === st.id);
         if (!row || !row.menuItemIds) continue;
         for (const mid of row.menuItemIds) {
@@ -943,6 +964,9 @@
       for (const st of item.setSteps || []) {
         const sel = setSelections.find((x) => x.stepId === st.id);
         if (!sel) return null;
+        for (const fc of st.fixedChoices || []) {
+          extras += choiceExtraInclusive(fc);
+        }
         for (const mid of sel.menuItemIds || []) {
           const ch = (st.choices || []).find((c) => c.menuItemId === mid);
           if (!ch) return null;
@@ -1001,6 +1025,9 @@
         for (const mid of sel.menuItemIds || []) {
           need.set(mid, (need.get(mid) || 0) + addQty);
         }
+        for (const fc of st.fixedChoices || []) {
+          need.set(fc.menuItemId, (need.get(fc.menuItemId) || 0) + addQty);
+        }
       }
       for (const [id, q] of need) {
         let max = null;
@@ -1009,6 +1036,9 @@
         } else {
           for (const st of item.setSteps) {
             for (const ch of st.choices || []) {
+              if (ch.menuItemId === id && ch.stockQty != null) max = ch.stockQty;
+            }
+            for (const ch of st.fixedChoices || []) {
               if (ch.menuItemId === id && ch.stockQty != null) max = ch.stockQty;
             }
           }
@@ -1023,6 +1053,14 @@
             for (const st of line.setSelections) {
               for (const mid of st.menuItemIds || []) if (mid === id) u += line.qty || 0;
             }
+            const lit = menuItemById.get(line.menuItemId);
+            if (lit && lit.setSteps) {
+              for (const st0 of lit.setSteps) {
+                for (const fc of st0.fixedChoices || []) {
+                  if (fc.menuItemId === id) u += line.qty || 0;
+                }
+              }
+            }
             return s + u;
           }
           return s;
@@ -1032,6 +1070,9 @@
         else {
           for (const st of item.setSteps) {
             for (const ch of st.choices || []) {
+              if (ch.menuItemId === id && ch.stockQty != null) max = ch.stockQty;
+            }
+            for (const ch of st.fixedChoices || []) {
               if (ch.menuItemId === id && ch.stockQty != null) max = ch.stockQty;
             }
           }
@@ -1192,6 +1233,24 @@
             "〜" +
             st.maxPick +
             "品</span></div>";
+          for (const ch of st.fixedChoices || []) {
+            const ex = Number(ch.extraPrice || 0);
+            const incl = choiceExtraInclusive(ch);
+            const priceTxt =
+              ex > 0
+                ? "+" +
+                  fmtMoney(incl).replace("¥", "") +
+                  " <span style=\"color:var(--muted);font-size:.68rem;font-weight:500\">(税込)</span>"
+                : "+¥0";
+            bodyInner +=
+              "<div class=\"opt-row opt-row-fixed\" style=\"cursor:default\">" +
+              "<span class=\"opt-fixed-tag\">付属</span>" +
+              "<span class=\"opt-name\">" +
+              escapeHtml(ch.name) +
+              "</span><span class=\"opt-price\">" +
+              priceTxt +
+              "</span></div>";
+          }
           for (const ch of st.choices || []) {
             const blockedAlcohol = alcoholRestricted && ch.containsAlcohol;
             const soldX =

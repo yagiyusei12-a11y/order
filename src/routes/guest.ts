@@ -193,6 +193,7 @@ function mapGuestSetMenuItem(
         componentMenuItemId: string;
         extraPrice: number;
         sortOrder: number;
+        isFixed?: boolean;
         componentMenuItem: {
           id: string;
           name: string;
@@ -216,24 +217,23 @@ function mapGuestSetMenuItem(
   nowMin: number,
 ): Record<string, unknown> | null {
   const stepsOut: Record<string, unknown>[] = [];
+  type ChoiceRow = {
+    menuItemId: string;
+    name: string;
+    extraPrice: number;
+    extraTaxIncluded: number;
+    stockQty: number | null;
+    soldOut: boolean;
+    containsAlcohol: boolean;
+  };
   for (const st of it.setSteps) {
-    const choices: {
-      menuItemId: string;
-      name: string;
-      extraPrice: number;
-      extraTaxIncluded: number;
-      stockQty: number | null;
-      soldOut: boolean;
-      containsAlcohol: boolean;
-    }[] = [];
+    const choices: ChoiceRow[] = [];
+    const fixedChoices: ChoiceRow[] = [];
     for (const ch of st.choices) {
       const comp = ch.componentMenuItem;
-      if (!comp.isAvailable) continue;
-      if (!comp.category.visibleToGuest) continue;
-      if (!componentVisibleToGuest(comp.category, nowMin)) continue;
       const ex = ch.extraPrice;
       const soldOut = comp.stockQty != null && comp.stockQty <= 0;
-      choices.push({
+      const row: ChoiceRow = {
         menuItemId: comp.id,
         name: comp.name,
         extraPrice: ex,
@@ -241,7 +241,19 @@ function mapGuestSetMenuItem(
         stockQty: comp.stockQty,
         soldOut,
         containsAlcohol: comp.containsAlcohol === true,
-      });
+      };
+      if (ch.isFixed === true) {
+        if (!comp.isAvailable || !comp.category.visibleToGuest || !componentVisibleToGuest(comp.category, nowMin)) {
+          return null;
+        }
+        if (soldOut) return null;
+        fixedChoices.push(row);
+        continue;
+      }
+      if (!comp.isAvailable) continue;
+      if (!comp.category.visibleToGuest) continue;
+      if (!componentVisibleToGuest(comp.category, nowMin)) continue;
+      choices.push(row);
     }
     const selectable = choices.filter((c) => !c.soldOut).length;
     if (st.minPick > 0 && selectable < st.minPick) {
@@ -254,6 +266,7 @@ function mapGuestSetMenuItem(
       maxPick: st.maxPick,
       sortOrder: st.sortOrder,
       choices,
+      fixedChoices,
     });
   }
   if (stepsOut.length === 0) return null;
@@ -876,6 +889,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
               choices: st.choices.map((c) => ({
                 componentMenuItemId: c.componentMenuItemId,
                 extraPrice: c.extraPrice,
+                isFixed: c.isFixed === true,
               })),
             }));
 

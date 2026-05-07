@@ -6,43 +6,54 @@ export type SetStepForValidation = {
   label: string;
   minPick: number;
   maxPick: number;
-  /** 各候補の上乗せは税抜円（会計時に店舗税率で税込換算） */
-  choices: { componentMenuItemId: string; extraPrice: number }[];
+  /** 各候補の上乗せは税抜円（会計時に店舗税率で税込換算）。isFixed はゲストが選ばず常に含める */
+  choices: { componentMenuItemId: string; extraPrice: number; isFixed?: boolean }[];
 };
 
 export function validateSetSelections(
   steps: SetStepForValidation[],
   selections: GuestSetStepSelection[],
 ): { ok: true; byStep: Map<string, string[]> } | { ok: false; error: string } {
-  const byStep = new Map<string, string[]>();
+  const byStepInput = new Map<string, string[]>();
   for (const s of selections) {
     if (!s.stepId || !Array.isArray(s.menuItemIds)) {
       return { ok: false, error: "invalid setSelections shape" };
     }
-    byStep.set(s.stepId, s.menuItemIds);
+    byStepInput.set(s.stepId, s.menuItemIds);
   }
-  if (byStep.size !== steps.length) {
+  if (byStepInput.size !== steps.length) {
     return { ok: false, error: "setSelections must include every step once" };
   }
+
+  const mergedByStep = new Map<string, string[]>();
   for (const st of steps) {
-    const ids = byStep.get(st.id);
-    if (!ids) return { ok: false, error: "missing step in setSelections" };
-    const n = ids.length;
+    const userIds = byStepInput.get(st.id);
+    if (!userIds) return { ok: false, error: "missing step in setSelections" };
+
+    const fixedIds = st.choices.filter((c) => c.isFixed === true).map((c) => c.componentMenuItemId);
+    const pickableSet = new Set(st.choices.filter((c) => !c.isFixed).map((c) => c.componentMenuItemId));
+
+    const n = userIds.length;
     if (n < st.minPick || n > st.maxPick) {
       return { ok: false, error: `pick count out of range for step: ${st.label}` };
     }
-    const uniq = new Set(ids);
-    if (uniq.size !== ids.length) {
+    const uniq = new Set(userIds);
+    if (uniq.size !== userIds.length) {
       return { ok: false, error: `duplicate pick in step: ${st.label}` };
     }
-    const allowed = new Map(st.choices.map((c) => [c.componentMenuItemId, c.extraPrice]));
-    for (const mid of ids) {
-      if (!allowed.has(mid)) {
+    for (const mid of userIds) {
+      if (!pickableSet.has(mid)) {
         return { ok: false, error: `invalid choice for step: ${st.label}` };
       }
     }
+    const merged = [...fixedIds, ...userIds];
+    const mergedUniq = new Set(merged);
+    if (mergedUniq.size !== merged.length) {
+      return { ok: false, error: `duplicate component in step: ${st.label}` };
+    }
+    mergedByStep.set(st.id, merged);
   }
-  return { ok: true, byStep };
+  return { ok: true, byStep: mergedByStep };
 }
 
 /** 候補の extraPrice（税抜円）を店舗税率で税込に換算し、選んだ分の上乗せ税込合計 */

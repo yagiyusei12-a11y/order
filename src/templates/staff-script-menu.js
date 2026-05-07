@@ -466,7 +466,12 @@ function buildSetDraftFromItem(item) {
       minPick: st.minPick,
       maxPick: st.maxPick,
       filterCatId: defaultFilterCategoryId(ex),
-      choiceMap: new Map(st.choices.map((c) => [c.componentMenuItemId, { extraPrice: c.extraPrice, checked: true }])),
+      choiceMap: new Map(
+        st.choices.map((c) => [
+          c.componentMenuItemId,
+          { extraPrice: c.extraPrice, checked: true, isFixed: c.isFixed === true },
+        ]),
+      ),
     }));
   }
   return [
@@ -492,32 +497,53 @@ function renderSetModalPickList(stepEl, stepIdx, draft, excludeItemId) {
     return;
   }
   for (const it of items) {
-    const ent = row.choiceMap.get(it.id) || { extraPrice: 0, checked: false };
-    const wrap = document.createElement("label");
+    const ent = row.choiceMap.get(it.id) || { extraPrice: 0, checked: false, isFixed: false };
+    const wrap = document.createElement("div");
     wrap.className = "row";
     wrap.style.cssText =
       "font-size:.78rem;margin:.15rem 0;align-items:center;gap:.4rem;display:flex;border-radius:6px;padding:.2rem .25rem;background:#fff;border:1px solid var(--border)";
     wrap.innerHTML =
-      "<input type=\"checkbox\" data-pick-id=\"" +
+      "<input type=\"checkbox\" data-pick-main=\"" +
       escapeHtml(it.id) +
       "\"" +
       (ent.checked ? " checked" : "") +
       " /><span style=\"flex:1;min-width:0\">" +
       escapeHtml(it.name) +
-      "</span><span style=\"font-size:.68rem;color:var(--muted)\">+円</span><input type=\"number\" data-extra-for=\"" +
+      "</span>" +
+      "<label style=\"font-size:.62rem;color:#64748b;white-space:nowrap;display:flex;align-items:center;gap:.22rem;margin:0;cursor:pointer\">" +
+      "<input type=\"checkbox\" data-pick-fixed=\"" +
+      escapeHtml(it.id) +
+      "\"" +
+      (ent.isFixed ? " checked" : "") +
+      " />標準付属</label>" +
+      "<span style=\"font-size:.68rem;color:var(--muted)\">+円</span><input type=\"number\" data-extra-for=\"" +
       escapeHtml(it.id) +
       "\" min=\"0\" step=\"1\" value=\"" +
       escapeHtml(String(ent.extraPrice ?? 0)) +
       "\" style=\"width:3.5rem;margin:0\" title=\"税抜上乗せ\" />";
-    const chk = wrap.querySelector("input[type=checkbox]");
+    const chkMain = wrap.querySelector("[data-pick-main]");
+    const chkFixed = wrap.querySelector("[data-pick-fixed]");
     const num = wrap.querySelector("input[type=number]");
-    chk.addEventListener("change", () => {
-      const cur = row.choiceMap.get(it.id) || { extraPrice: 0, checked: false };
-      cur.checked = chk.checked;
+    chkMain.addEventListener("change", () => {
+      const cur = row.choiceMap.get(it.id) || { extraPrice: 0, checked: false, isFixed: false };
+      cur.checked = chkMain.checked;
+      if (!cur.checked) {
+        cur.isFixed = false;
+        chkFixed.checked = false;
+      }
+      row.choiceMap.set(it.id, cur);
+    });
+    chkFixed.addEventListener("change", () => {
+      const cur = row.choiceMap.get(it.id) || { extraPrice: 0, checked: false, isFixed: false };
+      cur.isFixed = chkFixed.checked;
+      if (cur.isFixed) {
+        cur.checked = true;
+        chkMain.checked = true;
+      }
       row.choiceMap.set(it.id, cur);
     });
     function syncExtra() {
-      const cur = row.choiceMap.get(it.id) || { extraPrice: 0, checked: false };
+      const cur = row.choiceMap.get(it.id) || { extraPrice: 0, checked: false, isFixed: false };
       let v = Number(num.value);
       if (!Number.isInteger(v) || v < 0) v = 0;
       cur.extraPrice = v;
@@ -588,7 +614,7 @@ function renderSetModalStepsBody(body, item, draft) {
     });
     stepEl.querySelector("[data-bulk-all]").onclick = () => {
       for (const it of pickableItemsInCategory(row.filterCatId, ex)) {
-        const cur = row.choiceMap.get(it.id) || { extraPrice: 0, checked: false };
+        const cur = row.choiceMap.get(it.id) || { extraPrice: 0, checked: false, isFixed: false };
         cur.checked = true;
         row.choiceMap.set(it.id, cur);
       }
@@ -596,8 +622,9 @@ function renderSetModalStepsBody(body, item, draft) {
     };
     stepEl.querySelector("[data-bulk-none]").onclick = () => {
       for (const it of pickableItemsInCategory(row.filterCatId, ex)) {
-        const cur = row.choiceMap.get(it.id) || { extraPrice: 0, checked: false };
+        const cur = row.choiceMap.get(it.id) || { extraPrice: 0, checked: false, isFixed: false };
         cur.checked = false;
+        cur.isFixed = false;
         row.choiceMap.set(it.id, cur);
       }
       renderSetModalPickList(stepEl, stepIdx, draft, ex);
@@ -632,7 +659,7 @@ function openSetConfiguratorModal(item, right, opts) {
     "<div style=\"padding:.75rem 1rem;border-bottom:1px solid var(--border);font-weight:800;font-size:1rem\">セット構成の設定</div>" +
     "<p class=\"muted\" style=\"font-size:.72rem;margin:0;padding:.5rem 1rem 0\">" +
     escapeHtml(item.name) +
-    " — 項目ごとに名前・選ぶ個数・候補単品（<strong>税抜</strong>+円）を設定します。カテゴリで絞り込み、一括選択できます。</p>" +
+    " — 項目ごとに名前・選ぶ個数・候補単品（<strong>税抜</strong>+円）を設定します。<strong>標準付属</strong>にした単品はゲストが選べず常にセットに含まれます（その項目だけ標準付属にする場合は最小・最大を0に）。カテゴリで絞り込み、一括選択できます。</p>" +
     "<div id=\"setModalStepsScroll\" style=\"overflow:auto;flex:1;padding:.5rem 1rem 1rem\"></div>" +
     "<div style=\"padding:.65rem 1rem;border-top:1px solid var(--border);display:flex;gap:.5rem;flex-wrap:wrap;justify-content:space-between;background:#f0f1f3\">" +
     "<button type=\"button\" class=\"btn-ghost\" id=\"setModalAddStep\">＋ 項目を追加</button>" +
@@ -678,9 +705,13 @@ function openSetConfiguratorModal(item, right, opts) {
         if (!v || !v.checked) continue;
         const ex = Number(v.extraPrice);
         if (!Number.isInteger(ex) || ex < 0) return log("+円（税抜）は0以上の整数: " + label);
-        choices.push({ menuItemId, extraPrice: ex, sortOrder: ci++ });
+        choices.push({ menuItemId, extraPrice: ex, sortOrder: ci++, isFixed: !!v.isFixed });
       }
       if (choices.length === 0) return log("各項目で候補を1つ以上選んでください: " + label);
+      const pickable = choices.filter((x) => !x.isFixed);
+      if (pickable.length === 0 && (minPick !== 0 || maxPick !== 0)) {
+        return log("標準付属のみの項目「" + label + "」は最小・最大を0にしてください");
+      }
       stepsPayload.push({ label, minPick, maxPick, sortOrder: si, choices });
     }
     const btn = panel.querySelector("#setModalSave");

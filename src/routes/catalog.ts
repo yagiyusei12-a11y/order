@@ -363,7 +363,7 @@ async function buildMenuItemPatchData(
   return { data };
 }
 
-type SetDefChoiceIn = { menuItemId: string; extraPrice: number; sortOrder: number };
+type SetDefChoiceIn = { menuItemId: string; extraPrice: number; sortOrder: number; isFixed?: boolean };
 type SetDefStepIn = {
   label: string;
   minPick: number;
@@ -401,30 +401,38 @@ function parseSetDefinitionBody(raw: unknown): { ok: false; error: string } | { 
     if (!Array.isArray(chRaw) || chRaw.length === 0) {
       return { ok: false, error: "each step needs at least one choice" };
     }
-    const choices: SetDefChoiceIn[] = [];
-    const seenComp = new Set<string>();
-    for (let j = 0; j < chRaw.length; j++) {
-      const ch = chRaw[j];
-      if (!ch || typeof ch !== "object") return { ok: false, error: "invalid choice" };
-      const menuItemId =
-        typeof (ch as { menuItemId?: unknown }).menuItemId === "string"
-          ? (ch as { menuItemId: string }).menuItemId.trim()
-          : "";
-      if (!menuItemId) return { ok: false, error: "choice menuItemId required" };
-      if (seenComp.has(menuItemId)) return { ok: false, error: "duplicate component in same step" };
-      seenComp.add(menuItemId);
-      const extraPrice = (ch as { extraPrice?: unknown }).extraPrice;
-      if (typeof extraPrice !== "number" || !Number.isInteger(extraPrice) || extraPrice < 0 || extraPrice > 1_000_000) {
-        return { ok: false, error: "extraPrice（税抜上乗せ円）は0-1000000の整数" };
+      const choices: SetDefChoiceIn[] = [];
+      const seenComp = new Set<string>();
+      for (let j = 0; j < chRaw.length; j++) {
+        const ch = chRaw[j];
+        if (!ch || typeof ch !== "object") return { ok: false, error: "invalid choice" };
+        const menuItemId =
+          typeof (ch as { menuItemId?: unknown }).menuItemId === "string"
+            ? (ch as { menuItemId: string }).menuItemId.trim()
+            : "";
+        if (!menuItemId) return { ok: false, error: "choice menuItemId required" };
+        if (seenComp.has(menuItemId)) return { ok: false, error: "duplicate component in same step" };
+        seenComp.add(menuItemId);
+        const extraPrice = (ch as { extraPrice?: unknown }).extraPrice;
+        if (typeof extraPrice !== "number" || !Number.isInteger(extraPrice) || extraPrice < 0 || extraPrice > 1_000_000) {
+          return { ok: false, error: "extraPrice（税抜上乗せ円）は0-1000000の整数" };
+        }
+        const cSort = (ch as { sortOrder?: unknown }).sortOrder;
+        if (typeof cSort !== "number" || !Number.isInteger(cSort)) {
+          return { ok: false, error: "choice sortOrder must be integer" };
+        }
+        const isFixed = (ch as { isFixed?: unknown }).isFixed === true;
+        choices.push({ menuItemId, extraPrice, sortOrder: cSort, isFixed });
       }
-      const cSort = (ch as { sortOrder?: unknown }).sortOrder;
-      if (typeof cSort !== "number" || !Number.isInteger(cSort)) {
-        return { ok: false, error: "choice sortOrder must be integer" };
+      choices.sort((a, b) => a.sortOrder - b.sortOrder);
+      const pickable = choices.filter((c) => !c.isFixed);
+      if (choices.length > 0 && pickable.length === 0 && (minPick !== 0 || maxPick !== 0)) {
+        return {
+          ok: false,
+          error: "標準付属のみの項目は最小・最大を0にしてください: " + label,
+        };
       }
-      choices.push({ menuItemId, extraPrice, sortOrder: cSort });
-    }
-    choices.sort((a, b) => a.sortOrder - b.sortOrder);
-    steps.push({ label, minPick, maxPick, sortOrder, choices });
+      steps.push({ label, minPick, maxPick, sortOrder, choices });
   }
   steps.sort((a, b) => a.sortOrder - b.sortOrder);
   return { ok: true, steps };
@@ -1016,6 +1024,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
                   componentMenuItemId: c.componentMenuItemId,
                   extraPrice: c.extraPrice,
                   sortOrder: c.sortOrder,
+                  isFixed: c.isFixed === true,
                 })),
               });
             }
@@ -1398,6 +1407,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
             componentMenuItemId: c.menuItemId,
             extraPrice: c.extraPrice,
             sortOrder: c.sortOrder,
+            isFixed: c.isFixed === true,
           })),
         });
       }
@@ -1675,6 +1685,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
                 componentMenuItemId: c.componentMenuItemId,
                 extraPrice: c.extraPrice,
                 sortOrder: c.sortOrder,
+                isFixed: c.isFixed === true,
               })),
             });
           }

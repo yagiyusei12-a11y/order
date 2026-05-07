@@ -472,6 +472,17 @@ function summaryViewSignature(lines, st) {
   }
 }
 
+/** まとめ表示凍結中に「調理済」PATCH 後、一覧が動かないのを防ぐためサーバー応答を待たずに反映する */
+function applyKitSummaryDoneOptimistic(lineIds) {
+  if (!summaryMode || kitMainTab !== "active" || !kitSummaryFrozenLines || !lineIds || lineIds.length === 0) return;
+  const idSet = new Set(lineIds.map((id) => String(id)));
+  const nowIso = new Date().toISOString();
+  kitSummaryFrozenLines = kitSummaryFrozenLines.map((ln) => {
+    if (!ln || !idSet.has(String(ln.id))) return ln;
+    return { ...ln, status: "done", readyAt: nowIso };
+  });
+}
+
 function syncKitPendingUi() {
   const has = Boolean(summaryMode && kitMainTab === "active" && kitSummaryFrozenLines && kitSummaryHasPending);
   const t = has ? "再読込（更新あり）" : "再読込";
@@ -745,8 +756,18 @@ function renderKitList() {
         b.style.boxSizing = "border-box";
         b.style.fontSize = "0.68rem";
         b.textContent = t + " ×" + info.qty + " を調理済みにする";
-        b.onclick = () => {
-          setLinesDone(info.lineIds);
+        b.onclick = async () => {
+          const prevText = b.textContent;
+          b.disabled = true;
+          b.textContent = "処理中…";
+          try {
+            await setLinesDone(info.lineIds);
+          } finally {
+            if (b.isConnected) {
+              b.disabled = false;
+              b.textContent = prevText;
+            }
+          }
         };
         tableButtons.appendChild(b);
       }
@@ -1044,6 +1065,8 @@ async function setLinesDone(lineIds) {
         )
       )
     );
+    applyKitSummaryDoneOptimistic(lineIds);
+    renderKitList();
     await refreshKitchen();
   } catch (e) {
     log(String(e.message || e));

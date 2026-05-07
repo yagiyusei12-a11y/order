@@ -20,7 +20,9 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
     const orderBy =
       lineStatus === "done"
         ? ([{ readyAt: { sort: "asc" as const, nulls: "last" as const } }, { id: "asc" as const }] as const)
-        : ([{ id: "asc" as const }] as const);
+        : lineStatus === "served"
+          ? ([{ servedAt: { sort: "desc" as const, nulls: "last" as const } }, { id: "desc" as const }] as const)
+          : ([{ id: "asc" as const }] as const);
 
     const lines = await prisma.orderLine.findMany({
       where: {
@@ -70,6 +72,7 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
         tableName: l.order.session.table.name,
         sessionId: l.order.sessionId,
         readyAt: l.readyAt,
+        servedAt: l.servedAt,
       })),
     };
   });
@@ -92,11 +95,15 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
     });
     if (!line) return reply.code(404).send({ error: "line not found" });
 
-    const data: { status: string; readyAt?: Date | null } = { status };
+    const data: { status: string; readyAt?: Date | null; servedAt?: Date | null } = { status };
     if (status === "done") {
       data.readyAt = new Date();
+      data.servedAt = null;
     } else if (status === "queued" || status === "cooking") {
       data.readyAt = null;
+      data.servedAt = null;
+    } else if (status === "served") {
+      data.servedAt = new Date();
     }
 
     const updated = await prisma.orderLine.update({

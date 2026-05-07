@@ -1,7 +1,10 @@
 const HALL_FILTER_KEY = "orderHallReadyFilters:v1:" + STORE;
 
 let hallRefreshMs = 10000;
+/** @type {"done"|"served"} */
+let hallTab = "done";
 let lastDoneLines = [];
+let lastServedLines = [];
 let metaLoaded = false;
 let allCategories = [];
 let allStations = [];
@@ -95,9 +98,33 @@ function readyAtMs(ln) {
   return new Date(ln.orderCreatedAt || 0).getTime();
 }
 
+function servedAtMs(ln) {
+  if (ln.servedAt) {
+    const t = new Date(ln.servedAt).getTime();
+    if (!Number.isNaN(t)) return t;
+  }
+  return readyAtMs(ln);
+}
+
 function formatReadyLabel(ln) {
   if (ln.readyAt) {
     const d = new Date(ln.readyAt);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleString("ja-JP", {
+        month: "numeric",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+    }
+  }
+  return "時刻未記録";
+}
+
+function formatServedLabel(ln) {
+  if (ln.servedAt) {
+    const d = new Date(ln.servedAt);
     if (!Number.isNaN(d.getTime())) {
       return d.toLocaleString("ja-JP", {
         month: "numeric",
@@ -218,7 +245,11 @@ async function ensureMeta() {
   renderFilterControls();
 }
 
-function groupByTable(sortedLines) {
+/**
+ * @param {typeof lastDoneLines} sortedLines
+ * @param {"done"|"served"} mode
+ */
+function groupByTable(sortedLines, mode) {
   /** @type {Map<string, { tableName: string; lines: typeof sortedLines }>} */
   const m = new Map();
   for (const ln of sortedLines) {
@@ -233,9 +264,15 @@ function groupByTable(sortedLines) {
   }
   const arr = [...m.values()];
   arr.sort((a, b) => {
-    const ta = Math.min(...a.lines.map(readyAtMs));
-    const tb = Math.min(...b.lines.map(readyAtMs));
-    if (ta !== tb) return ta - tb;
+    if (mode === "served") {
+      const ta = Math.max(...a.lines.map(servedAtMs));
+      const tb = Math.max(...b.lines.map(servedAtMs));
+      if (ta !== tb) return tb - ta;
+    } else {
+      const ta = Math.min(...a.lines.map(readyAtMs));
+      const tb = Math.min(...b.lines.map(readyAtMs));
+      if (ta !== tb) return ta - tb;
+    }
     return a.tableName.localeCompare(b.tableName, "ja");
   });
   return arr;
@@ -244,27 +281,40 @@ function groupByTable(sortedLines) {
 function renderHallList() {
   const root = document.getElementById("hallReadyRoot");
   if (!root) return;
-  const filtered = filterLines(lastDoneLines);
-  const sorted = [...filtered].sort((a, b) => {
-    const d = readyAtMs(a) - readyAtMs(b);
-    if (d !== 0) return d;
-    return String(a.id).localeCompare(String(b.id));
-  });
+  const source = hallTab === "served" ? lastServedLines : lastDoneLines;
+  const filtered = filterLines(source);
+  const sorted =
+    hallTab === "served"
+      ? [...filtered].sort((a, b) => {
+          const d = servedAtMs(b) - servedAtMs(a);
+          if (d !== 0) return d;
+          return String(b.id).localeCompare(String(a.id));
+        })
+      : [...filtered].sort((a, b) => {
+          const d = readyAtMs(a) - readyAtMs(b);
+          if (d !== 0) return d;
+          return String(a.id).localeCompare(String(b.id));
+        });
 
   if (sorted.length === 0) {
-    if (lastDoneLines.length === 0) {
-      root.innerHTML =
-        "<div class=\"hall-ready-empty\"><div class=\"ico\">✓</div><div>調理済みの行はありません</div><p class=\"muted\" style=\"margin:0.5rem 0 0;font-size:0.8rem\">キッチンで「調理済」にするとここに表示されます</p></div>";
+    if (source.length === 0) {
+      if (hallTab === "served") {
+        root.innerHTML =
+          "<div class=\"hall-ready-empty\"><div class=\"ico\">✓</div><div>提供済みの行はありません</div><p class=\"muted\" style=\"margin:0.5rem 0 0;font-size:0.8rem\">提供待ちで「提供済み」にするとここに表示されます</p></div>";
+      } else {
+        root.innerHTML =
+          "<div class=\"hall-ready-empty\"><div class=\"ico\">✓</div><div>調理済みの行はありません</div><p class=\"muted\" style=\"margin:0.5rem 0 0;font-size:0.8rem\">キッチンで「調理済」にするとここに表示されます</p></div>";
+      }
     } else {
       root.innerHTML =
         "<div class=\"hall-ready-empty\"><div class=\"ico\">🔎</div><div>条件に一致する行がありません</div><p class=\"muted\" style=\"margin:0.5rem 0 0;font-size:0.8rem\">絞り込みを解除するか選択を変えてください（全" +
-        lastDoneLines.length +
+        source.length +
         "件中 0件）</p></div>";
     }
     return;
   }
 
-  const groups = groupByTable(sorted);
+  const groups = groupByTable(sorted, hallTab === "served" ? "served" : "done");
   root.innerHTML = "";
   const wrap = document.createElement("div");
   wrap.className = "hall-ready-groups";
@@ -314,7 +364,8 @@ function renderHallList() {
 
       const time = document.createElement("div");
       time.className = "hall-ready-time";
-      time.textContent = "調理完了 " + formatReadyLabel(ln);
+      time.textContent =
+        hallTab === "served" ? "提供済み " + formatServedLabel(ln) : "調理完了 " + formatReadyLabel(ln);
       block.appendChild(time);
 
       const extra = orderLineExtraSubtext(ln.lineExtra);
@@ -328,12 +379,14 @@ function renderHallList() {
         block.appendChild(meta);
       }
 
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "hall-ready-serve";
-      btn.textContent = "提供済み";
-      btn.onclick = () => setLineServed(ln.id);
-      block.appendChild(btn);
+      if (hallTab !== "served") {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "hall-ready-serve";
+        btn.textContent = "提供済み";
+        btn.onclick = () => setLineServed(ln.id);
+        block.appendChild(btn);
+      }
 
       grid.appendChild(block);
     }
@@ -368,10 +421,13 @@ async function refreshHall() {
   const root = document.getElementById("hallReadyRoot");
   try {
     await ensureMeta();
-    const data = await api(
-      "/stores/" + encodeURIComponent(STORE) + "/kitchen/order-lines?lineStatus=" + encodeURIComponent("done")
-    );
-    lastDoneLines = data.lines || [];
+    const base = "/stores/" + encodeURIComponent(STORE) + "/kitchen/order-lines?lineStatus=";
+    const [doneRes, servedRes] = await Promise.all([
+      api(base + encodeURIComponent("done")),
+      api(base + encodeURIComponent("served")),
+    ]);
+    lastDoneLines = doneRes.lines || [];
+    lastServedLines = servedRes.lines || [];
     renderHallList();
   } catch (e) {
     if (root) root.textContent = String(e.message || e);
@@ -404,6 +460,20 @@ function scheduleHall() {
   }
 }
 document.getElementById("hallAuto").onchange = scheduleHall;
+
+function setHallTab(tab) {
+  hallTab = tab;
+  const bDone = document.getElementById("hallTabDone");
+  const bServed = document.getElementById("hallTabServed");
+  if (bDone) bDone.classList.toggle("is-on", tab === "done");
+  if (bServed) bServed.classList.toggle("is-on", tab === "served");
+  renderHallList();
+}
+
+const hallTabDoneEl = document.getElementById("hallTabDone");
+const hallTabServedEl = document.getElementById("hallTabServed");
+if (hallTabDoneEl) hallTabDoneEl.onclick = () => setHallTab("done");
+if (hallTabServedEl) hallTabServedEl.onclick = () => setHallTab("served");
 
 refreshHallIntervalFromServer()
   .then(() => {

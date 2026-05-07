@@ -37,6 +37,23 @@ function lineGroupKey(ln) {
   return ln.menuItemId || "name:" + ln.nameSnapshot;
 }
 
+function stripNameSnapshotExtras(nameSnapshot) {
+  const s = String(nameSnapshot || "");
+  const i1 = s.indexOf("［");
+  const i2 = s.indexOf("[");
+  const cut =
+    i1 >= 0 && i2 >= 0 ? Math.min(i1, i2) : i1 >= 0 ? i1 : i2 >= 0 ? i2 : -1;
+  return (cut >= 0 ? s.slice(0, cut) : s).trim();
+}
+
+function orderLineDisplayName(ln) {
+  if (ln && ln.lineExtra && typeof ln.lineExtra === "object") {
+    const kind = /** @type {{ kind?: unknown }} */ (ln.lineExtra).kind;
+    if (kind === "set") return stripNameSnapshotExtras(ln.nameSnapshot);
+  }
+  return String((ln && ln.nameSnapshot) || "");
+}
+
 /** @param {unknown} extra */
 function orderLineExtraSubtext(extra) {
   if (extra == null || typeof extra !== "object") return "";
@@ -674,7 +691,7 @@ function renderKitHistoryList(box, lines) {
       const tag = ln.kitchenStationName ? "〈" + ln.kitchenStationName + "〉 " : "";
       const name = document.createElement("div");
       name.className = "kit-line-name";
-      name.textContent = tag + ln.nameSnapshot + " ×" + ln.qty;
+      name.textContent = tag + orderLineDisplayName(ln) + " ×" + ln.qty;
       const meta = document.createElement("div");
       meta.className = "kit-history-done-meta";
       meta.textContent = "調理完了 " + formatKitLineReadyAt(ln);
@@ -746,7 +763,7 @@ function renderKitList() {
         byTable.set(tk, { qty: Number(ln.qty || 0), lineIds: [ln.id] });
         grouped.set(key, {
           key,
-          nameSnapshot: ln.nameSnapshot,
+          nameSnapshot: orderLineDisplayName(ln),
           qty: Number(ln.qty || 0),
           categoryName: ln.categoryName,
           kitchenStationName: ln.kitchenStationName,

@@ -34,7 +34,15 @@ function normCookTimerSec(v) {
 }
 
 function lineGroupKey(ln) {
-  return ln.menuItemId || "name:" + ln.nameSnapshot;
+  const base = ln.menuItemId ? "mid:" + ln.menuItemId : "name:" + ln.nameSnapshot;
+  if (ln && ln.lineExtra && typeof ln.lineExtra === "object") {
+    const kind = /** @type {{ kind?: unknown }} */ (ln.lineExtra).kind;
+    if (kind === "set" || kind === "single") {
+      const sig = orderLineExtraSubtext(ln.lineExtra);
+      if (sig) return base + "|extra:" + sig;
+    }
+  }
+  return base;
 }
 
 function stripNameSnapshotExtras(nameSnapshot) {
@@ -754,7 +762,7 @@ function renderKitList() {
     const grouped = new Map();
     for (const ln of lines) {
       if (ln.status === "done" || ln.status === "served") continue;
-      const key = ln.menuItemId || ("name:" + ln.nameSnapshot);
+      const key = lineGroupKey(ln);
       const prev = grouped.get(key);
       const createdAtMs = new Date(ln.orderCreatedAt).getTime();
       if (!prev) {
@@ -1046,7 +1054,7 @@ function renderKitList() {
       nameRow.className = "kit-line-name-row";
       const name = document.createElement("div");
       name.className = "kit-line-name";
-      name.textContent = tag + ln.nameSnapshot + " ×" + ln.qty;
+      name.textContent = tag + orderLineDisplayName(ln) + " ×" + ln.qty;
       nameRow.appendChild(name);
       if (ln.status === "queued" || ln.status === "cooking" || ln.status === "done") {
         const cancelTxt = document.createElement("button");
@@ -1057,9 +1065,10 @@ function renderKitList() {
           "在庫切れなどで取り消す（確認のあと明細キャンセル・必要なら商品を販売停止・在庫0）";
         cancelTxt.onclick = async () => {
           const hasM = Boolean(ln.menuItemId);
+          const displayName = orderLineDisplayName(ln) || "品目";
           const msg =
             "対象：「" +
-            (ln.nameSnapshot || "品目") +
+            displayName +
             "」×" +
             (ln.qty != null ? ln.qty : 1) +
             "\n\n" +

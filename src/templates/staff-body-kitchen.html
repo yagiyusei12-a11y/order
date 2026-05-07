@@ -86,6 +86,59 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    /* まとめ表示: 左上に品名・時刻、右上に数量を強調 */
+    .kit-order-box-head.kit-summary-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 0.4rem;
+      white-space: normal;
+      overflow: visible;
+      text-overflow: unset;
+    }
+    .kit-summary-head-main {
+      min-width: 0;
+      flex: 1;
+    }
+    .kit-summary-head-sta {
+      font-size: 0.62rem;
+      font-weight: 700;
+      color: #9a3412;
+      margin-bottom: 0.12rem;
+      line-height: 1.25;
+    }
+    .kit-summary-head-name {
+      font-size: 0.78rem;
+      font-weight: 800;
+      color: #c2410c;
+      line-height: 1.3;
+      word-break: break-word;
+    }
+    .kit-summary-head-time {
+      font-size: 0.62rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-top: 0.2rem;
+    }
+    .kit-summary-qty {
+      flex-shrink: 0;
+      text-align: right;
+      padding: 0.05rem 0 0 0.2rem;
+      line-height: 1.05;
+    }
+    .kit-summary-qty-hint {
+      font-size: 0.55rem;
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+    }
+    .kit-summary-qty-num {
+      font-size: 1.42rem;
+      font-weight: 900;
+      color: var(--accent);
+      margin-top: 0.08rem;
+      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.9);
+    }
     .kit-order-box-body {
       padding: 0.4rem 0.45rem 0.45rem;
       display: flex;

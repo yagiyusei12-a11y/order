@@ -513,12 +513,37 @@ function renderKitList() {
       d.className = "kit-order-box";
 
       const head = document.createElement("div");
-      head.className = "kit-order-box-head";
-      const tag = g.kitchenStationName ? "〈" + g.kitchenStationName + "〉 " : "";
+      head.className = "kit-order-box-head kit-summary-head";
       const hm = new Date(g.oldestAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-      const headT = tag + g.nameSnapshot + " ×" + g.qty + " · " + hm;
-      head.textContent = headT;
-      head.title = headT;
+      const main = document.createElement("div");
+      main.className = "kit-summary-head-main";
+      if (g.kitchenStationName) {
+        const sta = document.createElement("div");
+        sta.className = "kit-summary-head-sta";
+        sta.textContent = "〈" + g.kitchenStationName + "〉";
+        main.appendChild(sta);
+      }
+      const nameEl = document.createElement("div");
+      nameEl.className = "kit-summary-head-name";
+      nameEl.textContent = g.nameSnapshot;
+      main.appendChild(nameEl);
+      const timeEl = document.createElement("div");
+      timeEl.className = "kit-summary-head-time";
+      timeEl.textContent = "最古 " + hm;
+      main.appendChild(timeEl);
+      const qtyCol = document.createElement("div");
+      qtyCol.className = "kit-summary-qty";
+      const qtyHint = document.createElement("div");
+      qtyHint.className = "kit-summary-qty-hint";
+      qtyHint.textContent = "合計";
+      const qtyNum = document.createElement("div");
+      qtyNum.className = "kit-summary-qty-num";
+      qtyNum.textContent = "×" + g.qty;
+      qtyCol.appendChild(qtyHint);
+      qtyCol.appendChild(qtyNum);
+      head.appendChild(main);
+      head.appendChild(qtyCol);
+      head.title = (g.kitchenStationName ? "〈" + g.kitchenStationName + "〉 " : "") + g.nameSnapshot + " ×" + g.qty + " · " + hm;
       d.appendChild(head);
 
       const bodyEl = document.createElement("div");

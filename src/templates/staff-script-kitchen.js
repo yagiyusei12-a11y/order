@@ -769,9 +769,11 @@ function renderKitList() {
         const byTable = new Map();
         const tk = ln.tableName || "卓未設定";
         byTable.set(tk, { qty: Number(ln.qty || 0), lineIds: [ln.id] });
+        const extraTxt = orderLineExtraSubtext(ln.lineExtra);
         grouped.set(key, {
           key,
           nameSnapshot: orderLineDisplayName(ln),
+          extraTxt,
           qty: Number(ln.qty || 0),
           categoryName: ln.categoryName,
           kitchenStationName: ln.kitchenStationName,
@@ -838,6 +840,13 @@ function renderKitList() {
       nameEl.textContent = g.nameSnapshot;
       nameRow.appendChild(nameEl);
       main.appendChild(nameRow);
+      if (g.extraTxt) {
+        const ex = document.createElement("div");
+        ex.className = "kit-line-extra";
+        ex.textContent = g.extraTxt;
+        ex.title = g.extraTxt;
+        main.appendChild(ex);
+      }
       const timeEl = document.createElement("div");
       timeEl.className = "kit-summary-head-time";
       timeEl.textContent = "最古 " + hm;

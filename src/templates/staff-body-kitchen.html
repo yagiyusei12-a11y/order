@@ -1,4 +1,82 @@
 <main>
+  <style>
+    /* 通常表示: 注文をタイル状に詰めて表示 */
+    #kit.kit-layout-normal {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 0.42rem;
+      padding: 0.45rem;
+      align-content: start;
+      min-height: 220px;
+    }
+    .kit-order-box {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    .kit-order-box-head {
+      font-size: 0.72rem;
+      font-weight: 800;
+      color: var(--accent);
+      padding: 0.38rem 0.5rem;
+      background: var(--accent-soft);
+      border-bottom: 1px solid #fed7aa;
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .kit-order-box-body {
+      padding: 0.4rem 0.45rem 0.45rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .kit-line-box {
+      border-top: 1px solid #f1f5f9;
+      padding-top: 0.4rem;
+      margin-top: 0.1rem;
+    }
+    .kit-line-box:first-child {
+      border-top: none;
+      padding-top: 0;
+      margin-top: 0;
+    }
+    .kit-line-name {
+      font-size: 0.78rem;
+      font-weight: 700;
+      line-height: 1.35;
+      color: #0f172a;
+      word-break: break-word;
+    }
+    .kit-line-extra {
+      font-size: 0.65rem;
+      color: var(--muted);
+      line-height: 1.35;
+      white-space: pre-line;
+      margin-top: 0.2rem;
+      max-height: 3.2em;
+      overflow: hidden;
+    }
+    .kit-line-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.28rem;
+      margin-top: 0.32rem;
+    }
+    .kit-line-actions button {
+      padding: 0.22rem 0.42rem !important;
+      font-size: 0.68rem !important;
+      min-height: 0;
+      line-height: 1.2;
+      width: auto !important;
+    }
+  </style>
   <div class="top-tabs" role="tablist" aria-label="注文ビュー">
     <button type="button">注文履歴</button>
     <button type="button" class="is-on">進行中の注文</button>
@@ -35,7 +113,7 @@
       <button type="button" class="btn-ghost" id="fltClear" style="width:auto">絞り込み解除</button>
     </div>
   </div>
-  <div id="kit" class="card" style="min-height:220px;padding:0"></div>
+  <div id="kit" class="card" style="min-height:220px;padding:0;box-sizing:border-box"></div>
   <p class="muted" style="margin:0.5rem 0 0.15rem;font-size:0.72rem">卓ショートカット（席の識別用）</p>
   <div class="chip-bar" id="chipBar"></div>
   <div id="log"></div>

@@ -438,6 +438,7 @@ function renderKitList() {
   const box = document.getElementById("kit");
   const lines = filterLines(lastLines);
   if (lines.length === 0) {
+    box.className = "card";
     if (lastLines.length === 0) {
       box.innerHTML =
         "<div class=\"kit-empty\"><div class=\"ico\">☕</div><div>注文がありません</div><p class=\"muted\" style=\"margin:0.5rem 0 0;font-size:0.8rem\">進行中の明細がここに並びます</p></div>";
@@ -530,11 +531,13 @@ function renderKitList() {
     const doneArr = [...doneByItem.values()].sort((a, b) => a.nameSnapshot.localeCompare(b.nameSnapshot, "ja"));
 
     if (arr.length === 0 && doneArr.length === 0) {
+      box.className = "card";
       box.innerHTML =
         "<div class=\"kit-empty\"><div class=\"ico\">✅</div><div>対象の明細がありません</div><p class=\"muted\" style=\"margin:0.5rem 0 0;font-size:0.8rem\">調理中・提供待ちの明細が入るとここに表示されます</p></div>";
       finishCookTimerUi();
       return;
     }
+    box.className = "card";
     box.innerHTML = "";
     const headA = document.createElement("div");
     headA.style.padding = "0.55rem 0.9rem";
@@ -710,32 +713,34 @@ function renderKitList() {
     if (ta !== tb) return ta - tb;
     return String(a.orderId).localeCompare(String(b.orderId));
   });
+  box.className = "card kit-layout-normal";
   box.innerHTML = "";
   for (const og of orderGroups) {
     og.lines.sort((a, b) => String(a.id).localeCompare(String(b.id)));
     const d = document.createElement("div");
-    d.style.padding = "0.75rem 1rem";
-    d.style.borderBottom = "1px solid var(--border)";
+    d.className = "kit-order-box";
 
     const head = document.createElement("div");
-    head.style.cssText = "font-size:0.82rem;font-weight:800;color:var(--accent);margin-bottom:0.4rem";
+    head.className = "kit-order-box-head";
     const hm = new Date(og.orderCreatedAt || 0).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-    head.textContent = (og.tableName || "卓未設定") + " · 注文 " + hm;
+    const headText = (og.tableName || "卓未設定") + " · " + hm;
+    head.textContent = headText;
+    head.title = headText;
     d.appendChild(head);
 
-    for (let i = 0; i < og.lines.length; i++) {
-      const ln = og.lines[i];
+    const body = document.createElement("div");
+    body.className = "kit-order-box-body";
+
+    for (const ln of og.lines) {
       const row = document.createElement("div");
-      if (i > 0) {
-        row.style.cssText = "margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid #f1f5f9";
-      }
+      row.className = "kit-line-box";
       const tag = ln.kitchenStationName ? "〈" + ln.kitchenStationName + "〉 " : "";
       const name = document.createElement("div");
+      name.className = "kit-line-name";
       name.textContent = tag + ln.nameSnapshot + " ×" + ln.qty;
       const extraTxt = orderLineExtraSubtext(ln.lineExtra);
       const actions = document.createElement("div");
-      actions.className = "row";
-      actions.style.marginTop = "0.35rem";
+      actions.className = "kit-line-actions";
       if (ln.status === "queued") {
         const b = document.createElement("button");
         b.className = "btn-ghost";
@@ -797,14 +802,15 @@ function renderKitList() {
       row.appendChild(name);
       if (extraTxt) {
         const ex = document.createElement("div");
-        ex.className = "muted";
-        ex.style.cssText = "font-size:0.74rem;margin-top:0.25rem;white-space:pre-line;line-height:1.35";
+        ex.className = "kit-line-extra";
         ex.textContent = extraTxt;
+        ex.title = extraTxt;
         row.appendChild(ex);
       }
       row.appendChild(actions);
-      d.appendChild(row);
+      body.appendChild(row);
     }
+    d.appendChild(body);
     box.appendChild(d);
   }
   finishCookTimerUi();
@@ -866,7 +872,10 @@ async function refreshKitchen() {
     renderFilterControls();
     renderKitList();
   } catch (e) {
-    if (box) box.textContent = String(e.message || e);
+    if (box) {
+      box.className = "card";
+      box.textContent = String(e.message || e);
+    }
   }
 }
 

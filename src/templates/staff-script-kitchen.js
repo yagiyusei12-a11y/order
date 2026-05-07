@@ -101,7 +101,7 @@ function playCookTimerCompleteSound() {
   } catch (_) {}
 }
 
-/** 新規注文（キッチン絞り込みに合う queued 行が増えたとき） */
+/** 新規注文（キッチン絞り込みに合う queued 行が増えたとき）— 低め・長め・繰り返しで遠くでも聞き取りやすく */
 function playNewKitchenOrderSound() {
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -110,21 +110,42 @@ function playNewKitchenOrderSound() {
     const ctx = kitAudioCtx;
     if (ctx.state === "suspended") ctx.resume();
     const now = ctx.currentTime;
-    const beep = (freq, t0, len, vol) => {
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.type = "triangle";
-      o.frequency.value = freq;
-      g.gain.setValueAtTime(0, t0);
-      g.gain.linearRampToValueAtTime(vol, t0 + 0.02);
-      g.gain.linearRampToValueAtTime(0, t0 + len);
-      o.connect(g);
-      g.connect(ctx.destination);
-      o.start(t0);
-      o.stop(t0 + len + 0.02);
+    const atk = 0.025;
+    /** 基音（三角）＋弱い倍音（矩形）で中低音域でも抜けを出す */
+    const chime = (freq, t0, dur, peak) => {
+      const master = ctx.createGain();
+      master.gain.value = 1;
+      master.connect(ctx.destination);
+      const mk = (type, mul) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = type;
+        o.frequency.value = freq;
+        const p = peak * mul;
+        g.gain.setValueAtTime(0, t0);
+        g.gain.linearRampToValueAtTime(p, t0 + atk);
+        g.gain.setValueAtTime(p, t0 + Math.max(atk, dur - atk * 2));
+        g.gain.linearRampToValueAtTime(0, t0 + dur);
+        o.connect(g);
+        g.connect(master);
+        o.start(t0);
+        o.stop(t0 + dur + 0.04);
+      };
+      mk("triangle", 1);
+      mk("square", 0.22);
     };
-    beep(523, now, 0.1, 0.11);
-    beep(659, now + 0.12, 0.1, 0.11);
+    const lo = 315;
+    const hi = 470;
+    const note = 0.34;
+    const gap = 0.12;
+    const betweenPhrases = 0.22;
+    let t = now;
+    for (let phrase = 0; phrase < 2; phrase++) {
+      chime(lo, t, note, 0.42);
+      t += note + gap;
+      chime(hi, t, note, 0.42);
+      t += note + gap + betweenPhrases;
+    }
   } catch (_) {}
 }
 

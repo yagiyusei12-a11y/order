@@ -1298,7 +1298,7 @@
               "<div class=\"opt-row opt-row-fixed\" style=\"cursor:default\">" +
               "<span class=\"opt-fixed-tag\">付属</span>" +
               "<span class=\"opt-name\">" +
-              escapeHtml(ch.name) +
+              escapeHtml((ch.name || "").trim() || "（名称未設定）") +
               "</span><span class=\"opt-price\">" +
               priceTxt +
               "</span></div>";
@@ -1686,15 +1686,15 @@
           const id = fc.menuItemId;
           if (!id || seenInStep.has(id)) continue;
           seenInStep.add(id);
-          const n = String(fc.name || "").trim();
-          if (n) names.push(n);
+          const n = String(fc.name || "").trim() || "（名称未設定）";
+          names.push(n);
         }
         for (const ch of st.choices || []) {
           const id = ch.menuItemId;
           if (!id || seenInStep.has(id)) continue;
           seenInStep.add(id);
-          const n = String(ch.name || "").trim();
-          if (n) names.push(n);
+          const n = String(ch.name || "").trim() || "（名称未設定）";
+          names.push(n);
         }
         if (names.length === 0) continue;
         const joined = names.join("、");

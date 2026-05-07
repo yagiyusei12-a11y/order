@@ -243,16 +243,15 @@ function mapGuestSetMenuItem(
         containsAlcohol: comp.containsAlcohol === true,
       };
       if (ch.isFixed === true) {
-        if (!comp.isAvailable || !comp.category.visibleToGuest || !componentVisibleToGuest(comp.category, nowMin)) {
-          return null;
-        }
+        // 標準付属は「セットの一部」なので、カテゴリのゲスト表示設定に関わらず表示対象にする。
+        //（ゲスト非表示カテゴリを参照しているだけでセット自体が消えるのを防ぐ）
+        if (!comp.isAvailable) return null;
         if (soldOut) return null;
         fixedChoices.push(row);
         continue;
       }
       if (!comp.isAvailable) continue;
-      if (!comp.category.visibleToGuest) continue;
-      if (!componentVisibleToGuest(comp.category, nowMin)) continue;
+      // セットの選択肢もカテゴリのゲスト表示設定に関わらず表示対象にする
       choices.push(row);
     }
     const selectable = choices.filter((c) => !c.soldOut).length;

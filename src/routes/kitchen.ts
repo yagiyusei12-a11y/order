@@ -130,6 +130,83 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
     return updated;
   });
 
+  /** 在庫なし等: 明細キャンセル＋商品を在庫0・販売停止（ゲスト等から注文不可） */
+  app.post<{
+    Params: { storeId: string; lineId: string };
+  }>("/stores/:storeId/kitchen/order-lines/:lineId/cancel-stockout", async (req, reply) => {
+    const line = await prisma.orderLine.findFirst({
+      where: {
+        id: req.params.lineId,
+        order: { session: { storeId: req.params.storeId, status: "open" } },
+      },
+      include: { order: true },
+    });
+    if (!line) return reply.code(404).send({ error: "line not found" });
+    if (line.status === "cancelled") return reply.code(400).send({ error: "order line already cancelled" });
+    if (line.status === "served") return reply.code(400).send({ error: "cannot cancel served line" });
+
+    const noteSuffix = "在庫切れキャンセル（キッチン）";
+    const nextNote = line.note ? `${line.note} / ${noteSuffix}` : noteSuffix;
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const next = await tx.orderLine.update({
+        where: { id: line.id },
+        data: {
+          status: "cancelled",
+          note: nextNote,
+          readyAt: null,
+          servedAt: null,
+        },
+      });
+
+      if (line.menuItemId) {
+        const item = await tx.menuItem.findFirst({
+          where: { id: line.menuItemId, category: { storeId: req.params.storeId } },
+        });
+        if (item) {
+          if (item.stockQty !== null) {
+            await tx.menuItem.update({
+              where: { id: item.id },
+              data: { stockQty: { increment: line.qty } },
+            });
+          }
+          await tx.menuItem.update({
+            where: { id: item.id },
+            data: { stockQty: 0, isAvailable: false },
+          });
+        }
+      }
+
+      return next;
+    });
+
+    const allLines = await prisma.orderLine.findMany({ where: { orderId: line.orderId } });
+    const activeLines = allLines.filter((x) => x.status !== "cancelled");
+    if (activeLines.length === 0) {
+      await prisma.salesOrder.update({
+        where: { id: line.orderId },
+        data: { status: "cancelled" },
+      });
+    } else if (activeLines.every((x) => x.status === "served")) {
+      await prisma.salesOrder.update({
+        where: { id: line.orderId },
+        data: { status: "served" },
+      });
+    } else if (activeLines.some((x) => x.status === "cooking" || x.status === "done")) {
+      await prisma.salesOrder.update({
+        where: { id: line.orderId },
+        data: { status: "cooking" },
+      });
+    } else {
+      await prisma.salesOrder.update({
+        where: { id: line.orderId },
+        data: { status: "submitted" },
+      });
+    }
+
+    return { ok: true, line: updated };
+  });
+
   app.patch<{
     Params: { storeId: string; orderId: string };
     Body: { status: string };

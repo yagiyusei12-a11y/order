@@ -563,6 +563,18 @@ function applyKitSummaryDoneOptimistic(lineIds) {
   });
 }
 
+/** 在庫切れキャンセル後、凍結・一覧から行を除いてすぐ反映する */
+function applyKitKitchenRemoveLines(lineIds) {
+  if (!lineIds || lineIds.length === 0) return;
+  const idSet = new Set(lineIds.map((id) => String(id)));
+  if (kitSummaryFrozenLines && kitSummaryFrozenLines.length) {
+    kitSummaryFrozenLines = kitSummaryFrozenLines.filter((ln) => !ln || !idSet.has(String(ln.id)));
+  }
+  if (lastLines && lastLines.length) {
+    lastLines = lastLines.filter((ln) => !ln || !idSet.has(String(ln.id)));
+  }
+}
+
 function syncKitPendingUi() {
   const has = Boolean(summaryMode && kitMainTab === "active" && kitSummaryFrozenLines && kitSummaryHasPending);
   const t = has ? "再読込（更新あり）" : "再読込";
@@ -825,7 +837,12 @@ function renderKitList() {
       tableButtons.style.gap = "0.28rem";
       tableButtons.style.flexDirection = "column";
       tableButtons.style.alignItems = "stretch";
+      const lineById = new Map(lines.map((ln) => [String(ln.id), ln]));
       for (const [t, info] of [...g.byTable.entries()].sort((a, b) => a[0].localeCompare(b[0], "ja"))) {
+        const cell = document.createElement("div");
+        cell.style.display = "flex";
+        cell.style.flexDirection = "column";
+        cell.style.gap = "0.28rem";
         const b = document.createElement("button");
         b.type = "button";
         b.className = "btn-ghost";
@@ -849,7 +866,33 @@ function renderKitList() {
             }
           }
         };
-        tableButtons.appendChild(b);
+        cell.appendChild(b);
+        const sampleLn = info.lineIds.map((id) => lineById.get(String(id))).find((x) => x);
+        const hasMenuItem = Boolean(sampleLn && sampleLn.menuItemId);
+        const bs = document.createElement("button");
+        bs.type = "button";
+        bs.className = "btn-ghost kit-btn-stockout";
+        bs.style.width = "100%";
+        bs.style.boxSizing = "border-box";
+        bs.style.fontSize = "0.65rem";
+        bs.textContent = t + " · 在庫切れキャンセル（" + info.lineIds.length + "件）";
+        bs.title = "在庫がない場合：この卓ぶんの明細をキャンセルし、商品を販売停止（在庫0）にします";
+        bs.onclick = async () => {
+          const msg =
+            "「" +
+            g.nameSnapshot +
+            "」 " +
+            t +
+            " · " +
+            info.lineIds.length +
+            "件を在庫切れでキャンセルしますか？\n\n" +
+            (hasMenuItem
+              ? "・注文明細がキャンセルされます\n・商品マスタは在庫0・販売停止になり、ゲスト・ハンディから注文できなくなります\n\n※ 再販する場合はメニュー管理で在庫・販売を戻してください。"
+              : "・注文明細がキャンセルされます（メニューに紐づかないため商品マスタは変わりません）");
+          await cancelKitchenLinesStockout(info.lineIds, msg, bs);
+        };
+        cell.appendChild(bs);
+        tableButtons.appendChild(cell);
       }
       const cs1 = normCookTimerSec(g.cookTimerSec);
       const cs2 = normCookTimerSec(g.cookTimerSec2);
@@ -1022,6 +1065,28 @@ function renderKitList() {
         b2.onclick = () => setLine(ln.id, "done");
         statusRow.appendChild(b2);
       }
+      if (ln.status === "queued" || ln.status === "cooking" || ln.status === "done") {
+        const bStock = document.createElement("button");
+        bStock.type = "button";
+        bStock.className = "btn-ghost kit-btn-stockout";
+        bStock.textContent = "在庫切れキャンセル";
+        bStock.title =
+          "在庫がない場合：この明細をキャンセルし、商品マスタを在庫0・販売停止にします（ゲスト・ハンディから注文不可）";
+        bStock.onclick = () => {
+          const hasM = Boolean(ln.menuItemId);
+          const msg =
+            "「" +
+            (ln.nameSnapshot || "品目") +
+            "」×" +
+            (ln.qty != null ? ln.qty : 1) +
+            " を在庫切れでキャンセルしますか？\n\n" +
+            (hasM
+              ? "・注文明細がキャンセルされます\n・商品マスタは在庫0・販売停止になり、ゲスト・ハンディから注文できなくなります\n\n※ 再販する場合はメニュー管理で在庫・販売を戻してください。"
+              : "・注文明細がキャンセルされます（メニューに紐づかないため商品マスタは変わりません）");
+          cancelKitchenLinesStockout([ln.id], msg, bStock);
+        };
+        statusRow.appendChild(bStock);
+      }
       if (timersRow.childNodes.length) {
         wrap.classList.add("kit-line-actions-has-timers");
         wrap.appendChild(timersRow);
@@ -1118,6 +1183,41 @@ async function refreshKitchen() {
     if (box) {
       box.className = "card";
       box.textContent = String(e.message || e);
+    }
+  }
+}
+
+/**
+ * @param {string[]} lineIds
+ * @param {string} confirmMessage
+ * @param {HTMLButtonElement | null} [busyBtn]
+ */
+async function cancelKitchenLinesStockout(lineIds, confirmMessage, busyBtn) {
+  if (!lineIds || lineIds.length === 0) return;
+  if (!confirm(confirmMessage)) return;
+  const prevText = busyBtn && busyBtn.textContent;
+  if (busyBtn) {
+    busyBtn.disabled = true;
+    busyBtn.textContent = "処理中…";
+  }
+  try {
+    await Promise.all(
+      lineIds.map((lineId) =>
+        api(
+          "/stores/" + encodeURIComponent(STORE) + "/kitchen/order-lines/" + encodeURIComponent(lineId) + "/cancel-stockout",
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }
+        )
+      )
+    );
+    applyKitKitchenRemoveLines(lineIds);
+    renderKitList();
+    await refreshKitchen();
+  } catch (e) {
+    log(String(e.message || e));
+  } finally {
+    if (busyBtn && busyBtn.isConnected) {
+      busyBtn.disabled = false;
+      if (prevText != null) busyBtn.textContent = prevText;
     }
   }
 }

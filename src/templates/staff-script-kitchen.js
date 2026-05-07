@@ -812,11 +812,6 @@ function renderKitList() {
       nameEl.className = "kit-summary-head-name";
       nameEl.textContent = g.nameSnapshot;
       nameRow.appendChild(nameEl);
-      const nameHint = document.createElement("span");
-      nameHint.className = "kit-stockout-name-hint";
-      nameHint.textContent = "キャンセル";
-      nameHint.title = "下の「在庫切れ」でこの商品の明細をキャンセルできます";
-      nameRow.appendChild(nameHint);
       main.appendChild(nameRow);
       const timeEl = document.createElement("div");
       timeEl.className = "kit-summary-head-time";
@@ -877,14 +872,23 @@ function renderKitList() {
         cell.appendChild(b);
         const sampleLn = info.lineIds.map((id) => lineById.get(String(id))).find((x) => x);
         const hasMenuItem = Boolean(sampleLn && sampleLn.menuItemId);
+        const rowCancel = document.createElement("div");
+        rowCancel.className = "kit-summary-cancel-row";
+        rowCancel.style.display = "flex";
+        rowCancel.style.alignItems = "center";
+        rowCancel.style.justifyContent = "space-between";
+        rowCancel.style.gap = "0.35rem";
+        rowCancel.style.flexWrap = "wrap";
+        const cancelLbl = document.createElement("span");
+        cancelLbl.className = "muted";
+        cancelLbl.style.fontSize = "0.62rem";
+        cancelLbl.textContent = t + " · " + info.lineIds.length + "件";
         const bs = document.createElement("button");
         bs.type = "button";
-        bs.className = "btn-ghost kit-btn-stockout";
-        bs.style.width = "100%";
-        bs.style.boxSizing = "border-box";
-        bs.style.fontSize = "0.65rem";
-        bs.textContent = t + " · 在庫切れ（" + info.lineIds.length + "件）";
-        bs.title = "在庫がない場合：この卓ぶんの明細をキャンセルし、商品を販売停止（在庫0）にします（実行前に確認します）";
+        bs.className = "kit-cancel-text-btn";
+        bs.textContent = "キャンセル";
+        bs.title =
+          "在庫切れなどで取り消す（確認のあと明細キャンセル・必要なら商品を販売停止・在庫0）";
         bs.onclick = async () => {
           const msg =
             "対象：「" +
@@ -899,7 +903,9 @@ function renderKitList() {
               : "・注文明細がキャンセルされます（メニューに紐づかないため商品マスタは変わりません）");
           await cancelKitchenLinesStockout(info.lineIds, msg, bs);
         };
-        cell.appendChild(bs);
+        rowCancel.appendChild(cancelLbl);
+        rowCancel.appendChild(bs);
+        cell.appendChild(rowCancel);
         tableButtons.appendChild(cell);
       }
       const cs1 = normCookTimerSec(g.cookTimerSec);
@@ -1026,11 +1032,26 @@ function renderKitList() {
       name.textContent = tag + ln.nameSnapshot + " ×" + ln.qty;
       nameRow.appendChild(name);
       if (ln.status === "queued" || ln.status === "cooking" || ln.status === "done") {
-        const nameHint = document.createElement("span");
-        nameHint.className = "kit-stockout-name-hint";
-        nameHint.textContent = "キャンセル";
-        nameHint.title = "下の「在庫切れキャンセル」でこの明細を取り消せます";
-        nameRow.appendChild(nameHint);
+        const cancelTxt = document.createElement("button");
+        cancelTxt.type = "button";
+        cancelTxt.className = "kit-cancel-text-btn";
+        cancelTxt.textContent = "キャンセル";
+        cancelTxt.title =
+          "在庫切れなどで取り消す（確認のあと明細キャンセル・必要なら商品を販売停止・在庫0）";
+        cancelTxt.onclick = async () => {
+          const hasM = Boolean(ln.menuItemId);
+          const msg =
+            "対象：「" +
+            (ln.nameSnapshot || "品目") +
+            "」×" +
+            (ln.qty != null ? ln.qty : 1) +
+            "\n\n" +
+            (hasM
+              ? "・注文明細がキャンセルされます\n・商品マスタは在庫0・販売停止になり、ゲスト・ハンディから注文できなくなります\n\n※ 再販する場合はメニュー管理で在庫・販売を戻してください。"
+              : "・注文明細がキャンセルされます（メニューに紐づかないため商品マスタは変わりません）");
+          await cancelKitchenLinesStockout([ln.id], msg, cancelTxt);
+        };
+        nameRow.appendChild(cancelTxt);
       }
       const extraTxt = orderLineExtraSubtext(ln.lineExtra);
       const wrap = document.createElement("div");
@@ -1082,28 +1103,6 @@ function renderKitList() {
         b2.textContent = "調理済";
         b2.onclick = () => setLine(ln.id, "done");
         statusRow.appendChild(b2);
-      }
-      if (ln.status === "queued" || ln.status === "cooking" || ln.status === "done") {
-        const bStock = document.createElement("button");
-        bStock.type = "button";
-        bStock.className = "btn-ghost kit-btn-stockout";
-        bStock.textContent = "在庫切れキャンセル";
-        bStock.title =
-          "押すと確認ダイアログが開きます。在庫がない場合：この明細をキャンセルし、商品マスタを在庫0・販売停止にします（ゲスト・ハンディから注文不可）";
-        bStock.onclick = async () => {
-          const hasM = Boolean(ln.menuItemId);
-          const msg =
-            "対象：「" +
-            (ln.nameSnapshot || "品目") +
-            "」×" +
-            (ln.qty != null ? ln.qty : 1) +
-            "\n\n" +
-            (hasM
-              ? "・注文明細がキャンセルされます\n・商品マスタは在庫0・販売停止になり、ゲスト・ハンディから注文できなくなります\n\n※ 再販する場合はメニュー管理で在庫・販売を戻してください。"
-              : "・注文明細がキャンセルされます（メニューに紐づかないため商品マスタは変わりません）");
-          await cancelKitchenLinesStockout([ln.id], msg, bStock);
-        };
-        statusRow.appendChild(bStock);
       }
       if (timersRow.childNodes.length) {
         wrap.classList.add("kit-line-actions-has-timers");

@@ -174,12 +174,32 @@
       color: #0f172a;
       word-break: break-word;
     }
-    .kit-stockout-name-hint {
-      font-size: 0.58rem;
-      font-weight: 700;
-      color: #b91c1c;
-      letter-spacing: 0.03em;
+    .kit-cancel-text-btn {
       flex-shrink: 0;
+      margin: 0;
+      padding: 0.12rem 0.38rem;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: #b91c1c;
+      font: inherit;
+      font-size: 0.65rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 0.15em;
+    }
+    .kit-cancel-text-btn:hover {
+      color: #991b1b;
+      background: #fef2f2;
+    }
+    .kit-cancel-text-btn:disabled {
+      opacity: 0.55;
+      cursor: wait;
+    }
+    .kit-summary-cancel-row {
+      width: 100%;
     }
     .kit-line-extra {
       font-size: 0.65rem;
@@ -264,15 +284,6 @@
       background: #fffbeb !important;
       border-color: #fcd34d !important;
       color: #b45309 !important;
-    }
-    .kit-btn-stockout {
-      background: #fef2f2 !important;
-      border-color: #f87171 !important;
-      color: #b91c1c !important;
-      font-weight: 700 !important;
-    }
-    .kit-btn-stockout:hover {
-      background: #fee2e2 !important;
     }
   </style>
   <div id="kitFullExitBar" class="kit-full-exit-bar" hidden>

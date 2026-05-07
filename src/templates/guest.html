@@ -396,6 +396,13 @@
     .detail-desc { margin: 0 0 1rem; font-size: 0.82rem; color: var(--muted); line-height: 1.55; }
 
     .opt-block { margin-bottom: 1.1rem; }
+    .opt-step-choices {
+      max-height: min(52vh, 320px);
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding-right: 0.2rem;
+      margin: 0 -0.15rem 0 0;
+    }
     .opt-block-head {
       display: flex;
       align-items: center;
@@ -421,7 +428,7 @@
     }
     .opt-row {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 0.55rem;
       padding: 0.55rem 0.65rem;
       margin-bottom: 0.35rem;
@@ -431,9 +438,23 @@
       cursor: pointer;
       font-size: 0.86rem;
     }
-    .opt-row input { accent-color: var(--accent); width: 1.1rem; height: 1.1rem; flex-shrink: 0; }
-    .opt-row .opt-name { flex: 1; min-width: 0; }
-    .opt-row .opt-price { font-size: 0.78rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+    .opt-row input { accent-color: var(--accent); width: 1.1rem; height: 1.1rem; flex-shrink: 0; margin-top: 0.15rem; }
+    .opt-row .opt-name {
+      flex: 1;
+      min-width: 0;
+      white-space: normal;
+      word-break: break-word;
+      line-height: 1.4;
+    }
+    .opt-row .opt-price {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+      flex-shrink: 0;
+      align-self: flex-start;
+      padding-top: 0.08rem;
+    }
     .opt-row.is-disabled { opacity: 0.45; pointer-events: none; }
     .opt-row-fixed {
       padding-left: 0.15rem;
@@ -1232,7 +1253,7 @@
             st.minPick +
             "〜" +
             st.maxPick +
-            "品</span></div>";
+            "品</span></div><div class=\"opt-step-choices\">";
           for (const ch of st.fixedChoices || []) {
             const ex = Number(ch.extraPrice || 0);
             const incl = choiceExtraInclusive(ch);
@@ -1283,7 +1304,7 @@
               priceTxt +
               "</span></label>";
           }
-          bodyInner += "</div>";
+          bodyInner += "</div></div>";
         }
       } else if (item.optionGroups && item.optionGroups.length) {
         for (const g of item.optionGroups) {

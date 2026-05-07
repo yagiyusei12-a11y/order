@@ -806,10 +806,18 @@ function renderKitList() {
         sta.textContent = "〈" + g.kitchenStationName + "〉";
         main.appendChild(sta);
       }
+      const nameRow = document.createElement("div");
+      nameRow.className = "kit-summary-head-name-row";
       const nameEl = document.createElement("div");
       nameEl.className = "kit-summary-head-name";
       nameEl.textContent = g.nameSnapshot;
-      main.appendChild(nameEl);
+      nameRow.appendChild(nameEl);
+      const nameHint = document.createElement("span");
+      nameHint.className = "kit-stockout-name-hint";
+      nameHint.textContent = "キャンセル";
+      nameHint.title = "下の「在庫切れ」でこの商品の明細をキャンセルできます";
+      nameRow.appendChild(nameHint);
+      main.appendChild(nameRow);
       const timeEl = document.createElement("div");
       timeEl.className = "kit-summary-head-time";
       timeEl.textContent = "最古 " + hm;
@@ -875,17 +883,17 @@ function renderKitList() {
         bs.style.width = "100%";
         bs.style.boxSizing = "border-box";
         bs.style.fontSize = "0.65rem";
-        bs.textContent = t + " · 在庫切れキャンセル（" + info.lineIds.length + "件）";
-        bs.title = "在庫がない場合：この卓ぶんの明細をキャンセルし、商品を販売停止（在庫0）にします";
+        bs.textContent = t + " · 在庫切れ（" + info.lineIds.length + "件）";
+        bs.title = "在庫がない場合：この卓ぶんの明細をキャンセルし、商品を販売停止（在庫0）にします（実行前に確認します）";
         bs.onclick = async () => {
           const msg =
-            "「" +
+            "対象：「" +
             g.nameSnapshot +
-            "」 " +
+            "」／ " +
             t +
             " · " +
             info.lineIds.length +
-            "件を在庫切れでキャンセルしますか？\n\n" +
+            "件\n\n" +
             (hasMenuItem
               ? "・注文明細がキャンセルされます\n・商品マスタは在庫0・販売停止になり、ゲスト・ハンディから注文できなくなります\n\n※ 再販する場合はメニュー管理で在庫・販売を戻してください。"
               : "・注文明細がキャンセルされます（メニューに紐づかないため商品マスタは変わりません）");
@@ -1011,9 +1019,19 @@ function renderKitList() {
       const row = document.createElement("div");
       row.className = "kit-line-box";
       const tag = ln.kitchenStationName ? "〈" + ln.kitchenStationName + "〉 " : "";
+      const nameRow = document.createElement("div");
+      nameRow.className = "kit-line-name-row";
       const name = document.createElement("div");
       name.className = "kit-line-name";
       name.textContent = tag + ln.nameSnapshot + " ×" + ln.qty;
+      nameRow.appendChild(name);
+      if (ln.status === "queued" || ln.status === "cooking" || ln.status === "done") {
+        const nameHint = document.createElement("span");
+        nameHint.className = "kit-stockout-name-hint";
+        nameHint.textContent = "キャンセル";
+        nameHint.title = "下の「在庫切れキャンセル」でこの明細を取り消せます";
+        nameRow.appendChild(nameHint);
+      }
       const extraTxt = orderLineExtraSubtext(ln.lineExtra);
       const wrap = document.createElement("div");
       wrap.className = "kit-line-actions-wrap";
@@ -1071,19 +1089,19 @@ function renderKitList() {
         bStock.className = "btn-ghost kit-btn-stockout";
         bStock.textContent = "在庫切れキャンセル";
         bStock.title =
-          "在庫がない場合：この明細をキャンセルし、商品マスタを在庫0・販売停止にします（ゲスト・ハンディから注文不可）";
-        bStock.onclick = () => {
+          "押すと確認ダイアログが開きます。在庫がない場合：この明細をキャンセルし、商品マスタを在庫0・販売停止にします（ゲスト・ハンディから注文不可）";
+        bStock.onclick = async () => {
           const hasM = Boolean(ln.menuItemId);
           const msg =
-            "「" +
+            "対象：「" +
             (ln.nameSnapshot || "品目") +
             "」×" +
             (ln.qty != null ? ln.qty : 1) +
-            " を在庫切れでキャンセルしますか？\n\n" +
+            "\n\n" +
             (hasM
               ? "・注文明細がキャンセルされます\n・商品マスタは在庫0・販売停止になり、ゲスト・ハンディから注文できなくなります\n\n※ 再販する場合はメニュー管理で在庫・販売を戻してください。"
               : "・注文明細がキャンセルされます（メニューに紐づかないため商品マスタは変わりません）");
-          cancelKitchenLinesStockout([ln.id], msg, bStock);
+          await cancelKitchenLinesStockout([ln.id], msg, bStock);
         };
         statusRow.appendChild(bStock);
       }
@@ -1092,7 +1110,7 @@ function renderKitList() {
         wrap.appendChild(timersRow);
       }
       if (statusRow.childNodes.length) wrap.appendChild(statusRow);
-      row.appendChild(name);
+      row.appendChild(nameRow);
       if (extraTxt) {
         const ex = document.createElement("div");
         ex.className = "kit-line-extra";
@@ -1194,7 +1212,12 @@ async function refreshKitchen() {
  */
 async function cancelKitchenLinesStockout(lineIds, confirmMessage, busyBtn) {
   if (!lineIds || lineIds.length === 0) return;
-  if (!confirm(confirmMessage)) return;
+  const fullMessage =
+    "【確認】在庫切れキャンセルを実行しますか？\n\n" +
+    "誤って押した場合は「いいえ」または「キャンセル」で閉じてください。\n\n" +
+    "────────────────\n\n" +
+    confirmMessage;
+  if (!window.confirm(fullMessage)) return;
   const prevText = busyBtn && busyBtn.textContent;
   if (busyBtn) {
     busyBtn.disabled = true;

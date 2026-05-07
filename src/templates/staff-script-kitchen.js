@@ -6,6 +6,8 @@ let metaLoaded = false;
 let allCategories = [];
 let allStations = [];
 let summaryMode = false;
+/** @type {"active" | "history"} */
+let kitMainTab = "active";
 /** @type {Map<string, { endAt: number; seconds: number; productName: string; stripTag?: string }>} */
 const kitCookDeadlines = new Map();
 let kitCookTick = null;
@@ -433,9 +435,160 @@ async function ensureMeta() {
   renderFilterControls();
 }
 
+function syncKitTabChrome() {
+  const h = document.getElementById("kitTabHistory");
+  const a = document.getElementById("kitTabActive");
+  if (h) {
+    h.classList.toggle("is-on", kitMainTab === "history");
+    h.setAttribute("aria-selected", kitMainTab === "history" ? "true" : "false");
+  }
+  if (a) {
+    a.classList.toggle("is-on", kitMainTab === "active");
+    a.setAttribute("aria-selected", kitMainTab === "active" ? "true" : "false");
+  }
+  const showActive = kitMainTab === "active";
+  const sum = document.getElementById("btnKitSummary");
+  const fsSum = document.getElementById("btnKitFsSummary");
+  const strip = document.getElementById("kitTimerStrip");
+  if (sum) sum.style.display = showActive ? "" : "none";
+  if (fsSum) fsSum.style.display = showActive ? "" : "none";
+  if (strip) strip.style.display = showActive ? "" : "none";
+}
+
+function kitLineReadyAtMs(ln) {
+  if (ln.readyAt) {
+    const t = new Date(ln.readyAt).getTime();
+    if (!Number.isNaN(t)) return t;
+  }
+  return new Date(ln.orderCreatedAt || 0).getTime();
+}
+
+function formatKitLineReadyAt(ln) {
+  if (ln.readyAt) {
+    const d = new Date(ln.readyAt);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleString("ja-JP", {
+        month: "numeric",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+    }
+  }
+  return "—";
+}
+
+/** 注文履歴タブ: 調理済（done）のみ。戻すで待ちに戻す。 */
+function renderKitHistoryList(box, lines) {
+  syncKitTabChrome();
+  if (!box) return;
+  const hist = lines.filter((ln) => ln.status === "done");
+  if (hist.length === 0) {
+    box.className = "card";
+    if (lastLines.length === 0) {
+      box.innerHTML =
+        "<div class=\"kit-empty\"><div class=\"ico\">☕</div><div>注文がありません</div><p class=\"muted\" style=\"margin:0.5rem 0 0;font-size:0.8rem\">進行中の明細がここに並びます</p></div>";
+    } else if (lines.length === 0) {
+      box.innerHTML =
+        "<div class=\"kit-empty\"><div class=\"ico\">🔎</div><div>条件に一致する行がありません</div><p class=\"muted\" style=\"margin:0.5rem 0 0;font-size:0.8rem\">絞り込みを解除するか、選択を変えてください。</p></div>";
+    } else {
+      box.innerHTML =
+        "<div class=\"kit-empty\"><div class=\"ico\">📋</div><div>調理済の明細はありません</div><p class=\"muted\" style=\"margin:0.5rem 0 0;font-size:0.8rem\">「進行中の注文」で調理済にするとここに表示されます。</p></div>";
+    }
+    return;
+  }
+
+  const byOrder = new Map();
+  for (const ln of hist) {
+    const oid = ln.orderId || ln.id;
+    let g = byOrder.get(oid);
+    if (!g) {
+      g = {
+        orderId: oid,
+        tableName: ln.tableName || "",
+        orderCreatedAt: ln.orderCreatedAt,
+        lines: [],
+      };
+      byOrder.set(oid, g);
+    }
+    g.lines.push(ln);
+  }
+  const orderGroups = [...byOrder.values()].sort((a, b) => {
+    const ta = Math.min(...a.lines.map(kitLineReadyAtMs));
+    const tb = Math.min(...b.lines.map(kitLineReadyAtMs));
+    if (ta !== tb) return ta - tb;
+    return String(a.orderId).localeCompare(String(b.orderId));
+  });
+
+  box.className = "card kit-layout-normal";
+  box.innerHTML = "";
+  for (const og of orderGroups) {
+    og.lines.sort((a, b) => kitLineReadyAtMs(a) - kitLineReadyAtMs(b) || String(a.id).localeCompare(String(b.id)));
+    const d = document.createElement("div");
+    d.className = "kit-order-box";
+
+    const head = document.createElement("div");
+    head.className = "kit-order-box-head kit-history-head";
+    const hm = new Date(og.orderCreatedAt || 0).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+    const headText = (og.tableName || "卓未設定") + " · 注文 " + hm;
+    head.textContent = headText;
+    head.title = headText;
+    d.appendChild(head);
+
+    const body = document.createElement("div");
+    body.className = "kit-order-box-body";
+
+    for (const ln of og.lines) {
+      const row = document.createElement("div");
+      row.className = "kit-line-box";
+      const tag = ln.kitchenStationName ? "〈" + ln.kitchenStationName + "〉 " : "";
+      const name = document.createElement("div");
+      name.className = "kit-line-name";
+      name.textContent = tag + ln.nameSnapshot + " ×" + ln.qty;
+      const meta = document.createElement("div");
+      meta.className = "kit-history-done-meta";
+      meta.textContent = "調理完了 " + formatKitLineReadyAt(ln);
+      const extraTxt = orderLineExtraSubtext(ln.lineExtra);
+      const wrap = document.createElement("div");
+      wrap.className = "kit-line-actions-wrap";
+      const statusRow = document.createElement("div");
+      statusRow.className = "kit-line-actions-status";
+      const rev = document.createElement("button");
+      rev.type = "button";
+      rev.className = "btn-ghost kit-btn-revert";
+      rev.textContent = "戻す（未調理に戻す）";
+      rev.title = "誤って調理済にした場合、待ちの注文に戻します";
+      rev.onclick = () => setLine(ln.id, "queued");
+      statusRow.appendChild(rev);
+      wrap.appendChild(statusRow);
+      row.appendChild(name);
+      row.appendChild(meta);
+      if (extraTxt) {
+        const ex = document.createElement("div");
+        ex.className = "kit-line-extra";
+        ex.textContent = extraTxt;
+        ex.title = extraTxt;
+        row.appendChild(ex);
+      }
+      row.appendChild(wrap);
+      body.appendChild(row);
+    }
+    d.appendChild(body);
+    box.appendChild(d);
+  }
+}
+
 function renderKitList() {
   const box = document.getElementById("kit");
+  if (!box) return;
   const lines = filterLines(lastLines);
+  if (kitMainTab === "history") {
+    renderKitHistoryList(box, lines);
+    finishCookTimerUi();
+    return;
+  }
+  syncKitTabChrome();
   if (lines.length === 0) {
     box.className = "card";
     if (lastLines.length === 0) {
@@ -638,7 +791,7 @@ function renderKitList() {
         "件中 0件表示）</p></div>";
     } else {
       box.innerHTML =
-        "<div class=\"kit-empty\"><div class=\"ico\">✅</div><div>未調理の明細はありません</div><p class=\"muted\" style=\"margin:0.5rem 0 0;font-size:0.8rem\">調理済みは「調理済・提供」画面でお渡し後に提供済にしてください。</p></div>";
+        "<div class=\"kit-empty\"><div class=\"ico\">✅</div><div>未調理の明細はありません</div><p class=\"muted\" style=\"margin:0.5rem 0 0;font-size:0.8rem\">調理済は<strong>注文履歴</strong>タブで確認・戻せます。お渡し後は「調理済・提供」で提供済にしてください。</p></div>";
     }
     finishCookTimerUi();
     return;
@@ -894,6 +1047,21 @@ document.getElementById("btnRefKit").onclick = () => {
 document.getElementById("btnKitSummary").onclick = () => toggleSummaryMode();
 
 document.getElementById("btnKitFullList").onclick = () => applyKitListFullscreen(true);
+
+{
+  const th = document.getElementById("kitTabHistory");
+  const ta = document.getElementById("kitTabActive");
+  if (th)
+    th.onclick = () => {
+      kitMainTab = "history";
+      renderKitList();
+    };
+  if (ta)
+    ta.onclick = () => {
+      kitMainTab = "active";
+      renderKitList();
+    };
+}
 document.getElementById("btnKitFullExit").onclick = () => applyKitListFullscreen(false);
 {
   const b = document.getElementById("btnKitFsRef");

@@ -230,6 +230,22 @@
       padding-top: 0;
       border-top: none;
     }
+    .kit-order-box-head.kit-history-head {
+      background: #ecfdf5;
+      color: #166534;
+      border-bottom-color: #86efac;
+    }
+    .kit-history-done-meta {
+      font-size: 0.65rem;
+      font-weight: 600;
+      color: #0f766e;
+      margin-top: 0.15rem;
+    }
+    .kit-line-actions-status button.kit-btn-revert {
+      background: #fffbeb !important;
+      border-color: #fcd34d !important;
+      color: #b45309 !important;
+    }
   </style>
   <div id="kitFullExitBar" class="kit-full-exit-bar" hidden>
     <span class="kit-full-exit-title">キッチン · リスト全画面</span>
@@ -241,9 +257,9 @@
   </div>
   <div class="kit-fs-hide">
     <div class="top-tabs" role="tablist" aria-label="注文ビュー">
-      <button type="button">注文履歴</button>
-      <button type="button" class="is-on">進行中の注文</button>
-      <button type="button">予約注文管理</button>
+      <button type="button" id="kitTabHistory" role="tab" aria-selected="false">注文履歴（調理済）</button>
+      <button type="button" id="kitTabActive" class="is-on" role="tab" aria-selected="true">進行中の注文</button>
+      <button type="button" id="kitTabReserve" role="tab" aria-selected="false" disabled style="opacity:0.45;cursor:not-allowed" title="未対応">予約注文管理</button>
     </div>
     <div class="row" style="margin-bottom:0.5rem">
       <button type="button" class="btn-ghost" id="btnRefKit">再読込</button>

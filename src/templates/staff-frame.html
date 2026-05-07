@@ -85,7 +85,54 @@
       box-shadow: var(--shadow);
     }
     .topbar .brand { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
-    .topbar .brand strong { font-size: 0.95rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60vw; }
+    .topbar .brand-top {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+    .topbar .brand-top strong {
+      font-size: 0.95rem;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: min(52vw, 20rem);
+    }
+    .topbar-guest-links {
+      display: flex;
+      align-items: center;
+      gap: 0.2rem;
+      flex-shrink: 0;
+    }
+    .topbar-guest-link {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      background: #f9fafb;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .topbar-guest-link:hover {
+      background: #fff;
+      color: var(--accent);
+      border-color: #fed7aa;
+    }
+    .topbar-guest-link svg {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
     .topbar .brand span { font-size: 0.72rem; color: var(--muted); }
     .topbar .actions { display: flex; align-items: center; gap: 0.5rem; }
     .topbar .pill {
@@ -452,12 +499,6 @@
       <a href="/staff-app/__STORE_PATH__/reception/net-settings" class="snav" id="nav-reserve-settings" title="予約設定">
         <svg viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/><path d="M19.4 15a7.9 7.9 0 0 0 .1-1 7.9 7.9 0 0 0-.1-1l2-1.5-2-3.5-2.4 1a7.7 7.7 0 0 0-1.7-1l-.4-2.6h-4l-.4 2.6a7.7 7.7 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a7.9 7.9 0 0 0-.1 1 7.9 7.9 0 0 0 .1 1l-2 1.5 2 3.5 2.4-1a7.7 7.7 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.7 7.7 0 0 0 1.7-1l2.4 1 2-3.5-2-1.5z"/></svg>
       </a>
-      <a href="/reception-app/__STORE_PATH__/front" class="snav" id="nav-reception-front" title="受付（お客様用）" target="_blank" rel="noopener noreferrer">
-        <svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M10 18h4"/></svg>
-      </a>
-      <a href="/reserve-app/__STORE_PATH__" class="snav" id="nav-reserve-front" title="ネット予約（お客様用）" target="_blank" rel="noopener noreferrer">
-        <svg viewBox="0 0 24 24"><path d="M7 3h10v2H7z"/><rect x="5" y="6" width="14" height="15" rx="2"/><path d="M8 10h8M8 14h8M8 18h6"/></svg>
-      </a>
       <a href="/staff-app/__STORE_PATH__/handy" class="snav" id="nav-handy" title="口頭注文">
         <svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M10 18h4"/></svg>
       </a>
@@ -487,7 +528,17 @@
     <div class="col">
       <header class="topbar">
         <div class="brand">
-          <strong id="sid">—</strong>
+          <div class="brand-top">
+            <strong id="sid">—</strong>
+            <div class="topbar-guest-links" aria-label="お客様向けページ">
+              <a href="/reception-app/__STORE_PATH__/front" class="topbar-guest-link" id="nav-reception-front" title="受付（お客様用）" target="_blank" rel="noopener noreferrer">
+                <svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M10 18h4"/></svg>
+              </a>
+              <a href="/reserve-app/__STORE_PATH__" class="topbar-guest-link" id="nav-reserve-front" title="ネット予約（お客様用）" target="_blank" rel="noopener noreferrer">
+                <svg viewBox="0 0 24 24"><path d="M7 3h10v2H7z"/><rect x="5" y="6" width="14" height="15" rx="2"/><path d="M8 10h8M8 14h8M8 18h6"/></svg>
+              </a>
+            </div>
+          </div>
           <span>店舗コンソール</span>
         </div>
         <div class="actions">

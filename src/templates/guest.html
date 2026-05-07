@@ -206,6 +206,43 @@
       overflow: hidden;
       flex: 1;
     }
+    .go-set-components {
+      list-style: none;
+      margin: 0.35rem 0 0;
+      padding: 0;
+      font-size: 0.65rem;
+      line-height: 1.45;
+      color: var(--muted);
+      max-height: 9.5rem;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+    .go-set-li {
+      display: flex;
+      align-items: baseline;
+      gap: 0.35rem;
+      padding: 0.05rem 0;
+    }
+    .go-set-pin {
+      flex: 0 0 2rem;
+      box-sizing: border-box;
+      font-size: 0.55rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      text-align: center;
+      color: var(--muted);
+      background: rgba(0, 0, 0, 0.07);
+      padding: 0.06rem 0.22rem;
+      border-radius: 4px;
+    }
+    .go-set-pin-spacer {
+      flex: 0 0 2rem;
+    }
+    .go-set-li-name {
+      flex: 1;
+      min-width: 0;
+      font-weight: 500;
+    }
     .go-card-price {
       margin-top: 0.45rem;
       font-size: 0.88rem;
@@ -1642,6 +1679,50 @@
       }
     }
 
+    /** セット一覧カード: ステップ順に標準付属と選択候補を列挙（同一単品IDは先頭のみ） */
+    function buildGuestSetComponentsUl(it) {
+      if (it.sellKind !== "set" || !Array.isArray(it.setSteps) || it.setSteps.length === 0) return null;
+      const steps = [...it.setSteps].sort((a, b) => Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0));
+      const seen = new Set();
+      const ul = document.createElement("ul");
+      ul.className = "go-set-components";
+      for (const st of steps) {
+        for (const fc of st.fixedChoices || []) {
+          const id = fc.menuItemId;
+          if (!id || seen.has(id)) continue;
+          seen.add(id);
+          const li = document.createElement("li");
+          li.className = "go-set-li";
+          const pin = document.createElement("span");
+          pin.className = "go-set-pin";
+          pin.textContent = "付属";
+          const nm = document.createElement("span");
+          nm.className = "go-set-li-name";
+          nm.textContent = fc.name || "";
+          li.appendChild(pin);
+          li.appendChild(nm);
+          ul.appendChild(li);
+        }
+        for (const ch of st.choices || []) {
+          const id = ch.menuItemId;
+          if (!id || seen.has(id)) continue;
+          seen.add(id);
+          const li = document.createElement("li");
+          li.className = "go-set-li";
+          const sp = document.createElement("span");
+          sp.className = "go-set-pin-spacer";
+          sp.setAttribute("aria-hidden", "true");
+          const nm = document.createElement("span");
+          nm.className = "go-set-li-name";
+          nm.textContent = ch.name || "";
+          li.appendChild(sp);
+          li.appendChild(nm);
+          ul.appendChild(li);
+        }
+      }
+      return ul.childNodes.length ? ul : null;
+    }
+
     async function loadMenu() {
       const data = await api("/guest/" + encodeURIComponent(TOKEN) + "/menu");
       guestShowMenuPrices = !(data.store && data.store.showMenuPrices === false);
@@ -1966,6 +2047,10 @@
             badges.appendChild(b);
           }
           body.appendChild(title);
+          if (it.sellKind === "set") {
+            const setUl = buildGuestSetComponentsUl(it);
+            if (setUl) body.appendChild(setUl);
+          }
           if (it.description) body.appendChild(meta);
           body.appendChild(price);
           if (badges.childNodes.length) body.appendChild(badges);

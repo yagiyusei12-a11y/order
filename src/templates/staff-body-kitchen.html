@@ -210,6 +210,11 @@
       max-height: 3.2em;
       overflow: hidden;
     }
+    /* まとめ表示ヘッダー内の内訳は全量見せる（切り捨てない） */
+    .kit-summary-head .kit-line-extra {
+      max-height: none;
+      overflow: visible;
+    }
     /* タイマーと調理済を縦に分離（誤タップ防止） */
     .kit-line-actions-wrap {
       display: flex;

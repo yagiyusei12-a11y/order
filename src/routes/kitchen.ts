@@ -17,6 +17,11 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
         ? { status: lineStatus }
         : { status: { in: ["queued", "cooking", "done"] } };
 
+    const orderBy =
+      lineStatus === "done"
+        ? ([{ readyAt: { sort: "asc" as const, nulls: "last" as const } }, { id: "asc" as const }] as const)
+        : ([{ id: "asc" as const }] as const);
+
     const lines = await prisma.orderLine.findMany({
       where: {
         ...whereLine,
@@ -24,7 +29,7 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
           session: { storeId: store.id, status: "open" },
         },
       },
-      orderBy: { id: "asc" },
+      orderBy: [...orderBy],
       include: {
         menuItem: {
           include: {
@@ -64,6 +69,7 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
         orderCreatedAt: l.order.createdAt,
         tableName: l.order.session.table.name,
         sessionId: l.order.sessionId,
+        readyAt: l.readyAt,
       })),
     };
   });
@@ -86,9 +92,16 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
     });
     if (!line) return reply.code(404).send({ error: "line not found" });
 
+    const data: { status: string; readyAt?: Date | null } = { status };
+    if (status === "done") {
+      data.readyAt = new Date();
+    } else if (status === "queued" || status === "cooking") {
+      data.readyAt = null;
+    }
+
     const updated = await prisma.orderLine.update({
       where: { id: line.id },
-      data: { status },
+      data,
     });
 
     const allLines = await prisma.orderLine.findMany({ where: { orderId: line.orderId } });

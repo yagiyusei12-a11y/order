@@ -504,8 +504,11 @@ model OrderLine {
   /// セット注文時の内訳など JSON（kind: set, steps: [...]）
   lineExtra    Json?
   status       String     @default("queued")
+  /// キッチンで「調理済」にした日時（提供待ちの並び順用）
+  readyAt      DateTime?
   order        SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   menuItem     MenuItem?  @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
+  @@index([status, readyAt])
 }

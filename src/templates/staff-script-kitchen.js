@@ -731,7 +731,7 @@ function renderKitList() {
       }
       const tag = ln.kitchenStationName ? "〈" + ln.kitchenStationName + "〉 " : "";
       const name = document.createElement("div");
-      name.textContent = tag + ln.nameSnapshot + " ×" + ln.qty + " · " + ln.status;
+      name.textContent = tag + ln.nameSnapshot + " ×" + ln.qty;
       const extraTxt = orderLineExtraSubtext(ln.lineExtra);
       const actions = document.createElement("div");
       actions.className = "row";

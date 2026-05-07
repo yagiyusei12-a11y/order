@@ -81,8 +81,11 @@ export function buildSetLineExtra(
   const outSteps: Record<string, unknown>[] = [];
   const byDef = new Map(stepDefs.map((s) => [s.id, s]));
   for (const st of steps) {
-    const picked = byStep.get(st.id) ?? [];
+    const pickedUser = byStep.get(st.id) ?? [];
     const def = byDef.get(st.id);
+    const fixedIds = def ? def.choices.filter((c) => c.isFixed === true).map((c) => c.componentMenuItemId) : [];
+    // lineExtra は「選択内容のスナップショット」なので、呼び出し元が fixed を混ぜ忘れても必ず含める
+    const picked = [...new Set([...fixedIds, ...pickedUser])];
     const picks = picked.map((menuItemId) => {
       let ex = 0;
       if (def) {

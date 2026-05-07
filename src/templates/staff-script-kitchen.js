@@ -624,9 +624,28 @@ function renderKitList() {
     finishCookTimerUi();
     return;
   }
+  /** 通常表示: 調理済（done）は出さない（「調理済・提供」画面へ）。待ち・調理中のみ。 */
+  const linesNormal = lines.filter((ln) => ln.status !== "done");
+  if (linesNormal.length === 0) {
+    box.className = "card";
+    if (lastLines.length === 0) {
+      box.innerHTML =
+        "<div class=\"kit-empty\"><div class=\"ico\">☕</div><div>注文がありません</div><p class=\"muted\" style=\"margin:0.5rem 0 0;font-size:0.8rem\">進行中の明細がここに並びます</p></div>";
+    } else if (lines.length === 0) {
+      box.innerHTML =
+        "<div class=\"kit-empty\"><div class=\"ico\">🔎</div><div>条件に一致する行がありません</div><p class=\"muted\" style=\"margin:0.5rem 0 0;font-size:0.8rem\">絞り込みを解除するか、選択を変えてください（全" +
+        lastLines.length +
+        "件中 0件表示）</p></div>";
+    } else {
+      box.innerHTML =
+        "<div class=\"kit-empty\"><div class=\"ico\">✅</div><div>未調理の明細はありません</div><p class=\"muted\" style=\"margin:0.5rem 0 0;font-size:0.8rem\">調理済みは「調理済・提供」画面でお渡し後に提供済にしてください。</p></div>";
+    }
+    finishCookTimerUi();
+    return;
+  }
   /** 通常表示: 1注文（orderId）= 1ブロック、行内は調理場のみ（カテゴリなし） */
   const byOrder = new Map();
-  for (const ln of lines) {
+  for (const ln of linesNormal) {
     const oid = ln.orderId || ln.id;
     let g = byOrder.get(oid);
     if (!g) {
@@ -721,13 +740,6 @@ function renderKitList() {
         b2.textContent = "調理済";
         b2.onclick = () => setLine(ln.id, "done");
         statusRow.appendChild(b2);
-      }
-      if (ln.status === "done") {
-        const b3 = document.createElement("button");
-        b3.className = "btn-ghost";
-        b3.textContent = "提供済";
-        b3.onclick = () => setLine(ln.id, "served");
-        statusRow.appendChild(b3);
       }
       if (timersRow.childNodes.length) {
         wrap.classList.add("kit-line-actions-has-timers");

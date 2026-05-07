@@ -12,6 +12,12 @@ const kitCookDeadlines = new Map();
 let kitCookTick = null;
 let kitAudioCtx = null;
 
+/** 絞り込み対象の新規注文行検知（自動更新用） */
+let kitKitchenDataInitialized = false;
+/** @type {Set<string>} */
+let kitPrevFilteredQueuedIds = new Set();
+let kitPrevFilterSig = "";
+
 const KIT_COOK_UI_MS = 250;
 
 function normCookTimerSec(v) {
@@ -93,6 +99,39 @@ function playCookTimerCompleteSound() {
     beep(988, now + 0.18, 0.14, 0.2);
     beep(1175, now + 0.36, 0.22, 0.22);
   } catch (_) {}
+}
+
+/** 新規注文（キッチン絞り込みに合う queued 行が増えたとき） */
+function playNewKitchenOrderSound() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!kitAudioCtx) kitAudioCtx = new Ctx();
+    const ctx = kitAudioCtx;
+    if (ctx.state === "suspended") ctx.resume();
+    const now = ctx.currentTime;
+    const beep = (freq, t0, len, vol) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "triangle";
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(vol, t0 + 0.02);
+      g.gain.linearRampToValueAtTime(0, t0 + len);
+      o.connect(g);
+      g.connect(ctx.destination);
+      o.start(t0);
+      o.stop(t0 + len + 0.02);
+    };
+    beep(523, now, 0.1, 0.11);
+    beep(659, now + 0.12, 0.1, 0.11);
+  } catch (_) {}
+}
+
+function filterStateSignature(st) {
+  const cats = [...(st.cats || [])].sort();
+  const stas = [...(st.stas || [])].sort();
+  return JSON.stringify({ cats, stas });
 }
 
 /** 確認前に積み上げる完了文（「確認」でまとめてログして閉じる） */
@@ -755,6 +794,33 @@ async function refreshKitchen() {
     const data = await api("/stores/" + encodeURIComponent(STORE) + "/kitchen/order-lines");
     lastLines = data.lines || [];
     lastDoneLines = lastLines.filter((ln) => ln.status === "done");
+
+    const st = loadFilterState();
+    const filterActive = (st.cats && st.cats.length > 0) || (st.stas && st.stas.length > 0);
+    const sig = filterStateSignature(st);
+    const passingQueued = lastLines.filter((ln) => ln.status === "queued" && passesFilters(ln, st));
+    const nextIds = new Set(passingQueued.map((ln) => ln.id));
+
+    if (!kitKitchenDataInitialized) {
+      kitPrevFilteredQueuedIds = new Set(nextIds);
+      kitPrevFilterSig = sig;
+      kitKitchenDataInitialized = true;
+    } else if (sig !== kitPrevFilterSig) {
+      kitPrevFilterSig = sig;
+      kitPrevFilteredQueuedIds = new Set(nextIds);
+    } else if (filterActive) {
+      for (const id of nextIds) {
+        if (!kitPrevFilteredQueuedIds.has(id)) {
+          primeKitAudioFromUserGesture();
+          playNewKitchenOrderSound();
+          break;
+        }
+      }
+      kitPrevFilteredQueuedIds = new Set(nextIds);
+    } else {
+      kitPrevFilteredQueuedIds = new Set(nextIds);
+    }
+
     renderFilterControls();
     renderKitList();
   } catch (e) {

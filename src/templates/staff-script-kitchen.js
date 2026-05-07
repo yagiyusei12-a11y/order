@@ -796,7 +796,6 @@ async function refreshKitchen() {
     lastDoneLines = lastLines.filter((ln) => ln.status === "done");
 
     const st = loadFilterState();
-    const filterActive = (st.cats && st.cats.length > 0) || (st.stas && st.stas.length > 0);
     const sig = filterStateSignature(st);
     const passingQueued = lastLines.filter((ln) => ln.status === "queued" && passesFilters(ln, st));
     const nextIds = new Set(passingQueued.map((ln) => ln.id));
@@ -808,7 +807,7 @@ async function refreshKitchen() {
     } else if (sig !== kitPrevFilterSig) {
       kitPrevFilterSig = sig;
       kitPrevFilteredQueuedIds = new Set(nextIds);
-    } else if (filterActive) {
+    } else {
       for (const id of nextIds) {
         if (!kitPrevFilteredQueuedIds.has(id)) {
           primeKitAudioFromUserGesture();
@@ -816,8 +815,6 @@ async function refreshKitchen() {
           break;
         }
       }
-      kitPrevFilteredQueuedIds = new Set(nextIds);
-    } else {
       kitPrevFilteredQueuedIds = new Set(nextIds);
     }
 

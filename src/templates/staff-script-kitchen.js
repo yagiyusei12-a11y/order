@@ -555,9 +555,7 @@ function renderKitList() {
       const d = document.createElement("div");
       d.style.padding = "0.75rem 1rem";
       d.style.borderBottom = "1px solid var(--border)";
-      const tag =
-        (g.categoryName ? "[" + g.categoryName + "] " : "") +
-        (g.kitchenStationName ? "〈" + g.kitchenStationName + "〉 " : "");
+      const tag = g.kitchenStationName ? "〈" + g.kitchenStationName + "〉 " : "";
       const hm = new Date(g.oldestAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
       d.innerHTML =
         "<div style=\"display:flex;justify-content:space-between;gap:0.5rem;align-items:flex-end\">" +
@@ -656,9 +654,7 @@ function renderKitList() {
       const d = document.createElement("div");
       d.style.padding = "0.75rem 1rem";
       d.style.borderBottom = "1px solid var(--border)";
-      const tag =
-        (g.categoryName ? "[" + g.categoryName + "] " : "") +
-        (g.kitchenStationName ? "〈" + g.kitchenStationName + "〉 " : "");
+      const tag = g.kitchenStationName ? "〈" + g.kitchenStationName + "〉 " : "";
       d.innerHTML =
         "<div style=\"display:flex;justify-content:space-between;gap:0.5rem;align-items:flex-end\">" +
         "<div><div style=\"font-size:0.8rem;color:var(--muted)\">" +
@@ -692,95 +688,123 @@ function renderKitList() {
     finishCookTimerUi();
     return;
   }
-  box.innerHTML = "";
+  /** 通常表示: 1注文（orderId）= 1ブロック、行内は調理場のみ（カテゴリなし） */
+  const byOrder = new Map();
   for (const ln of lines) {
+    const oid = ln.orderId || ln.id;
+    let g = byOrder.get(oid);
+    if (!g) {
+      g = {
+        orderId: oid,
+        tableName: ln.tableName || "",
+        orderCreatedAt: ln.orderCreatedAt,
+        lines: [],
+      };
+      byOrder.set(oid, g);
+    }
+    g.lines.push(ln);
+  }
+  const orderGroups = [...byOrder.values()].sort((a, b) => {
+    const ta = new Date(a.orderCreatedAt || 0).getTime();
+    const tb = new Date(b.orderCreatedAt || 0).getTime();
+    if (ta !== tb) return ta - tb;
+    return String(a.orderId).localeCompare(String(b.orderId));
+  });
+  box.innerHTML = "";
+  for (const og of orderGroups) {
+    og.lines.sort((a, b) => String(a.id).localeCompare(String(b.id)));
     const d = document.createElement("div");
     d.style.padding = "0.75rem 1rem";
     d.style.borderBottom = "1px solid var(--border)";
-    const tag =
-      (ln.categoryName ? "[" + ln.categoryName + "] " : "") +
-      (ln.kitchenStationName ? "〈" + ln.kitchenStationName + "〉 " : "");
-    const name = document.createElement("div");
-    name.textContent =
-      (ln.tableName || "") +
-      " · " +
-      tag +
-      ln.nameSnapshot +
-      " ×" +
-      ln.qty +
-      " · " +
-      ln.status;
-    const extraTxt = orderLineExtraSubtext(ln.lineExtra);
-    const actions = document.createElement("div");
-    actions.className = "row";
-    actions.style.marginTop = "0.35rem";
-    if (ln.status === "queued") {
-      const b = document.createElement("button");
-      b.className = "btn-ghost";
-      b.textContent = "調理中";
-      b.onclick = () => setLine(ln.id, "cooking");
-      actions.appendChild(b);
-    }
-    if (ln.status === "queued" || ln.status === "cooking") {
-      const b2 = document.createElement("button");
-      b2.className = "btn-ghost";
-      b2.textContent = "調理済";
-      b2.onclick = () => setLine(ln.id, "done");
-      actions.appendChild(b2);
-    }
-    if (ln.status === "done") {
-      const b3 = document.createElement("button");
-      b3.className = "btn-ghost";
-      b3.textContent = "提供済";
-      b3.onclick = () => setLine(ln.id, "served");
-      actions.appendChild(b3);
-    }
-    const lk = lineGroupKey(ln);
-    const csL1 = normCookTimerSec(ln.cookTimerSec);
-    const csL2 = normCookTimerSec(ln.cookTimerSec2);
-    if ((csL1 != null || csL2 != null) && (ln.status === "queued" || ln.status === "cooking")) {
-      if (csL1 != null && csL1 > 0) {
-        const gk1 = cookTimerSlotGroupKey(lk, 1);
-        const tb = document.createElement("button");
-        tb.type = "button";
-        tb.className = "btn-ghost kit-cook-btn";
-        tb.style.background = "#fef9c3";
-        tb.style.borderColor = "#eab308";
-        tb.style.color = "#854d0e";
-        tb.setAttribute("data-cook-gk", gk1);
-        tb.setAttribute("data-cook-sec", String(csL1));
-        tb.setAttribute("data-cook-idle", "① " + csL1 + "秒");
-        tb.textContent = "① " + csL1 + "秒";
-        tb.title = "調理タイマー1（まとめ表示の同一商品と共有）";
-        tb.onclick = () => armKitCookTimer(gk1, csL1, ln.nameSnapshot, "タイマー1");
-        actions.appendChild(tb);
+
+    const head = document.createElement("div");
+    head.style.cssText = "font-size:0.82rem;font-weight:800;color:var(--accent);margin-bottom:0.4rem";
+    const hm = new Date(og.orderCreatedAt || 0).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+    head.textContent = (og.tableName || "卓未設定") + " · 注文 " + hm;
+    d.appendChild(head);
+
+    for (let i = 0; i < og.lines.length; i++) {
+      const ln = og.lines[i];
+      const row = document.createElement("div");
+      if (i > 0) {
+        row.style.cssText = "margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid #f1f5f9";
       }
-      if (csL2 != null && csL2 > 0) {
-        const gk2 = cookTimerSlotGroupKey(lk, 2);
-        const tb2 = document.createElement("button");
-        tb2.type = "button";
-        tb2.className = "btn-ghost kit-cook-btn";
-        tb2.style.background = "#fef9c3";
-        tb2.style.borderColor = "#eab308";
-        tb2.style.color = "#854d0e";
-        tb2.setAttribute("data-cook-gk", gk2);
-        tb2.setAttribute("data-cook-sec", String(csL2));
-        tb2.setAttribute("data-cook-idle", "② " + csL2 + "秒");
-        tb2.textContent = "② " + csL2 + "秒";
-        tb2.title = "調理タイマー2（まとめ表示の同一商品と共有）";
-        tb2.onclick = () => armKitCookTimer(gk2, csL2, ln.nameSnapshot, "タイマー2");
-        actions.appendChild(tb2);
+      const tag = ln.kitchenStationName ? "〈" + ln.kitchenStationName + "〉 " : "";
+      const name = document.createElement("div");
+      name.textContent = tag + ln.nameSnapshot + " ×" + ln.qty + " · " + ln.status;
+      const extraTxt = orderLineExtraSubtext(ln.lineExtra);
+      const actions = document.createElement("div");
+      actions.className = "row";
+      actions.style.marginTop = "0.35rem";
+      if (ln.status === "queued") {
+        const b = document.createElement("button");
+        b.className = "btn-ghost";
+        b.textContent = "調理中";
+        b.onclick = () => setLine(ln.id, "cooking");
+        actions.appendChild(b);
       }
+      if (ln.status === "queued" || ln.status === "cooking") {
+        const b2 = document.createElement("button");
+        b2.className = "btn-ghost";
+        b2.textContent = "調理済";
+        b2.onclick = () => setLine(ln.id, "done");
+        actions.appendChild(b2);
+      }
+      if (ln.status === "done") {
+        const b3 = document.createElement("button");
+        b3.className = "btn-ghost";
+        b3.textContent = "提供済";
+        b3.onclick = () => setLine(ln.id, "served");
+        actions.appendChild(b3);
+      }
+      const lk = lineGroupKey(ln);
+      const csL1 = normCookTimerSec(ln.cookTimerSec);
+      const csL2 = normCookTimerSec(ln.cookTimerSec2);
+      if ((csL1 != null || csL2 != null) && (ln.status === "queued" || ln.status === "cooking")) {
+        if (csL1 != null && csL1 > 0) {
+          const gk1 = cookTimerSlotGroupKey(lk, 1);
+          const tb = document.createElement("button");
+          tb.type = "button";
+          tb.className = "btn-ghost kit-cook-btn";
+          tb.style.background = "#fef9c3";
+          tb.style.borderColor = "#eab308";
+          tb.style.color = "#854d0e";
+          tb.setAttribute("data-cook-gk", gk1);
+          tb.setAttribute("data-cook-sec", String(csL1));
+          tb.setAttribute("data-cook-idle", "① " + csL1 + "秒");
+          tb.textContent = "① " + csL1 + "秒";
+          tb.title = "調理タイマー1（まとめ表示の同一商品と共有）";
+          tb.onclick = () => armKitCookTimer(gk1, csL1, ln.nameSnapshot, "タイマー1");
+          actions.appendChild(tb);
+        }
+        if (csL2 != null && csL2 > 0) {
+          const gk2 = cookTimerSlotGroupKey(lk, 2);
+          const tb2 = document.createElement("button");
+          tb2.type = "button";
+          tb2.className = "btn-ghost kit-cook-btn";
+          tb2.style.background = "#fef9c3";
+          tb2.style.borderColor = "#eab308";
+          tb2.style.color = "#854d0e";
+          tb2.setAttribute("data-cook-gk", gk2);
+          tb2.setAttribute("data-cook-sec", String(csL2));
+          tb2.setAttribute("data-cook-idle", "② " + csL2 + "秒");
+          tb2.textContent = "② " + csL2 + "秒";
+          tb2.title = "調理タイマー2（まとめ表示の同一商品と共有）";
+          tb2.onclick = () => armKitCookTimer(gk2, csL2, ln.nameSnapshot, "タイマー2");
+          actions.appendChild(tb2);
+        }
+      }
+      row.appendChild(name);
+      if (extraTxt) {
+        const ex = document.createElement("div");
+        ex.className = "muted";
+        ex.style.cssText = "font-size:0.74rem;margin-top:0.25rem;white-space:pre-line;line-height:1.35";
+        ex.textContent = extraTxt;
+        row.appendChild(ex);
+      }
+      row.appendChild(actions);
+      d.appendChild(row);
     }
-    d.appendChild(name);
-    if (extraTxt) {
-      const ex = document.createElement("div");
-      ex.className = "muted";
-      ex.style.cssText = "font-size:0.74rem;margin-top:0.25rem;white-space:pre-line;line-height:1.35";
-      ex.textContent = extraTxt;
-      d.appendChild(ex);
-    }
-    d.appendChild(actions);
     box.appendChild(d);
   }
   finishCookTimerUi();

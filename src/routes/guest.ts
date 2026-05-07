@@ -233,9 +233,10 @@ function mapGuestSetMenuItem(
       const comp = ch.componentMenuItem;
       const ex = ch.extraPrice;
       const soldOut = comp.stockQty != null && comp.stockQty <= 0;
+      const compName = (typeof comp.name === "string" ? comp.name : "").trim();
       const row: ChoiceRow = {
         menuItemId: comp.id,
-        name: comp.name,
+        name: compName || "（名称未設定）",
         extraPrice: ex,
         extraTaxIncluded: Math.round(ex * (1 + taxRatePercent / 100)),
         stockQty: comp.stockQty,

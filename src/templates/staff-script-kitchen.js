@@ -575,7 +575,6 @@ function renderKitList() {
         "</div>";
       const tableButtons = document.createElement("div");
       tableButtons.className = "row";
-      tableButtons.style.marginTop = "0.35rem";
       tableButtons.style.gap = "0.35rem";
       for (const [t, info] of [...g.byTable.entries()].sort((a, b) => a[0].localeCompare(b[0], "ja"))) {
         const b = document.createElement("button");
@@ -590,15 +589,13 @@ function renderKitList() {
         };
         tableButtons.appendChild(b);
       }
-      d.appendChild(tableButtons);
       const cs1 = normCookTimerSec(g.cookTimerSec);
       const cs2 = normCookTimerSec(g.cookTimerSec2);
+      /** @type {HTMLDivElement | null} */
+      let tw = null;
       if ((cs1 != null && cs1 > 0) || (cs2 != null && cs2 > 0)) {
-        const tw = document.createElement("div");
-        tw.className = "row";
-        tw.style.marginTop = "0.35rem";
-        tw.style.gap = "0.35rem";
-        tw.style.flexWrap = "wrap";
+        tw = document.createElement("div");
+        tw.className = "row kit-summary-timers-row";
         if (cs1 != null && cs1 > 0) {
           const gk1 = cookTimerSlotGroupKey(g.key, 1);
           const tb = document.createElement("button");
@@ -631,8 +628,15 @@ function renderKitList() {
           tb2.onclick = () => armKitCookTimer(gk2, cs2, g.nameSnapshot, "タイマー2");
           tw.appendChild(tb2);
         }
-        d.appendChild(tw);
       }
+      const stack = document.createElement("div");
+      stack.className = "kit-summary-action-stack" + (tw ? " kit-summary-has-timers" : "");
+      if (tw) stack.appendChild(tw);
+      const doneRow = document.createElement("div");
+      doneRow.className = "kit-summary-done-row";
+      doneRow.appendChild(tableButtons);
+      stack.appendChild(doneRow);
+      d.appendChild(stack);
       box.appendChild(d);
     }
     const headB = document.createElement("div");
@@ -739,22 +743,12 @@ function renderKitList() {
       name.className = "kit-line-name";
       name.textContent = tag + ln.nameSnapshot + " ×" + ln.qty;
       const extraTxt = orderLineExtraSubtext(ln.lineExtra);
-      const actions = document.createElement("div");
-      actions.className = "kit-line-actions";
-      if (ln.status === "queued" || ln.status === "cooking") {
-        const b2 = document.createElement("button");
-        b2.className = "btn-ghost";
-        b2.textContent = "調理済";
-        b2.onclick = () => setLine(ln.id, "done");
-        actions.appendChild(b2);
-      }
-      if (ln.status === "done") {
-        const b3 = document.createElement("button");
-        b3.className = "btn-ghost";
-        b3.textContent = "提供済";
-        b3.onclick = () => setLine(ln.id, "served");
-        actions.appendChild(b3);
-      }
+      const wrap = document.createElement("div");
+      wrap.className = "kit-line-actions-wrap";
+      const timersRow = document.createElement("div");
+      timersRow.className = "kit-line-actions-timers";
+      const statusRow = document.createElement("div");
+      statusRow.className = "kit-line-actions-status";
       const lk = lineGroupKey(ln);
       const csL1 = normCookTimerSec(ln.cookTimerSec);
       const csL2 = normCookTimerSec(ln.cookTimerSec2);
@@ -773,7 +767,7 @@ function renderKitList() {
           tb.textContent = "① " + csL1 + "秒";
           tb.title = "調理タイマー1（まとめ表示の同一商品と共有）";
           tb.onclick = () => armKitCookTimer(gk1, csL1, ln.nameSnapshot, "タイマー1");
-          actions.appendChild(tb);
+          timersRow.appendChild(tb);
         }
         if (csL2 != null && csL2 > 0) {
           const gk2 = cookTimerSlotGroupKey(lk, 2);
@@ -789,9 +783,28 @@ function renderKitList() {
           tb2.textContent = "② " + csL2 + "秒";
           tb2.title = "調理タイマー2（まとめ表示の同一商品と共有）";
           tb2.onclick = () => armKitCookTimer(gk2, csL2, ln.nameSnapshot, "タイマー2");
-          actions.appendChild(tb2);
+          timersRow.appendChild(tb2);
         }
       }
+      if (ln.status === "queued" || ln.status === "cooking") {
+        const b2 = document.createElement("button");
+        b2.className = "btn-ghost";
+        b2.textContent = "調理済";
+        b2.onclick = () => setLine(ln.id, "done");
+        statusRow.appendChild(b2);
+      }
+      if (ln.status === "done") {
+        const b3 = document.createElement("button");
+        b3.className = "btn-ghost";
+        b3.textContent = "提供済";
+        b3.onclick = () => setLine(ln.id, "served");
+        statusRow.appendChild(b3);
+      }
+      if (timersRow.childNodes.length) {
+        wrap.classList.add("kit-line-actions-has-timers");
+        wrap.appendChild(timersRow);
+      }
+      if (statusRow.childNodes.length) wrap.appendChild(statusRow);
       row.appendChild(name);
       if (extraTxt) {
         const ex = document.createElement("div");
@@ -800,7 +813,7 @@ function renderKitList() {
         ex.title = extraTxt;
         row.appendChild(ex);
       }
-      row.appendChild(actions);
+      if (wrap.childNodes.length) row.appendChild(wrap);
       body.appendChild(row);
     }
     d.appendChild(body);

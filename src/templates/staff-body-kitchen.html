@@ -118,18 +118,64 @@
       max-height: 3.2em;
       overflow: hidden;
     }
-    .kit-line-actions {
+    /* タイマーと調理済を縦に分離（誤タップ防止） */
+    .kit-line-actions-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      margin-top: 0.32rem;
+    }
+    .kit-line-actions-timers {
       display: flex;
       flex-wrap: wrap;
       gap: 0.28rem;
-      margin-top: 0.32rem;
+      align-items: center;
     }
-    .kit-line-actions button {
+    .kit-line-actions-timers button {
       padding: 0.22rem 0.42rem !important;
       font-size: 0.68rem !important;
       min-height: 0;
       line-height: 1.2;
       width: auto !important;
+    }
+    .kit-line-actions-status {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+    .kit-line-actions-wrap.kit-line-actions-has-timers .kit-line-actions-status {
+      padding-top: 0.48rem;
+      border-top: 1px dashed #94a3b8;
+      margin-top: 0.08rem;
+    }
+    .kit-line-actions-status button {
+      padding: 0.36rem 0.5rem !important;
+      font-size: 0.74rem !important;
+      line-height: 1.25;
+      width: 100% !important;
+      box-sizing: border-box;
+    }
+    .kit-summary-action-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      margin-top: 0.35rem;
+    }
+    .kit-summary-timers-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+    .kit-summary-done-row {
+      padding-top: 0.48rem;
+      border-top: 1px dashed #94a3b8;
+    }
+    .kit-summary-done-row .row {
+      margin-top: 0 !important;
+    }
+    .kit-summary-action-stack:not(.kit-summary-has-timers) .kit-summary-done-row {
+      padding-top: 0;
+      border-top: none;
     }
   </style>
   <div id="kitFullExitBar" class="kit-full-exit-bar" hidden>

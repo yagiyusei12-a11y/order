@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { Prisma } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 import { minutesSinceMidnightInTimeZone } from "../lib/guest-category-hours.js";
 import {
   applyGuestItemTimeDiscounts,
@@ -14,12 +15,14 @@ import {
 } from "../lib/guest-order-options.js";
 import {
   buildSetLineExtra,
+  buildSetLineExtraOmitStepIds,
   buildSetNameSnapshot,
   surchargeExclusiveStepSumInclusive,
   validateSetSelections,
   type GuestSetStepSelection,
   type SetStepForValidation,
 } from "../lib/menu-set-order.js";
+import { SET_SERVE_LATER_LINE_KIND } from "../lib/set-order-bundle.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
 import { prisma } from "../db.js";
 
@@ -265,6 +268,7 @@ function mapGuestSetMenuItem(
       minPick: st.minPick,
       maxPick: st.maxPick,
       sortOrder: st.sortOrder,
+      allowServeLaterSplit: st.allowServeLaterSplit === true,
       choices,
       fixedChoices,
     });
@@ -735,6 +739,8 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         note?: string;
         setSelections?: GuestSetStepSelection[];
         optionSelections?: GuestOptionGroupSelection[];
+        /** セットで「後から提供」にしたステップ id（メニューで allowServeLaterSplit な項目のみ） */
+        serveLaterDeferStepId?: string;
       }[];
       note?: string;
     };
@@ -938,14 +944,46 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                 nameById.set(ch.componentMenuItemId, ch.componentMenuItem.name);
               }
             }
-            const lineExtra = buildSetLineExtra(
-              setItem.setSteps.map((s) => ({ id: s.id, label: s.label })),
-              byStep,
-              nameById,
-              stepsVal,
-              storeTaxRatePercent,
-            );
-            const nameSnapshot = buildSetNameSnapshot(setItem.name, lineExtra);
+
+            const deferRaw = (l as { serveLaterDeferStepId?: unknown }).serveLaterDeferStepId;
+            const serveLaterDeferStepId =
+              typeof deferRaw === "string" && deferRaw.trim() ? deferRaw.trim() : "";
+            const deferStepRow = serveLaterDeferStepId
+              ? setItem.setSteps.find((s) => s.id === serveLaterDeferStepId)
+              : undefined;
+            if (serveLaterDeferStepId) {
+              if (!deferStepRow || deferStepRow.allowServeLaterSplit !== true) {
+                throw new Error("BAD_SERVE_LATER");
+              }
+            }
+
+            const bundleId = serveLaterDeferStepId ? randomUUID() : "";
+            let lineExtra: Record<string, unknown>;
+            let nameSnapshot: string;
+            if (serveLaterDeferStepId) {
+              const omit = new Set([serveLaterDeferStepId]);
+              lineExtra = buildSetLineExtraOmitStepIds(
+                setItem.setSteps.map((s) => ({ id: s.id, label: s.label })),
+                byStep,
+                nameById,
+                stepsVal,
+                storeTaxRatePercent,
+                omit,
+              );
+              lineExtra.bundleId = bundleId;
+              lineExtra.serveLaterDeferredStepId = serveLaterDeferStepId;
+              lineExtra.serveLaterDeferredStepLabel = deferStepRow!.label;
+              nameSnapshot = buildSetNameSnapshot(setItem.name, lineExtra);
+            } else {
+              lineExtra = buildSetLineExtra(
+                setItem.setSteps.map((s) => ({ id: s.id, label: s.label })),
+                byStep,
+                nameById,
+                stepsVal,
+                storeTaxRatePercent,
+              );
+              nameSnapshot = buildSetNameSnapshot(setItem.name, lineExtra);
+            }
 
             needStock.set(setItem.id, (needStock.get(setItem.id) ?? 0) + l.qty);
             for (const st of setItem.setSteps) {
@@ -964,6 +1002,30 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
               nameSnapshot,
               lineExtra,
             });
+
+            if (serveLaterDeferStepId) {
+              const deferPicked = byStep.get(serveLaterDeferStepId) ?? [];
+              const deferStepLabel = deferStepRow!.label;
+              for (const compId of deferPicked) {
+                const compName = nameById.get(compId) ?? "（名称未設定）";
+                const childNameSnapshot = `${setItem.name}（後出し）› ${deferStepLabel}: ${compName}`;
+                resolved.push({
+                  kind: "single",
+                  menuItemId: compId,
+                  qty: l.qty,
+                  note: l.note?.trim() || null,
+                  unitPrice: 0,
+                  nameSnapshot: childNameSnapshot,
+                  lineExtra: {
+                    kind: SET_SERVE_LATER_LINE_KIND,
+                    bundleId,
+                    setMenuItemId: setItem.id,
+                    deferredStepId: serveLaterDeferStepId,
+                    stepLabel: deferStepLabel,
+                  },
+                });
+              }
+            }
           } else {
             const plainItem = await tx.menuItem.findFirst({
               where: {
@@ -1165,6 +1227,9 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       }
       if (msg === "BAD_SET") {
         return reply.code(400).send({ error: "セットの選択内容が正しくありません" });
+      }
+      if (msg === "BAD_SERVE_LATER") {
+        return reply.code(400).send({ error: "「後から提供」の指定が不正です" });
       }
       if (msg === "ALCOHOL_DENIED") {
         return reply.code(403).send({ error: "酒類をご注文いただけません（確認が必要です）" });

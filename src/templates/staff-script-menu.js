@@ -465,6 +465,7 @@ function buildSetDraftFromItem(item) {
       label: st.label,
       minPick: st.minPick,
       maxPick: st.maxPick,
+      allowServeLaterSplit: st.allowServeLaterSplit === true,
       filterCatId: defaultFilterCategoryId(ex),
       choiceMap: new Map(
         st.choices.map((c) => [
@@ -597,7 +598,17 @@ function renderSetModalStepsBody(body, item, draft) {
       "<div class=\"row\" style=\"gap:.35rem;flex-wrap:wrap;margin-bottom:.35rem\">" +
       "<button type=\"button\" class=\"btn-ghost\" data-bulk-all style=\"font-size:.78rem\">表示中を全選択</button>" +
       "<button type=\"button\" class=\"btn-ghost\" data-bulk-none style=\"font-size:.78rem\">表示中を全解除</button></div>" +
+      "<label style=\"font-size:.72rem;display:flex;align-items:center;gap:.35rem;margin:.35rem 0 0;cursor:pointer\">" +
+      "<input type=\"checkbox\" data-serve-later-split" +
+      (row.allowServeLaterSplit ? " checked" : "") +
+      " />ゲストに「後から提供」を選ばせる（別OrderLine・0円・在庫切れはセット丸ごと）</label>" +
       "<div data-pick-list></div>";
+    const serveLaterChk = stepEl.querySelector("[data-serve-later-split]");
+    if (serveLaterChk) {
+      serveLaterChk.addEventListener("change", () => {
+        row.allowServeLaterSplit = serveLaterChk.checked;
+      });
+    }
     stepEl.querySelector("[data-slab]").addEventListener("input", (ev) => {
       row.label = ev.target.value;
     });
@@ -686,6 +697,7 @@ function openSetConfiguratorModal(item, right, opts) {
       label: "",
       minPick: 1,
       maxPick: 1,
+      allowServeLaterSplit: false,
       filterCatId: defaultFilterCategoryId(item.id),
       choiceMap: new Map(),
     });
@@ -725,7 +737,14 @@ function openSetConfiguratorModal(item, right, opts) {
       if (pickable.length === 0 && (minPick !== 0 || maxPick !== 0)) {
         return log("標準付属のみの項目「" + label + "」は最小・最大を0にしてください");
       }
-      stepsPayload.push({ label, minPick, maxPick, sortOrder: si, choices });
+      stepsPayload.push({
+        label,
+        minPick,
+        maxPick,
+        sortOrder: si,
+        allowServeLaterSplit: !!row.allowServeLaterSplit,
+        choices,
+      });
     }
     const btn = panel.querySelector("#setModalSave");
     btn.disabled = true;

@@ -369,6 +369,7 @@ type SetDefStepIn = {
   minPick: number;
   maxPick: number;
   sortOrder: number;
+  allowServeLaterSplit?: boolean;
   choices: SetDefChoiceIn[];
 };
 
@@ -432,7 +433,8 @@ function parseSetDefinitionBody(raw: unknown): { ok: false; error: string } | { 
           error: "標準付属のみの項目は最小・最大を0にしてください: " + label,
         };
       }
-      steps.push({ label, minPick, maxPick, sortOrder, choices });
+      const allowServeLaterSplit = (row as { allowServeLaterSplit?: unknown }).allowServeLaterSplit === true;
+      steps.push({ label, minPick, maxPick, sortOrder, allowServeLaterSplit, choices });
   }
   steps.sort((a, b) => a.sortOrder - b.sortOrder);
   return { ok: true, steps };
@@ -1015,6 +1017,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
                 minPick: st.minPick,
                 maxPick: st.maxPick,
                 sortOrder: st.sortOrder,
+                allowServeLaterSplit: st.allowServeLaterSplit === true,
               },
             });
             if (st.choices.length > 0) {
@@ -1399,6 +1402,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
             minPick: st.minPick,
             maxPick: st.maxPick,
             sortOrder: st.sortOrder,
+            allowServeLaterSplit: st.allowServeLaterSplit === true,
           },
         });
         await tx.menuSetChoice.createMany({
@@ -1676,6 +1680,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
               minPick: st.minPick,
               maxPick: st.maxPick,
               sortOrder: st.sortOrder,
+              allowServeLaterSplit: st.allowServeLaterSplit === true,
             },
           });
           if (st.choices.length > 0) {

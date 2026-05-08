@@ -1368,6 +1368,17 @@
       return setSelections;
     }
 
+    function getServeLaterDeferStepId(panel, item) {
+      const deferrable = (item.setSteps || []).filter((st) => st.allowServeLaterSplit);
+      if (deferrable.length === 0) return "";
+      if (deferrable.length === 1) {
+        const chk = panel.querySelector("[data-serve-later-check]");
+        return chk && chk.checked ? String(deferrable[0].id) : "";
+      }
+      const sel = panel.querySelector("[data-serve-later-select]");
+      return sel && sel.value ? String(sel.value) : "";
+    }
+
     function syncDetailAddPrice(panel, unitPrice, qty) {
       const btn = panel.querySelector("[data-add]");
       if (!btn || !guestShowMenuPrices) return;
@@ -1424,6 +1435,10 @@
           }
           if (nm.length) parts.push(g.name + ": " + nm.join("・"));
         }
+      }
+      if (line.serveLaterDeferStepId && item.setSteps) {
+        const st = item.setSteps.find((s) => s.id === line.serveLaterDeferStepId);
+        if (st) parts.push("「" + String(st.label || "").trim() + "」は後から提供（別明細）");
       }
       return parts.join("\n");
     }
@@ -1778,6 +1793,42 @@
           }
           bodyInner += "</div></div>";
         }
+        const deferrableSteps = (item.setSteps || []).filter((st) => st.allowServeLaterSplit);
+        if (deferrableSteps.length === 1) {
+          bodyInner +=
+            "<div class=\"opt-block\" data-serve-later-wrap>" +
+            "<label class=\"opt-row\" style=\"cursor:pointer;margin:0\">" +
+            "<input type=\"checkbox\" data-serve-later-check value=\"" +
+            escapeHtml(deferrableSteps[0].id) +
+            "\" />" +
+            "<span class=\"opt-name\">「" +
+            escapeHtml(deferrableSteps[0].label) +
+            "」は後から提供（別の明細・キッチン行・0円）</span></label>" +
+            "<p class=\"muted\" style=\"font-size:.68rem;margin:.35rem 0 0;line-height:1.35\">セット価格はそのままです。在庫切れキャンセルはセット全体まとめて行われます。</p>" +
+            "</div>";
+        } else if (deferrableSteps.length > 1) {
+          let opts =
+            "<option value=\"\">いつもと一緒に出す</option>" +
+            deferrableSteps
+              .map(function (st) {
+                return (
+                  "<option value=\"" +
+                  escapeHtml(st.id) +
+                  "\">" +
+                  escapeHtml(st.label) +
+                  " だけ後から</option>"
+                );
+              })
+              .join("");
+          bodyInner +=
+            "<div class=\"opt-block\" data-serve-later-wrap>" +
+            "<div class=\"opt-block-head\"><strong>後から提供</strong><span class=\"tag-opt\" style=\"margin-left:auto\">任意</span></div>" +
+            "<select data-serve-later-select class=\"guest-select-serve-later\" style=\"width:100%;margin:.25rem 0;padding:.45rem;border-radius:8px;border:1px solid var(--border);font-size:.85rem\">" +
+            opts +
+            "</select>" +
+            "<p class=\"muted\" style=\"font-size:.68rem;margin:.35rem 0 0;line-height:1.35\">選んだ項目だけ別明細（0円）になります。キャンセルはセット全体です。</p>" +
+            "</div>";
+        }
       } else if (item.optionGroups && item.optionGroups.length) {
         for (const g of item.optionGroups) {
           const req = g.minSelect > 0;
@@ -1904,6 +1955,14 @@
               return;
             }
           }
+          const serveLaterDeferStepId = getServeLaterDeferStepId(panel, item);
+          if (serveLaterDeferStepId) {
+            const st0 = (item.setSteps || []).find((s) => s.id === serveLaterDeferStepId);
+            if (!st0 || !st0.allowServeLaterSplit) {
+              toast("「後から提供」の指定が無効です");
+              return;
+            }
+          }
           const unitPrice = computeSetUnitPrice(item, setSelections);
           if (unitPrice == null) {
             toast("選択内容を確認してください");
@@ -1918,7 +1977,12 @@
             toast("酒類はご注文いただけません");
             return;
           }
-          const cartKey = "s:" + item.id + ":" + stableSetKey(setSelections);
+          const cartKey =
+            "s:" +
+            item.id +
+            ":" +
+            stableSetKey(setSelections) +
+            (serveLaterDeferStepId ? "|sl:" + serveLaterDeferStepId : "");
           const cur = cart[cartKey] || {
             cartKey,
             menuItemId: item.id,
@@ -1931,6 +1995,8 @@
           cur.unitPrice = unitPrice;
           cur.setSelections = setSelections;
           cur.name = item.name;
+          if (serveLaterDeferStepId) cur.serveLaterDeferStepId = serveLaterDeferStepId;
+          else delete cur.serveLaterDeferStepId;
           cur.qty = (cur.qty || 0) + q;
           cart[cartKey] = cur;
           closeDetail();
@@ -2533,6 +2599,7 @@
           const o = { menuItemId: x.menuItemId, qty: x.qty };
           if (x.sellKind === "set" && x.setSelections) o.setSelections = x.setSelections;
           if (x.optionSelections && x.optionSelections.length) o.optionSelections = x.optionSelections;
+          if (x.serveLaterDeferStepId) o.serveLaterDeferStepId = x.serveLaterDeferStepId;
           return o;
         });
       if (lines.length === 0) return;

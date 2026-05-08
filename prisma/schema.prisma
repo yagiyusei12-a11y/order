@@ -319,6 +319,8 @@ model MenuSetStep {
   /// この項目で選ぶ個数の上限
   maxPick       Int             @default(1)
   sortOrder     Int             @default(0)
+  /// true のときゲストが「後から提供」を選ぶと、この項目が別 OrderLine（0円）になる
+  allowServeLaterSplit Boolean  @default(false)
   setMenuItem   MenuItem        @relation("MenuSetOfItem", fields: [setMenuItemId], references: [id], onDelete: Cascade)
   choices       MenuSetChoice[]
 

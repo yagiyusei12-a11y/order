@@ -8,6 +8,11 @@ import {
   readKitDonePartIds,
   stripSetNameSnapshotBracket,
 } from "../lib/kitchen-expand-set-lines.js";
+import {
+  collectBundleStockDecrements,
+  isBundledSetParentLine,
+  readBundleId,
+} from "../lib/set-order-bundle.js";
 
 const LINE_STATUSES = ["queued", "cooking", "done", "served"] as const;
 
@@ -306,9 +311,70 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
     if (line.status === "served") return reply.code(400).send({ error: "cannot cancel served line" });
 
     const noteSuffix = "在庫切れキャンセル（キッチン）";
-    const nextNote = line.note ? `${line.note} / ${noteSuffix}` : noteSuffix;
+    const bundleId = readBundleId(line.lineExtra);
+    const orderLinesAll = await prisma.orderLine.findMany({
+      where: { orderId: line.orderId },
+    });
+    const bundleLines = bundleId
+      ? orderLinesAll.filter((x) => readBundleId(x.lineExtra) === bundleId)
+      : null;
+
+    if (bundleId && bundleLines && bundleLines.length > 0) {
+      if (bundleLines.some((x) => x.status === "served")) {
+        return reply.code(400).send({ error: "cannot cancel served line" });
+      }
+      const parent = bundleLines.find((x) => isBundledSetParentLine(x.lineExtra));
+      if (!parent?.menuItemId) {
+        return reply.code(400).send({ error: "bundle order missing parent line" });
+      }
+    }
 
     const updated = await prisma.$transaction(async (tx) => {
+      if (bundleId && bundleLines && bundleLines.length > 0) {
+        const parent = bundleLines.find((x) => isBundledSetParentLine(x.lineExtra))!;
+        const stockMap = collectBundleStockDecrements(
+          parent.lineExtra,
+          parent.menuItemId!,
+          parent.qty,
+          bundleLines.map((x) => ({ menuItemId: x.menuItemId, qty: x.qty, lineExtra: x.lineExtra })),
+        );
+        for (const bl of bundleLines) {
+          if (bl.status === "cancelled") continue;
+          const nn = bl.note ? `${bl.note} / ${noteSuffix}` : noteSuffix;
+          await tx.orderLine.update({
+            where: { id: bl.id },
+            data: {
+              status: "cancelled",
+              note: nn,
+              readyAt: null,
+              servedAt: null,
+            },
+          });
+        }
+        for (const [mid, q] of stockMap) {
+          const item = await tx.menuItem.findFirst({
+            where: { id: mid, category: { storeId: req.params.storeId } },
+          });
+          if (item && item.stockQty !== null) {
+            await tx.menuItem.update({
+              where: { id: item.id },
+              data: { stockQty: { increment: q } },
+            });
+          }
+        }
+        const setItem = await tx.menuItem.findFirst({
+          where: { id: parent.menuItemId!, category: { storeId: req.params.storeId } },
+        });
+        if (setItem) {
+          await tx.menuItem.update({
+            where: { id: setItem.id },
+            data: { stockQty: 0, isAvailable: false },
+          });
+        }
+        return tx.orderLine.findFirstOrThrow({ where: { id: parent.id } });
+      }
+
+      const nextNote = line.note ? `${line.note} / ${noteSuffix}` : noteSuffix;
       const next = await tx.orderLine.update({
         where: { id: line.id },
         data: {

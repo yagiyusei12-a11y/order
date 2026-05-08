@@ -105,6 +105,24 @@ export function buildSetLineExtra(
   return { kind: "set", steps: outSteps };
 }
 
+/** 指定ステップを lineExtra から除く（後出し別明細用。金額計算は元の byStep のまま） */
+export function buildSetLineExtraOmitStepIds(
+  steps: { id: string; label: string }[],
+  byStep: Map<string, string[]>,
+  nameByComponentId: Map<string, string>,
+  stepDefs: SetStepForValidation[],
+  taxRatePercent: number,
+  omitStepIds: Set<string>,
+): Record<string, unknown> {
+  const stepsFiltered = steps.filter((s) => !omitStepIds.has(s.id));
+  const defsFiltered = stepDefs.filter((d) => !omitStepIds.has(d.id));
+  const byFiltered = new Map<string, string[]>();
+  for (const s of stepsFiltered) {
+    byFiltered.set(s.id, byStep.get(s.id) ?? []);
+  }
+  return buildSetLineExtra(stepsFiltered, byFiltered, nameByComponentId, defsFiltered, taxRatePercent);
+}
+
 export function buildSetNameSnapshot(setName: string, lineExtra: Record<string, unknown>): string {
   const steps = lineExtra.steps;
   if (!Array.isArray(steps) || steps.length === 0) return setName;

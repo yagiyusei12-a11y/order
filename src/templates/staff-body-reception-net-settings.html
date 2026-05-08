@@ -57,6 +57,25 @@
     </section>
 
     <section class="nr-card">
+      <div class="nr-head"><strong>ネット予約：営業時間（複数帯）</strong></div>
+      <div class="nr-body">
+        <p class="nr-muted">お客様のネット予約ページで選べる時間枠を、営業時間内・指定刻みで生成します。未保存の空欄はサーバ側の既定（ランチ11:00〜15:00・ディナー17:00〜23:00）にフォールバックします。</p>
+        <div class="nr-row">
+          <label>
+            予約枠の刻み（分）
+            <input type="number" id="nrSlotMinutes" min="5" max="60" step="5" value="15">
+            <span class="nr-muted">例: 15 → 15分刻み</span>
+          </label>
+        </div>
+        <div style="margin-top:0.75rem">
+          <div class="nr-muted" style="margin-bottom:0.45rem;font-weight:800">時間帯（開始〜終了・終了時刻の枠まで含む）</div>
+          <div id="nrBizWindows" style="display:flex;flex-direction:column;gap:0.45rem"></div>
+          <button type="button" class="btn-ghost" id="btnNrBizAdd" style="margin-top:0.5rem;width:auto">＋ 時間帯を追加</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="nr-card">
       <div class="nr-head"><strong>席ごとの収容人数・合体設定</strong></div>
       <div class="nr-body">
         <p class="nr-muted">「合体可能」は publicCode をカンマ区切りで入力します（例: <code>T21,T22</code>）。</p>

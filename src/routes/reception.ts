@@ -1,6 +1,18 @@
 import type { FastifyInstance } from "fastify";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { openSessionForTable } from "../lib/open-table-session.js";
+import { minutesSinceMidnightInTimeZone } from "../lib/guest-category-hours.js";
+import { mergeStoreSettings } from "../lib/store-settings.js";
+import {
+  normalizeNetReserveWindows,
+  defaultNetReserveWindows,
+  netReserveSlotKey,
+  shiftFromTimeHHMM,
+  legacyDaypartShiftKey,
+  listNetReserveSlotTimes,
+  isTimeInNetReserveSlots,
+} from "../lib/net-reserve-slots.js";
 
 type SeatStatus = "vacant" | "reserved" | "occupied" | "cleaning" | "closed";
 
@@ -113,16 +125,6 @@ function dayDiffJst(fromDate: string, toDate: string): number | null {
   const toMs = new Date(`${toDate}T00:00:00.000+09:00`).getTime();
   if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) return null;
   return Math.floor((toMs - fromMs) / (1000 * 60 * 60 * 24));
-}
-
-function shiftFromTimeHHMM(time: string): "lunch" | "dinner" | null {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(time.trim());
-  if (!m) return null;
-  const hh = Number(m[1]);
-  const mm = Number(m[2]);
-  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
-  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
-  return hh < 15 ? "lunch" : "dinner";
 }
 
 function pickReservationSeats(input: {
@@ -250,6 +252,63 @@ function pickReservationSeats(input: {
   }
 
   return bestIds;
+}
+
+async function collectUsedSeatsForNetReservation(
+  tx: Prisma.TransactionClient,
+  storeId: string,
+  date: string,
+  timeHHMM: string,
+): Promise<Set<string>> {
+  const shift = shiftFromTimeHHMM(timeHHMM);
+  if (!shift) return new Set();
+  const legacyKey = legacyDaypartShiftKey(date, shift);
+  const slotKey = netReserveSlotKey(date, timeHHMM);
+  if (!slotKey) return new Set();
+
+  const used = new Set<string>();
+  const locks = await tx.receptionReservationSeat.findMany({
+    where: { storeId, shiftKey: { in: [slotKey, legacyKey] } },
+    select: { seatId: true },
+  });
+  for (const l of locks) used.add(l.seatId);
+
+  const sh = await tx.receptionShift.findUnique({
+    where: { storeId_shiftKey: { storeId, shiftKey: legacyKey } },
+  });
+  const seatsNow = Array.isArray((sh?.seats as unknown) as unknown[]) ? ((sh?.seats as unknown[]) ?? []) : [];
+  for (const row of seatsNow) {
+    if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+    const o = row as Record<string, unknown>;
+    const id = typeof o.id === "string" ? o.id : "";
+    const st = typeof o.status === "string" ? o.status : "";
+    if (!id) continue;
+    if (st && st !== "vacant") used.add(id);
+  }
+  return used;
+}
+
+function effectiveNetReserveWindows(c: Record<string, unknown>): ReturnType<typeof normalizeNetReserveWindows> {
+  const raw = normalizeNetReserveWindows(c.netReserveBusinessWindows);
+  return raw.length ? raw : defaultNetReserveWindows();
+}
+
+function netReserveSlotStepMinutes(c: Record<string, unknown>): number {
+  const n = Number(c.netReserveSlotMinutes);
+  if (!Number.isFinite(n)) return 15;
+  return Math.max(5, Math.min(60, Math.floor(n)));
+}
+
+function filterNetSlotsNotPast(dateYmd: string, slotTimes: string[], timezone: string): string[] {
+  if (dateYmd !== jstTodayDateStr()) return dateYmd < jstTodayDateStr() ? [] : slotTimes;
+  const nowMin = minutesSinceMidnightInTimeZone(new Date(), timezone);
+  const buffer = 5;
+  return slotTimes.filter((t) => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(t.trim());
+    if (!m) return false;
+    const tm = Number(m[1]) * 60 + Number(m[2]);
+    return tm >= nowMin + buffer;
+  });
 }
 
 async function syncReservationSeatLocks(input: {
@@ -657,7 +716,84 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
     const c = (conf?.data as any) || {};
     const daysAhead = Number.isFinite(Number(c.netReserveDaysAhead)) ? Number(c.netReserveDaysAhead) : 30;
     const enableNote = c.netReserveEnableNote === undefined ? true : Boolean(c.netReserveEnableNote);
-    return { storeId: store.id, daysAhead, enableNote };
+    const st = mergeStoreSettings(store.settings);
+    const windows = effectiveNetReserveWindows(c as Record<string, unknown>);
+    const slotMinutes = netReserveSlotStepMinutes(c as Record<string, unknown>);
+    return {
+      storeId: store.id,
+      daysAhead,
+      enableNote,
+      timezone: st.timezone,
+      slotMinutes,
+      businessWindows: windows,
+    };
+  });
+
+  /**
+   * ネット予約: 人数別の空き枠（公開）
+   */
+  app.get<{
+    Params: { storeId: string };
+    Querystring: { date?: string; partySize?: string };
+  }>("/reception/:storeId/net/availability", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    await ensureReceptionRows(store.id);
+
+    const conf = await prisma.receptionConfig.findUnique({ where: { storeId: store.id } });
+    const c = (conf?.data as any) || {};
+    const daysAhead = Number.isFinite(Number(c.netReserveDaysAhead)) ? Number(c.netReserveDaysAhead) : 30;
+
+    const date = typeof req.query.date === "string" ? req.query.date.trim() : "";
+    const partySize = Number(req.query.partySize);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return reply.code(400).send({ error: "invalid date" });
+    if (!Number.isFinite(partySize) || partySize < 1 || partySize > 20) {
+      return reply.code(400).send({ error: "partySize must be 1..20" });
+    }
+
+    const diff = dayDiffJst(jstTodayDateStr(), date);
+    if (diff === null) return reply.code(400).send({ error: "invalid date" });
+    if (diff < 0) return reply.code(400).send({ error: "past date not allowed" });
+    if (diff > daysAhead) return reply.code(403).send({ error: "date exceeds reservable range" });
+
+    const stSet = mergeStoreSettings(store.settings);
+    const windows = effectiveNetReserveWindows(c as Record<string, unknown>);
+    const step = netReserveSlotStepMinutes(c as Record<string, unknown>);
+    let slotTimes = listNetReserveSlotTimes(windows, step);
+    slotTimes = filterNetSlotsNotPast(date, slotTimes, stSet.timezone);
+
+    const rxSeatCode = /^(?:[A-Za-z0-9_-]+-)?(C\d+|T\d+|\d+)$/i;
+    const maxMergeSize = Number.isFinite(Number(c.maxMergeSize)) ? Number(c.maxMergeSize) : 10;
+    const allOrNothingGroups = Array.isArray(c.mergeAllOrNothingGroups) ? c.mergeAllOrNothingGroups : [];
+    const n = Math.floor(partySize);
+
+    const slots = await prisma.$transaction(async (tx) => {
+      const tables = await tx.table.findMany({
+        where: { storeId: store.id, active: true },
+        select: { publicCode: true, capacity: true, mergeWith: true },
+        orderBy: { sortOrder: "asc" },
+      });
+      const tableMaster = tables.filter((t) => rxSeatCode.test(t.publicCode)).map((t) => ({
+        code: t.publicCode,
+        capacity: Number(t.capacity || 2),
+        mergeWith: Array.isArray(t.mergeWith) ? t.mergeWith.filter((x) => typeof x === "string") as string[] : [],
+      }));
+      const out: { time: string; available: boolean }[] = [];
+      for (const time of slotTimes) {
+        const used = await collectUsedSeatsForNetReservation(tx, store.id, date, time);
+        const seats = pickReservationSeats({
+          tables: tableMaster,
+          used,
+          num: n,
+          maxMergeSize,
+          allOrNothingGroups,
+        });
+        out.push({ time, available: seats !== null });
+      }
+      return out;
+    });
+
+    return { date, partySize: n, timezone: stSet.timezone, slots };
   });
 
   /**
@@ -694,8 +830,23 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
     if (diff < 0) return reply.code(400).send({ error: "past date not allowed" });
     if (diff > daysAhead) return reply.code(403).send({ error: "date exceeds reservable range" });
 
-    const shiftKey = `${date}_${shift}`;
-    await ensureShift(store.id, shiftKey);
+    const stSet = mergeStoreSettings(store.settings);
+    const windows = effectiveNetReserveWindows(c as Record<string, unknown>);
+    const step = netReserveSlotStepMinutes(c as Record<string, unknown>);
+    const slotTimesAll = listNetReserveSlotTimes(windows, step);
+    if (!isTimeInNetReserveSlots(time, slotTimesAll)) {
+      return reply.code(400).send({ error: "time not in business hours" });
+    }
+    const slotTimesToday = filterNetSlotsNotPast(date, slotTimesAll, stSet.timezone);
+    if (!isTimeInNetReserveSlots(time, slotTimesToday)) {
+      return reply.code(400).send({ error: "past time not allowed" });
+    }
+
+    const slotKeySnap = netReserveSlotKey(date, time);
+    if (!slotKeySnap) return reply.code(400).send({ error: "invalid time" });
+
+    const legacyKey = `${date}_${shift}`;
+    await ensureShift(store.id, legacyKey);
 
     // Concurrency-safe seat assignment:
     // - Compute candidate seats
@@ -706,32 +857,14 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
       const resId = "N" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
       try {
         const out = await prisma.$transaction(async (tx) => {
-          const [tables, sh] = await Promise.all([
-            tx.table.findMany({
-              where: { storeId: store.id, active: true },
-              select: { publicCode: true, capacity: true, mergeWith: true },
-              orderBy: { sortOrder: "asc" },
-            }),
-            tx.receptionShift.findUnique({ where: { storeId_shiftKey: { storeId: store.id, shiftKey } } }),
-          ]);
+          const tables = await tx.table.findMany({
+            where: { storeId: store.id, active: true },
+            select: { publicCode: true, capacity: true, mergeWith: true },
+            orderBy: { sortOrder: "asc" },
+          });
           const rxSeatCode = /^(?:[A-Za-z0-9_-]+-)?(C\d+|T\d+|\d+)$/i;
 
-          const used = new Set<string>();
-          const locks = await tx.receptionReservationSeat.findMany({
-            where: { storeId: store.id, shiftKey },
-            select: { seatId: true },
-          });
-          for (const l of locks) used.add(l.seatId);
-
-          const seatsNow = Array.isArray((sh?.seats as unknown) as unknown[]) ? ((sh?.seats as unknown[]) ?? []) : [];
-          for (const row of seatsNow) {
-            if (!row || typeof row !== "object" || Array.isArray(row)) continue;
-            const o = row as Record<string, unknown>;
-            const id = typeof o.id === "string" ? o.id : "";
-            const st = typeof o.status === "string" ? o.status : "";
-            if (!id) continue;
-            if (st && st !== "vacant") used.add(id);
-          }
+          const used = await collectUsedSeatsForNetReservation(tx, store.id, date, time);
 
           const tableMaster = tables.filter((t) => rxSeatCode.test(t.publicCode)).map((t) => ({
             code: t.publicCode,
@@ -767,7 +900,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
             update: { data: reservation as never, date, shift, status: "予約確定" },
           });
           await tx.receptionReservationSeat.createMany({
-            data: seats.map((seatId) => ({ storeId: store.id, shiftKey, seatId, resKey: resId })),
+            data: seats.map((seatId) => ({ storeId: store.id, shiftKey: slotKeySnap, seatId, resKey: resId })),
           });
           return { ok: true as const, resId, seats };
         });

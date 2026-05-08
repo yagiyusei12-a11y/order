@@ -36,8 +36,8 @@
         <input type="date" id="rDate" required>
       </div>
       <div>
-        <label>時間</label>
-        <input type="time" id="rTime" required>
+        <label>時間（人数に応じた空き）</label>
+        <select id="rTime" required></select>
       </div>
     </div>
 
@@ -114,6 +114,52 @@
     }
 
     let cfg = { daysAhead: 30, enableNote: true };
+    function fmtHm(min) {
+      const h = Math.floor(Number(min) / 60);
+      const m = Number(min) % 60;
+      return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
+    }
+
+    async function refreshSlots() {
+      const date = document.getElementById("rDate").value;
+      const num = Number(document.getElementById("rNum").value);
+      const sel = document.getElementById("rTime");
+      sel.innerHTML = "";
+      if (!date || !Number.isFinite(num) || num < 1 || num > 20) return;
+      try {
+        const res = await fetch(
+          `/reception/${encodeURIComponent(STORE_ID)}/net/availability?date=${encodeURIComponent(date)}&partySize=${encodeURIComponent(String(num))}`,
+          { cache: "no-store" }
+        );
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        const slots = data.slots || [];
+        if (!slots.length) {
+          const opt = document.createElement("option");
+          opt.value = "";
+          opt.textContent = "この日は予約枠がありません";
+          opt.disabled = true;
+          sel.appendChild(opt);
+          return;
+        }
+        for (const s of slots) {
+          const opt = document.createElement("option");
+          opt.value = s.time;
+          opt.textContent = s.time + (s.available ? "（予約可）" : "（満席）");
+          if (!s.available) opt.disabled = true;
+          sel.appendChild(opt);
+        }
+        const firstOk = [...sel.options].find((o) => !o.disabled && o.value);
+        if (firstOk) sel.value = firstOk.value;
+      } catch (_) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "空き状況の取得に失敗しました";
+        opt.disabled = true;
+        sel.appendChild(opt);
+      }
+    }
+
     async function boot() {
       document.getElementById("btnFullscreen").onclick = () => toggleFullscreen();
       document.addEventListener("fullscreenchange", () => syncFullscreenButton());
@@ -132,7 +178,18 @@
       document.getElementById("rDate").value = today;
 
       document.getElementById("noteWrap").style.display = enableNote ? "" : "none";
-      document.getElementById("ruleText").textContent = `本日から ${days} 日先まで予約可能です。`;
+      const wins = Array.isArray(cfg.businessWindows) ? cfg.businessWindows : [];
+      const step = Number(cfg.slotMinutes ?? 15);
+      const hoursLine =
+        wins.length > 0 ? ` 営業枠: ${wins.map((w) => fmtHm(w.startMin) + "〜" + fmtHm(w.endMin)).join("、")}。` : "";
+      document.getElementById("ruleText").textContent =
+        `本日から ${days} 日先まで予約可能です（${step} 分刻み）。` + hoursLine;
+
+      document.getElementById("rDate").addEventListener("change", () => refreshSlots());
+      document.getElementById("rNum").addEventListener("change", () => refreshSlots());
+      document.getElementById("rNum").addEventListener("input", () => refreshSlots());
+
+      await refreshSlots();
 
       document.getElementById("btnSubmit").onclick = async () => {
         const date = document.getElementById("rDate").value;
@@ -140,8 +197,10 @@
         const name = document.getElementById("rName").value.trim();
         const num = Number(document.getElementById("rNum").value);
         const note = document.getElementById("rNote").value.trim();
-        if (!date || !time || !name || !Number.isFinite(num) || num < 1) {
-          showMsg("err", "入力内容を確認してください。");
+        const sel = document.getElementById("rTime");
+        const opt = sel && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex] : null;
+        if (!date || !time || !name || !Number.isFinite(num) || num < 1 || (opt && opt.disabled)) {
+          showMsg("err", "日付・時間・お名前・人数を確認してください。満席の時間は選べません。");
           return;
         }
         try {

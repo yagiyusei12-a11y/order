@@ -277,6 +277,9 @@ async function collectUsedSeatsForNetReservation(
   });
   for (const l of locks) used.add(l.seatId);
 
+  // シフト JSON の「予約済み reserved」は手動予約ロックと二重になりやすく、かつ GET /state の表示用ブロックと
+  // DB 上の raw seats がずれるとネットだけ全枠満席になる。カレンダー上の埋まりは receptionReservationSeat に任せ、
+  // ここでは物理的に案内できない席だけシフトから拾う。
   const sh = await tx.receptionShift.findUnique({
     where: { storeId_shiftKey: { storeId, shiftKey: legacyKey } },
   });
@@ -287,7 +290,7 @@ async function collectUsedSeatsForNetReservation(
     const id = typeof o.id === "string" ? o.id : "";
     const st = typeof o.status === "string" ? o.status : "";
     if (!id) continue;
-    if (st && st !== "vacant") used.add(id);
+    if (st === "occupied" || st === "cleaning" || st === "closed") used.add(id);
   }
   return used;
 }

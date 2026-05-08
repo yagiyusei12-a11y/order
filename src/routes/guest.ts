@@ -192,6 +192,7 @@ function mapGuestSetMenuItem(
       minPick: number;
       maxPick: number;
       sortOrder: number;
+      allowServeLaterSplit?: boolean;
       choices: {
         componentMenuItemId: string;
         extraPrice: number;

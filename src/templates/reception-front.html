@@ -125,7 +125,8 @@
         "&t=" +
         Date.now() +
         "&r=" +
-        Math.random().toString(36).slice(2);
+        Math.random().toString(36).slice(2) +
+        "&skip304=1";
       const res = await fetch(url, { cache: "reload" });
       if (!res.ok) throw new Error(await res.text());
       const text = await res.text();

@@ -283,7 +283,8 @@ function netReserveSeatTypeMode(c: Record<string, unknown>): "any" | "require_se
   return c.netReserveSeatTypeMode === "require_select" ? "require_select" : "any";
 }
 
-const rxNetBookableTableCode = /^(?:[A-Za-z0-9_-]+-)?(C\d+|T\d+|\d+)$/i;
+/** 店舗プレフィックス付き卓コード（区切りは - または _）。受付・ネット予約の席一覧に使用 */
+const rxNetBookableTableCode = /^(?:[A-Za-z0-9_-]+[-_])?(C\d+|T\d+|\d+)$/i;
 
 async function distinctSeatTypesForNetReserve(storeId: string): Promise<string[]> {
   const tables = await prisma.table.findMany({
@@ -535,7 +536,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
    * 旧 api.php 互換の read API
    * - shiftKey が無ければ「今日の lunch/dinner」を使う
    */
-  app.get<{ Params: { storeId: string }; Querystring: { shiftKey?: string } }>(
+  app.get<{ Params: { storeId: string }; Querystring: { shiftKey?: string; skip304?: string } }>(
     "/reception/:storeId/state",
     async (req, reply) => {
       const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
@@ -585,8 +586,9 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         tableMasterSig,
       ].join("-")}"`;
       const inm = (req.headers["if-none-match"] || "").toString();
+      const skip304 = String(req.query.skip304 || "") === "1";
       reply.header("Etag", etag);
-      if (inm === etag) return reply.code(304).send();
+      if (!skip304 && inm === etag) return reply.code(304).send();
 
       // seats が空なら、卓/セッションから初期化（互換維持）
       let seats = Array.isArray((sh?.seats as unknown) as unknown[]) ? (sh?.seats as unknown[]) : [];
@@ -629,7 +631,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         .filter((row): row is { code: string; name: string; capacity: number; mergeWith: string[]; seatType: string } => row !== null);
 
       const seatTypeOptSet = new Set<string>();
-      for (const t of filteredMaster) {
+      for (const t of tableMaster) {
         const st = String(t.seatType ?? "").trim();
         if (st) seatTypeOptSet.add(st);
       }

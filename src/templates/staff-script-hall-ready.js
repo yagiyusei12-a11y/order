@@ -40,6 +40,14 @@ function escapeHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
+/** キッチン API のセット内訳行は仮想 id のため、PATCH は親明細 id（kitchenPatchLineId）を使う */
+function kitchenPatchLineId(ln) {
+  if (!ln) return "";
+  const p = ln.kitchenPatchLineId;
+  if (p != null && String(p)) return String(p);
+  return String(ln.id || "");
+}
+
 function passesFilters(ln, state) {
   const catActive = state.cats.length > 0;
   const staActive = state.stas.length > 0;
@@ -384,7 +392,7 @@ function renderHallList() {
         btn.type = "button";
         btn.className = "hall-ready-serve";
         btn.textContent = "提供済み";
-        btn.onclick = () => setLineServed(ln.id);
+        btn.onclick = () => setLineServed(kitchenPatchLineId(ln));
         block.appendChild(btn);
       }
 

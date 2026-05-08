@@ -1312,7 +1312,7 @@ async function cancelKitchenLinesStockout(lineIds, confirmMessage, busyBtn) {
     busyBtn.textContent = "処理中…";
   }
   try {
-    await Promise.all(
+    const responses = await Promise.all(
       uniq.map((lineId) =>
         api(
           "/stores/" + encodeURIComponent(STORE) + "/kitchen/order-lines/" + encodeURIComponent(lineId) + "/cancel-stockout",
@@ -1320,7 +1320,14 @@ async function cancelKitchenLinesStockout(lineIds, confirmMessage, busyBtn) {
         )
       )
     );
-    applyKitKitchenRemoveLines(uniq);
+    const merged = [
+      ...new Set(
+        responses.flatMap((r) =>
+          r && Array.isArray(r.cancelledLineIds) ? r.cancelledLineIds.map((id) => String(id)) : [],
+        ),
+      ),
+    ];
+    applyKitKitchenRemoveLines(merged.length > 0 ? merged : uniq);
     renderKitList();
     await refreshKitchen();
   } catch (e) {

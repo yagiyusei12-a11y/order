@@ -430,7 +430,11 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
       });
     }
 
-    return { ok: true, line: updated };
+    const cancelledLineIds =
+      bundleId && bundleLines && bundleLines.length > 0
+        ? bundleLines.map((x) => x.id)
+        : [updated.id];
+    return { ok: true, line: updated, cancelledLineIds };
   });
 
   app.patch<{

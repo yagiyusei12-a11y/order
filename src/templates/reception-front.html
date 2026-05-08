@@ -112,7 +112,10 @@
     function getActiveShiftKey() {
       const now = new Date();
       const dateStr = getFormattedDate(now);
-      const shift = now.getHours() < 15 ? "lunch" : "dinner";
+      const lunchEndRaw = Number(receptionConf.receptionShiftLunchEndHour);
+      const lunchEnd =
+        Number.isFinite(lunchEndRaw) ? Math.max(0, Math.min(23, Math.floor(lunchEndRaw))) : 15;
+      const shift = now.getHours() < lunchEnd ? "lunch" : "dinner";
       return dateStr + "_" + shift;
     }
 
@@ -127,10 +130,14 @@
         Math.random().toString(36).slice(2) +
         "&skip304=1";
       const res = await fetch(url, { cache: "reload" });
-      if (!res.ok) throw new Error(await res.text());
       const text = await res.text();
+      if (!res.ok) throw new Error(text || "state request failed");
       if (!text || !text.trim()) throw new Error("empty state response");
-      return JSON.parse(text);
+      try {
+        return JSON.parse(text);
+      } catch (e) {
+        throw new Error("state is not JSON: " + String(text).slice(0, 120));
+      }
     }
     async function apiEvent(body) {
       const res = await fetch(API_BASE + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -261,29 +268,39 @@
       const shiftData = (data.shifts || {})[activeShiftKey] || { seats: [], waiting: [] };
       seatStates = {};
       (shiftData.seats || []).forEach((s) => {
-        // hasFutureRes はサーバ側（予約ブロック）で付与されるので上書きしない
-        seatStates[s.id] = { ...s };
+        if (!s || typeof s !== "object" || Array.isArray(s)) return;
+        const id = typeof s.id === "string" ? s.id : "";
+        if (!id) return;
+        seatStates[id] = { ...s };
       });
 
       const waitCount = (shiftData.waiting || []).length;
       const finalWait = isOverride ? manualWait : waitCount * 10;
       const waitEl = document.getElementById("viewWaitTime");
       const waitContainer = document.getElementById("waitContainer");
-      waitEl.textContent = String(finalWait);
-      if (finalWait > 0) {
-        waitEl.className = "wait-value wait-busy";
-        waitContainer.style.borderColor = "var(--error-red)";
-        waitContainer.style.background = "#fff0f0";
-      } else {
-        waitEl.className = "wait-value wait-zero";
-        waitContainer.style.borderColor = "#ccc";
-        waitContainer.style.background = "#fff";
+      if (waitEl) waitEl.textContent = String(finalWait);
+      if (waitEl && waitContainer) {
+        if (finalWait > 0) {
+          waitEl.className = "wait-value wait-busy";
+          waitContainer.style.borderColor = "var(--error-red)";
+          waitContainer.style.background = "#fff0f0";
+        } else {
+          waitEl.className = "wait-value wait-zero";
+          waitContainer.style.borderColor = "#ccc";
+          waitContainer.style.background = "#fff";
+        }
       }
       renderSeatPreferenceButtons();
     }
 
     async function handleCheckIn() {
-      await loadData();
+      try {
+        await loadData();
+      } catch (e) {
+        console.error("reception-front loadData", e);
+        await triggerStaffCall("通信エラーです。スタッフにお声がけください。", "normal");
+        return;
+      }
       const num = selectedNum;
       const wait = parseInt(document.getElementById("viewWaitTime").innerText || "0", 10) || 0;
 
@@ -334,10 +351,14 @@
         for (const c of freeCodes) adj.set(c, new Set());
         for (const t of tables) {
           if (!freeSet.has(t.code)) continue;
+          const a = adj.get(t.code);
+          if (!a) continue;
           for (const o of (t.mergeWith || []).map(String)) {
             if (!freeSet.has(o)) continue;
-            adj.get(t.code).add(o);
-            adj.get(o).add(t.code);
+            const b = adj.get(o);
+            if (!b) continue;
+            a.add(o);
+            b.add(t.code);
           }
         }
 
@@ -474,7 +495,11 @@
     document.getElementById("btnFullscreen").onclick = () => toggleFullscreen();
     document.addEventListener("fullscreenchange", () => syncFullscreenButton());
     syncFullscreenButton();
-    document.getElementById("btnCheckIn").onclick = () => handleCheckIn().catch(() => triggerStaffCall("エラーが発生しました。", "normal"));
+    document.getElementById("btnCheckIn").onclick = () =>
+      handleCheckIn().catch((e) => {
+        console.error("reception-front handleCheckIn", e);
+        return triggerStaffCall("エラーが発生しました。", "normal");
+      });
     document.getElementById("btnReserved").onclick = async () => {
       await triggerStaffCall("ご予約のお客様", "reserved");
     };

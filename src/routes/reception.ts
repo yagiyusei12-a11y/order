@@ -383,7 +383,6 @@ async function computeDefaultSeatsForShift(storeId: string): Promise<
     orderBy: { sortOrder: "asc" },
     select: { id: true, publicCode: true, capacity: true, mergeWith: true, seatType: true },
   });
-  const rxSeatCode = rxNetBookableTableCode;
   const sessions = await prisma.diningSession.findMany({
     where: { storeId, status: { in: ["open", "bashing_waiting"] } },
     select: { id: true, tableId: true, status: true, guestCount: true, openedAt: true },
@@ -403,7 +402,7 @@ async function computeDefaultSeatsForShift(storeId: string): Promise<
     const pc = String(t.publicCode ?? "").trim();
     if (!pc) continue;
     const seatType = String(t.seatType ?? "").trim();
-    if (!rxSeatCode.test(pc) && !seatType) continue;
+    // 受付マップは有効な publicCode を持つ全卓を載せる（ネット予約の卓コード規則は isNetReserveTableRow 側）。
     const s = sessByTableId.get(t.id);
     const mergeWith = Array.isArray(t.mergeWith)
       ? (t.mergeWith as unknown[]).filter((x) => typeof x === "string") as string[]
@@ -456,9 +455,22 @@ type DerivedSeatRow = Awaited<ReturnType<typeof computeDefaultSeatsForShift>>[nu
  * DB のライブ状態（derived）で席の占有・清掃を上書きし、予約ブロック処理の前に合わせる。
  * reserved は derived が vacant のとき維持（applyReservationBlocksToSeats が後段で再適用）。
  */
+function seatRowFromDerived(d: DerivedSeatRow): Record<string, unknown> {
+  return {
+    id: d.id,
+    status: d.status,
+    current: d.current,
+    cleanStart: d.cleanStart,
+    entryTime: d.entryTime,
+    capacity: d.capacity,
+    mergeWith: d.mergeWith,
+    seatType: d.seatType,
+  };
+}
+
 function mergeShiftSeatsWithLiveDerived(seats: unknown[], derived: DerivedSeatRow[]): unknown[] {
   const byId = new Map(derived.map((d) => [d.id, d]));
-  return seats.map((row) => {
+  const merged = seats.map((row) => {
     if (!row || typeof row !== "object" || Array.isArray(row)) return row;
     const o = { ...(row as Record<string, unknown>) };
     const id = typeof o.id === "string" ? o.id : "";
@@ -489,6 +501,17 @@ function mergeShiftSeatsWithLiveDerived(seats: unknown[], derived: DerivedSeatRo
     }
     return o;
   });
+  const seen = new Set<string>();
+  for (const row of merged) {
+    if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+    const id = typeof (row as Record<string, unknown>).id === "string" ? String((row as Record<string, unknown>).id) : "";
+    if (id) seen.add(id);
+  }
+  const extra: unknown[] = [];
+  for (const d of derived) {
+    if (!seen.has(d.id)) extra.push(seatRowFromDerived(d));
+  }
+  return extra.length ? [...merged, ...extra] : merged;
 }
 
 async function syncSeatToSessions(storeId: string, seatId: string, next: SeatStatus, current: number): Promise<void> {
@@ -659,7 +682,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         entryQueue: (st?.entryQueue ?? []) as unknown,
         seatTypeOptions,
         tableMaster: (() => {
-          const masterRows = allTables.filter((t) => isNetReserveTableRow(t));
+          const masterRows = allTables.filter((t) => String(t.publicCode ?? "").trim() !== "");
           if (masterRows.length === 0) return fallbackMaster;
           return masterRows.map((t) => ({
             code: t.publicCode,

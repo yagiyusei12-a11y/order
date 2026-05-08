@@ -93,8 +93,14 @@ function getFormattedDate(dateObj) {
 }
 
 function getSafeShiftData(data, shiftKey) {
-  let sd = (data.shifts || {})[shiftKey];
-  return sd;
+  const sd = (data && data.shifts && typeof data.shifts === "object" ? data.shifts : {})[shiftKey];
+  if (!sd || typeof sd !== "object" || Array.isArray(sd)) {
+    return { seats: [], waiting: [], updatedAt: 0 };
+  }
+  const seats = Array.isArray(sd.seats) ? sd.seats : [];
+  const waiting = Array.isArray(sd.waiting) ? sd.waiting : [];
+  const updatedAt = Number(sd.updatedAt || 0) || 0;
+  return { ...sd, seats, waiting, updatedAt };
 }
 
 function getMasterIds() {
@@ -553,7 +559,10 @@ async function markArrived(resId) {
 async function loadData() {
   if (!currentShiftKey) return;
   try {
-    const res = await fetch(API_URL + "/state?shiftKey=" + encodeURIComponent(currentShiftKey) + "&t=" + Date.now(), { cache: "no-store" });
+    const res = await fetch(
+      API_URL + "/state?shiftKey=" + encodeURIComponent(currentShiftKey) + "&skip304=1&t=" + Date.now(),
+      { cache: "no-store" },
+    );
     if (res.status === 304) return;
     const data = await res.json();
     tableMaster = Array.isArray(data.tableMaster) ? data.tableMaster : [];

@@ -398,6 +398,45 @@ async function computeDefaultSeatsForShift(storeId: string): Promise<
   return out;
 }
 
+type DerivedSeatRow = Awaited<ReturnType<typeof computeDefaultSeatsForShift>>[number];
+
+/**
+ * オペ・卓QR等で DiningSession が変わっても、保存済み receptionShift.seats が古いままになる。
+ * DB のライブ状態（derived）で席の占有・清掃を上書きし、予約ブロック処理の前に合わせる。
+ * reserved は derived が vacant のとき維持（applyReservationBlocksToSeats が後段で再適用）。
+ */
+function mergeShiftSeatsWithLiveDerived(seats: unknown[], derived: DerivedSeatRow[]): unknown[] {
+  const byId = new Map(derived.map((d) => [d.id, d]));
+  return seats.map((row) => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return row;
+    const o = { ...(row as Record<string, unknown>) };
+    const id = typeof o.id === "string" ? o.id : "";
+    const d = id ? byId.get(id) : undefined;
+    if (!d) return row;
+    if (d.status === "occupied" || d.status === "cleaning") {
+      o.status = d.status;
+      o.current = d.current;
+      o.cleanStart = d.cleanStart;
+      o.entryTime = d.entryTime;
+      o.capacity = d.capacity;
+      o.mergeWith = d.mergeWith;
+      return o;
+    }
+    if (o.status === "occupied" || o.status === "cleaning") {
+      o.status = d.status;
+      o.current = d.current;
+      o.cleanStart = d.cleanStart;
+      o.entryTime = d.entryTime;
+      o.capacity = d.capacity;
+      o.mergeWith = d.mergeWith;
+    } else {
+      o.capacity = d.capacity;
+      o.mergeWith = d.mergeWith;
+    }
+    return o;
+  });
+}
+
 async function syncSeatToSessions(storeId: string, seatId: string, next: SeatStatus, current: number): Promise<void> {
   const table = await prisma.table.findFirst({
     where: { storeId, active: true, publicCode: seatId },
@@ -472,20 +511,27 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
 
       await ensureShift(store.id, shiftKey);
 
-      const [conf, st, sh, reservations] = await Promise.all([
+      const [conf, st, sh, reservations, derivedLive] = await Promise.all([
         prisma.receptionConfig.findUnique({ where: { storeId: store.id } }),
         prisma.receptionState.findUnique({ where: { storeId: store.id } }),
         prisma.receptionShift.findUnique({ where: { storeId_shiftKey: { storeId: store.id, shiftKey } } }),
         prisma.receptionReservation.findMany({ where: { storeId: store.id } }),
+        computeDefaultSeatsForShift(store.id),
       ]);
 
       // 旧 index.html の Etag キャッシュ互換（内容が変わらなければ 304）
+      // ※ DiningSession だけ変わった場合も再取得できるようライブ席スナップショットを含める
       const maxResUpdatedAt = reservations.reduce((acc, r) => Math.max(acc, r.updatedAt?.getTime?.() ?? 0), 0);
+      const liveSeatSig = derivedLive
+        .map((s) => `${s.id}:${s.status}:${s.current}`)
+        .sort()
+        .join(",");
       const etag = `W/"${[
         conf?.updatedAt?.getTime?.() ?? 0,
         st?.updatedAt?.getTime?.() ?? 0,
         sh?.updatedAt?.getTime?.() ?? 0,
         maxResUpdatedAt,
+        liveSeatSig,
       ].join("-")}"`;
       const inm = (req.headers["if-none-match"] || "").toString();
       reply.header("Etag", etag);
@@ -495,12 +541,13 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
       let seats = Array.isArray((sh?.seats as unknown) as unknown[]) ? (sh?.seats as unknown[]) : [];
       let waiting = Array.isArray((sh?.waiting as unknown) as unknown[]) ? (sh?.waiting as unknown[]) : [];
       if (!seats || seats.length === 0) {
-        const initSeats = await computeDefaultSeatsForShift(store.id);
-        seats = initSeats as unknown[];
+        seats = derivedLive as unknown[];
         await prisma.receptionShift.update({
           where: { storeId_shiftKey: { storeId: store.id, shiftKey } },
-          data: { seats: initSeats as never },
+          data: { seats: derivedLive as never },
         });
+      } else {
+        seats = mergeShiftSeatsWithLiveDerived(seats, derivedLive) as unknown[];
       }
 
       const seatsWithBlocks = applyReservationBlocksToSeats({

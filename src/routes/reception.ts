@@ -18,6 +18,7 @@ import {
   startOfWallCalendarDayUtc,
   storeNowWallClock,
 } from "../lib/store-wall-time.js";
+import { displayTableCode, tableDisplayLabel } from "../lib/table-display-code.js";
 
 type SeatStatus = "vacant" | "reserved" | "occupied" | "cleaning" | "closed";
 
@@ -921,7 +922,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         const out = await prisma.$transaction(async (tx) => {
           const tables = await tx.table.findMany({
             where: { storeId: store.id, active: true },
-            select: { publicCode: true, capacity: true, mergeWith: true },
+            select: { publicCode: true, name: true, capacity: true, mergeWith: true },
             orderBy: { sortOrder: "asc" },
           });
           const rxSeatCode = /^(?:[A-Za-z0-9_-]+-)?(C\d+|T\d+|\d+)$/i;
@@ -964,11 +965,15 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           await tx.receptionReservationSeat.createMany({
             data: seats.map((seatId) => ({ storeId: store.id, shiftKey: slotKeySnap, seatId, resKey: resId })),
           });
-          return { ok: true as const, resId, seats };
+          const labelByCode = new Map(
+            tables.map((t) => [t.publicCode, tableDisplayLabel(t.name, t.publicCode)]),
+          );
+          const seatLabels = seats.map((id) => labelByCode.get(id) || displayTableCode(id) || id);
+          return { ok: true as const, resId, seats, seatLabels };
         });
 
         if (!out.ok) return reply.code(409).send({ error: "no available seats" });
-        return { ok: true, resId: out.resId, seats: out.seats };
+        return { ok: true, resId: out.resId, seats: out.seats, seatLabels: out.seatLabels };
       } catch (e: any) {
         const msg = String(e?.message || e);
         // Unique constraint hit means seat already locked; retry

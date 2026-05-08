@@ -199,8 +199,12 @@
         }
         try {
           const out = await apiReserve({ date, time, name, num, note });
-          const seats = Array.isArray(out.seats) ? out.seats.join(", ") : "";
-          showMsg("ok", `予約を受け付けました。\n予約番号: ${out.resId || "—"}\n席: ${seats || "未指定"}`);
+          const seatLine = Array.isArray(out.seatLabels) && out.seatLabels.length
+            ? out.seatLabels.filter(Boolean).join("、")
+            : Array.isArray(out.seats)
+              ? out.seats.join("、")
+              : "";
+          showMsg("ok", `予約を受け付けました。\n予約番号: ${out.resId || "—"}\n席: ${seatLine || "未指定"}`);
         } catch (e) {
           showMsg("err", String(e.message || e));
         }

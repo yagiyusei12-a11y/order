@@ -136,10 +136,16 @@ function pickReservationSeats(input: {
   num: number;
   maxMergeSize?: number;
   allOrNothingGroups?: string[][];
+  /**
+   * ネット予約の自動席割りでは、mergeAllOrNothingGroups が mergeWith 上つながらない卓を1グループに含むと
+   * 連結条件と両立せず席が選べないことがある（例: 掘りごたつ島を1グループ化）。手動受付は reception-front 側。
+   */
+  skipAllOrNothingGroups?: boolean;
 }): string[] | null {
   const { tables, used, num } = input;
   const maxMergeSize = Math.max(1, Number.isFinite(Number(input.maxMergeSize)) ? Math.floor(Number(input.maxMergeSize)) : 10);
   const allOrNothingGroups = Array.isArray(input.allOrNothingGroups) ? input.allOrNothingGroups : [];
+  const skipAon = input.skipAllOrNothingGroups === true;
 
   const byCode = new Map<string, { code: string; capacity: number; mergeWith: string[] }>();
   for (const t of tables) byCode.set(t.code, t);
@@ -159,11 +165,35 @@ function pickReservationSeats(input: {
     }
   }
 
-  const groups: { set: Set<string>; arr: string[] }[] = allOrNothingGroups
-    .filter((g) => Array.isArray(g) && g.every((x) => typeof x === "string"))
-    .map((g) => g.map(String).filter((x) => freeSet.has(x)))
-    .filter((g) => g.length >= 2)
-    .map((arr) => ({ arr, set: new Set(arr) }));
+  const groups: { set: Set<string>; arr: string[] }[] = [];
+  if (!skipAon) {
+    for (const g of allOrNothingGroups) {
+      if (!Array.isArray(g) || !g.every((x) => typeof x === "string")) continue;
+      const arrAll = g.map(String).filter((x) => freeSet.has(x));
+      if (arrAll.length < 2) continue;
+      const sub = new Set(arrAll);
+      const seen = new Set<string>();
+      for (const start of arrAll) {
+        if (seen.has(start)) continue;
+        const comp: string[] = [];
+        const stack = [start];
+        seen.add(start);
+        while (stack.length) {
+          const cur = stack.pop()!;
+          comp.push(cur);
+          for (const nx of adj.get(cur) || []) {
+            if (!sub.has(nx) || seen.has(nx)) continue;
+            seen.add(nx);
+            stack.push(nx);
+          }
+        }
+        comp.sort();
+        if (comp.length < 2) continue;
+        if (comp.length > maxMergeSize) continue;
+        groups.push({ arr: comp, set: new Set(comp) });
+      }
+    }
+  }
 
   function violatesAllOrNothing(sub: Set<string>): boolean {
     for (const g of groups) {
@@ -1014,6 +1044,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           num: n,
           maxMergeSize,
           allOrNothingGroups,
+          skipAllOrNothingGroups: true,
         });
         out.push({ time, available: seats !== null });
       }
@@ -1123,6 +1154,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
             num: Math.floor(num),
             maxMergeSize,
             allOrNothingGroups,
+            skipAllOrNothingGroups: true,
           });
           if (!seats) return { ok: false as const };
 

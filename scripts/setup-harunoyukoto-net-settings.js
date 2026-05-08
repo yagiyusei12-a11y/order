@@ -95,9 +95,9 @@ async function main() {
     });
   }
 
-  // All-or-nothing group: T52-T64 only as full merge (貸し切り)
-  const allLabels = ["T52", "T53", "T54", "T61", "T62", "T63", "T64"];
-  const allCodes = allLabels.map((l) => labelToCode.get(l)).filter(Boolean);
+  // mergeAllOrNothingGroups は「1つでも使うならグループ全卓」かつ席は mergeWith 上で連結している必要がある。
+  // T52–54 と T61–64 は島が分かれているため [全卓一括] にすると自動席割りが常に不可能になる。
+  // 貸し切りは手動で席を選ぶ運用とし、ここでは空にする（ネット予約はサーバ側で AON を無視済み）。
 
   // Store constraints into ReceptionConfig.data (merged)
   await prisma.receptionConfig.upsert({
@@ -109,19 +109,19 @@ async function main() {
         override: false,
         manualWait: 30,
         maxMergeSize: 10,
-        mergeAllOrNothingGroups: allCodes.length ? [allCodes] : [],
+        mergeAllOrNothingGroups: [],
       },
     },
     update: {
       data: {
         ...(await prisma.receptionConfig.findUnique({ where: { storeId } }))?.data,
         maxMergeSize: 10,
-        mergeAllOrNothingGroups: allCodes.length ? [allCodes] : [],
+        mergeAllOrNothingGroups: [],
       },
     },
   });
 
-  console.log(JSON.stringify({ ok: true, updated: updates.length, allOrNothingSize: allCodes.length }, null, 2));
+  console.log(JSON.stringify({ ok: true, updated: updates.length, mergeAllOrNothingGroups: [] }, null, 2));
 }
 
 main()

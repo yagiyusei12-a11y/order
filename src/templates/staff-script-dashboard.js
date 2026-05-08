@@ -13,7 +13,10 @@ async function refreshStats() {
       api(base + "/tables"),
     ]);
     const open = (sess.sessions && sess.sessions.length) || 0;
-    const klines = (kit.lines && kit.lines.length) || 0;
+    const kitArr = kit.lines && kit.lines.length ? kit.lines : [];
+    const klines = new Set(
+      kitArr.map((ln) => String((ln && (ln.kitchenPatchLineId || ln.id)) || "")).filter(Boolean)
+    ).size;
     const tables = (tbl.tables && tbl.tables.filter((t) => t.active).length) || 0;
     document.getElementById("statOpen").textContent = "開店セッション " + open;
     document.getElementById("statKit").textContent = "キッチン明細（提供前） " + klines;

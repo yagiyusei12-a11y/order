@@ -1,7 +1,11 @@
 import type { FastifyInstance } from "fastify";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import {
+  applyKitDonePartIdsToLineExtra,
+  deriveSetComponentRowStatus,
   extractSetComponentsFromLineExtra,
+  readKitDonePartIds,
   stripSetNameSnapshotBracket,
 } from "../lib/kitchen-expand-set-lines.js";
 
@@ -136,7 +140,7 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
           id: `${l.id}::${p.menuItemId}`,
           kitchenPatchLineId: l.id,
           isSetComponent: true,
-          status: l.status,
+          status: deriveSetComponentRowStatus(l.status, l.lineExtra, p.menuItemId),
           nameSnapshot: p.stepLabel ? `${setTitle} › ${p.stepLabel}: ${p.pickName}` : `${setTitle} › ${p.pickName}`,
           unitPrice: 0,
           qty: l.qty,
@@ -166,23 +170,41 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
 
   app.patch<{
     Params: { storeId: string; lineId: string };
-    Body: { status: string };
+    Body: { status: string; componentMenuItemId?: string };
   }>("/stores/:storeId/kitchen/order-lines/:lineId", async (req, reply) => {
     const status = req.body?.status;
     if (!status || !LINE_STATUSES.includes(status as (typeof LINE_STATUSES)[number])) {
       return reply.code(400).send({ error: `status must be one of: ${LINE_STATUSES.join(", ")}` });
     }
 
+    const compRaw = req.body?.componentMenuItemId;
+    const componentMenuItemId =
+      typeof compRaw === "string" && compRaw.trim().length > 0 ? compRaw.trim() : "";
+
     const line = await prisma.orderLine.findFirst({
       where: {
         id: req.params.lineId,
         order: { session: { storeId: req.params.storeId } },
       },
-      include: { order: true },
+      include: {
+        order: true,
+        menuItem: { select: { sellKind: true } },
+      },
     });
     if (!line) return reply.code(404).send({ error: "line not found" });
 
-    const data: { status: string; readyAt?: Date | null; servedAt?: Date | null } = { status };
+    const picks =
+      line.menuItem?.sellKind === "set" ? extractSetComponentsFromLineExtra(line.lineExtra) : [];
+    const compKeys = picks.map((p) => p.menuItemId);
+
+    type PatchData = {
+      status: string;
+      readyAt?: Date | null;
+      servedAt?: Date | null;
+      lineExtra?: Record<string, unknown>;
+    };
+
+    let data: PatchData = { status };
     if (status === "done") {
       data.readyAt = new Date();
       data.servedAt = null;
@@ -193,9 +215,60 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
       data.servedAt = new Date();
     }
 
+    if (picks.length > 0) {
+      if (status === "served") {
+        data.lineExtra = applyKitDonePartIdsToLineExtra(line.lineExtra, null);
+      } else if (componentMenuItemId) {
+        if (status === "cooking") {
+          return reply
+            .code(400)
+            .send({ error: "componentMenuItemId is only valid with status done or queued" });
+        }
+        if (!compKeys.includes(componentMenuItemId)) {
+          return reply.code(400).send({ error: "component not in set line" });
+        }
+        const existing = readKitDonePartIds(line.lineExtra);
+        const idSet = new Set(existing ?? []);
+        if (status === "done") {
+          idSet.add(componentMenuItemId);
+        } else {
+          idSet.delete(componentMenuItemId);
+        }
+        const arr = [...idSet].sort();
+        const allDone = compKeys.length > 0 && compKeys.every((k) => idSet.has(k));
+        data.lineExtra = applyKitDonePartIdsToLineExtra(line.lineExtra, arr.length === 0 ? null : arr);
+        if (allDone) {
+          data.status = "done";
+          data.readyAt = new Date();
+          data.servedAt = null;
+        } else {
+          data.status = "queued";
+          data.readyAt = null;
+          data.servedAt = null;
+        }
+      } else if (status === "done") {
+        data.lineExtra = applyKitDonePartIdsToLineExtra(line.lineExtra, [...compKeys].sort());
+        data.status = "done";
+        data.readyAt = new Date();
+        data.servedAt = null;
+      } else if (status === "queued") {
+        data.lineExtra = applyKitDonePartIdsToLineExtra(line.lineExtra, null);
+        data.status = "queued";
+        data.readyAt = null;
+        data.servedAt = null;
+      }
+    }
+
     const updated = await prisma.orderLine.update({
       where: { id: line.id },
-      data,
+      data: {
+        status: data.status,
+        ...(data.readyAt !== undefined ? { readyAt: data.readyAt } : {}),
+        ...(data.servedAt !== undefined ? { servedAt: data.servedAt } : {}),
+        ...(data.lineExtra !== undefined
+          ? { lineExtra: data.lineExtra as Prisma.InputJsonValue }
+          : {}),
+      },
     });
 
     const allLines = await prisma.orderLine.findMany({ where: { orderId: line.orderId } });
@@ -207,7 +280,7 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
         where: { id: line.orderId },
         data: { status: "served" },
       });
-    } else if (status === "cooking" || status === "done") {
+    } else if (updated.status === "cooking" || updated.status === "done") {
       await prisma.salesOrder.update({
         where: { id: line.orderId },
         data: { status: "cooking" },

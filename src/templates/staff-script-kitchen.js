@@ -597,13 +597,19 @@ function summaryViewSignature(lines, st) {
   }
 }
 
-/** まとめ表示凍結中に「調理済」PATCH 後、一覧が動かないのを防ぐためサーバー応答を待たずに反映する */
-function applyKitSummaryDoneOptimistic(lineIds) {
+/**
+ * まとめ表示凍結中に「調理済」PATCH 後、一覧が動かないのを防ぐためサーバー応答を待たずに反映する
+ * @param {string} [componentMenuItemId] セット内訳行のときのみ（単品 menuItemId）
+ */
+function applyKitSummaryDoneOptimistic(lineIds, componentMenuItemId) {
   if (!summaryMode || kitMainTab !== "active" || !kitSummaryFrozenLines || !lineIds || lineIds.length === 0) return;
   const idSet = new Set(lineIds.map((id) => String(id)));
+  const comp = componentMenuItemId ? String(componentMenuItemId) : "";
   const nowIso = new Date().toISOString();
   kitSummaryFrozenLines = kitSummaryFrozenLines.map((ln) => {
     if (!ln || !idSet.has(kitchenPatchLineId(ln))) return ln;
+    if (comp && ln.menuItemId && String(ln.menuItemId) !== comp) return ln;
+    if (comp && !ln.menuItemId) return ln;
     return { ...ln, status: "done", readyAt: nowIso };
   });
 }
@@ -733,7 +739,8 @@ function renderKitHistoryList(box, lines) {
       rev.className = "btn-ghost kit-btn-revert";
       rev.textContent = "戻す（未調理に戻す）";
       rev.title = "誤って調理済にした場合、待ちの注文に戻します";
-      rev.onclick = () => setLine(kitchenPatchLineId(ln), "queued");
+      rev.onclick = () =>
+        setLine(kitchenPatchLineId(ln), "queued", ln.isSetComponent ? ln.menuItemId : "");
       statusRow.appendChild(rev);
       wrap.appendChild(statusRow);
       row.appendChild(name);
@@ -803,6 +810,7 @@ function renderKitList() {
           byTable,
           cookTimerSec: normCookTimerSec(ln.cookTimerSec),
           cookTimerSec2: normCookTimerSec(ln.cookTimerSec2),
+          summaryComponentMenuItemId: ln.menuItemId ? String(ln.menuItemId) : "",
         });
       } else {
         prev.qty += Number(ln.qty || 0);
@@ -921,7 +929,7 @@ function renderKitList() {
           b.disabled = true;
           b.textContent = "処理中…";
           try {
-            await setLinesDone(info.lineIds);
+            await setLinesDone(info.lineIds, g.summaryComponentMenuItemId || "");
           } finally {
             if (b.isConnected) {
               b.disabled = false;
@@ -1180,7 +1188,8 @@ function renderKitList() {
         const b2 = document.createElement("button");
         b2.className = "btn-ghost";
         b2.textContent = "調理済";
-        b2.onclick = () => setLine(kitchenPatchLineId(ln), "done");
+        b2.onclick = () =>
+          setLine(kitchenPatchLineId(ln), "done", ln.isSetComponent ? ln.menuItemId : "");
         statusRow.appendChild(b2);
       }
       if (timersRow.childNodes.length) {
@@ -1324,11 +1333,13 @@ async function cancelKitchenLinesStockout(lineIds, confirmMessage, busyBtn) {
   }
 }
 
-async function setLine(lineId, status) {
+async function setLine(lineId, status, componentMenuItemId) {
   try {
+    const body = { status };
+    if (componentMenuItemId) body.componentMenuItemId = String(componentMenuItemId);
     await api(
       "/stores/" + encodeURIComponent(STORE) + "/kitchen/order-lines/" + encodeURIComponent(lineId),
-      { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) }
+      { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
     );
     await refreshKitchen();
   } catch (e) {
@@ -1336,19 +1347,26 @@ async function setLine(lineId, status) {
   }
 }
 
-async function setLinesDone(lineIds) {
+async function setLinesDone(lineIds, summaryComponentMenuItemId) {
   const uniq = [...new Set((lineIds || []).map((id) => String(id)).filter(Boolean))];
   if (uniq.length === 0) return;
+  const comp = summaryComponentMenuItemId ? String(summaryComponentMenuItemId) : "";
   try {
     await Promise.all(
       uniq.map((lineId) =>
         api(
           "/stores/" + encodeURIComponent(STORE) + "/kitchen/order-lines/" + encodeURIComponent(lineId),
-          { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "done" }) }
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(
+              comp ? { status: "done", componentMenuItemId: comp } : { status: "done" }
+            ),
+          }
         )
       )
     );
-    applyKitSummaryDoneOptimistic(uniq);
+    applyKitSummaryDoneOptimistic(uniq, comp || undefined);
     renderKitList();
     await refreshKitchen();
   } catch (e) {

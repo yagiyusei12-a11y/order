@@ -7,6 +7,14 @@ let shiftUpdatedAt = 0;
 let seatOrder = [];
 let callAnnounceTimer = null;
 let lastCallReserved = false;
+/** 受付設定のキャッシュ（updateConfig マージ用） */
+let configCache = {};
+/** 席マップ配置編集モード */
+let mapEditMode = false;
+let lastWaiting = [];
+let lastStaffCount = 6;
+let lastResList = [];
+let mapDrag = null;
 
 function seatLabel(id) {
   const raw0 = String(id || "").trim();
@@ -131,12 +139,229 @@ async function resetReservedCall() {
 }
 async function saveConfig() {
   const p = {
-    staff: parseInt(document.getElementById("staffCount").value),
+    ...configCache,
+    staff: parseInt(document.getElementById("staffCount").value, 10),
     override: document.getElementById("waitOverride").checked,
-    manualWait: parseInt(document.getElementById("manualWaitValue").value),
+    manualWait: parseInt(document.getElementById("manualWaitValue").value, 10),
   };
   await fetch(API_URL + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "updateConfig", payload: p }) });
+  configCache = p;
   loadData();
+}
+
+/** 旧 grid 文字列 → マップ領域内のパーセント座標（既定レイアウト） */
+function parseGridPlacement(style, cols, rows) {
+  const gc = /grid-column:\s*(\d+)(?:\s*\/\s*(\d+))?/.exec(style);
+  const gr = /grid-row:\s*(\d+)(?:\s*\/\s*(\d+))?/.exec(style);
+  const cs = gc ? parseInt(gc[1], 10) : 1;
+  const ce = gc && gc[2] ? parseInt(gc[2], 10) : cs + 1;
+  const rs = gr ? parseInt(gr[1], 10) : 1;
+  const re = gr && gr[2] ? parseInt(gr[2], 10) : rs + 1;
+  return {
+    left: ((cs - 1) / cols) * 100,
+    width: ((ce - cs) / cols) * 100,
+    top: ((rs - 1) / rows) * 100,
+    height: ((re - rs) / rows) * 100,
+  };
+}
+
+function buildDefaultPercentLayout() {
+  const cols = 12;
+  const rows = 16;
+  const entries = [
+    ["C01", "grid-column:2;grid-row:1;"], ["C02", "grid-column:3;grid-row:1;"], ["C03", "grid-column:4;grid-row:1;"],
+    ["C04", "grid-column:5;grid-row:2;"], ["C05", "grid-column:5;grid-row:3;"], ["C06", "grid-column:5;grid-row:4;"],
+    ["C07", "grid-column:5;grid-row:5;"], ["C08", "grid-column:4;grid-row:6;"], ["C09", "grid-column:3;grid-row:6;"],
+    ["C10", "grid-column:2;grid-row:6;"],
+    ["T31", "grid-column:8/11;grid-row:1;"], ["T32", "grid-column:8/11;grid-row:2;"], ["T33", "grid-column:8/11;grid-row:3;"],
+    ["T34", "grid-column:8/11;grid-row:4;"], ["T35", "grid-column:8/11;grid-row:5;"], ["T36", "grid-column:8/11;grid-row:6;"],
+    ["T37", "grid-column:8/11;grid-row:7;"],
+    ["T21", "grid-column:2/4;grid-row:8;"], ["T23", "grid-column:4/6;grid-row:8;"], ["T22", "grid-column:2/4;grid-row:9;"],
+    ["T24", "grid-column:4/6;grid-row:9;"],
+    ["T52", "grid-column:2/4;grid-row:11;"], ["T53", "grid-column:4/7;grid-row:11;"], ["T54", "grid-column:7/9;grid-row:11;"],
+    ["T61", "grid-column:1/3;grid-row:13;"], ["T62", "grid-column:3/6;grid-row:13;"], ["T63", "grid-column:6/9;grid-row:13;"],
+    ["T64", "grid-column:9/11;grid-row:13;"],
+  ];
+  const out = {};
+  for (const [k, st] of entries) {
+    out[k] = parseGridPlacement(st, cols, rows);
+  }
+  return out;
+}
+
+const DEFAULT_PERCENT_LAYOUT = buildDefaultPercentLayout();
+
+function getSavedSeatLayout() {
+  const raw = configCache && configCache.receptionSeatLayout;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  return raw;
+}
+
+function readLayoutFromDom() {
+  const map = document.getElementById("map");
+  if (!map) return {};
+  const rect = map.getBoundingClientRect();
+  if (rect.width < 20 || rect.height < 20) return {};
+  const out = {};
+  map.querySelectorAll(".seat").forEach((el) => {
+    const label = el.getAttribute("data-seat-label");
+    if (!label) return;
+    const r = el.getBoundingClientRect();
+    out[label] = {
+      left: Math.max(0, Math.min(100, ((r.left - rect.left) / rect.width) * 100)),
+      top: Math.max(0, Math.min(100, ((r.top - rect.top) / rect.height) * 100)),
+      width: Math.max(3, Math.min(100, (r.width / rect.width) * 100)),
+      height: Math.max(3, Math.min(100, (r.height / rect.height) * 100)),
+    };
+  });
+  return out;
+}
+
+function applyPercentBox(el, box) {
+  if (!box || typeof box !== "object") return;
+  const left = Number(box.left);
+  const top = Number(box.top);
+  const width = Number(box.width);
+  const height = Number(box.height);
+  if (![left, top, width, height].every((n) => Number.isFinite(n))) return;
+  el.style.left = `${Math.max(0, Math.min(100, left))}%`;
+  el.style.top = `${Math.max(0, Math.min(100, top))}%`;
+  el.style.width = `${Math.max(3, Math.min(100, width))}%`;
+  el.style.height = `${Math.max(3, Math.min(100, height))}%`;
+  el.style.right = "auto";
+  el.style.bottom = "auto";
+}
+
+function toggleMapEditMode() {
+  const cb = document.getElementById("mapEditMode");
+  mapEditMode = Boolean(cb && cb.checked);
+  const map = document.getElementById("map");
+  const hint = document.getElementById("mapEditHint");
+  if (map) map.classList.toggle("map-editing", mapEditMode);
+  if (hint) hint.style.display = mapEditMode ? "block" : "none";
+  if (mapEditMode) {
+    render(lastWaiting, lastStaffCount, lastResList);
+  } else {
+    loadData();
+  }
+}
+
+async function saveSeatLayout() {
+  const layout = readLayoutFromDom();
+  const keys = Object.keys(layout);
+  if (keys.length === 0) {
+    alert("席要素が見つかりません。画面を再読込してから試してください。");
+    return;
+  }
+  const p = { ...configCache, receptionSeatLayout: layout };
+  try {
+    await fetch(API_URL + "/event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "updateConfig", payload: p }),
+    });
+    configCache = p;
+    alert("席配置を保存しました。");
+  } catch (e) {
+    alert(String(e.message || e));
+  }
+}
+
+async function resetSeatLayoutDefaults() {
+  if (!window.confirm("保存した席配置を消して、既定の並びに戻しますか？")) return;
+  const p = { ...configCache, receptionSeatLayout: null };
+  try {
+    await fetch(API_URL + "/event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "updateConfig", payload: p }),
+    });
+    configCache = { ...p };
+    if (configCache.receptionSeatLayout == null) delete configCache.receptionSeatLayout;
+    loadData();
+  } catch (e) {
+    alert(String(e.message || e));
+  }
+}
+
+function findSeatEl(map, id) {
+  const nodes = map.querySelectorAll(".seat");
+  for (const n of nodes) {
+    if (n.dataset.seatId === String(id)) return n;
+  }
+  return null;
+}
+
+function ensureGlobalSeatDrag() {
+  if (window.__rcSeatDragBound) return;
+  window.__rcSeatDragBound = true;
+  function endDrag() {
+    if (mapDrag && mapDrag.el) {
+      try {
+        if (mapDrag.ptrId != null) mapDrag.el.releasePointerCapture(mapDrag.ptrId);
+      } catch (_) { /* noop */ }
+      mapDrag.el.classList.remove("seat-dragging");
+    }
+    mapDrag = null;
+  }
+  window.addEventListener("pointermove", (ev) => {
+    if (!mapEditMode || !mapDrag) return;
+    const map = document.getElementById("map");
+    if (!map) return;
+    const rect = map.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return;
+    const dx = ((ev.clientX - mapDrag.startClientX) / rect.width) * 100;
+    const dy = ((ev.clientY - mapDrag.startClientY) / rect.height) * 100;
+    const o = mapDrag.orig;
+    if (mapDrag.kind === "move") {
+      const nl = Math.max(0, Math.min(100 - o.width, o.left + dx));
+      const nt = Math.max(0, Math.min(100 - o.height, o.top + dy));
+      applyPercentBox(mapDrag.el, { left: nl, top: nt, width: o.width, height: o.height });
+    } else {
+      const nw = Math.max(5, Math.min(100 - o.left, o.width + dx));
+      const nh = Math.max(4, Math.min(100 - o.top, o.height + dy));
+      applyPercentBox(mapDrag.el, { left: o.left, top: o.top, width: nw, height: nh });
+    }
+  });
+  window.addEventListener("pointerup", endDrag);
+  window.addEventListener("pointercancel", endDrag);
+}
+
+function startSeatMove(ev, el) {
+  ev.preventDefault();
+  const map = document.getElementById("map");
+  const rect = map.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  const orig = {
+    left: ((r.left - rect.left) / rect.width) * 100,
+    top: ((r.top - rect.top) / rect.height) * 100,
+    width: (r.width / rect.width) * 100,
+    height: (r.height / rect.height) * 100,
+  };
+  mapDrag = { kind: "move", el, startClientX: ev.clientX, startClientY: ev.clientY, orig, ptrId: ev.pointerId };
+  el.classList.add("seat-dragging");
+  try {
+    el.setPointerCapture(ev.pointerId);
+  } catch (_) { /* noop */ }
+}
+
+function startSeatResize(ev, el) {
+  ev.preventDefault();
+  ev.stopPropagation();
+  const map = document.getElementById("map");
+  const rect = map.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  const orig = {
+    left: ((r.left - rect.left) / rect.width) * 100,
+    top: ((r.top - rect.top) / rect.height) * 100,
+    width: (r.width / rect.width) * 100,
+    height: (r.height / rect.height) * 100,
+  };
+  mapDrag = { kind: "resize", el, startClientX: ev.clientX, startClientY: ev.clientY, orig, ptrId: ev.pointerId };
+  el.classList.add("seat-dragging");
+  try {
+    el.setPointerCapture(ev.pointerId);
+  } catch (_) { /* noop */ }
 }
 
 function updateReserveSeatSelector() {
@@ -326,6 +551,7 @@ async function loadData() {
     if (res.status === 304) return;
     const data = await res.json();
     tableMaster = Array.isArray(data.tableMaster) ? data.tableMaster : [];
+    configCache = data.config && typeof data.config === "object" ? { ...data.config } : {};
     if (data.config) {
       document.getElementById("staffCount").value = data.config.staff || 6;
       document.getElementById("waitOverride").checked = data.config.override || false;
@@ -404,46 +630,26 @@ async function loadData() {
         });
       }
     });
-    render(shiftData.waiting || [], parseInt(data.config ? data.config.staff : 6), resList);
+    const staffCount = parseInt(data.config ? data.config.staff : 6, 10) || 6;
+    lastWaiting = shiftData.waiting || [];
+    lastStaffCount = staffCount;
+    lastResList = resList;
+    if (mapEditMode) {
+      syncMapSeatVisuals(staffCount);
+      renderSidePanels(lastWaiting, staffCount, resList);
+      document.getElementById("totalGuestCount").innerText = String(
+        Object.values(seatStates).reduce(
+          (acc, s) => acc + (s.status === "occupied" || s.status === "reserved" ? (s.current || 0) : 0),
+          0,
+        ),
+      );
+    } else {
+      render(shiftData.waiting || [], staffCount, resList);
+    }
   } catch (e) { console.error(e); }
 }
 
-function render(waiting, staffCount, resList) {
-  const map = document.getElementById("map"); map.innerHTML = "";
-  const posMap = new Map([
-    ["C1", "grid-column:2;grid-row:1;"], ["C2", "grid-column:3;grid-row:1;"], ["C3", "grid-column:4;grid-row:1;"], ["C4", "grid-column:5;grid-row:2;"], ["C5", "grid-column:5;grid-row:3;"], ["C6", "grid-column:5;grid-row:4;"], ["C7", "grid-column:5;grid-row:5;"], ["C8", "grid-column:4;grid-row:6;"], ["C9", "grid-column:3;grid-row:6;"], ["C10", "grid-column:2;grid-row:6;"],
-    ["T31", "grid-column:8/11;grid-row:1;"], ["T32", "grid-column:8/11;grid-row:2;"], ["T33", "grid-column:8/11;grid-row:3;"], ["T34", "grid-column:8/11;grid-row:4;"], ["T35", "grid-column:8/11;grid-row:5;"], ["T36", "grid-column:8/11;grid-row:6;"], ["T37", "grid-column:8/11;grid-row:7;"],
-    ["T21", "grid-column:2/4;grid-row:8;"], ["T23", "grid-column:4/6;grid-row:8;"], ["T22", "grid-column:2/4;grid-row:9;"], ["T24", "grid-column:4/6;grid-row:9;"],
-    ["T52", "grid-column:2/4;grid-row:11;"], ["T53", "grid-column:4/7;grid-row:11;"], ["T54", "grid-column:7/9;grid-row:11;"],
-    ["T61", "grid-column:1/3;grid-row:13;"], ["T62", "grid-column:3/6;grid-row:13;"], ["T63", "grid-column:6/9;grid-row:13;"], ["T64", "grid-column:9/11;grid-row:13;"],
-  ]);
-
-  const ids = getMasterIds();
-  const placedIds = ids.filter((id) => posMap.has(seatLabel(id)));
-  const unknownIds = ids.filter((id) => !posMap.has(seatLabel(id)));
-  // auto place unknown at bottom rows (stable order)
-  let autoCol = 1;
-  let autoRow = 15;
-
-  for (const id of [...placedIds, ...unknownIds]) {
-    const st = seatStates[id] || { status: "vacant" };
-    let status = st.status;
-    const labelKey = seatLabel(id);
-    if (["T52","T53","T54","T61","T62","T63","T64"].includes(labelKey) && staffCount <= 5 && status === "vacant") status = "closed";
-    const div = document.createElement("div");
-    div.className = `seat ${status}`;
-    const pos = posMap.get(labelKey) || `grid-column:${autoCol}/${autoCol + 1};grid-row:${autoRow};`;
-    if (!posMap.has(labelKey)) {
-      autoCol += 1;
-      if (autoCol > 12) { autoCol = 1; autoRow += 1; }
-    }
-    div.style = pos;
-    div.textContent = labelKey;
-    div.onclick = () => { if (status !== "closed") toggleSeat(id); };
-    map.appendChild(div);
-  }
-  document.getElementById("totalGuestCount").innerText = Object.values(seatStates).reduce((acc, s) => acc + (((s.status === "occupied" || s.status === "reserved") ? (s.current || 0) : 0)), 0);
-
+function renderSidePanels(waiting, staffCount, resList) {
   const resBody = document.getElementById("reservationListBody");
   resBody.innerHTML = "";
   if (!resList || resList.length === 0) {
@@ -508,32 +714,147 @@ function render(waiting, staffCount, resList) {
 
   const body = document.getElementById("waitListBody");
   body.innerHTML = "";
-  Object.values(seatStates).filter((s) => s.status === "cleaning").forEach((s) => {
-    const tr = document.createElement("tr");
-    const td1 = document.createElement("td"); td1.textContent = String(s.id || "");
-    const td2 = document.createElement("td"); td2.textContent = "清掃";
-    const td3 = document.createElement("td");
-    const btn = document.createElement("button");
-    btn.className = "btn-action";
-    btn.textContent = "完了";
-    btn.addEventListener("click", () => toggleSeat(String(s.id || "")));
-    td3.appendChild(btn);
-    tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
-    body.appendChild(tr);
-  });
+  Object.values(seatStates)
+    .filter((s) => s.status === "cleaning")
+    .forEach((s) => {
+      const tr = document.createElement("tr");
+      const td1 = document.createElement("td");
+      td1.textContent = String(s.id || "");
+      const td2 = document.createElement("td");
+      td2.textContent = "清掃";
+      const td3 = document.createElement("td");
+      const btn = document.createElement("button");
+      btn.className = "btn-action";
+      btn.textContent = "完了";
+      btn.addEventListener("click", () => toggleSeat(String(s.id || "")));
+      td3.appendChild(btn);
+      tr.appendChild(td1);
+      tr.appendChild(td2);
+      tr.appendChild(td3);
+      body.appendChild(tr);
+    });
   (waiting || []).forEach((w, i) => {
     const tr = document.createElement("tr");
-    const td1 = document.createElement("td"); td1.textContent = String(w.seat || "");
-    const td2 = document.createElement("td"); td2.textContent = String(w.startTime || "");
+    const td1 = document.createElement("td");
+    td1.textContent = String(w.seat || "");
+    const td2 = document.createElement("td");
+    td2.textContent = String(w.startTime || "");
     const td3 = document.createElement("td");
     const btn = document.createElement("button");
     btn.className = "btn-action";
     btn.textContent = "入店";
     btn.addEventListener("click", () => startOrder(i, String(w.seat || "")));
     td3.appendChild(btn);
-    tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
+    tr.appendChild(td1);
+    tr.appendChild(td2);
+    tr.appendChild(td3);
     body.appendChild(tr);
   });
+}
+
+function syncMapSeatVisuals(staffCount) {
+  const map = document.getElementById("map");
+  if (!map) return;
+  const ids = getMasterIds();
+  const domEls = map.querySelectorAll(".seat");
+  if (domEls.length !== ids.length) {
+    render(lastWaiting, staffCount, lastResList);
+    return;
+  }
+  for (const id of ids) {
+    const el = findSeatEl(map, id);
+    if (!el) {
+      render(lastWaiting, staffCount, lastResList);
+      return;
+    }
+    const st = seatStates[id] || { status: "vacant" };
+    let status = st.status;
+    const labelKey = seatLabel(id);
+    if (["T52", "T53", "T54", "T61", "T62", "T63", "T64"].includes(labelKey) && staffCount <= 5 && status === "vacant") {
+      status = "closed";
+    }
+    el.className = `seat ${status}`;
+    const lab = el.querySelector(".seat-label");
+    if (lab) lab.textContent = labelKey;
+  }
+}
+
+function render(waiting, staffCount, resList) {
+  ensureGlobalSeatDrag();
+  const map = document.getElementById("map");
+  map.innerHTML = "";
+  map.classList.toggle("map-editing", mapEditMode);
+  const hint = document.getElementById("mapEditHint");
+  if (hint) hint.style.display = mapEditMode ? "block" : "none";
+  const cb = document.getElementById("mapEditMode");
+  if (cb) cb.checked = mapEditMode;
+
+  const saved = getSavedSeatLayout();
+  const ids = getMasterIds();
+  let autoIdx = 0;
+
+  for (const id of ids) {
+    const st = seatStates[id] || { status: "vacant" };
+    let status = st.status;
+    const labelKey = seatLabel(id);
+    if (["T52", "T53", "T54", "T61", "T62", "T63", "T64"].includes(labelKey) && staffCount <= 5 && status === "vacant") {
+      status = "closed";
+    }
+    const div = document.createElement("div");
+    div.className = `seat ${status}`;
+    div.dataset.seatId = id;
+    div.dataset.seatLabel = labelKey;
+
+    const span = document.createElement("span");
+    span.className = "seat-label";
+    span.textContent = labelKey;
+    div.appendChild(span);
+    const handle = document.createElement("div");
+    handle.className = "seat-resize-handle";
+    div.appendChild(handle);
+
+    let box =
+      saved && saved[labelKey] && typeof saved[labelKey] === "object" ? saved[labelKey] : null;
+    if (
+      !box ||
+      ![box.left, box.top, box.width, box.height].every((n) => Number.isFinite(Number(n)))
+    ) {
+      box = DEFAULT_PERCENT_LAYOUT[labelKey] || null;
+    }
+    if (!box) {
+      const col = autoIdx % 6;
+      const row = Math.floor(autoIdx / 6);
+      autoIdx += 1;
+      box = { left: (col / 6) * 84 + 2, top: 72 + row * 9, width: 13, height: 8 };
+    }
+    applyPercentBox(div, box);
+
+    if (mapEditMode) {
+      div.addEventListener("pointerdown", (ev) => {
+        if (ev.target.classList.contains("seat-resize-handle")) return;
+        initAudio();
+        startSeatMove(ev, div);
+      });
+      handle.addEventListener("pointerdown", (ev) => {
+        initAudio();
+        startSeatResize(ev, div);
+      });
+    } else {
+      div.addEventListener("click", () => {
+        if (status !== "closed") toggleSeat(id);
+      });
+    }
+
+    map.appendChild(div);
+  }
+
+  document.getElementById("totalGuestCount").innerText = String(
+    Object.values(seatStates).reduce(
+      (acc, s) => acc + (s.status === "occupied" || s.status === "reserved" ? (s.current || 0) : 0),
+      0,
+    ),
+  );
+  renderSidePanels(waiting, staffCount, resList);
 }
 
 async function toggleSeat(id) {
@@ -597,6 +918,9 @@ window.saveConfig = saveConfig;
 window.markArrived = markArrived;
 window.toggleSeat = toggleSeat;
 window.startOrder = startOrder;
+window.toggleMapEditMode = toggleMapEditMode;
+window.saveSeatLayout = saveSeatLayout;
+window.resetSeatLayoutDefaults = resetSeatLayoutDefaults;
 
 window.onload = () => {
   window.setToday();

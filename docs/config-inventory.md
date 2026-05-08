@@ -21,6 +21,7 @@
 | `netReserveEnableNote` | boolean / true | 備考欄 |
 | `maxMergeSize` | number | 合体席の最大人数など |
 | `mergeAllOrNothingGroups` | 配列 | 合体グループ |
+| `receptionSeatLayout` | `{ [席表示ラベル]: { left, top, width, height } }`（0–100 のパーセント） | 受付フル画面の席マップの位置・サイズ（[`staff-script-reception-full.js`](../src/templates/staff-script-reception-full.js)）。`null` で削除可 |
 
 公開 API [`GET /reception/:storeId/net/config`](../src/routes/reception.ts) は `todayYmd`・`maxReservableYmd`・`timezone`・`shiftLunchEndHour`・`netReserveFallbackToTemplateWindows` などを返す（フロントは JST 固定不要）。
 

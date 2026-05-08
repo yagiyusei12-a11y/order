@@ -570,9 +570,19 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           string,
           unknown
         >;
+        const curRow = await prisma.receptionConfig.findUnique({ where: { storeId: store.id } });
+        const prev =
+          curRow?.data && typeof curRow.data === "object" && !Array.isArray(curRow.data)
+            ? (curRow.data as Record<string, unknown>)
+            : {};
+        const next = { ...prev };
+        for (const [k, v] of Object.entries(payload)) {
+          if (v === null || v === undefined) delete next[k];
+          else next[k] = v;
+        }
         await prisma.receptionConfig.update({
           where: { storeId: store.id },
-          data: { data: payload as never },
+          data: { data: next as never },
         });
         return { status: "success" };
       }

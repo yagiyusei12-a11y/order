@@ -17,8 +17,15 @@
     .btn-full { background: #111; color: #fff; border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-weight: 900; font-size: 1.05em; }
     .main-content { display: flex; flex: 1; gap: 8px; overflow: hidden; }
     .map-section { background: var(--staff-bg); padding: 8px; border-radius: 12px; flex: 3.5; display: flex; flex-direction: column; min-height: 0; }
-    .shop-map { display: grid; grid-template-columns: repeat(12, 1fr); grid-auto-rows: minmax(20px, 6vh); gap: 3px; background: #444; padding: 8px; border-radius: 10px; flex: 1; overflow-y: auto; }
-    .seat { background: #666; color: white; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 14px; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); font-weight: bold; position: relative; }
+    .shop-map { position: relative; background: #444; padding: 8px; border-radius: 10px; flex: 1; min-height: min(62vh, 520px); overflow: hidden; }
+    .shop-map.map-editing { outline: 2px dashed var(--accent); outline-offset: 2px; }
+    .map-edit-hint { font-size: 0.78rem; color: #bbb; margin-top: 6px; line-height: 1.35; }
+    .seat { background: #666; color: white; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: clamp(11px, 1.5vw, 14px); cursor: pointer; border: 1px solid rgba(255,255,255,0.1); font-weight: bold; position: absolute; box-sizing: border-box; min-width: 36px; min-height: 28px; user-select: none; touch-action: none; }
+    .seat .seat-label { pointer-events: none; text-align: center; line-height: 1.1; padding: 2px; }
+    .seat-resize-handle { position: absolute; right: 0; bottom: 0; width: 14px; height: 14px; background: rgba(255,255,255,0.35); border-radius: 4px 0 4px 0; cursor: se-resize; display: none; z-index: 2; }
+    .map-editing .seat-resize-handle { display: block; }
+    .map-editing .seat { cursor: grab; }
+    .map-editing .seat.seat-dragging { cursor: grabbing; z-index: 50; opacity: 0.95; }
     .seat:active { transform: scale(0.95); }
     .seat.vacant { background-color: var(--vacant-green) !important; }
     .seat.reserved { background-color: var(--reserved-yellow) !important; color: #333 !important; }
@@ -97,7 +104,12 @@
     </div>
     <div id="reservedAlertBar"></div>
     <div class="main-content">
-      <section class="map-section"><div id="map" class="shop-map"></div></section>
+      <section class="map-section">
+        <div id="map" class="shop-map"></div>
+        <div class="map-edit-hint" id="mapEditHint" style="display:none">
+          配置編集中：席をドラッグで移動、右下の角をドラッグでサイズ変更。「配置を保存」で店舗に記録します（自動更新は一時停止）。
+        </div>
+      </section>
       <section class="side-section">
         <div class="control-panel" style="flex: none;">
           <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -107,6 +119,15 @@
           <hr style="border:0.5px solid #555; margin:8px 0;">
           <label style="display:flex; align-items:center; gap:5px;"><input type="checkbox" id="waitOverride" style="transform:scale(1.3);" onchange="saveConfig()"> 待ち強制表示</label>
           <div style="margin-top:8px;"><input type="number" id="manualWaitValue" value="30" style="width:50px; font-size:1.1em; text-align:center;" onchange="saveConfig()">分に固定</div>
+          <hr style="border:0.5px solid #555; margin:8px 0;">
+          <label style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            <input type="checkbox" id="mapEditMode" style="transform:scale(1.2);" onchange="toggleMapEditMode()">
+            席マップの配置を編集
+          </label>
+          <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;">
+            <button type="button" class="btn-action" onclick="saveSeatLayout()" style="background:var(--accent);color:#fff;font-weight:800;">配置を保存</button>
+            <button type="button" class="btn-action" onclick="resetSeatLayoutDefaults()" style="background:#555;color:#fff;">既定に戻す</button>
+          </div>
         </div>
         <div class="control-panel list-panel" style="background:#4e342e;">
           <strong style="color:var(--reserved-yellow); position:sticky; top:0; background:#4e342e; padding:8px 0; border-bottom:1px solid #77554c; z-index:1; display:block;">

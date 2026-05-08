@@ -93,20 +93,38 @@ function getFormattedDate(dateObj) {
 }
 
 function getSafeShiftData(data, shiftKey) {
-  const sd = (data && data.shifts && typeof data.shifts === "object" ? data.shifts : {})[shiftKey];
+  const raw =
+    data && data.shifts && typeof data.shifts === "object" && !Array.isArray(data.shifts) ? data.shifts : {};
+  const sd = raw[shiftKey];
   if (!sd || typeof sd !== "object" || Array.isArray(sd)) {
     return { seats: [], waiting: [], updatedAt: 0 };
   }
-  const seats = Array.isArray(sd.seats) ? sd.seats : [];
-  const waiting = Array.isArray(sd.waiting) ? sd.waiting : [];
+  const seatsRaw = Array.isArray(sd.seats) ? sd.seats : [];
+  const seats = seatsRaw.filter(
+    (x) => x && typeof x === "object" && !Array.isArray(x) && typeof x.id === "string" && String(x.id).trim() !== "",
+  );
+  const waiting = Array.isArray(sd.waiting) ? sd.waiting.filter((w) => w != null) : [];
   const updatedAt = Number(sd.updatedAt || 0) || 0;
   return { ...sd, seats, waiting, updatedAt };
 }
 
 function getMasterIds() {
-  const codes = Array.isArray(tableMaster) && tableMaster.length > 0
-    ? tableMaster.map((t) => t.code)
-    : (Array.isArray(seatOrder) && seatOrder.length > 0 ? seatOrder : Object.keys(seatStates));
+  const fromMaster = (Array.isArray(tableMaster) ? tableMaster : [])
+    .map((t) => (t && typeof t.code === "string" ? t.code.trim() : ""))
+    .filter(Boolean);
+  const fromSeats = Array.isArray(seatOrder) && seatOrder.length > 0 ? seatOrder : Object.keys(seatStates);
+  let codes;
+  if (fromMaster.length > 0) {
+    const seen = new Set(fromMaster);
+    codes = [...fromMaster];
+    for (const id of fromSeats) {
+      if (typeof id !== "string" || !id || seen.has(id)) continue;
+      seen.add(id);
+      codes.push(id);
+    }
+  } else {
+    codes = fromSeats.filter((x) => typeof x === "string" && x);
+  }
 
   // legacy index.html の表示順を最優先（並びが崩れないようにする）
   const legacyOrder = [
@@ -428,7 +446,9 @@ async function submitReservation() {
 function openBulkEditModal() {
   const d = document.getElementById("viewDate").value;
   const s = document.getElementById("viewShift").value;
-  const resList = existingReservations.filter((r) => r.date === d && r.shift === s).sort((a, b) => a.time.localeCompare(b.time));
+  const resList = existingReservations
+    .filter((r) => r.date === d && r.shift === s)
+    .sort((a, b) => String(a.time || "").localeCompare(String(b.time || "")));
   if (resList.length === 0) { alert("このシフトには予約データがありません。"); return; }
   openCsvModal(resList);
 }
@@ -564,7 +584,20 @@ async function loadData() {
       { cache: "no-store" },
     );
     if (res.status === 304) return;
-    const data = await res.json();
+    if (!res.ok) {
+      const raw = await res.text().catch(() => "");
+      console.error("reception-full /state", res.status, raw.slice(0, 500));
+      renderNetworkErrorMap(res.status);
+      return;
+    }
+    const data = await res.json().catch((err) => {
+      console.error("reception-full /state json", err);
+      return null;
+    });
+    if (!data || typeof data !== "object") {
+      renderNetworkErrorMap("parse");
+      return;
+    }
     tableMaster = Array.isArray(data.tableMaster) ? data.tableMaster : [];
     configCache = data.config && typeof data.config === "object" ? { ...data.config } : {};
     if (data.config) {
@@ -635,7 +668,9 @@ async function loadData() {
     seatOrder = (shiftData.seats || []).map((s) => s && s.id).filter(Boolean);
 
     const d = document.getElementById("viewDate").value, s = document.getElementById("viewShift").value;
-    const resList = existingReservations.filter((r) => r.date === d && r.shift === s && r.status !== "キャンセル").sort((a, b) => a.time.localeCompare(b.time));
+    const resList = existingReservations
+      .filter((r) => r.date === d && r.shift === s && r.status !== "キャンセル")
+      .sort((a, b) => String(a.time || "").localeCompare(String(b.time || "")));
     resList.forEach((r) => {
       if (r.status === "予約確定") {
         r.seats.forEach((seatId) => {
@@ -661,7 +696,29 @@ async function loadData() {
     } else {
       render(shiftData.waiting || [], staffCount, resList);
     }
-  } catch (e) { console.error(e); }
+  } catch (e) {
+    console.error("reception-full loadData", e);
+    renderNetworkErrorMap("error");
+  }
+}
+
+function renderNetworkErrorMap(hint) {
+  const map = document.getElementById("map");
+  if (!map) return;
+  map.innerHTML = "";
+  const empty = document.createElement("div");
+  empty.className = "reception-map-empty-msg";
+  empty.style.cssText =
+    "position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:1.2rem;color:#eee;text-align:center;font-size:0.95rem;line-height:1.55;";
+  empty.innerHTML =
+    `<div><strong>受付データを表示できませんでした</strong><br><span style="opacity:.88;font-size:.88em">` +
+    (hint === "parse"
+      ? "サーバー応答の形式が不正です。再読込してください。"
+      : hint === "error"
+        ? "読み込み中にエラーが発生しました。再読込するか、開発者ツールのコンソールを確認してください。"
+        : `通信に失敗しました（${String(hint)}）。ネットワークとログイン状態を確認してください。`) +
+    `</span></div>`;
+  map.appendChild(empty);
 }
 
 function renderSidePanels(waiting, staffCount, resList) {
@@ -824,6 +881,21 @@ function render(waiting, staffCount, resList) {
   const ids = getMasterIds();
   let autoIdx = 0;
 
+  if (ids.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "reception-map-empty-msg";
+    empty.style.cssText =
+      "position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:1.2rem;color:#ccc;text-align:center;font-size:0.95rem;line-height:1.55;";
+    empty.innerHTML =
+      '<div><strong>表示できる卓がありません</strong><br><span style="opacity:.85;font-size:.88em">この店舗に「有効」な卓（公開コード付き）が登録されているか、<a href="/staff-app/' +
+      encodeURIComponent(STORE) +
+      '/tables" style="color:var(--accent)">席マスタ</a>で確認してください。</span></div>';
+    map.appendChild(empty);
+    document.getElementById("totalGuestCount").innerText = "0";
+    renderSidePanels(waiting, staffCount, resList);
+    return;
+  }
+
   for (const id of ids) {
     const st = seatStates[id] || { status: "vacant" };
     let status = st.status;
@@ -958,6 +1030,23 @@ window.startOrder = startOrder;
 window.toggleMapEditMode = toggleMapEditMode;
 window.saveSeatLayout = saveSeatLayout;
 window.resetSeatLayoutDefaults = resetSeatLayoutDefaults;
+
+function bootReceptionInitialLoad() {
+  const vd = document.getElementById("viewDate");
+  const vs = document.getElementById("viewShift");
+  if (!vd || !vs) return;
+  if (!vd.value) {
+    const now = new Date();
+    vd.value = getFormattedDate(now);
+    vs.value = now.getHours() < 15 ? "lunch" : "dinner";
+  }
+  changeViewShift();
+}
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", bootReceptionInitialLoad);
+} else {
+  bootReceptionInitialLoad();
+}
 
 window.onload = () => {
   window.setToday();

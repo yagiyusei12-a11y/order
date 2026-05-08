@@ -21,13 +21,13 @@ function seatLabel(id) {
   if (m) {
     const kind = String(m[1]).toUpperCase();
     const n = parseInt(m[2], 10);
-    if (Number.isFinite(n)) return kind + n;
+    if (Number.isFinite(n)) return kind + String(n).padStart(2, "0");
   }
 
   if (/^\d+$/.test(raw)) {
     const n = parseInt(raw, 10);
-    if (n >= 1 && n <= 10) return "C" + n;
-    if (n >= 21) return "T" + n;
+    if (n >= 1 && n <= 10) return "C" + String(n).padStart(2, "0");
+    if (n >= 21) return "T" + String(n).padStart(2, "0");
   }
 
   return raw;

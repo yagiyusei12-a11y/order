@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { Prisma } from "@prisma/client";
+import { tableDisplayLabel } from "../lib/table-display-code.js";
 import { prisma } from "../db.js";
 
 function maskDevice(id: string): string {
@@ -97,7 +98,7 @@ export async function registerCustomers(app: FastifyInstance): Promise<void> {
       const recentOrders = recentOrdersRaw.map((o) => ({
         id: o.id,
         createdAt: o.createdAt,
-        tableName: o.session.table?.name ?? "卓",
+        tableName: tableDisplayLabel(o.session.table?.name, o.session.table?.publicCode) || "卓",
         lines: o.lines.map((l) => ({ nameSnapshot: l.nameSnapshot, qty: l.qty })),
       }));
 

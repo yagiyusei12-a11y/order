@@ -24,6 +24,7 @@ import {
 } from "../lib/menu-set-order.js";
 import { SET_SERVE_LATER_LINE_KIND } from "../lib/set-order-bundle.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
+import { displayTableCode } from "../lib/table-display-code.js";
 import { prisma } from "../db.js";
 
 type EatMode = "dine_in" | "takeout";
@@ -663,6 +664,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       return reply.code(404).send({ error: "session not found or closed" });
     }
     const seatCode = typeof sess.table?.publicCode === "string" ? sess.table.publicCode : "";
+    const callSeat = seatCode ? displayTableCode(seatCode) || seatCode : "";
     await prisma.receptionConfig.upsert({
       where: { storeId: sess.storeId },
       create: { storeId: sess.storeId },
@@ -670,8 +672,8 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     });
     await prisma.receptionState.upsert({
       where: { storeId: sess.storeId },
-      create: { storeId: sess.storeId, callReserved: true, callType: seatCode ? `guest:${seatCode}` : "guest" },
-      update: { callReserved: true, callType: seatCode ? `guest:${seatCode}` : "guest" },
+      create: { storeId: sess.storeId, callReserved: true, callType: callSeat ? `guest:${callSeat}` : "guest" },
+      update: { callReserved: true, callType: callSeat ? `guest:${callSeat}` : "guest" },
     });
     return { ok: true };
   });

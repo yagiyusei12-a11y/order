@@ -175,7 +175,13 @@ function renderGrid() {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = cls;
-    btn.innerHTML = "<span class=\"code\">" + escapeHtml(t.publicCode) + "</span><span class=\"name\">" + escapeHtml(t.name) + "</span>" + meta;
+    btn.innerHTML =
+      "<span class=\"code\">" +
+      escapeHtml(displayTableCode(t.publicCode)) +
+      "</span><span class=\"name\">" +
+      escapeHtml(t.name) +
+      "</span>" +
+      meta;
     btn.onclick = () => {
       selectedTableId = t.id;
       renderGrid();

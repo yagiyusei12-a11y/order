@@ -586,6 +586,7 @@
 
   <script>
     const STORE = __STORE_ID_JS__;
+    __TABLE_DISPLAY_CODE__
     document.getElementById("sid").textContent = STORE;
 
     const api = (path, opt = {}) =>
@@ -665,7 +666,7 @@
         return "";
       }
       function show(callType) {
-        const seat = parseSeatFromCallType(callType);
+        const seat = displayTableCode(parseSeatFromCallType(callType));
         banner.style.display = "block";
         banner.classList.add("is-on");
         banner.innerHTML = "";

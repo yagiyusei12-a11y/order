@@ -2,6 +2,7 @@ import { createReadStream, existsSync, readFileSync } from "node:fs";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { join } from "node:path";
 import { templatePath } from "../lib/paths.js";
+import { displayTableCode } from "../lib/table-display-code.js";
 import { prisma } from "../db.js";
 
 function loadTemplate(name: string): string {
@@ -20,11 +21,13 @@ function assembleStaffPage(storeId: string, pageTitle: string, bodyFile: string,
   const pathEnc = encodeURIComponent(storeId);
   const body = loadTemplate(bodyFile).replace(/__STORE_PATH__/g, pathEnc);
   const script = loadTemplate(scriptFile);
+  const tableDisplay = loadTemplate("staff-script-table-display.js");
   return loadTemplate("staff-frame.html")
     .replace(/__PAGE_TITLE__/g, escapeHtml(pageTitle))
     .replace(/__STORE_ID_HTML__/g, escapeHtml(storeId))
     .replace(/__STORE_ID_JS__/g, JSON.stringify(storeId))
     .replace(/__STORE_PATH__/g, pathEnc)
+    .replace("__TABLE_DISPLAY_CODE__", tableDisplay)
     .replace("__BODY__", body)
     .replace("__PAGE_SCRIPT__", script);
 }
@@ -250,10 +253,11 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
   });
 
   app.get<{ Params: { publicCode: string } }>("/table-app/:publicCode", async (req, reply) => {
-    const code = escapeHtml(req.params.publicCode);
+    const rawPc = req.params.publicCode;
+    const code = escapeHtml(displayTableCode(rawPc) || rawPc);
     const body = html("table-qr.html")
       .replace("__PUBLIC_CODE_HTML__", code)
-      .replace("__PUBLIC_CODE_JS__", JSON.stringify(req.params.publicCode));
+      .replace("__PUBLIC_CODE_JS__", JSON.stringify(rawPc));
     return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(body);
   });
 }

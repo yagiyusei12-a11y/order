@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { openOrReuseSessionForTable } from "../lib/open-table-session.js";
+import { displayTableCode, tableDisplayLabel } from "../lib/table-display-code.js";
 
 /**
  * 認証不要の公開API（卓の固定QRから参照する想定）
@@ -36,7 +37,13 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
     }));
     return {
       storeId: table.storeId,
-      table: { id: table.id, name: table.name, publicCode: table.publicCode },
+      table: {
+        id: table.id,
+        name: table.name,
+        publicCode: table.publicCode,
+        displayCode: displayTableCode(table.publicCode),
+        displayName: tableDisplayLabel(table.name, table.publicCode),
+      },
       session: session
         ? {
             id: session.id,

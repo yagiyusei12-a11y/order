@@ -1240,7 +1240,7 @@ async function refreshChips() {
     const data = await api("/stores/" + encodeURIComponent(STORE) + "/tables");
     const tables = (data.tables || []).filter((t) => t.active);
     bar.innerHTML = tables
-      .map((t) => "<span class=\"chip\">" + escapeHtml(t.publicCode) + "</span>")
+      .map((t) => "<span class=\"chip\">" + escapeHtml(displayTableCode(t.publicCode)) + "</span>")
       .join("");
   } catch {
     bar.innerHTML = "";

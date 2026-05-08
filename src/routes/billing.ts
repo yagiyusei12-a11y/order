@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { computeCourseSessionTotal, formatCourseLineLabel } from "../lib/course-pricing.js";
+import { tableDisplayLabel } from "../lib/table-display-code.js";
 import { prisma } from "../db.js";
 
 type SessionForPreview = {
@@ -253,7 +254,9 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
           status: b.status,
           label: b.label,
           sessionId: b.sessionId,
-          tableName: b.session?.table?.name ?? null,
+          tableName: b.session?.table
+            ? tableDisplayLabel(b.session.table.name, b.session.table.publicCode) || null
+            : null,
           createdAt: b.createdAt,
           settledAt: b.settledAt,
           paidTotal: paid,
@@ -494,7 +497,11 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     const paid = bill.payments.reduce((s, p) => s + p.amount, 0);
     if (paid > 0) return reply.code(400).send({ error: "cannot void bill with payments" });
 
-    const tag = bill.session?.table?.name ? `取消（${bill.session.table.name}）` : "取消伝票";
+    const tbl = bill.session?.table;
+    const tag =
+      tbl && (tbl.name || tbl.publicCode)
+        ? `取消（${tableDisplayLabel(tbl.name, tbl.publicCode)}）`
+        : "取消伝票";
     const label = bill.label ? `${bill.label} · ${tag}` : tag;
 
     const updated = await prisma.bill.update({

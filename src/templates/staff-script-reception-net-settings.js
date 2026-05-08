@@ -3,6 +3,14 @@ let tablesCache = [];
 
 function $(id) { return document.getElementById(id); }
 
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function guestMinToTimeInputValue(min) {
   if (min == null || min === "") return "";
   const n = Number(min);
@@ -117,7 +125,7 @@ function renderTables() {
     const row = document.createElement("tr");
     row.setAttribute("data-id", t.id);
     row.innerHTML = `
-      <td class="nr-code">${code}</td>
+      <td class="nr-code" title="${escapeHtml(code)}">${escapeHtml(displayTableCode(code))}</td>
       <td>${String(t.name || "")}</td>
       <td><input type="number" min="1" max="99" value="${Number.isFinite(cap) ? cap : 2}" class="nr-cap"></td>
       <td><input type="text" value="${mergeText}" class="nr-merge" placeholder="例: T21,T22"></td>

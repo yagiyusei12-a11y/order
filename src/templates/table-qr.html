@@ -127,10 +127,12 @@
         }
         loading.style.display = "none";
         main.style.display = "block";
-        const tname = (j.table && j.table.name) || code;
-        document.getElementById("title").textContent = tname;
+        const dispName =
+          (j.table && (j.table.displayName || j.table.name)) || (j.table && j.table.displayCode) || code;
+        const dispCode = (j.table && j.table.displayCode) || code;
+        document.getElementById("title").textContent = dispName;
         document.getElementById("deskLine").textContent =
-          "卓コード " + code + " · 人数とメニュー種類を選んでください。";
+          "卓コード " + dispCode + " · 人数とメニュー種類を選んでください。";
         renderCourseRadios(j.courses || []);
 
         document.getElementById("btnStart").onclick = async () => {

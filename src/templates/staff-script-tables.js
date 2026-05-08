@@ -56,7 +56,8 @@ async function renderTablesMaster(list) {
     const sub = document.createElement("div");
     sub.className = "muted";
     sub.style.fontSize = "0.75rem";
-    sub.textContent = (t.active ? "" : "無効 · ") + t.publicCode;
+    sub.textContent = (t.active ? "" : "無効 · ") + displayTableCode(t.publicCode);
+    sub.title = "publicCode: " + t.publicCode;
     const urlEl = document.createElement("div");
     urlEl.className = "muted";
     urlEl.style.fontSize = "0.72rem";
@@ -138,7 +139,7 @@ async function renderTablesMaster(list) {
     delBtn.onclick = async () => {
       if (
         !window.confirm(
-          "席「" + t.name + "」（コード " + t.publicCode + "）を削除しますか？\n" +
+          "席「" + t.name + "」（コード " + displayTableCode(t.publicCode) + "）を削除しますか？\n" +
             "この卓の滞在・注文履歴も削除されます。開いている卓がある場合は削除できません。"
         )
       ) {

@@ -13,6 +13,7 @@ import {
   isBundledSetParentLine,
   readBundleId,
 } from "../lib/set-order-bundle.js";
+import { tableDisplayLabel } from "../lib/table-display-code.js";
 
 const LINE_STATUSES = ["queued", "cooking", "done", "served"] as const;
 
@@ -132,7 +133,7 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
               : null,
           orderId: l.orderId,
           orderCreatedAt: l.order.createdAt,
-          tableName: l.order.session.table.name,
+          tableName: tableDisplayLabel(l.order.session.table.name, l.order.session.table.publicCode),
           sessionId: l.order.sessionId,
           readyAt: l.readyAt,
           servedAt: l.servedAt,
@@ -166,7 +167,7 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
           setFixedSteps: null,
           orderId: l.orderId,
           orderCreatedAt: l.order.createdAt,
-          tableName: l.order.session.table.name,
+          tableName: tableDisplayLabel(l.order.session.table.name, l.order.session.table.publicCode),
           sessionId: l.order.sessionId,
           readyAt: l.readyAt,
           servedAt: l.servedAt,

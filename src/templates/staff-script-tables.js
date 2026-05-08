@@ -56,7 +56,8 @@ async function renderTablesMaster(list) {
     const sub = document.createElement("div");
     sub.className = "muted";
     sub.style.fontSize = "0.75rem";
-    sub.textContent = (t.active ? "" : "無効 · ") + displayTableCode(t.publicCode);
+    const typeSuffix = String(t.seatType || "").trim() ? " · " + String(t.seatType).trim() : "";
+    sub.textContent = (t.active ? "" : "無効 · ") + displayTableCode(t.publicCode) + typeSuffix;
     sub.title = "publicCode: " + t.publicCode;
     const urlEl = document.createElement("div");
     urlEl.className = "muted";
@@ -79,12 +80,27 @@ async function renderTablesMaster(list) {
     inp.setAttribute("aria-label", "席名");
     inp.title = "この卓の呼び名を変更";
 
+    const typeLab = document.createElement("div");
+    typeLab.className = "muted";
+    typeLab.style.fontSize = "0.72rem";
+    typeLab.textContent = "席種別（ネット予約・受付表示）";
+    const inpType = document.createElement("input");
+    inpType.type = "text";
+    inpType.value = String(t.seatType || "").trim();
+    inpType.maxLength = 40;
+    inpType.style.marginBottom = "0.35rem";
+    inpType.setAttribute("aria-label", "席種別");
+    inpType.placeholder = "空欄で種別なし";
+    inpType.title = "カウンター／テーブルなど。同じ文字列の卓はネット予約で同じ種別として扱います。";
+
     const actions = document.createElement("div");
     actions.className = "pm-actions";
     actions.style.flexDirection = "column";
     actions.style.alignItems = "stretch";
     actions.appendChild(nameLab);
     actions.appendChild(inp);
+    actions.appendChild(typeLab);
+    actions.appendChild(inpType);
     const rowBtns = document.createElement("div");
     rowBtns.className = "row";
     rowBtns.style.justifyContent = "flex-end";
@@ -93,9 +109,13 @@ async function renderTablesMaster(list) {
         try {
           await api(
             "/stores/" + encodeURIComponent(STORE) + "/tables/" + encodeURIComponent(t.id),
-            { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: inp.value }) }
+            {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name: inp.value, seatType: inpType.value.trim() }),
+            }
           );
-          log("席名を保存しました");
+          log("席情報を保存しました");
           await bootTables();
         } catch (e) {
           log(String(e.message || e));
@@ -219,6 +239,7 @@ document.getElementById("btnAddTable").onclick = async () => {
   log("");
   const name = document.getElementById("newTableName").value.trim();
   const publicCode = document.getElementById("newTableCode").value.trim() || undefined;
+  const seatType = document.getElementById("newTableSeatType").value.trim();
   if (!name) {
     log("席名を入力してください");
     return;
@@ -227,10 +248,11 @@ document.getElementById("btnAddTable").onclick = async () => {
     await api("/stores/" + encodeURIComponent(STORE) + "/tables", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, publicCode }),
+      body: JSON.stringify({ name, publicCode, ...(seatType ? { seatType } : {}) }),
     });
     document.getElementById("newTableName").value = "";
     document.getElementById("newTableCode").value = "";
+    document.getElementById("newTableSeatType").value = "";
     await bootTables();
   } catch (e) {
     log(String(e.message || e));

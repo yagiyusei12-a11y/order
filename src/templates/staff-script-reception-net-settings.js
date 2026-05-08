@@ -115,6 +115,10 @@ async function loadAll() {
   if (fbEl) {
     fbEl.checked = configCache.netReserveFallbackToTemplateWindows !== false;
   }
+  const modeEl = $("nrSeatTypeMode");
+  if (modeEl) {
+    modeEl.value = configCache.netReserveSeatTypeMode === "require_select" ? "require_select" : "any";
+  }
   const rawW = configCache.netReserveBusinessWindows;
   const wins = Array.isArray(rawW) && rawW.length ? rawW : defaultBizWindows();
   renderBizWindows(wins);
@@ -131,11 +135,13 @@ function renderTables() {
     const cap = Number(t.capacity || 2);
     const mergeArr = Array.isArray(t.mergeWith) ? t.mergeWith : [];
     const mergeText = mergeArr.filter((x) => typeof x === "string").join(",");
+    const stype = String(t.seatType || "").trim();
     const row = document.createElement("tr");
     row.setAttribute("data-id", t.id);
     row.innerHTML = `
       <td class="nr-code" title="${escapeHtml(code)}">${escapeHtml(displayTableCode(code))}</td>
       <td>${String(t.name || "")}</td>
+      <td><input type="text" value="${escapeHtml(stype)}" class="nr-seat-type" maxlength="40" placeholder="例: テーブル" title="ネット予約の種別。空欄は種別なし"></td>
       <td><input type="number" min="1" max="99" value="${Number.isFinite(cap) ? cap : 2}" class="nr-cap"></td>
       <td><input type="text" value="${mergeText}" class="nr-merge" placeholder="例: T21,T22"></td>
     `;
@@ -181,6 +187,8 @@ async function saveAll() {
   }
   nextConfig.receptionShiftLunchEndHour = Math.floor(lunchBoundary);
   nextConfig.netReserveFallbackToTemplateWindows = Boolean($("nrFallbackTemplate")?.checked);
+  const stm = $("nrSeatTypeMode")?.value;
+  nextConfig.netReserveSeatTypeMode = stm === "require_select" ? "require_select" : "any";
   const biz = readBizWindowsFromDom();
   if (!biz.length) {
     alert("営業時間帯を1つ以上、正しい開始・終了で入力してください。");
@@ -210,10 +218,11 @@ async function saveAll() {
       alert(`合体可能の席コードが不正です: ${bad.join(", ")}`);
       return;
     }
+    const seatType = String(row.querySelector(".nr-seat-type")?.value || "").trim();
     await api(`/stores/${encodeURIComponent(STORE)}/tables/${encodeURIComponent(id)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ capacity: Math.floor(cap), mergeWith: mergeVals }),
+      body: JSON.stringify({ capacity: Math.floor(cap), mergeWith: mergeVals, seatType }),
     });
   }
 

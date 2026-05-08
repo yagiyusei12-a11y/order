@@ -52,6 +52,12 @@
       </div>
     </div>
 
+    <div id="seatTypeWrap" style="display:none">
+      <label for="rSeatType">席の種別</label>
+      <select id="rSeatType"></select>
+      <p class="muted" id="seatTypeHint"></p>
+    </div>
+
     <div id="noteWrap">
       <label>備考</label>
       <textarea id="rNote" placeholder="アレルギー等（任意）"></textarea>
@@ -104,11 +110,51 @@
       el.appendChild(box);
     }
 
-    let cfg = { daysAhead: 30, enableNote: true };
+    let cfg = { daysAhead: 30, enableNote: true, seatTypeMode: "any", seatTypes: [] };
     function fmtHm(min) {
       const h = Math.floor(Number(min) / 60);
       const m = Number(min) % 60;
       return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
+    }
+
+    function currentSeatTypeParam() {
+      const mode = cfg.seatTypeMode === "require_select" ? "require_select" : "any";
+      if (mode !== "require_select") return "";
+      const st = document.getElementById("rSeatType");
+      return st && st.value ? String(st.value).trim() : "";
+    }
+
+    function applySeatTypeUi() {
+      const wrap = document.getElementById("seatTypeWrap");
+      const sel = document.getElementById("rSeatType");
+      const hint = document.getElementById("seatTypeHint");
+      if (!wrap || !sel) return;
+      const mode = cfg.seatTypeMode === "require_select" ? "require_select" : "any";
+      const types = Array.isArray(cfg.seatTypes) ? cfg.seatTypes : [];
+      if (mode !== "require_select") {
+        wrap.style.display = "none";
+        sel.removeAttribute("required");
+        return;
+      }
+      wrap.style.display = "";
+      sel.setAttribute("required", "required");
+      sel.innerHTML = "";
+      const ph = document.createElement("option");
+      ph.value = "";
+      ph.textContent = types.length ? "種別を選んでください" : "（店舗で種別未設定）";
+      ph.disabled = !types.length;
+      sel.appendChild(ph);
+      for (const t of types) {
+        const opt = document.createElement("option");
+        opt.value = t;
+        opt.textContent = t;
+        sel.appendChild(opt);
+      }
+      if (hint) {
+        hint.textContent = types.length
+          ? "選んだ種別の席だけを使って、この人数で予約できる時間を表示します。"
+          : "店舗のネット予約設定で、卓に種別名を入力してください。";
+      }
     }
 
     async function refreshSlots() {
@@ -117,11 +163,20 @@
       const sel = document.getElementById("rTime");
       sel.innerHTML = "";
       if (!date || !Number.isFinite(num) || num < 1 || num > 20) return;
+      const stParam = currentSeatTypeParam();
+      if (cfg.seatTypeMode === "require_select" && !stParam) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "先に席の種別を選んでください";
+        opt.disabled = true;
+        sel.appendChild(opt);
+        return;
+      }
       try {
-        const res = await fetch(
-          `/reception/${encodeURIComponent(STORE_ID)}/net/availability?date=${encodeURIComponent(date)}&partySize=${encodeURIComponent(String(num))}`,
-          { cache: "no-store" }
-        );
+        let url =
+          `/reception/${encodeURIComponent(STORE_ID)}/net/availability?date=${encodeURIComponent(date)}&partySize=${encodeURIComponent(String(num))}`;
+        if (stParam) url += `&seatType=${encodeURIComponent(stParam)}`;
+        const res = await fetch(url, { cache: "no-store" });
         if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
         const slots = data.slots || [];
@@ -157,6 +212,8 @@
       syncFullscreenButton();
 
       cfg = await apiGetConfig();
+      cfg.seatTypeMode = cfg.seatTypeMode === "require_select" ? "require_select" : "any";
+      cfg.seatTypes = Array.isArray(cfg.seatTypes) ? cfg.seatTypes : [];
       const days = Number(cfg.daysAhead ?? 30);
       const enableNote = Boolean(cfg.enableNote ?? true);
 
@@ -182,6 +239,9 @@
       document.getElementById("rDate").addEventListener("change", () => refreshSlots());
       document.getElementById("rNum").addEventListener("change", () => refreshSlots());
       document.getElementById("rNum").addEventListener("input", () => refreshSlots());
+      applySeatTypeUi();
+      const rSeatType = document.getElementById("rSeatType");
+      if (rSeatType) rSeatType.addEventListener("change", () => refreshSlots());
 
       await refreshSlots();
 
@@ -193,18 +253,38 @@
         const note = document.getElementById("rNote").value.trim();
         const sel = document.getElementById("rTime");
         const opt = sel && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex] : null;
+        const stSel = document.getElementById("rSeatType");
+        const seatType =
+          cfg.seatTypeMode === "require_select" && stSel && stSel.value ? String(stSel.value).trim() : "";
+        if (cfg.seatTypeMode === "require_select" && !seatType) {
+          showMsg("err", "席の種別を選んでください。");
+          return;
+        }
         if (!date || !time || !name || !Number.isFinite(num) || num < 1 || (opt && opt.disabled)) {
           showMsg("err", "日付・時間・お名前・人数を確認してください。満席の時間は選べません。");
           return;
         }
         try {
-          const out = await apiReserve({ date, time, name, num, note });
+          const out = await apiReserve({
+            date,
+            time,
+            name,
+            num,
+            note,
+            ...(seatType ? { seatType } : {}),
+          });
           const seatLine = Array.isArray(out.seatLabels) && out.seatLabels.length
             ? out.seatLabels.filter(Boolean).join("、")
             : Array.isArray(out.seats)
               ? out.seats.join("、")
               : "";
-          showMsg("ok", `予約を受け付けました。\n予約番号: ${out.resId || "—"}\n席: ${seatLine || "未指定"}`);
+          const typeLine = (out.seatType || seatType)
+            ? `\n席種別: ${String(out.seatType || seatType || "")}`
+            : "";
+          showMsg(
+            "ok",
+            `予約を受け付けました。\n予約番号: ${out.resId || "—"}${typeLine}\n席: ${seatLine || "未指定"}`,
+          );
         } catch (e) {
           showMsg("err", String(e.message || e));
         }

@@ -85,7 +85,24 @@
     </section>
 
     <section class="nr-card">
-      <div class="nr-head"><strong>席ごとの収容人数・合体設定</strong></div>
+      <div class="nr-head"><strong>ネット予約：席種別の扱い</strong></div>
+      <div class="nr-body">
+        <p class="nr-muted">卓マスタの「席種別」と連動します。種別を選ばせるモードでは、お客が選んだ種別の席だけを使って空き枠を計算します（カウンター／テーブルなどの切り分け用）。</p>
+        <div class="nr-row" style="align-items:flex-start">
+          <label style="min-width:min(520px,94vw)">
+            席種別
+            <select id="nrSeatTypeMode" style="margin-top:0.35rem;padding:0.55rem 0.6rem;border-radius:10px;border:1px solid var(--border);font:inherit;max-width:100%">
+              <option value="any">どこでもよい（全席から空きを出す・種別は表示のみ）</option>
+              <option value="require_select">お客に種別を選ばせる（その種別の席だけで空き判定）</option>
+            </select>
+            <span class="nr-muted">「選ばせる」には、下の一覧で少なくとも1卓に種別名を入れてください。</span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="nr-card">
+      <div class="nr-head"><strong>席ごとの収容人数・合体・種別</strong></div>
       <div class="nr-body">
         <p class="nr-muted">「合体可能」は publicCode をカンマ区切りで入力します（例: <code>T21,T22</code>）。</p>
         <p class="nr-muted">未設定のままだと全席 <strong>2名</strong> 扱いになります。ここで店舗の実態に合わせて設定してください。</p>
@@ -95,6 +112,7 @@
               <tr>
                 <th style="width: 120px;">席コード</th>
                 <th>席名</th>
+                <th style="width: 110px;">種別</th>
                 <th style="width: 120px;">収容人数</th>
                 <th>合体可能</th>
               </tr>

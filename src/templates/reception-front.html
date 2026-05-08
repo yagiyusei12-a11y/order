@@ -343,6 +343,13 @@
       }
 
       const seatText = foundIds.map(seatDisplayLabel).join("、");
+      const typeLabels = [...new Set(foundIds.map((fid) => {
+        const s = seatStates[fid];
+        return s && String(s.seatType || "").trim() ? String(s.seatType).trim() : "";
+      }).filter(Boolean))];
+      const typeHtml = typeLabels.length
+        ? `<p style="margin:0 0 10px;font-size:1.05em;font-weight:800;color:var(--wood-dark)">${typeLabels.join("・")}</p>`
+        : "";
       const st =
         wait > 0
           ? new Date(Date.now() + wait * 60000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
@@ -350,6 +357,7 @@
       const html =
         `<h1 style="font-size:3.2em;margin:0 0 8px">${seatText}番</h1>` +
         `<h2 style="margin:0 0 10px">へどうぞ！</h2>` +
+        typeHtml +
         (st
           ? `<div class="time-alert" style="color:var(--error-red);font-size:2.2em;font-weight:900;margin:12px 0">注文開始予定：${st}～</div>` +
             `<p style="font-size:1.1em; font-weight:900; color:var(--wood-dark); margin:10px 0 12px;">お時間になりましたらスタッフが<br>お席までご案内に参ります。</p>`

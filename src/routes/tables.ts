@@ -3,6 +3,13 @@ import { prisma } from "../db.js";
 import { newPublicCode } from "../lib/token.js";
 import type { Prisma } from "@prisma/client";
 
+function normalizeTableSeatType(raw: unknown): string | undefined {
+  if (raw === undefined) return undefined;
+  const s = String(raw ?? "").trim();
+  if (s.length > 40) return undefined;
+  return s;
+}
+
 export async function registerTables(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { storeId: string } }>("/stores/:storeId/tables", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
@@ -16,7 +23,7 @@ export async function registerTables(app: FastifyInstance): Promise<void> {
 
   app.post<{
     Params: { storeId: string };
-    Body: { name: string; publicCode?: string; sortOrder?: number };
+    Body: { name: string; publicCode?: string; sortOrder?: number; seatType?: unknown };
   }>("/stores/:storeId/tables", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
     if (!store) return reply.code(404).send({ error: "store not found" });
@@ -33,12 +40,17 @@ export async function registerTables(app: FastifyInstance): Promise<void> {
     if (!code) return reply.code(500).send({ error: "could not allocate publicCode" });
     const existing = await prisma.table.findUnique({ where: { publicCode: code } });
     if (existing) return reply.code(400).send({ error: "publicCode already in use" });
+    const seatTypeRaw = normalizeTableSeatType(req.body?.seatType);
+    if (req.body?.seatType !== undefined && seatTypeRaw === undefined) {
+      return reply.code(400).send({ error: "seatType must be at most 40 characters" });
+    }
     const table = await prisma.table.create({
       data: {
         storeId: store.id,
         name,
         publicCode: code,
         sortOrder: req.body?.sortOrder ?? 0,
+        ...(seatTypeRaw !== undefined ? { seatType: seatTypeRaw } : {}),
       },
     });
     return table;
@@ -84,13 +96,27 @@ export async function registerTables(app: FastifyInstance): Promise<void> {
 
   app.patch<{
     Params: { storeId: string; tableId: string };
-    Body: { name?: string; active?: boolean; sortOrder?: number; capacity?: unknown; mergeWith?: unknown };
+    Body: {
+      name?: string;
+      active?: boolean;
+      sortOrder?: number;
+      capacity?: unknown;
+      mergeWith?: unknown;
+      seatType?: unknown;
+    };
   }>("/stores/:storeId/tables/:tableId", async (req, reply) => {
     const t = await prisma.table.findFirst({
       where: { id: req.params.tableId, storeId: req.params.storeId },
     });
     if (!t) return reply.code(404).send({ error: "table not found" });
-    const data: { name?: string; active?: boolean; sortOrder?: number; capacity?: number; mergeWith?: Prisma.InputJsonValue } = {};
+    const data: {
+      name?: string;
+      active?: boolean;
+      sortOrder?: number;
+      capacity?: number;
+      mergeWith?: Prisma.InputJsonValue;
+      seatType?: string;
+    } = {};
     if (req.body?.name !== undefined) {
       const n = req.body.name.trim();
       if (!n) return reply.code(400).send({ error: "name cannot be empty" });
@@ -108,6 +134,13 @@ export async function registerTables(app: FastifyInstance): Promise<void> {
       const arr = Array.isArray(req.body.mergeWith) ? req.body.mergeWith : [];
       const cleaned = arr.filter((x) => typeof x === "string").map((s) => s.trim()).filter((s) => s);
       data.mergeWith = cleaned as Prisma.InputJsonValue;
+    }
+    if (req.body?.seatType !== undefined) {
+      const st = normalizeTableSeatType(req.body.seatType);
+      if (st === undefined && String(req.body.seatType ?? "").trim() !== "") {
+        return reply.code(400).send({ error: "seatType must be at most 40 characters" });
+      }
+      data.seatType = st ?? "";
     }
     const updated = await prisma.table.update({ where: { id: t.id }, data });
     return updated;

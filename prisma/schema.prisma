@@ -167,6 +167,8 @@ model Table {
   capacity   Int               @default(2)
   /// 合体可能な席（publicCode の配列を JSON で保持）
   mergeWith  Json              @default("[]")
+  /// 席種別（例: カウンター／テーブル）。ネット予約で種別指定時の判定に使用。空なら種別なし扱い
+  seatType   String            @default("")
   active     Boolean           @default(true)
   store      Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
   sessions   DiningSession[]

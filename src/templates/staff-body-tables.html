@@ -18,6 +18,9 @@
     <label for="newTableCode">卓QR用コード（空欄なら自動発行）</label>
     <p class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.35rem"><code>/table-app/コード</code> の末尾。英数字・ハイフン推奨。変更するとQRのURLも変わります。</p>
     <input id="newTableCode" type="text" placeholder="例: counter-3" autocomplete="off" />
+    <label for="newTableSeatType">席種別（任意・ネット予約の種別指定用）</label>
+    <p class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.35rem">例: カウンター、テーブル。複数卓で同じ文字列にすると同一種別としてまとまります。</p>
+    <input id="newTableSeatType" type="text" placeholder="空欄で種別なし" maxlength="40" autocomplete="off" />
     <button type="button" class="btn-primary" id="btnAddTable">席を追加</button>
   </div>
   <div id="log"></div>

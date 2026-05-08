@@ -41,6 +41,12 @@ function seatLabel(id) {
   return raw;
 }
 
+function seatTypeLine(id) {
+  const st = seatStates[String(id || "")];
+  const t = st && String(st.seatType || "").trim();
+  return t || "";
+}
+
 const initAudio = () => {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   if (audioCtx.state === "suspended") audioCtx.resume();
@@ -678,6 +684,16 @@ function renderSidePanels(waiting, staffCount, resList) {
         tdName.appendChild(br);
         tdName.appendChild(span);
       }
+      if (r.seatType) {
+        const brt = document.createElement("br");
+        const spt = document.createElement("span");
+        spt.style.fontSize = "0.82em";
+        spt.style.color = "#93c5fd";
+        spt.style.fontWeight = "800";
+        spt.textContent = `種別: ${String(r.seatType)}`;
+        tdName.appendChild(brt);
+        tdName.appendChild(spt);
+      }
 
       const tdSeats = document.createElement("td");
       tdSeats.style.color = "var(--reserved-yellow)";
@@ -776,6 +792,12 @@ function syncMapSeatVisuals(staffCount) {
     el.className = `seat ${status}`;
     const lab = el.querySelector(".seat-label");
     if (lab) lab.textContent = labelKey;
+    const tl = seatTypeLine(id);
+    const tEl = el.querySelector(".seat-type-line");
+    if (tEl) {
+      tEl.textContent = tl;
+      tEl.style.display = tl ? "" : "none";
+    }
   }
 }
 
@@ -809,6 +831,12 @@ function render(waiting, staffCount, resList) {
     span.className = "seat-label";
     span.textContent = labelKey;
     div.appendChild(span);
+    const typeSpan = document.createElement("span");
+    typeSpan.className = "seat-type-line";
+    const tl0 = seatTypeLine(id);
+    typeSpan.textContent = tl0;
+    typeSpan.style.display = tl0 ? "" : "none";
+    div.appendChild(typeSpan);
     const handle = document.createElement("div");
     handle.className = "seat-resize-handle";
     div.appendChild(handle);

@@ -45,6 +45,14 @@ function lineGroupKey(ln) {
   return base;
 }
 
+/** キッチン PATCH / キャンセルは DB の注文明細 id。セット内訳行は親行 id を kitchenPatchLineId で渡す */
+function kitchenPatchLineId(ln) {
+  if (!ln) return "";
+  const p = ln.kitchenPatchLineId;
+  if (p != null && String(p)) return String(p);
+  return String(ln.id || "");
+}
+
 function stripNameSnapshotExtras(nameSnapshot) {
   const s = String(nameSnapshot || "");
   const i1 = s.indexOf("［");
@@ -575,10 +583,14 @@ function syncKitTabChrome() {
 
 function summaryViewSignature(lines, st) {
   try {
-    const ids = (lines || [])
-      .filter((ln) => ln && ln.status !== "done" && ln.status !== "served" && passesFilters(ln, st))
-      .map((ln) => String(ln.id))
-      .sort();
+    const ids = [
+      ...new Set(
+        (lines || [])
+          .filter((ln) => ln && ln.status !== "done" && ln.status !== "served" && passesFilters(ln, st))
+          .map((ln) => kitchenPatchLineId(ln))
+          .filter(Boolean)
+      ),
+    ].sort();
     return ids.join(",");
   } catch (_) {
     return "";
@@ -591,7 +603,7 @@ function applyKitSummaryDoneOptimistic(lineIds) {
   const idSet = new Set(lineIds.map((id) => String(id)));
   const nowIso = new Date().toISOString();
   kitSummaryFrozenLines = kitSummaryFrozenLines.map((ln) => {
-    if (!ln || !idSet.has(String(ln.id))) return ln;
+    if (!ln || !idSet.has(kitchenPatchLineId(ln))) return ln;
     return { ...ln, status: "done", readyAt: nowIso };
   });
 }
@@ -601,10 +613,10 @@ function applyKitKitchenRemoveLines(lineIds) {
   if (!lineIds || lineIds.length === 0) return;
   const idSet = new Set(lineIds.map((id) => String(id)));
   if (kitSummaryFrozenLines && kitSummaryFrozenLines.length) {
-    kitSummaryFrozenLines = kitSummaryFrozenLines.filter((ln) => !ln || !idSet.has(String(ln.id)));
+    kitSummaryFrozenLines = kitSummaryFrozenLines.filter((ln) => !ln || !idSet.has(kitchenPatchLineId(ln)));
   }
   if (lastLines && lastLines.length) {
-    lastLines = lastLines.filter((ln) => !ln || !idSet.has(String(ln.id)));
+    lastLines = lastLines.filter((ln) => !ln || !idSet.has(kitchenPatchLineId(ln)));
   }
 }
 
@@ -703,7 +715,7 @@ function renderKitHistoryList(box, lines) {
 
     for (const ln of og.lines) {
       const row = document.createElement("div");
-      row.className = "kit-line-box";
+      row.className = ln.isSetComponent ? "kit-line-box kit-line-set-part" : "kit-line-box";
       const tag = ln.kitchenStationName ? "〈" + ln.kitchenStationName + "〉 " : "";
       const name = document.createElement("div");
       name.className = "kit-line-name";
@@ -721,7 +733,7 @@ function renderKitHistoryList(box, lines) {
       rev.className = "btn-ghost kit-btn-revert";
       rev.textContent = "戻す（未調理に戻す）";
       rev.title = "誤って調理済にした場合、待ちの注文に戻します";
-      rev.onclick = () => setLine(ln.id, "queued");
+      rev.onclick = () => setLine(kitchenPatchLineId(ln), "queued");
       statusRow.appendChild(rev);
       wrap.appendChild(statusRow);
       row.appendChild(name);
@@ -776,7 +788,8 @@ function renderKitList() {
       if (!prev) {
         const byTable = new Map();
         const tk = ln.tableName || "卓未設定";
-        byTable.set(tk, { qty: Number(ln.qty || 0), lineIds: [ln.id] });
+        const pid = kitchenPatchLineId(ln);
+        byTable.set(tk, { qty: Number(ln.qty || 0), lineIds: pid ? [pid] : [] });
         const extraTxt = orderLineExtraSubtext(ln);
         grouped.set(key, {
           key,
@@ -807,11 +820,12 @@ function renderKitList() {
         }
         const tk = ln.tableName || "卓未設定";
         const cur = prev.byTable.get(tk);
+        const pid = kitchenPatchLineId(ln);
         if (!cur) {
-          prev.byTable.set(tk, { qty: Number(ln.qty || 0), lineIds: [ln.id] });
+          prev.byTable.set(tk, { qty: Number(ln.qty || 0), lineIds: pid ? [pid] : [] });
         } else {
           cur.qty += Number(ln.qty || 0);
-          cur.lineIds.push(ln.id);
+          if (pid && !cur.lineIds.includes(pid)) cur.lineIds.push(pid);
         }
       }
     }
@@ -882,7 +896,11 @@ function renderKitList() {
       tableButtons.style.gap = "0.28rem";
       tableButtons.style.flexDirection = "column";
       tableButtons.style.alignItems = "stretch";
-      const lineById = new Map(lines.map((ln) => [String(ln.id), ln]));
+      const lineByPatchId = new Map();
+      for (const ln of lines) {
+        const pid = kitchenPatchLineId(ln);
+        if (pid && !lineByPatchId.has(pid)) lineByPatchId.set(pid, ln);
+      }
       for (const [t, info] of [...g.byTable.entries()].sort((a, b) => a[0].localeCompare(b[0], "ja"))) {
         const cell = document.createElement("div");
         cell.style.display = "flex";
@@ -912,8 +930,9 @@ function renderKitList() {
           }
         };
         cell.appendChild(b);
-        const sampleLn = info.lineIds.map((id) => lineById.get(String(id))).find((x) => x);
+        const sampleLn = info.lineIds.map((id) => lineByPatchId.get(String(id))).find((x) => x);
         const hasMenuItem = Boolean(sampleLn && sampleLn.menuItemId);
+        const stockoutTargetsSet = Boolean(sampleLn && sampleLn.isSetComponent);
         const rowCancel = document.createElement("div");
         rowCancel.className = "kit-summary-cancel-row";
         rowCancel.style.display = "flex";
@@ -941,7 +960,9 @@ function renderKitList() {
             info.lineIds.length +
             "件\n\n" +
             (hasMenuItem
-              ? "・注文明細がキャンセルされます\n・商品マスタは在庫0・販売停止になり、ゲスト・ハンディから注文できなくなります\n\n※ 再販する場合はメニュー管理で在庫・販売を戻してください。"
+              ? stockoutTargetsSet
+                ? "・注文明細がキャンセルされます\n・セット商品のマスタが在庫0・販売停止になります（画面上は構成単品ですが、取り消しはセット単位です）\n\n※ 再販する場合はメニュー管理で在庫・販売を戻してください。"
+                : "・注文明細がキャンセルされます\n・商品マスタは在庫0・販売停止になり、ゲスト・ハンディから注文できなくなります\n\n※ 再販する場合はメニュー管理で在庫・販売を戻してください。"
               : "・注文明細がキャンセルされます（メニューに紐づかないため商品マスタは変わりません）");
           await cancelKitchenLinesStockout(info.lineIds, msg, bs);
         };
@@ -1065,7 +1086,7 @@ function renderKitList() {
 
     for (const ln of og.lines) {
       const row = document.createElement("div");
-      row.className = "kit-line-box";
+      row.className = ln.isSetComponent ? "kit-line-box kit-line-set-part" : "kit-line-box";
       const tag = ln.kitchenStationName ? "〈" + ln.kitchenStationName + "〉 " : "";
       const nameRow = document.createElement("div");
       nameRow.className = "kit-line-name-row";
@@ -1081,18 +1102,33 @@ function renderKitList() {
         cancelTxt.title =
           "在庫切れなどで取り消す（確認のあと明細キャンセル・必要なら商品を販売停止・在庫0）";
         cancelTxt.onclick = async () => {
+          const patchId = kitchenPatchLineId(ln);
           const hasM = Boolean(ln.menuItemId);
           const displayName = orderLineDisplayName(ln) || "品目";
-          const msg =
-            "対象：「" +
-            displayName +
-            "」×" +
-            (ln.qty != null ? ln.qty : 1) +
-            "\n\n" +
-            (hasM
-              ? "・注文明細がキャンセルされます\n・商品マスタは在庫0・販売停止になり、ゲスト・ハンディから注文できなくなります\n\n※ 再販する場合はメニュー管理で在庫・販売を戻してください。"
-              : "・注文明細がキャンセルされます（メニューに紐づかないため商品マスタは変わりません）");
-          await cancelKitchenLinesStockout([ln.id], msg, cancelTxt);
+          const qty = ln.qty != null ? ln.qty : 1;
+          let msg;
+          if (ln.isSetComponent) {
+            msg =
+              "対象：「" +
+              displayName +
+              "」×" +
+              qty +
+              "（セット注文の明細全体がキャンセルされます）\n\n" +
+              (hasM
+                ? "・1 件の注文明細がキャンセルされます\n・セット商品のマスタが在庫0・販売停止になります（表示は構成単品です）\n\n※ 再販する場合はメニュー管理で在庫・販売を戻してください。"
+                : "・注文明細がキャンセルされます（メニューに紐づかないため商品マスタは変わりません）");
+          } else {
+            msg =
+              "対象：「" +
+              displayName +
+              "」×" +
+              qty +
+              "\n\n" +
+              (hasM
+                ? "・注文明細がキャンセルされます\n・商品マスタは在庫0・販売停止になり、ゲスト・ハンディから注文できなくなります\n\n※ 再販する場合はメニュー管理で在庫・販売を戻してください。"
+                : "・注文明細がキャンセルされます（メニューに紐づかないため商品マスタは変わりません）");
+          }
+          await cancelKitchenLinesStockout([patchId], msg, cancelTxt);
         };
         nameRow.appendChild(cancelTxt);
       }
@@ -1144,7 +1180,7 @@ function renderKitList() {
         const b2 = document.createElement("button");
         b2.className = "btn-ghost";
         b2.textContent = "調理済";
-        b2.onclick = () => setLine(ln.id, "done");
+        b2.onclick = () => setLine(kitchenPatchLineId(ln), "done");
         statusRow.appendChild(b2);
       }
       if (timersRow.childNodes.length) {
@@ -1201,7 +1237,7 @@ async function refreshKitchen() {
     const st = loadFilterState();
     const sig = filterStateSignature(st);
     const passingQueued = fetchedLines.filter((ln) => ln.status === "queued" && passesFilters(ln, st));
-    const nextIds = new Set(passingQueued.map((ln) => ln.id));
+    const nextIds = new Set(passingQueued.map((ln) => kitchenPatchLineId(ln)).filter(Boolean));
 
     if (!kitKitchenDataInitialized) {
       kitPrevFilteredQueuedIds = new Set(nextIds);
@@ -1253,7 +1289,8 @@ async function refreshKitchen() {
  * @param {HTMLButtonElement | null} [busyBtn]
  */
 async function cancelKitchenLinesStockout(lineIds, confirmMessage, busyBtn) {
-  if (!lineIds || lineIds.length === 0) return;
+  const uniq = [...new Set((lineIds || []).map((id) => String(id)).filter(Boolean))];
+  if (uniq.length === 0) return;
   const fullMessage =
     "【確認】在庫切れキャンセルを実行しますか？\n\n" +
     "誤って押した場合は「いいえ」または「キャンセル」で閉じてください。\n\n" +
@@ -1267,14 +1304,14 @@ async function cancelKitchenLinesStockout(lineIds, confirmMessage, busyBtn) {
   }
   try {
     await Promise.all(
-      lineIds.map((lineId) =>
+      uniq.map((lineId) =>
         api(
           "/stores/" + encodeURIComponent(STORE) + "/kitchen/order-lines/" + encodeURIComponent(lineId) + "/cancel-stockout",
           { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }
         )
       )
     );
-    applyKitKitchenRemoveLines(lineIds);
+    applyKitKitchenRemoveLines(uniq);
     renderKitList();
     await refreshKitchen();
   } catch (e) {
@@ -1300,17 +1337,18 @@ async function setLine(lineId, status) {
 }
 
 async function setLinesDone(lineIds) {
-  if (!lineIds || lineIds.length === 0) return;
+  const uniq = [...new Set((lineIds || []).map((id) => String(id)).filter(Boolean))];
+  if (uniq.length === 0) return;
   try {
     await Promise.all(
-      lineIds.map((lineId) =>
+      uniq.map((lineId) =>
         api(
           "/stores/" + encodeURIComponent(STORE) + "/kitchen/order-lines/" + encodeURIComponent(lineId),
           { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "done" }) }
         )
       )
     );
-    applyKitSummaryDoneOptimistic(lineIds);
+    applyKitSummaryDoneOptimistic(uniq);
     renderKitList();
     await refreshKitchen();
   } catch (e) {

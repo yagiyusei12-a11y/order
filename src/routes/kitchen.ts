@@ -1,5 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
+import {
+  extractSetComponentsFromLineExtra,
+  stripSetNameSnapshotBracket,
+} from "../lib/kitchen-expand-set-lines.js";
 
 const LINE_STATUSES = ["queued", "cooking", "done", "served"] as const;
 
@@ -57,45 +61,107 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
       },
     });
 
-    return {
-      storeId: store.id,
-      lines: lines.map((l) => ({
-        id: l.id,
-        status: l.status,
-        nameSnapshot: l.nameSnapshot,
-        unitPrice: l.unitPrice,
-        qty: l.qty,
-        note: l.note,
-        lineExtra: l.lineExtra,
-        menuItemId: l.menuItemId,
-        categoryId: l.menuItem?.categoryId ?? null,
-        categoryName: l.menuItem?.category?.name ?? null,
-        categoryVisibleToGuest: l.menuItem?.category?.visibleToGuest ?? null,
-        kitchenStationId: l.menuItem?.kitchenStationId ?? null,
-        kitchenStationName: l.menuItem?.kitchenStation?.name ?? null,
-        cookTimerSec:
-          l.menuItem?.cookTimerSec != null && l.menuItem.cookTimerSec > 0 ? l.menuItem.cookTimerSec : null,
-        cookTimerSec2:
-          l.menuItem?.cookTimerSec2 != null && l.menuItem.cookTimerSec2 > 0 ? l.menuItem.cookTimerSec2 : null,
-        setFixedSteps:
-          l.menuItem?.sellKind === "set"
-            ? l.menuItem.setSteps.map((st) => ({
-                stepId: st.id,
-                label: st.label,
-                fixed: (st.choices || []).map((c) => ({
-                  menuItemId: c.componentMenuItemId,
-                  name: c.componentMenuItem?.name ?? "",
-                })),
-              }))
-            : null,
-        orderId: l.orderId,
-        orderCreatedAt: l.order.createdAt,
-        tableName: l.order.session.table.name,
-        sessionId: l.order.sessionId,
-        readyAt: l.readyAt,
-        servedAt: l.servedAt,
-      })),
-    };
+    const compIds = new Set<string>();
+    for (const l of lines) {
+      if (l.menuItem?.sellKind !== "set") continue;
+      for (const p of extractSetComponentsFromLineExtra(l.lineExtra)) compIds.add(p.menuItemId);
+    }
+
+    const compRows =
+      compIds.size === 0
+        ? []
+        : await prisma.menuItem.findMany({
+            where: { id: { in: [...compIds] }, category: { storeId: store.id } },
+            include: {
+              category: { select: { id: true, name: true, visibleToGuest: true } },
+              kitchenStation: { select: { id: true, name: true } },
+            },
+          });
+    const compMenuById = new Map(compRows.map((mi) => [mi.id, mi] as const));
+
+    const outLines: Array<Record<string, unknown>> = [];
+
+    for (const l of lines) {
+      const picks =
+        l.menuItem?.sellKind === "set" ? extractSetComponentsFromLineExtra(l.lineExtra) : [];
+      const resolved =
+        picks.length > 0 ? picks.filter((p) => compMenuById.has(p.menuItemId)) : [];
+
+      if (picks.length === 0 || resolved.length === 0) {
+        outLines.push({
+          id: l.id,
+          kitchenPatchLineId: l.id,
+          isSetComponent: false,
+          status: l.status,
+          nameSnapshot: l.nameSnapshot,
+          unitPrice: l.unitPrice,
+          qty: l.qty,
+          note: l.note,
+          lineExtra: l.lineExtra,
+          menuItemId: l.menuItemId,
+          categoryId: l.menuItem?.categoryId ?? null,
+          categoryName: l.menuItem?.category?.name ?? null,
+          categoryVisibleToGuest: l.menuItem?.category?.visibleToGuest ?? null,
+          kitchenStationId: l.menuItem?.kitchenStationId ?? null,
+          kitchenStationName: l.menuItem?.kitchenStation?.name ?? null,
+          cookTimerSec:
+            l.menuItem?.cookTimerSec != null && l.menuItem.cookTimerSec > 0 ? l.menuItem.cookTimerSec : null,
+          cookTimerSec2:
+            l.menuItem?.cookTimerSec2 != null && l.menuItem.cookTimerSec2 > 0 ? l.menuItem.cookTimerSec2 : null,
+          setFixedSteps:
+            l.menuItem?.sellKind === "set"
+              ? l.menuItem.setSteps.map((st) => ({
+                  stepId: st.id,
+                  label: st.label,
+                  fixed: (st.choices || []).map((c) => ({
+                    menuItemId: c.componentMenuItemId,
+                    name: c.componentMenuItem?.name ?? "",
+                  })),
+                }))
+              : null,
+          orderId: l.orderId,
+          orderCreatedAt: l.order.createdAt,
+          tableName: l.order.session.table.name,
+          sessionId: l.order.sessionId,
+          readyAt: l.readyAt,
+          servedAt: l.servedAt,
+        });
+        continue;
+      }
+
+      const setTitle = stripSetNameSnapshotBracket(l.nameSnapshot);
+      for (const p of resolved) {
+        const mi = compMenuById.get(p.menuItemId)!;
+        outLines.push({
+          id: `${l.id}::${p.menuItemId}`,
+          kitchenPatchLineId: l.id,
+          isSetComponent: true,
+          status: l.status,
+          nameSnapshot: p.stepLabel ? `${setTitle} › ${p.stepLabel}: ${p.pickName}` : `${setTitle} › ${p.pickName}`,
+          unitPrice: 0,
+          qty: l.qty,
+          note: l.note,
+          lineExtra: null,
+          menuItemId: mi.id,
+          categoryId: mi.categoryId,
+          categoryName: mi.category?.name ?? null,
+          categoryVisibleToGuest: mi.category?.visibleToGuest ?? null,
+          kitchenStationId: mi.kitchenStationId,
+          kitchenStationName: mi.kitchenStation?.name ?? null,
+          cookTimerSec: mi.cookTimerSec != null && mi.cookTimerSec > 0 ? mi.cookTimerSec : null,
+          cookTimerSec2: mi.cookTimerSec2 != null && mi.cookTimerSec2 > 0 ? mi.cookTimerSec2 : null,
+          setFixedSteps: null,
+          orderId: l.orderId,
+          orderCreatedAt: l.order.createdAt,
+          tableName: l.order.session.table.name,
+          sessionId: l.order.sessionId,
+          readyAt: l.readyAt,
+          servedAt: l.servedAt,
+        });
+      }
+    }
+
+    return { storeId: store.id, lines: outLines };
   });
 
   app.patch<{

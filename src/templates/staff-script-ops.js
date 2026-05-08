@@ -43,6 +43,27 @@ function orderLineExtraSubtext(extra) {
 function yen(v) {
   return Number(v || 0).toLocaleString("ja-JP") + "円";
 }
+
+function taxBreakdownFromLines(orderLines) {
+  const byRate = new Map();
+  for (const l of orderLines || []) {
+    if (!l || l.status === "cancelled") continue;
+    const rate = Number(l.taxRatePercent || 0);
+    const gross = Number(l.lineTotal || (Number(l.unitPrice || 0) * Number(l.qty || 0)) || 0);
+    const net = rate > 0 ? Math.round(gross / (1 + rate / 100)) : gross;
+    const tax = gross - net;
+    const cur = byRate.get(rate) || { rate, gross: 0, net: 0, tax: 0 };
+    cur.gross += gross;
+    cur.net += net;
+    cur.tax += tax;
+    byRate.set(rate, cur);
+  }
+  const rows = [...byRate.values()].sort((a, b) => b.rate - a.rate);
+  const netTotal = rows.reduce((s, r) => s + r.net, 0);
+  const taxTotal = rows.reduce((s, r) => s + r.tax, 0);
+  const grossTotal = rows.reduce((s, r) => s + r.gross, 0);
+  return { rows, netTotal, taxTotal, grossTotal };
+}
 function billPath(id) {
   return "/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(id);
 }
@@ -262,7 +283,7 @@ function groupedOrderLines(detail) {
   const lines = (detail.orderLines || []).filter((l) => l.status !== "cancelled");
   const grouped = new Map();
   for (const l of lines) {
-    const key = [l.nameSnapshot || "", Number(l.unitPrice || 0), l.menuItemId || "", JSON.stringify(l.lineExtra ?? null)].join("::");
+    const key = [l.nameSnapshot || "", String(l.eatMode || "dine_in"), Number(l.unitPrice || 0), l.menuItemId || "", JSON.stringify(l.lineExtra ?? null)].join("::");
     if (!grouped.has(key)) {
       grouped.set(key, {
         key,
@@ -270,6 +291,7 @@ function groupedOrderLines(detail) {
         unitPrice: Number(l.unitPrice || 0),
         qty: 0,
         lineTotal: 0,
+        eatMode: String(l.eatMode || "dine_in"),
         lines: [],
       });
     }
@@ -388,9 +410,15 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
     detail = await api(billPath(billId));
   }
   const remainder = Number(detail.remainder || 0);
-  const taxRate = Number(storeSettingsCache.taxRatePercent || 10);
-  const netTotal = Math.round(Number(detail.totalAmount || 0) / (1 + taxRate / 100));
-  const taxAmount = Number(detail.totalAmount || 0) - netTotal;
+  const tb = taxBreakdownFromLines(detail.orderLines || []);
+  const netTotal = tb.netTotal;
+  const taxAmount = tb.taxTotal;
+  const taxDetailHtml =
+    tb.rows.length > 1
+      ? "<div class=\"muted\" style=\"font-size:.72rem;line-height:1.35;margin:.15rem 0 .35rem;text-align:right\">" +
+        tb.rows.map((r) => `内訳: ${r.rate}% 税 ${yen(r.tax)}`).join("<br/>") +
+        "</div>"
+      : "";
   const methods = paymentMethodsCache
     .map((m) => "<option value=\"" + escapeHtml(m.code) + "\">" + escapeHtml(m.labelJa || m.code) + "</option>")
     .join("");
@@ -403,6 +431,7 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
         "\">" +
         "<td>" +
         "<div class=\"ops-line-name\">" +
+        (g.eatMode === "takeout" ? "<span class=\"badge\" style=\"margin-right:.35rem;background:#0ea5e9\">テイクアウト</span>" : "") +
         escapeHtml(g.nameSnapshot) +
         "</div>" +
         (g.lines && g.lines[0] && orderLineExtraSubtext(g.lines[0].lineExtra)
@@ -458,6 +487,7 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
     "<div class=\"row ops-total-row\"><span class=\"muted\">消費税</span><strong>" +
     yen(taxAmount) +
     "</strong></div>" +
+    taxDetailHtml +
     "<div class=\"row ops-total-row ops-total-main\"><span class=\"muted\">請求金額</span><strong>" +
     yen(detail.totalAmount) +
     "</strong></div>" +

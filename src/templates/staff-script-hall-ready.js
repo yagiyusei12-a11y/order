@@ -347,7 +347,7 @@ function renderHallList() {
 
       const title = document.createElement("div");
       title.className = "name";
-      title.textContent = ln.nameSnapshot || "（品目）";
+      title.textContent = (ln.eatMode === "takeout" ? "【テイクアウト】" : "") + (ln.nameSnapshot || "（品目）");
       block.appendChild(title);
 
       const chips = document.createElement("div");

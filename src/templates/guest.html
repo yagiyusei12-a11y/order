@@ -1424,6 +1424,12 @@
       return sel && sel.value ? String(sel.value) : "";
     }
 
+    function getEatMode(panel, item) {
+      if (!item || !item.allowTakeout) return "dine_in";
+      const r = panel.querySelector("input[type=radio][name=eatmode]:checked");
+      return r && r.value === "takeout" ? "takeout" : "dine_in";
+    }
+
     function syncDetailAddPrice(panel, unitPrice, qty) {
       const btn = panel.querySelector("[data-add]");
       if (!btn || !guestShowMenuPrices) return;
@@ -2016,6 +2022,17 @@
         }
       }
 
+      if (item.allowTakeout) {
+        bodyInner +=
+          "<div class=\"opt-block\" data-eatmode-wrap>" +
+          "<div class=\"opt-block-head\"><strong>受け取り</strong><span class=\"tag-opt\" style=\"margin-left:auto\">任意</span></div>" +
+          "<label class=\"opt-row\" style=\"cursor:pointer;margin:0\"><input type=\"radio\" name=\"eatmode\" value=\"dine_in\" checked />" +
+          "<span class=\"opt-name\">店内</span></label>" +
+          "<label class=\"opt-row\" style=\"cursor:pointer;margin:0\"><input type=\"radio\" name=\"eatmode\" value=\"takeout\" />" +
+          "<span class=\"opt-name\">テイクアウト（税率8%）</span></label>" +
+          "</div>";
+      }
+
       host.innerHTML =
         "<div class=\"detail-panel\" role=\"dialog\" aria-modal=\"true\">" +
         "<button type=\"button\" class=\"detail-close\" aria-label=\"閉じる\">×</button>" +
@@ -2119,6 +2136,7 @@
             toast("酒類はご注文いただけません");
             return;
           }
+          const eatMode = getEatMode(panel, item);
           const setComponentOptionSelections = collectSetComponentOptionSelections(panel, item);
           const cartKey =
             "s:" +
@@ -2138,6 +2156,7 @@
           cur.unitPrice = unitPrice;
           cur.setSelections = setSelections;
           cur.name = item.name;
+          cur.eatMode = eatMode;
           if (setComponentOptionSelections && setComponentOptionSelections.length) cur.setComponentOptionSelections = setComponentOptionSelections;
           else delete cur.setComponentOptionSelections;
           if (serveLaterDeferStepId) cur.serveLaterDeferStepId = serveLaterDeferStepId;
@@ -2187,6 +2206,7 @@
           }
           const unitPrice = computeOptionUnitPrice(item, optionSelections);
           const q = getQty();
+          const eatMode = getEatMode(panel, item);
           const cartKey = "o:" + item.id + ":" + stableOptionKey(optionSelections);
           const cur = cart[cartKey] || {
             cartKey,
@@ -2200,6 +2220,7 @@
           cur.unitPrice = unitPrice;
           cur.optionSelections = optionSelections;
           cur.name = item.name;
+          cur.eatMode = eatMode;
           if (item.stockQty != null && (cur.qty || 0) + q > item.stockQty) {
             toast("これ以上は在庫がありません");
             return;
@@ -2220,6 +2241,7 @@
           }
           const cartKey = item.id;
           const base = singleGuestChargeBase(item);
+          const eatMode = getEatMode(panel, item);
           const cur = cart[cartKey] || {
             cartKey,
             menuItemId: item.id,
@@ -2230,6 +2252,7 @@
           };
           cur.unitPrice = base;
           cur.name = item.name;
+          cur.eatMode = eatMode;
           if (item.stockQty != null && (cur.qty || 0) + q > item.stockQty) {
             toast("これ以上は在庫がありません");
             return;
@@ -2746,6 +2769,7 @@
           if (x.optionSelections && x.optionSelections.length) o.optionSelections = x.optionSelections;
           if (x.serveLaterDeferStepId) o.serveLaterDeferStepId = x.serveLaterDeferStepId;
           if (x.setComponentOptionSelections && x.setComponentOptionSelections.length) o.setComponentOptionSelections = x.setComponentOptionSelections;
+          if (x.eatMode) o.eatMode = x.eatMode;
           return o;
         });
       if (lines.length === 0) return;

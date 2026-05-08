@@ -12,7 +12,7 @@ type SessionForPreview = {
     pricePerPerson: number;
     childPricePerPerson: number | null;
   } | null;
-  orders: { lines: { unitPrice: number; qty: number; status: string }[] }[];
+  orders: { lines: { unitPrice: number; qty: number; status: string; taxRatePercent?: number }[] }[];
 };
 
 function sessionPreviewFromSession(session: SessionForPreview): {
@@ -76,6 +76,8 @@ async function buildBillDetailPayload(
     status: string;
     menuItemId: string | null;
     lineExtra: unknown;
+    eatMode: string;
+    taxRatePercent: number;
   }[];
 } | null> {
   const bill = await prisma.bill.findFirst({
@@ -139,6 +141,8 @@ async function buildBillDetailPayload(
     status: string;
     menuItemId: string | null;
     lineExtra: unknown;
+    eatMode: string;
+    taxRatePercent: number;
   }[] = [];
   if (bill.session) {
     preview = sessionPreviewFromSession(bill.session as SessionForPreview);
@@ -174,6 +178,8 @@ async function buildBillDetailPayload(
           status: l.status,
           menuItemId: l.menuItemId,
           lineExtra: l.lineExtra,
+          eatMode: (l as { eatMode?: string }).eatMode ?? "dine_in",
+          taxRatePercent: (l as { taxRatePercent?: number }).taxRatePercent ?? 10,
         });
       }
     }

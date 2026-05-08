@@ -67,7 +67,9 @@ function orderLineDisplayName(ln) {
     const kind = /** @type {{ kind?: unknown }} */ (ln.lineExtra).kind;
     if (kind === "set") return stripNameSnapshotExtras(ln.nameSnapshot);
   }
-  return String((ln && ln.nameSnapshot) || "");
+  const base = String((ln && ln.nameSnapshot) || "");
+  const em = ln && ln.eatMode ? String(ln.eatMode) : "";
+  return em === "takeout" ? "【テイクアウト】" + base : base;
 }
 
 function orderLineExtraSubtext(ln) {

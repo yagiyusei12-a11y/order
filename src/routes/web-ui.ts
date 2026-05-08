@@ -98,6 +98,13 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
     return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(body);
   });
 
+  app.get<{ Params: { storeId: string } }>("/takeout/:storeId", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId }, select: { id: true, name: true } });
+    if (!store) return reply.code(404).type("text/plain; charset=utf-8").send("store not found");
+    const body = html("takeout-net.html").replace("__STORE_ID_JS__", JSON.stringify(store.id));
+    return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(body);
+  });
+
   const staffHtml = (reply: FastifyReply, storeId: string, title: string, bodyFile: string, scriptFile: string) =>
     reply
       .type("text/html; charset=utf-8")
@@ -107,6 +114,17 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/ops", async (req, reply) => {
     if (!(await assertStaffStore(req, reply))) return;
     return staffHtml(reply, req.params.storeId, "オペレーション", "staff-body-ops.html", "staff-script-ops.js");
+  });
+
+  app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/takeout", async (req, reply) => {
+    if (!(await assertStaffStore(req, reply))) return;
+    return staffHtml(
+      reply,
+      req.params.storeId,
+      "テイクアウト（ネット・口頭）",
+      "staff-body-takeout-net-orders.html",
+      "staff-script-takeout-net-orders.js"
+    );
   });
 
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/reception", async (req, reply) => {

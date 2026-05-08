@@ -26,6 +26,33 @@ import { SET_SERVE_LATER_LINE_KIND } from "../lib/set-order-bundle.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
 import { prisma } from "../db.js";
 
+type EatMode = "dine_in" | "takeout";
+function normalizeEatMode(raw: unknown): EatMode {
+  return raw === "takeout" ? "takeout" : "dine_in";
+}
+function eatModeTaxRatePercent(eatMode: EatMode, storeTaxRatePercent: number): number {
+  return eatMode === "takeout" ? 8 : storeTaxRatePercent;
+}
+function retaxInclusiveYen(
+  taxIncludedYen: number,
+  fromTaxRatePercent: number,
+  toTaxRatePercent: number,
+): number {
+  const net = Math.round(Number(taxIncludedYen || 0) / (1 + fromTaxRatePercent / 100));
+  return Math.round(net * (1 + toTaxRatePercent / 100));
+}
+function baseNetFromStoredPrice(
+  storedPrice: number,
+  storedMode: "inclusive" | "exclusive",
+  storeTaxRatePercent: number,
+): number {
+  if (storedMode === "exclusive") return storedPrice;
+  return Math.round(storedPrice / (1 + storeTaxRatePercent / 100));
+}
+function taxIncludedFromNet(netExclusiveYen: number, taxRatePercent: number): number {
+  return Math.round(netExclusiveYen * (1 + taxRatePercent / 100));
+}
+
 function mapGuestMenuItem(
   it: {
     id: string;
@@ -35,6 +62,7 @@ function mapGuestMenuItem(
     price: number;
     priceTaxMode: string;
     containsAlcohol?: boolean;
+    allowTakeout?: boolean;
     stockQty: number | null;
     stockLowThreshold: number | null;
     timeDiscounts?: {
@@ -71,6 +99,7 @@ function mapGuestMenuItem(
     priceTaxMode,
     basePrice: it.price,
     taxIncludedPrice: discounted,
+    allowTakeout: it.allowTakeout === true,
     stockQty: it.stockQty,
     lowStock,
     containsAlcohol: it.containsAlcohol === true,
@@ -517,6 +546,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                         stockQty: true,
                         stockLowThreshold: true,
                         containsAlcohol: true,
+                        allowTakeout: true,
                         category: {
                           include: { guestVisibleTimeWindow: true },
                         },
@@ -765,6 +795,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         menuItemId: string;
         qty: number;
         note?: string;
+        eatMode?: EatMode;
         setSelections?: GuestSetStepSelection[];
         optionSelections?: GuestOptionGroupSelection[];
         /** セット構成単品のオプション（stepId + menuItemId） */
@@ -863,6 +894,8 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
           unitPrice?: number;
           nameSnapshot?: string;
           lineExtra?: Record<string, unknown>;
+          eatMode: EatMode;
+          taxRatePercent: number;
         };
         type ResolvedSet = {
           kind: "set";
@@ -872,6 +905,8 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
           unitPrice: number;
           nameSnapshot: string;
           lineExtra: Record<string, unknown>;
+          eatMode: EatMode;
+          taxRatePercent: number;
         };
         const resolved: (ResolvedSingle | ResolvedSet)[] = [];
 
@@ -881,6 +916,8 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
           }
           const sel = Array.isArray(l.setSelections) ? l.setSelections : [];
           const hasSetPayload = sel.length > 0;
+          const eatMode = normalizeEatMode((l as { eatMode?: unknown }).eatMode);
+          const taxRatePercent = eatModeTaxRatePercent(eatMode, storeTaxRatePercent);
 
           if (hasSetPayload) {
             const setItem = await tx.menuItem.findFirst({
@@ -919,6 +956,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
               },
             });
             if (!setItem) throw new Error("BAD_ITEM");
+            if (eatMode === "takeout" && setItem.allowTakeout !== true) throw new Error("BAD_TAKEOUT");
             const sc = setItem.category;
             const gw0 = sc.guestVisibleTimeWindow;
             const sl0 = gw0 ? { startMin: gw0.startMin, endMin: gw0.endMin } : null;
@@ -977,17 +1015,14 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
               }
             }
 
-            const priceTaxMode =
-              setItem.priceTaxMode === "exclusive" ? "exclusive" : st.menuPriceTaxMode;
-            const baseTaxIncluded =
-              (setItem.priceTaxMode === "exclusive" ? "exclusive" : st.menuPriceTaxMode) === "exclusive"
-                ? Math.round(setItem.price * (1 + st.taxRatePercent / 100))
-                : setItem.price;
+            const priceTaxMode = setItem.priceTaxMode === "exclusive" ? "exclusive" : st.menuPriceTaxMode;
+            const baseNet = baseNetFromStoredPrice(setItem.price, priceTaxMode, storeTaxRatePercent);
+            const baseTaxIncluded = taxIncludedFromNet(baseNet, taxRatePercent);
             let surcharge = 0;
             for (const st of setItem.setSteps) {
               const picked = byStep.get(st.id) ?? [];
               const def = stepsVal.find((x) => x.id === st.id)!;
-              surcharge += surchargeExclusiveStepSumInclusive(def, picked, storeTaxRatePercent);
+              surcharge += surchargeExclusiveStepSumInclusive(def, picked, taxRatePercent);
             }
 
             // セット構成単品のオプション（単品 option priceDelta をセット単価に加算）
@@ -1002,7 +1037,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
               const ch = stepRow.choices.find((c) => c.componentMenuItemId === row.menuItemId);
               if (!ch) throw new Error("BAD_SET_COMP_OPT");
               const comp = ch.componentMenuItem;
-              const linkedGroups = (comp.optionLinks || [])
+              const linkedGroupsRaw = (comp.optionLinks || [])
                 .map((ol) => ol.optionGroup)
                 .filter((g): g is NonNullable<typeof g> => Boolean(g && g.active))
                 .map((g) => ({
@@ -1013,6 +1048,13 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                   items: g.items.filter((i) => i.active).map((i) => ({ id: i.id, name: i.name, priceDelta: i.priceDelta })),
                 }))
                 .filter((g) => g.items.length > 0);
+              const linkedGroups = linkedGroupsRaw.map((g) => ({
+                ...g,
+                items: g.items.map((it) => ({
+                  ...it,
+                  priceDelta: retaxInclusiveYen(it.priceDelta, storeTaxRatePercent, taxRatePercent),
+                })),
+              }));
               const vOpt = validateGuestOptionSelections(linkedGroups, row.optionSelections);
               if (!vOpt.ok) throw new Error("BAD_SET_COMP_OPT");
               surcharge += sumInclusiveOptionPriceDelta(linkedGroups, vOpt.byGroup);
@@ -1119,6 +1161,8 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
               unitPrice,
               nameSnapshot,
               lineExtra,
+              eatMode,
+              taxRatePercent,
             });
 
             if (serveLaterDeferStepId) {
@@ -1141,6 +1185,8 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                     deferredStepId: serveLaterDeferStepId,
                     stepLabel: deferStepLabel,
                   },
+                  eatMode,
+                  taxRatePercent,
                 });
               }
             }
@@ -1170,6 +1216,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
               },
             });
             if (!plainItem) throw new Error("BAD_ITEM");
+            if (eatMode === "takeout" && plainItem.allowTakeout !== true) throw new Error("BAD_TAKEOUT");
             const cat0 = plainItem.category;
             const gw0 = cat0.guestVisibleTimeWindow;
             const sl0 = gw0 ? { startMin: gw0.startMin, endMin: gw0.endMin } : null;
@@ -1193,10 +1240,9 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
             const vOpt = validateGuestOptionSelections(linkedGroups, l.optionSelections);
             if (!vOpt.ok) throw new Error("BAD_OPTIONS");
 
-            const baseTaxIncluded =
-              (plainItem.priceTaxMode === "exclusive" ? "exclusive" : st.menuPriceTaxMode) === "exclusive"
-                ? Math.round(plainItem.price * (1 + st.taxRatePercent / 100))
-                : plainItem.price;
+            const priceTaxMode = plainItem.priceTaxMode === "exclusive" ? "exclusive" : st.menuPriceTaxMode;
+            const baseNet = baseNetFromStoredPrice(plainItem.price, priceTaxMode, storeTaxRatePercent);
+            const baseTaxIncluded = taxIncludedFromNet(baseNet, taxRatePercent);
             const discRows0 = plainItem.timeDiscounts.map((d) => ({
               discountKind: d.discountKind,
               value: d.value,
@@ -1207,12 +1253,19 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
               Boolean(sess?.courseId && includedSingles.has(plainItem.id));
             const effectiveBase = inCourseIncluded ? 0 : discountedBase;
             const chargeOptExtras = st.guestCourseIncludedChargeOptionExtras !== false;
+            const linkedGroupsTaxed = linkedGroups.map((g) => ({
+              ...g,
+              items: g.items.map((it) => ({
+                ...it,
+                priceDelta: retaxInclusiveYen(it.priceDelta, storeTaxRatePercent, taxRatePercent),
+              })),
+            }));
             const optSum =
               inCourseIncluded && !chargeOptExtras
                 ? 0
-                : sumInclusiveOptionPriceDelta(linkedGroups, vOpt.byGroup);
+                : sumInclusiveOptionPriceDelta(linkedGroupsTaxed, vOpt.byGroup);
             const unitPriceWithOpts = effectiveBase + optSum;
-            const lineExtraOpts = buildSingleOptionsLineExtra(linkedGroups, vOpt.byGroup);
+            const lineExtraOpts = buildSingleOptionsLineExtra(linkedGroupsTaxed, vOpt.byGroup);
             const optArr = lineExtraOpts.options;
             const hasOptDetail = Array.isArray(optArr) && optArr.length > 0;
 
@@ -1232,6 +1285,8 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                     unitPrice: effectiveBase,
                     nameSnapshot: plainItem.name,
                   }),
+              eatMode,
+              taxRatePercent,
             });
           }
         }
@@ -1300,6 +1355,8 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                 qty: r.qty,
                 note: r.note,
                 lineExtra: lineExtraJson,
+                eatMode: r.eatMode,
+                taxRatePercent: r.taxRatePercent,
                 status: "queued",
               },
             });
@@ -1313,6 +1370,8 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                 qty: r.qty,
                 note: r.note,
                 lineExtra: r.lineExtra as Prisma.InputJsonValue,
+                eatMode: r.eatMode,
+                taxRatePercent: r.taxRatePercent,
                 status: "queued",
               },
             });
@@ -1354,6 +1413,9 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       }
       if (msg === "BAD_OPTIONS") {
         return reply.code(400).send({ error: "オプションの選択内容が正しくありません" });
+      }
+      if (msg === "BAD_TAKEOUT") {
+        return reply.code(400).send({ error: "テイクアウト不可の商品が含まれています" });
       }
       if (msg === "BAD_SET_COMP_OPT") {
         return reply.code(400).send({ error: "セット構成単品のオプション選択が正しくありません" });

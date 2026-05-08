@@ -24,6 +24,7 @@ model Store {
   sessions         DiningSession[]
   timeWindows      StoreTimeWindow[]
   customers        Customer[]
+  takeoutNetOrders TakeoutNetOrder[]
   receptionConfig  ReceptionConfig?
   receptionState   ReceptionState?
   receptionShifts  ReceptionShift[]
@@ -293,6 +294,8 @@ model MenuItem {
   cookTimerSec2     Int?
   /// 酒類（未成年・運転者向けの注文制限の対象。マスタで指定）
   containsAlcohol   Boolean         @default(false)
+  /// テイクアウト可能（ゲスト/ネット注文で選択可能）
+  allowTakeout      Boolean         @default(false)
   /// メニュー保存の楽観ロック（PATCH 時 ifMasterVersion と照合）
   masterVersion     Int             @default(1)
   category          MenuCategory    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
@@ -507,6 +510,10 @@ model OrderLine {
   note         String?
   /// セット注文時の内訳など JSON（kind: set, steps: [...]）
   lineExtra    Json?
+  /// 店内/テイクアウト（税率・表示用）
+  eatMode      String     @default("dine_in")
+  /// 明細ごとの税率（%）。店内は店舗設定、テイクアウトは 8。
+  taxRatePercent Int      @default(10)
   status       String     @default("queued")
   /// キッチンで「調理済」にした日時（提供待ちの並び順用）
   readyAt      DateTime?
@@ -518,4 +525,27 @@ model OrderLine {
   @@index([orderId])
   @@index([status, readyAt])
   @@index([status, servedAt])
+}
+
+/// 店外からのネット注文（テイクアウト）
+model TakeoutNetOrder {
+  id           String   @id @default(cuid())
+  storeId      String
+  status       String   @default("new")
+  pickupAt     DateTime
+  /// 生成した SalesOrder.id（厨房/ホール/OPS と紐づけ）
+  salesOrderId String?  @unique
+  customerName String
+  phone        String
+  email        String
+  note         String?
+  /// 注文明細スナップショット（menuItemId, nameSnapshot, qty, unitPrice, lineExtra, eatMode, taxRatePercent）
+  lines        Json     @default("[]")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  store        Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@index([storeId, status])
+  @@index([storeId, pickupAt])
 }

@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>テイクアウト注文</title>
+    <style>
+      :root {
+        --bg: #0b1220;
+        --card: rgba(255, 255, 255, 0.06);
+        --border: rgba(255, 255, 255, 0.12);
+        --muted: rgba(255, 255, 255, 0.72);
+        --text: rgba(255, 255, 255, 0.92);
+        --accent: #38bdf8;
+      }
+      body {
+        margin: 0;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Arial,
+          "Noto Sans JP",
+          "Hiragino Sans",
+          sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(800px 500px at 10% 0%, rgba(56, 189, 248, 0.12), transparent 60%),
+          radial-gradient(900px 600px at 100% 20%, rgba(99, 102, 241, 0.10), transparent 55%),
+          var(--bg);
+      }
+      a {
+        color: var(--accent);
+      }
+      .wrap {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 18px 14px 40px;
+      }
+      .top {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+        margin: 8px 0 14px;
+      }
+      h1 {
+        font-size: 1.2rem;
+        margin: 0;
+        letter-spacing: 0.02em;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+      @media (min-width: 940px) {
+        .grid {
+          grid-template-columns: 1.5fr 1fr;
+          align-items: start;
+        }
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 12px;
+        backdrop-filter: blur(10px);
+      }
+      label {
+        display: block;
+        font-size: 0.86rem;
+        margin: 10px 0 6px;
+        color: var(--muted);
+      }
+      input,
+      textarea,
+      button {
+        font: inherit;
+      }
+      input,
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px 10px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: rgba(0, 0, 0, 0.2);
+        color: var(--text);
+      }
+      textarea {
+        min-height: 70px;
+        resize: vertical;
+      }
+      button {
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: rgba(56, 189, 248, 0.16);
+        color: var(--text);
+        padding: 10px 12px;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      .btn-primary {
+        background: rgba(56, 189, 248, 0.28);
+        border-color: rgba(56, 189, 248, 0.45);
+        font-weight: 700;
+      }
+      .row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .row > * {
+        flex: 1;
+      }
+      .menu h2,
+      .cart h2 {
+        margin: 2px 0 10px;
+        font-size: 1rem;
+      }
+      .cat {
+        margin: 12px 0 16px;
+      }
+      .cat h3 {
+        font-size: 0.9rem;
+        margin: 0 0 8px;
+        color: rgba(255, 255, 255, 0.86);
+      }
+      .item {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: rgba(0, 0, 0, 0.18);
+        margin: 8px 0;
+      }
+      .item .name {
+        font-weight: 700;
+      }
+      .item .sub {
+        font-size: 0.82rem;
+        color: var(--muted);
+        margin-top: 3px;
+      }
+      .pill {
+        font-size: 0.72rem;
+        color: rgba(255, 255, 255, 0.8);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 3px 8px;
+        background: rgba(255, 255, 255, 0.05);
+      }
+      .cart-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        border-top: 1px solid var(--border);
+        padding: 10px 0;
+      }
+      .cart-row:first-child {
+        border-top: none;
+        padding-top: 0;
+      }
+      .qty {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .qty button {
+        padding: 6px 10px;
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .ok {
+        border: 1px solid rgba(34, 197, 94, 0.4);
+        background: rgba(34, 197, 94, 0.14);
+        padding: 10px;
+        border-radius: 12px;
+        margin-top: 12px;
+      }
+      .err {
+        border: 1px solid rgba(244, 63, 94, 0.4);
+        background: rgba(244, 63, 94, 0.12);
+        padding: 10px;
+        border-radius: 12px;
+        margin-top: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="top">
+        <h1 id="title">テイクアウト注文</h1>
+        <div class="muted">税率 <strong>8%</strong>（店頭支払い）</div>
+      </div>
+
+      <div class="grid">
+        <div class="card menu">
+          <h2>メニュー</h2>
+          <div id="menu" class="muted">読み込み中…</div>
+          <div class="muted" style="font-size: 0.78rem; margin-top: 10px">
+            セット商品・複雑な選択が必要な商品は、現時点ではネット注文に表示されない場合があります。
+          </div>
+        </div>
+
+        <div class="card cart">
+          <h2>ご注文</h2>
+          <div class="muted" style="font-size: 0.82rem; margin-top: -2px">
+            受取日時・お客様情報は必須です（確認の連絡に使用します）
+          </div>
+
+          <label>受取日時</label>
+          <input id="pickupAt" type="datetime-local" />
+          <div class="row">
+            <div>
+              <label>お名前</label>
+              <input id="name" type="text" placeholder="例）山田 太郎" />
+            </div>
+            <div>
+              <label>電話番号</label>
+              <input id="phone" type="tel" placeholder="例）09012345678" />
+            </div>
+          </div>
+          <label>メールアドレス</label>
+          <input id="email" type="email" placeholder="例）taro@example.com" />
+          <label>備考（任意）</label>
+          <textarea id="note" placeholder="アレルギー・到着予定など"></textarea>
+
+          <div id="cart" style="margin-top: 10px"></div>
+          <div class="row" style="margin-top: 10px">
+            <button id="btnClear" type="button">カートを空にする</button>
+            <button id="btnSubmit" type="button" class="btn-primary">注文する</button>
+          </div>
+
+          <div id="msg"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const STORE_ID = __STORE_ID_JS__;
+
+      const api = (path, opt) =>
+        fetch(path, opt).then(async (r) => {
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.error || r.statusText || String(r.status));
+          return j;
+        });
+
+      const cart = new Map(); // menuItemId -> {menuItemId,name,unitPrice,qty}
+      let menuData = null;
+
+      function yen(n) {
+        return "¥" + Number(n || 0).toLocaleString("ja-JP");
+      }
+      function esc(s) {
+        return String(s || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+      function setMsg(kind, text) {
+        const el = document.getElementById("msg");
+        if (!el) return;
+        if (!text) {
+          el.innerHTML = "";
+          return;
+        }
+        el.innerHTML = "<div class=\"" + (kind === "ok" ? "ok" : "err") + "\">" + esc(text) + "</div>";
+      }
+
+      function renderCart() {
+        const el = document.getElementById("cart");
+        if (!el) return;
+        const rows = [...cart.values()].filter((x) => x.qty > 0);
+        if (!rows.length) {
+          el.innerHTML = "<div class=\"muted\">カートは空です</div>";
+          return;
+        }
+        let total = 0;
+        el.innerHTML =
+          rows
+            .map((r) => {
+              total += Number(r.unitPrice || 0) * Number(r.qty || 0);
+              return (
+                "<div class=\"cart-row\">" +
+                "<div><div style=\"font-weight:700\">" +
+                esc(r.name) +
+                "</div><div class=\"muted\" style=\"font-size:.8rem\">" +
+                yen(r.unitPrice) +
+                " / 点</div></div>" +
+                "<div class=\"qty\">" +
+                "<button type=\"button\" data-dec=\"" +
+                esc(r.menuItemId) +
+                "\">-</button>" +
+                "<span>×" +
+                Number(r.qty || 0) +
+                "</span>" +
+                "<button type=\"button\" data-inc=\"" +
+                esc(r.menuItemId) +
+                "\">+</button>" +
+                "</div>" +
+                "</div>"
+              );
+            })
+            .join("") +
+          "<div class=\"row\" style=\"justify-content:space-between;border-top:1px solid var(--border);padding-top:10px;margin-top:10px\">" +
+          "<span class=\"muted\">合計</span><strong>" +
+          yen(total) +
+          "</strong></div>";
+
+        el.querySelectorAll("[data-inc]").forEach((b) => {
+          b.onclick = () => {
+            const id = b.getAttribute("data-inc");
+            const r = cart.get(id);
+            if (!r) return;
+            r.qty += 1;
+            renderCart();
+          };
+        });
+        el.querySelectorAll("[data-dec]").forEach((b) => {
+          b.onclick = () => {
+            const id = b.getAttribute("data-dec");
+            const r = cart.get(id);
+            if (!r) return;
+            r.qty = Math.max(0, r.qty - 1);
+            if (r.qty === 0) cart.delete(id);
+            renderCart();
+          };
+        });
+      }
+
+      function renderMenu() {
+        const el = document.getElementById("menu");
+        if (!el) return;
+        if (!menuData) {
+          el.textContent = "読み込み中…";
+          return;
+        }
+        document.getElementById("title").textContent = esc(menuData.store.name) + " / テイクアウト注文";
+        const cats = menuData.categories || [];
+        const html = cats
+          .map((c) => {
+            const singles = (c.items || []).filter((it) => it.sellKind !== "set");
+            if (!singles.length) return "";
+            return (
+              "<div class=\"cat\"><h3>" +
+              esc(c.name) +
+              "</h3>" +
+              singles
+                .map((it) => {
+                  return (
+                    "<div class=\"item\">" +
+                    "<div style=\"min-width:0\">" +
+                    "<div class=\"name\">" +
+                    esc(it.name) +
+                    "</div>" +
+                    (it.description ? "<div class=\"sub\">" + esc(it.description) + "</div>" : "") +
+                    "</div>" +
+                    "<div style=\"display:flex;flex-direction:column;align-items:flex-end;gap:6px\">" +
+                    "<span class=\"pill\">" +
+                    yen(it.price) +
+                    "</span>" +
+                    "<button type=\"button\" data-add=\"" +
+                    esc(it.id) +
+                    "\">追加</button>" +
+                    "</div>" +
+                    "</div>"
+                  );
+                })
+                .join("") +
+              "</div>"
+            );
+          })
+          .join("");
+        el.innerHTML = html || "<div class=\"muted\">現在ネット注文できる商品がありません</div>";
+        el.querySelectorAll("[data-add]").forEach((b) => {
+          b.onclick = () => {
+            const id = b.getAttribute("data-add");
+            const it = findItem(id);
+            if (!it) return;
+            const cur = cart.get(id) || { menuItemId: id, name: it.name, unitPrice: Number(it.price || 0), qty: 0 };
+            cur.qty += 1;
+            cart.set(id, cur);
+            setMsg("", "");
+            renderCart();
+          };
+        });
+      }
+
+      function findItem(id) {
+        for (const c of menuData.categories || []) {
+          for (const it of c.items || []) if (it.id === id) return it;
+        }
+        return null;
+      }
+
+      async function load() {
+        const data = await api("/takeout/" + encodeURIComponent(STORE_ID) + "/menu");
+        menuData = data;
+        renderMenu();
+        renderCart();
+      }
+
+      document.getElementById("btnClear").onclick = () => {
+        cart.clear();
+        setMsg("", "");
+        renderCart();
+      };
+
+      document.getElementById("btnSubmit").onclick = async () => {
+        try {
+          setMsg("", "");
+          const pickupAt = document.getElementById("pickupAt").value;
+          const customerName = document.getElementById("name").value;
+          const phone = document.getElementById("phone").value;
+          const email = document.getElementById("email").value;
+          const note = document.getElementById("note").value;
+          const lines = [...cart.values()].filter((x) => x.qty > 0).map((x) => ({ menuItemId: x.menuItemId, qty: x.qty }));
+          if (!lines.length) {
+            setMsg("err", "カートが空です");
+            return;
+          }
+          document.getElementById("btnSubmit").disabled = true;
+          const res = await api("/takeout/" + encodeURIComponent(STORE_ID) + "/orders", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pickupAt, customerName, phone, email, note, lines }),
+          });
+          cart.clear();
+          renderCart();
+          setMsg("ok", "注文を受け付けました。店頭でのお支払いになります。");
+        } catch (e) {
+          setMsg("err", String((e && e.message) || e));
+        } finally {
+          document.getElementById("btnSubmit").disabled = false;
+        }
+      };
+
+      load().catch((e) => setMsg("err", String((e && e.message) || e)));
+    </script>
+  </body>
+</html>
+

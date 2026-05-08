@@ -59,6 +59,8 @@
     let selectedType = "any";
     let selectedNum = 2;
     let seatStates = {};
+    /** 受付設定（席割りで mergeAllOrNothingGroups / maxMergeSize を参照） */
+    let receptionConf = {};
     let activeShiftKey = "";
     let autoCloseTimeout = null;
 
@@ -160,10 +162,10 @@
       activeShiftKey = getActiveShiftKey();
       const data = await apiGetState(activeShiftKey);
       tableMaster = Array.isArray(data.tableMaster) ? data.tableMaster : [];
-      const conf = data.config || {};
-      const staff = parseInt(conf.staff) || 6;
-      const isOverride = conf.override === true || conf.override === "true";
-      const manualWait = parseInt(conf.manualWait) || 30;
+      receptionConf = data.config && typeof data.config === "object" ? data.config : {};
+      const staff = parseInt(receptionConf.staff) || 6;
+      const isOverride = receptionConf.override === true || receptionConf.override === "true";
+      const manualWait = parseInt(receptionConf.manualWait) || 30;
 
       const shiftData = (data.shifts || {})[activeShiftKey] || { seats: [], waiting: [] };
       seatStates = {};
@@ -227,7 +229,9 @@
         const freeCodes = tables.map((t) => t.code).filter((c) => c && !used.has(c));
         const freeSet = new Set(freeCodes);
 
-        const allOrNothingGroups = Array.isArray(conf.mergeAllOrNothingGroups) ? conf.mergeAllOrNothingGroups : [];
+        const allOrNothingGroups = Array.isArray(receptionConf.mergeAllOrNothingGroups)
+          ? receptionConf.mergeAllOrNothingGroups
+          : [];
         const groups = allOrNothingGroups
           .filter((g) => Array.isArray(g) && g.every((x) => typeof x === "string"))
           .map((g) => g.map(String).filter((x) => freeSet.has(x)))
@@ -272,7 +276,9 @@
           return seen.size === sub.size;
         }
 
-        const maxMergeSize = Number.isFinite(Number(conf.maxMergeSize)) ? Math.floor(Number(conf.maxMergeSize)) : 10;
+        const maxMergeSize = Number.isFinite(Number(receptionConf.maxMergeSize))
+          ? Math.floor(Number(receptionConf.maxMergeSize))
+          : 10;
 
         let best = null;
         const visited = new Set();

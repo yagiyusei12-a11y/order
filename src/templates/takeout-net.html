@@ -398,6 +398,106 @@
         border-radius: 14px;
         margin-top: 0.65rem;
       }
+      .desktop-shell {
+        display: block;
+      }
+      .desktop-cats,
+      .desktop-cart {
+        display: none;
+      }
+      @media (min-width: 1000px) {
+        .go-tabs-wrap {
+          display: none;
+        }
+        .desktop-shell {
+          display: grid;
+          grid-template-columns: 220px 1fr 360px;
+          gap: 0.85rem;
+          padding: 0.85rem;
+          padding-bottom: 1.2rem;
+        }
+        .desktop-cats,
+        .desktop-cart {
+          display: block;
+        }
+        .go-menu-grid {
+          padding: 0;
+          grid-template-columns: 1fr 1fr;
+        }
+        .go-cart {
+          display: none;
+        }
+        #msg {
+          padding: 0 0.85rem 0.35rem;
+        }
+      }
+      .cat-list {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.06);
+        padding: 0.35rem;
+        overflow: auto;
+        max-height: calc(100vh - 140px);
+      }
+      .cat-btn {
+        width: 100%;
+        text-align: left;
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--muted);
+        padding: 0.55rem 0.65rem;
+        border-radius: 12px;
+        cursor: pointer;
+        font-weight: 800;
+      }
+      .cat-btn.is-on {
+        background: rgba(249, 115, 22, 0.18);
+        border-color: rgba(249, 115, 22, 0.45);
+        color: rgba(255, 255, 255, 0.92);
+      }
+      .desktop-cart {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.06);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        max-height: calc(100vh - 140px);
+      }
+      .desktop-cart-head {
+        padding: 0.75rem 0.85rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        font-weight: 900;
+      }
+      .desktop-cart-body {
+        padding: 0.75rem 0.85rem;
+        overflow: auto;
+        flex: 1;
+      }
+      .desktop-cart-bar {
+        padding: 0.75rem 0.85rem;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.65rem;
+      }
+      .pickup-candidates {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        margin: 0.35rem 0 0.55rem;
+      }
+      .pickup-candidates button {
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--text);
+        border-radius: 999px;
+        padding: 0.35rem 0.55rem;
+        cursor: pointer;
+        font-size: 0.78rem;
+        font-weight: 800;
+      }
     </style>
   </head>
   <body>
@@ -418,10 +518,25 @@
 
     <div id="msg" style="padding: 0.75rem 0.85rem"></div>
 
-    <div class="go-tabs-wrap">
-      <div class="go-tabs" id="catTabs"></div>
+    <div class="desktop-shell">
+      <aside class="desktop-cats">
+        <div class="cat-list" id="catList"></div>
+      </aside>
+      <main>
+        <div class="go-tabs-wrap">
+          <div class="go-tabs" id="catTabs"></div>
+        </div>
+        <div id="menu" class="go-menu-grid"></div>
+      </main>
+      <aside class="desktop-cart">
+        <div class="desktop-cart-head">カート</div>
+        <div class="desktop-cart-body" id="desktopCartLines"></div>
+        <div class="desktop-cart-bar">
+          <div class="sheet-sum" id="desktopCartSum">¥0</div>
+          <button class="btn-primary" id="desktopCheckoutBtn" type="button">注文する</button>
+        </div>
+      </aside>
     </div>
-    <div id="menu" class="go-menu-grid"></div>
 
     <footer class="go-cart" id="cartFooter">
       <div class="info" id="cartFooterInfo" role="button" tabindex="0" aria-label="カートを開く">
@@ -452,6 +567,21 @@
       </div>
     </div>
 
+    <div id="detailSheet" class="sheet" aria-hidden="true">
+      <div class="sheet-bg" id="detailSheetBg" tabindex="-1"></div>
+      <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="detailSheetTitle">
+        <div class="sheet-head">
+          <h2 class="sheet-title" id="detailSheetTitle">商品</h2>
+          <button class="sheet-close" type="button" id="detailSheetClose" aria-label="閉じる">×</button>
+        </div>
+        <div class="sheet-body" id="detailSheetBody"></div>
+        <div class="sheet-bar">
+          <div class="sheet-sum" id="detailSheetSum">¥0</div>
+          <button class="btn-primary" id="detailSheetAddBtn" type="button">カートに入れる</button>
+        </div>
+      </div>
+    </div>
+
     <div id="checkoutSheet" class="sheet" aria-hidden="true">
       <div class="sheet-bg" id="checkoutSheetBg" tabindex="-1"></div>
       <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="checkoutSheetTitle">
@@ -465,6 +595,7 @@
           </div>
 
           <label for="pickupAt">受取日時</label>
+          <div class="pickup-candidates" id="pickupCandidates"></div>
           <input id="pickupAt" type="datetime-local" />
 
           <label for="name">お名前</label>
@@ -502,10 +633,24 @@
           return j;
         });
 
-      /** @type {Map<string, {menuItemId:string,name:string,unitPrice:number,qty:number}>} */
+      /**
+       * @type {Map<string, {
+       *   cartKey: string,
+       *   menuItemId: string,
+       *   sellKind: string,
+       *   name: string,
+       *   unitPrice: number,
+       *   qty: number,
+       *   optionSelections?: any[],
+       *   setSelections?: any[],
+       *   setComponentOptionSelections?: any[],
+       * }>}
+       */
       const cart = new Map();
       let menuData = null;
       let activeCatId = "";
+      let activeDetailItemId = "";
+      let activeDetailSellKind = "";
 
       function yen(n) {
         return "¥" + Number(n || 0).toLocaleString("ja-JP");
@@ -615,11 +760,11 @@
               "</div>" +
               (allowEdit
                 ? "<div class=\"qty\"><button type=\"button\" data-dec=\"" +
-                  esc(r.menuItemId) +
+                  esc(r.cartKey) +
                   "\">-</button><span>×" +
                   Number(r.qty || 0) +
                   "</span><button type=\"button\" data-inc=\"" +
-                  esc(r.menuItemId) +
+                  esc(r.cartKey) +
                   "\">+</button></div>"
                 : "<div class=\"pill\">×" + Number(r.qty || 0) + "</div>") +
               "</div>"
@@ -653,8 +798,128 @@
         renderFooter();
         document.getElementById("cartSheetSum").textContent = yen(total);
         document.getElementById("checkoutSum").textContent = yen(total);
+        const dSum = document.getElementById("desktopCartSum");
+        if (dSum) dSum.textContent = yen(total);
         renderCartLines("cartLines", true);
         renderCartLines("checkoutLines", false);
+        renderCartLines("desktopCartLines", true);
+      }
+
+      function renderDesktopCatList() {
+        const host = document.getElementById("catList");
+        if (!host) return;
+        const cats = menuData && menuData.categories ? menuData.categories : [];
+        if (!cats.length) {
+          host.innerHTML = "<div class=\"muted\" style=\"padding:.65rem\">カテゴリがありません</div>";
+          return;
+        }
+        host.innerHTML =
+          "<button type=\"button\" class=\"cat-btn" +
+          (!activeCatId ? " is-on" : "") +
+          "\" data-cat=\"\">すべて</button>" +
+          cats
+            .map(
+              (c) =>
+                "<button type=\"button\" class=\"cat-btn" +
+                (activeCatId === c.id ? " is-on" : "") +
+                "\" data-cat=\"" +
+                esc(c.id) +
+                "\">" +
+                esc(c.name) +
+                "</button>"
+            )
+            .join("");
+        host.querySelectorAll("[data-cat]").forEach((b) => {
+          b.onclick = () => {
+            activeCatId = b.getAttribute("data-cat") || "";
+            renderDesktopCatList();
+            renderTabs();
+            renderMenu();
+          };
+        });
+      }
+
+      function toJstParts(d) {
+        const fmt = new Intl.DateTimeFormat("ja-JP", {
+          timeZone: (menuData && menuData.timezone) || "Asia/Tokyo",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        });
+        const parts = fmt.formatToParts(d);
+        const by = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+        return {
+          y: by.year,
+          m: by.month,
+          d: by.day,
+          hh: by.hour,
+          mm: by.minute,
+        };
+      }
+
+      function buildPickupCandidates() {
+        const host = document.getElementById("pickupCandidates");
+        if (!host) return;
+        host.innerHTML = "";
+        const wins = (menuData && menuData.pickupTimeWindows) || [];
+        if (!Array.isArray(wins) || wins.length === 0) {
+          host.innerHTML = "<span class=\"muted\" style=\"font-size:.76rem\">（候補が未設定です）</span>";
+          return;
+        }
+        const now = new Date();
+        const stepMin = 15;
+        const candidates = [];
+        for (let dayOffset = 0; dayOffset <= 1; dayOffset++) {
+          const base = new Date(now.getTime() + dayOffset * 24 * 60 * 60 * 1000);
+          for (const w of wins) {
+            const s = Number(w.startMin || 0);
+            const e = Number(w.endMin || 0);
+            const spans = [];
+            if (e > s) spans.push({ start: s, end: e });
+            else {
+              spans.push({ start: s, end: 1440 });
+              spans.push({ start: 0, end: e });
+            }
+            for (const sp of spans) {
+              for (let m = sp.start; m <= sp.end; m += stepMin) {
+                const hh = Math.floor(m / 60);
+                const mm = m % 60;
+                const dt = new Date(base);
+                dt.setHours(hh, mm, 0, 0);
+                if (dt.getTime() <= now.getTime() + 2 * 60 * 1000) continue;
+                candidates.push(dt);
+              }
+            }
+          }
+        }
+        const uniq = new Map();
+        for (const dt of candidates) {
+          const p = toJstParts(dt);
+          const key = `${p.y}-${p.m}-${p.d}T${p.hh}:${p.mm}`;
+          if (!uniq.has(key)) uniq.set(key, { key, dt });
+        }
+        const rows = [...uniq.values()].sort((a, b) => a.dt.getTime() - b.dt.getTime()).slice(0, 24);
+        if (!rows.length) {
+          host.innerHTML = "<span class=\"muted\" style=\"font-size:.76rem\">（候補がありません）</span>";
+          return;
+        }
+        host.innerHTML = rows
+          .map((r) => {
+            const p = toJstParts(r.dt);
+            const lab = `${Number(p.m)}/${Number(p.d)} ${p.hh}:${p.mm}`;
+            return "<button type=\"button\" data-pickup=\"" + esc(r.key) + "\">" + esc(lab) + "</button>";
+          })
+          .join("");
+        host.querySelectorAll("[data-pickup]").forEach((b) => {
+          b.onclick = () => {
+            const v = b.getAttribute("data-pickup");
+            const inp = document.getElementById("pickupAt");
+            if (inp) inp.value = v;
+          };
+        });
       }
 
       function renderTabs() {
@@ -729,13 +994,7 @@
             const id = b.getAttribute("data-add");
             const it = findItem(id);
             if (!it) return;
-            const cur =
-              cart.get(id) || { menuItemId: id, name: it.name, unitPrice: Number(it.price || 0), qty: 0 };
-            cur.qty += 1;
-            cart.set(id, cur);
-            setMsg("", "");
-            renderAllCartUis();
-            toast(it.name + " を追加");
+            openDetailSheet(it);
           };
         });
       }
@@ -745,6 +1004,344 @@
           for (const it of c.items || []) if (it.id === id) return it;
         }
         return null;
+      }
+
+      function stableOptionKey(optionSelections) {
+        const arr = Array.isArray(optionSelections) ? optionSelections : [];
+        const parts = arr
+          .map((r) => ({
+            gid: String(r.optionGroupId || ""),
+            ids: (Array.isArray(r.optionItemIds) ? r.optionItemIds : []).map(String).sort(),
+          }))
+          .sort((a, b) => a.gid.localeCompare(b.gid));
+        return JSON.stringify(parts);
+      }
+
+      function stableSetKey(setSelections, serveLaterDeferStepId, setComponentOptionSelections) {
+        const ss = Array.isArray(setSelections) ? setSelections : [];
+        const s0 = ss
+          .map((r) => ({
+            stepId: String(r.stepId || ""),
+            menuItemIds: (Array.isArray(r.menuItemIds) ? r.menuItemIds : []).map(String).sort(),
+          }))
+          .sort((a, b) => a.stepId.localeCompare(b.stepId));
+        const sc = Array.isArray(setComponentOptionSelections)
+          ? setComponentOptionSelections
+              .map((r) => ({
+                stepId: String(r.stepId || ""),
+                menuItemId: String(r.menuItemId || ""),
+                optionSelections: Array.isArray(r.optionSelections) ? r.optionSelections : [],
+              }))
+              .sort((a, b) => (a.stepId + a.menuItemId).localeCompare(b.stepId + b.menuItemId))
+              .map((r) => ({
+                stepId: r.stepId,
+                menuItemId: r.menuItemId,
+                k: stableOptionKey(r.optionSelections),
+              }))
+          : [];
+        return JSON.stringify({ s0, sc, sl: serveLaterDeferStepId || "" });
+      }
+
+      function computeSingleUnitPrice(item, optionSelections) {
+        let sum = Number(item.price || 0);
+        const groups = Array.isArray(item.optionGroups) ? item.optionGroups : [];
+        for (const g of groups) {
+          const row = (optionSelections || []).find((x) => x.optionGroupId === g.id);
+          const ids = row && Array.isArray(row.optionItemIds) ? row.optionItemIds : [];
+          for (const id of ids) {
+            const oi = (g.items || []).find((x) => x.id === id);
+            if (oi) sum += Number(oi.priceDelta || 0);
+          }
+        }
+        return sum;
+      }
+
+      function computeSetUnitPrice(item, setSelections, setComponentOptionSelections) {
+        let sum = Number(item.price || 0);
+        const steps = Array.isArray(item.setSteps) ? item.setSteps : [];
+        const byStep = new Map();
+        for (const row of setSelections || []) {
+          if (!row || !row.stepId) continue;
+          byStep.set(String(row.stepId), Array.isArray(row.menuItemIds) ? row.menuItemIds.map(String) : []);
+        }
+        for (const st of steps) {
+          const picked = byStep.get(st.id) || [];
+          const chs = (st.choices || []).filter((c) => picked.includes(c.menuItemId));
+          for (const ch of chs) sum += Number(ch.extraPrice || 0);
+        }
+        // component options
+        const compOpts = Array.isArray(setComponentOptionSelections) ? setComponentOptionSelections : [];
+        for (const row of compOpts) {
+          if (!row || !row.stepId || !row.menuItemId) continue;
+          const st = steps.find((s) => s.id === row.stepId);
+          const ch = st && (st.choices || []).find((c) => c.menuItemId === row.menuItemId);
+          if (!ch || !Array.isArray(ch.optionGroups)) continue;
+          for (const g of ch.optionGroups) {
+            const sel = (row.optionSelections || []).find((x) => x.optionGroupId === g.id);
+            const ids = sel && Array.isArray(sel.optionItemIds) ? sel.optionItemIds : [];
+            for (const id of ids) {
+              const oi = (g.items || []).find((x) => x.id === id);
+              if (oi) sum += Number(oi.priceDelta || 0);
+            }
+          }
+        }
+        return sum;
+      }
+
+      function collectOptionSelections(panel, item) {
+        const out = [];
+        for (const g of item.optionGroups || []) {
+          const useRadio = Number(g.maxSelect || 1) <= 1;
+          let ids = [];
+          if (useRadio) {
+            const r = panel.querySelector("input[type=radio][name=\"og-" + esc(g.id) + "\"]:checked");
+            if (r && r.value) ids = [r.value];
+          } else {
+            ids = [...panel.querySelectorAll("input[type=checkbox][name=\"ogcb-" + esc(g.id) + "\"]:checked")].map(
+              (x) => x.value
+            );
+          }
+          out.push({ optionGroupId: g.id, optionItemIds: ids });
+        }
+        return out;
+      }
+
+      function collectSetSelections(panel, item) {
+        const out = [];
+        for (const st of item.setSteps || []) {
+          const ids = [
+            ...panel.querySelectorAll("input[type=checkbox][name=\"st-" + esc(st.id) + "\"]:checked"),
+          ].map((x) => x.value);
+          out.push({ stepId: st.id, menuItemIds: ids });
+        }
+        return out;
+      }
+
+      function collectSetComponentOptionSelections(panel, item, setSelections) {
+        const out = [];
+        const byStep = new Map();
+        for (const row of setSelections || []) byStep.set(row.stepId, row.menuItemIds || []);
+        for (const st of item.setSteps || []) {
+          const picked = byStep.get(st.id) || [];
+          for (const mid of picked) {
+            const ch = (st.choices || []).find((c) => c.menuItemId === mid);
+            if (!ch || !Array.isArray(ch.optionGroups) || ch.optionGroups.length === 0) continue;
+            const optionSelections = [];
+            for (const g of ch.optionGroups) {
+              const useRadio = Number(g.maxSelect || 1) <= 1;
+              let ids = [];
+              if (useRadio) {
+                const r = panel.querySelector(
+                  "input[type=radio][name=\"copt-" + esc(st.id) + "-" + esc(mid) + "-" + esc(g.id) + "\"]:checked"
+                );
+                if (r && r.value) ids = [r.value];
+              } else {
+                ids = [
+                  ...panel.querySelectorAll(
+                    "input[type=checkbox][name=\"copt-" + esc(st.id) + "-" + esc(mid) + "-" + esc(g.id) + "\"]:checked"
+                  ),
+                ].map((x) => x.value);
+              }
+              optionSelections.push({ optionGroupId: g.id, optionItemIds: ids });
+            }
+            out.push({ stepId: st.id, menuItemId: mid, optionSelections });
+          }
+        }
+        return out;
+      }
+
+      function validateOptionMinMax(item, optionSelections) {
+        const groups = Array.isArray(item.optionGroups) ? item.optionGroups : [];
+        for (const g of groups) {
+          const row = (optionSelections || []).find((x) => x.optionGroupId === g.id);
+          const n = row && Array.isArray(row.optionItemIds) ? row.optionItemIds.length : 0;
+          const min = Number(g.minSelect || 0);
+          const max = Number(g.maxSelect || 1);
+          if (n < min || n > max) return "「" + (g.name || "オプション") + "」は" + min + "〜" + max + "個で選んでください";
+        }
+        return "";
+      }
+
+      function validateSetMinMax(item, setSelections) {
+        const steps = Array.isArray(item.setSteps) ? item.setSteps : [];
+        for (const st of steps) {
+          const row = (setSelections || []).find((x) => x.stepId === st.id);
+          const n = row && Array.isArray(row.menuItemIds) ? row.menuItemIds.length : 0;
+          const min = Number(st.minPick || 0);
+          const max = Number(st.maxPick || 0);
+          if (n < min || n > max) return "「" + (st.label || "項目") + "」は" + min + "〜" + max + "個で選んでください";
+        }
+        return "";
+      }
+
+      function openDetailSheet(item) {
+        activeDetailItemId = item.id;
+        activeDetailSellKind = item.sellKind === "set" ? "set" : "single";
+        document.getElementById("detailSheetTitle").textContent = item.name || "商品";
+        const body = document.getElementById("detailSheetBody");
+        const imgHtml = item.imageUrl ? "<img class=\"img\" loading=\"lazy\" alt=\"\" src=\"" + esc(item.imageUrl) + "\" />" : "";
+        let html =
+          imgHtml +
+          "<div style=\"font-weight:900;font-size:1.05rem;letter-spacing:.01em\">" +
+          esc(item.name || "") +
+          "</div>" +
+          (item.description ? "<div class=\"muted\" style=\"font-size:.82rem;line-height:1.45;margin-top:.25rem;white-space:pre-wrap\">" + esc(item.description) + "</div>" : "") +
+          "<div style=\"margin-top:.45rem\"><span class=\"pill\">" +
+          yen(item.price) +
+          "</span></div>";
+
+        if (activeDetailSellKind === "single") {
+          const groups = Array.isArray(item.optionGroups) ? item.optionGroups : [];
+          if (groups.length) {
+            html += "<div style=\"margin-top:.75rem\">";
+            for (const g of groups) {
+              const req = Number(g.minSelect || 0) > 0;
+              html +=
+                "<div style=\"margin-top:.65rem;padding-top:.65rem;border-top:1px solid rgba(255,255,255,.1)\">" +
+                "<div style=\"display:flex;align-items:center;gap:.5rem\"><strong>" +
+                esc(g.name || \"\") +
+                "</strong>" +
+                (req ? "<span class=\"pill\" style=\"border-color:rgba(249,115,22,.45)\">必須</span>" : "<span class=\"pill\">任意</span>") +
+                "<span class=\"muted\" style=\"margin-left:auto;font-size:.75rem\">" +
+                Number(g.minSelect || 0) +
+                "〜" +
+                Number(g.maxSelect || 1) +
+                "個</span></div>";
+              const useRadio = Number(g.maxSelect || 1) <= 1;
+              for (const oi of g.items || []) {
+                const delta = Number(oi.priceDelta || 0);
+                const priceTxt = delta > 0 ? "+" + delta.toLocaleString(\"ja-JP\") + \"円\" : \"+0円\";
+                if (useRadio) {
+                  html +=
+                    "<label class=\"row\" style=\"align-items:center;gap:.45rem;margin:.35rem 0\"><input type=\"radio\" name=\"og-" +
+                    esc(g.id) +
+                    "\" value=\"" +
+                    esc(oi.id) +
+                    "\" /> <span style=\"flex:1\">" +
+                    esc(oi.name || \"\") +
+                    "</span><span class=\"muted\" style=\"font-size:.78rem\">" +
+                    priceTxt +
+                    "</span></label>";
+                } else {
+                  html +=
+                    "<label class=\"row\" style=\"align-items:center;gap:.45rem;margin:.35rem 0\"><input type=\"checkbox\" name=\"ogcb-" +
+                    esc(g.id) +
+                    "\" value=\"" +
+                    esc(oi.id) +
+                    "\" /> <span style=\"flex:1\">" +
+                    esc(oi.name || \"\") +
+                    "</span><span class=\"muted\" style=\"font-size:.78rem\">" +
+                    priceTxt +
+                    "</span></label>";
+                }
+              }
+              html += "</div>";
+            }
+            html += "</div>";
+          }
+        } else {
+          const steps = Array.isArray(item.setSteps) ? item.setSteps : [];
+          html += "<div style=\"margin-top:.75rem\">";
+          for (const st of steps) {
+            html +=
+              "<div style=\"margin-top:.65rem;padding-top:.65rem;border-top:1px solid rgba(255,255,255,.1)\">" +
+              "<div style=\"display:flex;align-items:center;gap:.5rem\"><strong>" +
+              esc(st.label || \"\") +
+              "</strong><span class=\"muted\" style=\"margin-left:auto;font-size:.75rem\">" +
+              Number(st.minPick || 0) +
+              "〜" +
+              Number(st.maxPick || 0) +
+              "個</span></div>";
+            for (const ch of st.choices || []) {
+              const ex = Number(ch.extraPrice || 0);
+              const exTxt = ex > 0 ? "+" + ex.toLocaleString(\"ja-JP\") + \"円\" : \"+0円\";
+              html +=
+                "<label class=\"row\" style=\"align-items:center;gap:.45rem;margin:.35rem 0\"><input type=\"checkbox\" name=\"st-" +
+                esc(st.id) +
+                "\" value=\"" +
+                esc(ch.menuItemId) +
+                "\" /> <span style=\"flex:1\">" +
+                esc(ch.name || \"\") +
+                "</span><span class=\"muted\" style=\"font-size:.78rem\">" +
+                exTxt +
+                "</span></label>";
+              // component options (render block; visible regardless, validated on submit)
+              if (Array.isArray(ch.optionGroups) && ch.optionGroups.length) {
+                html += "<div style=\"margin:.15rem 0 .35rem 1.8rem;padding-left:.45rem;border-left:2px solid rgba(255,255,255,.12)\">";
+                for (const g of ch.optionGroups) {
+                  const req = Number(g.minSelect || 0) > 0;
+                  html +=
+                    "<div class=\"muted\" style=\"font-size:.74rem;margin:.25rem 0\">" +
+                    esc((req ? \"(必須) \" : \"\") + (g.name || \"\")) +
+                    " " +
+                    Number(g.minSelect || 0) +
+                    "〜" +
+                    Number(g.maxSelect || 1) +
+                    "個</div>";
+                  const useRadio = Number(g.maxSelect || 1) <= 1;
+                  for (const oi of g.items || []) {
+                    const delta = Number(oi.priceDelta || 0);
+                    const priceTxt = delta > 0 ? "+" + delta.toLocaleString(\"ja-JP\") + \"円\" : \"+0円\";
+                    if (useRadio) {
+                      html +=
+                        "<label class=\"row\" style=\"align-items:center;gap:.45rem;margin:.28rem 0\"><input type=\"radio\" name=\"copt-" +
+                        esc(st.id) +
+                        "-" +
+                        esc(ch.menuItemId) +
+                        "-" +
+                        esc(g.id) +
+                        "\" value=\"" +
+                        esc(oi.id) +
+                        "\" /> <span style=\"flex:1\">" +
+                        esc(oi.name || \"\") +
+                        "</span><span class=\"muted\" style=\"font-size:.76rem\">" +
+                        priceTxt +
+                        "</span></label>";
+                    } else {
+                      html +=
+                        "<label class=\"row\" style=\"align-items:center;gap:.45rem;margin:.28rem 0\"><input type=\"checkbox\" name=\"copt-" +
+                        esc(st.id) +
+                        "-" +
+                        esc(ch.menuItemId) +
+                        "-" +
+                        esc(g.id) +
+                        "\" value=\"" +
+                        esc(oi.id) +
+                        "\" /> <span style=\"flex:1\">" +
+                        esc(oi.name || \"\") +
+                        "</span><span class=\"muted\" style=\"font-size:.76rem\">" +
+                        priceTxt +
+                        "</span></label>";
+                    }
+                  }
+                }
+                html += "</div>";
+              }
+            }
+            html += "</div>";
+          }
+          html += "</div>";
+        }
+
+        body.innerHTML = html;
+        updateDetailAddPrice();
+        openSheet("detailSheet");
+      }
+
+      function updateDetailAddPrice() {
+        const item = findItem(activeDetailItemId);
+        if (!item) return;
+        const panel = document.getElementById("detailSheetBody");
+        let unit = Number(item.price || 0);
+        if (activeDetailSellKind === "single") {
+          const opt = collectOptionSelections(panel, item);
+          unit = computeSingleUnitPrice(item, opt);
+        } else {
+          const sel = collectSetSelections(panel, item);
+          const compOpt = collectSetComponentOptionSelections(panel, item, sel);
+          unit = computeSetUnitPrice(item, sel, compOpt);
+        }
+        document.getElementById("detailSheetSum").textContent = yen(unit);
       }
 
       function openCartSheet() {
@@ -768,6 +1365,7 @@
         if (phoneEl && !phoneEl.value) phoneEl.value = p.phone || "";
         if (emailEl && !emailEl.value) emailEl.value = p.email || "";
         renderAllCartUis();
+        buildPickupCandidates();
         closeCartSheet();
         openSheet("checkoutSheet");
       }
@@ -779,11 +1377,89 @@
       document.getElementById("cartFooterInfo").onclick = () => openCartSheet();
       document.getElementById("btnCheckout").onclick = () => openCheckoutSheet();
       document.getElementById("cartSheetCheckoutBtn").onclick = () => openCheckoutSheet();
+      const desktopCheckoutBtn = document.getElementById("desktopCheckoutBtn");
+      if (desktopCheckoutBtn) desktopCheckoutBtn.onclick = () => openCheckoutSheet();
 
       document.getElementById("cartSheetClose").onclick = () => closeCartSheet();
       document.getElementById("cartSheetBg").onclick = () => closeCartSheet();
+      document.getElementById("detailSheetClose").onclick = () => closeSheet("detailSheet");
+      document.getElementById("detailSheetBg").onclick = () => closeSheet("detailSheet");
       document.getElementById("checkoutSheetClose").onclick = () => closeCheckoutSheet();
       document.getElementById("checkoutSheetBg").onclick = () => closeCheckoutSheet();
+
+      document.getElementById("detailSheetBody").onchange = () => updateDetailAddPrice();
+      document.getElementById("detailSheetAddBtn").onclick = () => {
+        try {
+          const item = findItem(activeDetailItemId);
+          if (!item) return;
+          const panel = document.getElementById("detailSheetBody");
+          if (activeDetailSellKind === "single") {
+            const optionSelections = collectOptionSelections(panel, item);
+            const err = validateOptionMinMax(item, optionSelections);
+            if (err) return toast(err);
+            const unitPrice = computeSingleUnitPrice(item, optionSelections);
+            const cartKey = "o:" + item.id + ":" + stableOptionKey(optionSelections);
+            const cur =
+              cart.get(cartKey) || {
+                cartKey,
+                menuItemId: item.id,
+                sellKind: "single",
+                name: item.name,
+                unitPrice,
+                qty: 0,
+                optionSelections,
+              };
+            cur.unitPrice = unitPrice;
+            cur.optionSelections = optionSelections;
+            cur.name = item.name;
+            cur.qty += 1;
+            cart.set(cartKey, cur);
+          } else {
+            const setSelections = collectSetSelections(panel, item);
+            const err = validateSetMinMax(item, setSelections);
+            if (err) return toast(err);
+            const setComponentOptionSelections = collectSetComponentOptionSelections(panel, item, setSelections);
+            // validate component options min/max
+            for (const row of setComponentOptionSelections) {
+              const st = (item.setSteps || []).find((x) => x.id === row.stepId);
+              const ch = st && (st.choices || []).find((x) => x.menuItemId === row.menuItemId);
+              if (!ch || !Array.isArray(ch.optionGroups)) continue;
+              for (const g of ch.optionGroups) {
+                const sel = (row.optionSelections || []).find((x) => x.optionGroupId === g.id);
+                const n = sel && Array.isArray(sel.optionItemIds) ? sel.optionItemIds.length : 0;
+                const min = Number(g.minSelect || 0);
+                const max = Number(g.maxSelect || 1);
+                if (n < min || n > max) return toast("「" + (ch.name || "構成単品") + "：" + (g.name || "オプション") + "」は" + min + "〜" + max + "個で選んでください");
+              }
+            }
+            const unitPrice = computeSetUnitPrice(item, setSelections, setComponentOptionSelections);
+            const cartKey = "s:" + item.id + ":" + stableSetKey(setSelections, "", setComponentOptionSelections);
+            const cur =
+              cart.get(cartKey) || {
+                cartKey,
+                menuItemId: item.id,
+                sellKind: "set",
+                name: item.name,
+                unitPrice,
+                qty: 0,
+                setSelections,
+                setComponentOptionSelections,
+              };
+            cur.unitPrice = unitPrice;
+            cur.setSelections = setSelections;
+            cur.setComponentOptionSelections = setComponentOptionSelections;
+            cur.name = item.name;
+            cur.qty += 1;
+            cart.set(cartKey, cur);
+          }
+          setMsg("", "");
+          renderAllCartUis();
+          closeSheet("detailSheet");
+          toast(item.name + " をカートに追加");
+        } catch (e) {
+          toast(String((e && e.message) || e));
+        }
+      };
 
       document.getElementById("btnSubmit").onclick = async () => {
         try {
@@ -793,7 +1469,13 @@
           const phone = document.getElementById("phone").value.trim();
           const email = document.getElementById("email").value.trim();
           const note = document.getElementById("note").value;
-          const lines = cartRows().map((x) => ({ menuItemId: x.menuItemId, qty: x.qty }));
+          const lines = cartRows().map((x) => {
+            const o = { menuItemId: x.menuItemId, qty: x.qty };
+            if (x.sellKind === "set" && x.setSelections) o.setSelections = x.setSelections;
+            if (x.optionSelections && x.optionSelections.length) o.optionSelections = x.optionSelections;
+            if (x.setComponentOptionSelections && x.setComponentOptionSelections.length) o.setComponentOptionSelections = x.setComponentOptionSelections;
+            return o;
+          });
 
           if (!lines.length) return setMsg("err", "カートが空です");
           if (!pickupAt) return setMsg("err", "受取日時を入力してください");
@@ -827,6 +1509,7 @@
         menuData = data;
         document.getElementById("title").textContent = esc(menuData.store.name) + " / テイクアウト注文";
         renderTabs();
+        renderDesktopCatList();
         renderMenu();
         renderAllCartUis();
       }

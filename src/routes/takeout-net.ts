@@ -65,6 +65,14 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
     const storeTaxRatePercent = st.taxRatePercent;
     const takeoutTaxRatePercent = 8;
 
+    const pickupWindows =
+      st.takeoutPickupTimeWindowIds && st.takeoutPickupTimeWindowIds.length
+        ? await prisma.storeTimeWindow.findMany({
+            where: { storeId: store.id, id: { in: st.takeoutPickupTimeWindowIds } },
+            orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+          })
+        : [];
+
     const categories = await prisma.menuCategory.findMany({
       where: {
         storeId: store.id,
@@ -207,6 +215,13 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
     return {
       store: { id: store.id, name: store.name },
       taxRatePercent: takeoutTaxRatePercent,
+      timezone: st.timezone,
+      pickupTimeWindows: pickupWindows.map((w) => ({
+        id: w.id,
+        name: w.name,
+        startMin: w.startMin,
+        endMin: w.endMin,
+      })),
       categories: outCategories,
     };
   });
@@ -225,6 +240,11 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
         note?: string;
         setSelections?: GuestSetStepSelection[];
         optionSelections?: GuestOptionGroupSelection[];
+        setComponentOptionSelections?: {
+          stepId: string;
+          menuItemId: string;
+          optionSelections?: GuestOptionGroupSelection[];
+        }[];
       }[];
     };
   }>("/takeout/:storeId/orders", async (req, reply) => {
@@ -353,6 +373,44 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
               const picked = byStep.get(stp.id) ?? [];
               const def = stepsVal.find((x) => x.id === stp.id)!;
               surcharge += surchargeExclusiveStepSumInclusive(def, picked, taxRatePercent);
+            }
+
+            // セット構成単品のオプション（guest.ts と同様にセット単価へ加算）
+            const setCompOptRows = Array.isArray((l as { setComponentOptionSelections?: unknown }).setComponentOptionSelections)
+              ? ((l as { setComponentOptionSelections: any[] }).setComponentOptionSelections || [])
+              : [];
+            for (const row of setCompOptRows) {
+              if (!row || typeof row !== "object") throw new Error("BAD_OPTIONS");
+              const stepRow = it.setSteps.find((s) => s.id === row.stepId);
+              if (!stepRow) throw new Error("BAD_OPTIONS");
+              const pickedIds = byStep.get(row.stepId) ?? [];
+              const fixedIds = stepRow.choices.filter((c) => c.isFixed === true).map((c) => c.componentMenuItemId);
+              const allowedPicked = new Set([...fixedIds, ...pickedIds]);
+              if (!allowedPicked.has(row.menuItemId)) throw new Error("BAD_OPTIONS");
+              const ch = stepRow.choices.find((c) => c.componentMenuItemId === row.menuItemId);
+              if (!ch) throw new Error("BAD_OPTIONS");
+              const comp = ch.componentMenuItem;
+              const linkedGroupsRaw = (comp.optionLinks || [])
+                .map((ol) => ol.optionGroup)
+                .filter((g): g is NonNullable<typeof g> => Boolean(g && g.active))
+                .map((g) => ({
+                  id: g.id,
+                  name: g.name,
+                  minSelect: g.minSelect,
+                  maxSelect: g.maxSelect,
+                  items: g.items.filter((i) => i.active).map((i) => ({ id: i.id, name: i.name, priceDelta: i.priceDelta })),
+                }))
+                .filter((g) => g.items.length > 0);
+              const linkedGroups = linkedGroupsRaw.map((g) => ({
+                ...g,
+                items: g.items.map((it0) => ({
+                  ...it0,
+                  priceDelta: retaxInclusiveYen(it0.priceDelta, storeTaxRatePercent, taxRatePercent),
+                })),
+              }));
+              const vOpt = validateGuestOptionSelections(linkedGroups, row.optionSelections);
+              if (!vOpt.ok) throw new Error("BAD_OPTIONS");
+              surcharge += sumInclusiveOptionPriceDelta(linkedGroups, vOpt.byGroup);
             }
 
             const discRows = (it.timeDiscounts || []).map((d) => ({

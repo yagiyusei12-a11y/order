@@ -32,6 +32,8 @@ export type StoreSettingsShape = {
    * false のとき本体・オプションとも税込0円（選択は伝票に残る）。
    */
   guestCourseIncludedChargeOptionExtras: boolean;
+  /** テイクアウト受取の候補に使う時間帯マスタ（複数） */
+  takeoutPickupTimeWindowIds: string[];
 };
 
 export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
@@ -44,6 +46,7 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     guestCourseLastOrderMinutesBeforeEnd: 30,
     guestEnforceLastOrder: true,
     guestCourseIncludedChargeOptionExtras: true,
+    takeoutPickupTimeWindowIds: [],
   };
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return d;
   const o = raw as Record<string, unknown>;
@@ -74,6 +77,14 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
   }
   if (typeof o.guestCourseIncludedChargeOptionExtras === "boolean") {
     d.guestCourseIncludedChargeOptionExtras = o.guestCourseIncludedChargeOptionExtras;
+  }
+  if (Array.isArray(o.takeoutPickupTimeWindowIds)) {
+    const ids = o.takeoutPickupTimeWindowIds
+      .filter((x) => typeof x === "string")
+      .map((x) => x.trim())
+      .filter(Boolean);
+    // unique + cap to avoid bloat
+    d.takeoutPickupTimeWindowIds = [...new Set(ids)].slice(0, 50);
   }
   return d;
 }

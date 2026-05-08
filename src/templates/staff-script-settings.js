@@ -149,6 +149,37 @@ function renderTimeWindows(list) {
   });
 }
 
+function renderTakeoutPickupWindows(list, selectedIds) {
+  const box = document.getElementById("takeoutPickupWindows");
+  if (!box) return;
+  const arr = list || [];
+  const sel = new Set(Array.isArray(selectedIds) ? selectedIds : []);
+  if (!arr.length) {
+    box.innerHTML = "<div class=\"muted\" style=\"font-size:0.75rem\">時間帯マスタがありません。先に追加してください。</div>";
+    return;
+  }
+  box.innerHTML =
+    "<div class=\"muted\" style=\"font-size:0.72rem;margin-bottom:0.45rem\">受取候補に使う時間帯（複数選択）</div>" +
+    arr
+      .map(
+        (w) =>
+          "<label class=\"row\" style=\"font-size:.82rem;gap:.45rem;margin:.25rem 0;align-items:center\">" +
+          "<input type=\"checkbox\" class=\"tw-pickup-chk\" value=\"" +
+          escapeHtml(w.id) +
+          "\"" +
+          (sel.has(w.id) ? " checked" : "") +
+          " />" +
+          "<span>" +
+          escapeHtml(w.name || \"\") +
+          " <span class=\"muted\" style=\"font-size:.72rem\">(" +
+          escapeHtml(guestMinToTimeInputValue(w.startMin)) +
+          "〜" +
+          escapeHtml(guestMinToTimeInputValue(w.endMin)) +
+          ")</span></span></label>"
+      )
+      .join(\"\");
+}
+
 async function loadAll() {
   log("");
   const [st, staff, pay, twRes] = await Promise.all([
@@ -169,6 +200,7 @@ async function loadAll() {
   if (loEnf) loEnf.checked = s.guestEnforceLastOrder !== false;
   const incOpt = document.getElementById("stIncOptCharge");
   if (incOpt) incOpt.checked = s.guestCourseIncludedChargeOptionExtras !== false;
+  renderTakeoutPickupWindows(twRes.timeWindows || [], s.takeoutPickupTimeWindowIds || []);
 
   const sl = document.getElementById("staffList");
   const users = staff.staffUsers || [];
@@ -475,5 +507,26 @@ document.getElementById("btnSaveUi").onclick = async () => {
     log(String(e.message || e));
   }
 };
+
+const btnSaveTakeoutPickup = document.getElementById("btnSaveTakeoutPickup");
+if (btnSaveTakeoutPickup) {
+  btnSaveTakeoutPickup.onclick = async () => {
+    try {
+      log("");
+      const ids = [...document.querySelectorAll(".tw-pickup-chk:checked")].map((x) => x.value);
+      await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          settings: { takeoutPickupTimeWindowIds: ids },
+        }),
+      });
+      log("保存しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+}
 
 loadAll().catch((e) => log(String(e.message || e)));

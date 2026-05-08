@@ -531,20 +531,20 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
   if (btnEndSession) {
     btnEndSession.onclick = async () => {
       const rem = Number(detail.remainder || 0);
-      let msg = "この卓のセッションを終了し、空席に戻しますか？";
+      let msg = "この卓のセッションを切り、バッシング待ち（片付け待ち）にしますか？\n空席に戻すのはバッシング完了後です。";
       if (rem > 0) {
         msg =
           "未払いが " +
           yen(rem) +
-          " 残っています。セッションを切るとゲストからの注文はできなくなります。終了して空席に戻しますか？";
+          " 残っています。セッションを切るとゲストからの注文はできなくなります。バッシング待ちにしますか？\n（空席に戻すのは片付け完了後です）";
       }
       if (!confirm(msg)) return;
       try {
         await api(
-          "/stores/" + encodeURIComponent(STORE) + "/sessions/" + encodeURIComponent(session.id) + "/close",
+          "/stores/" + encodeURIComponent(STORE) + "/sessions/" + encodeURIComponent(session.id) + "/bashing",
           { method: "PATCH" }
         );
-        log("セッションを終了しました");
+        log("バッシング待ちにしました");
         await loadAll();
         selectedTableId = table.id;
         renderGrid();

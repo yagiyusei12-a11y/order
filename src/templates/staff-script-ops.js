@@ -70,6 +70,66 @@ function billPath(id) {
 function sessionForTable(tableId) {
   return sessionsCache.find((x) => x.tableId === tableId) || null;
 }
+
+/** @param {{ id: string; tableId?: string }} session @param {{ id: string; name: string; publicCode?: string }} table */
+function openMoveTableDialog(session, table) {
+  const vacant = tablesCache.filter((t) => t.active && t.id !== table.id && !sessionForTable(t.id));
+  if (!vacant.length) {
+    log("空いている移動先の卓がありません");
+    return;
+  }
+  vacant.sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+  const box = document.createElement("div");
+  box.style.cssText =
+    "position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem";
+  box.innerHTML =
+    "<div class=\"card\" style=\"max-width:420px;padding:1.1rem;background:#fff;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.12)\">" +
+    "<p style=\"margin:0 0 0.45rem;font-weight:900\">席移動: 「" +
+    escapeHtml(table.name) +
+    "」</p>" +
+    "<p style=\"margin:0 0 0.85rem;font-size:0.86rem;color:var(--muted);line-height:1.45\">滞在・注文・キッチン表示の卓名を移動先に切り替えます。ゲストQRのトークンは変わりません。</p>" +
+    "<label style=\"display:block;font-size:0.78rem;font-weight:800;margin-bottom:0.25rem\">移動先の卓</label>" +
+    "<select id=\"moveTargetSel\" style=\"width:100%;padding:0.5rem;margin-bottom:1rem;border-radius:8px;border:1px solid var(--border)\">" +
+    vacant
+      .map((t) => {
+        const lab = escapeHtml(displayTableCode(t.publicCode) || t.name || "");
+        return "<option value=\"" + escapeHtml(t.id) + "\">" + lab + " · " + escapeHtml(t.name) + "</option>";
+      })
+      .join("") +
+    "</select>" +
+    "<div class=\"row\" style=\"gap:0.5rem;justify-content:flex-end\">" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"moveCancel\">キャンセル</button>" +
+    "<button type=\"button\" class=\"btn-primary\" id=\"moveOk\" style=\"width:auto;padding:0.45rem 0.85rem\">移動する</button>" +
+    "</div></div>";
+  document.body.appendChild(box);
+  const close = () => box.remove();
+  box.querySelector("#moveCancel").onclick = close;
+  box.querySelector("#moveOk").onclick = async () => {
+    const sel = box.querySelector("#moveTargetSel");
+    const tid = sel && sel.value ? String(sel.value) : "";
+    if (!tid) return;
+    if (!confirm("この滞在を選んだ卓へ移動しますか？")) return;
+    try {
+      const res = await api(
+        "/stores/" + encodeURIComponent(STORE) + "/sessions/" + encodeURIComponent(session.id) + "/move-table",
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ targetTableId: tid }),
+        }
+      );
+      close();
+      log("席を移動しました");
+      await loadAll();
+      const nextTableId = res.session && res.session.tableId ? res.session.tableId : tid;
+      selectedTableId = nextTableId;
+      renderGrid();
+      await renderDetail();
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+}
 function currentTotal(session) {
   return Number(session && session.currentTotal) || 0;
 }
@@ -531,6 +591,7 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
     })() +
     "</span></div>" +
     "<div class=\"row\" style=\"margin:0.35rem 0 0.5rem;justify-content:flex-end;flex-wrap:wrap;gap:0.35rem\">" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"btnMoveTable\" style=\"font-weight:700;border-color:#93c5fd\">席移動</button>" +
     "<button type=\"button\" class=\"btn-ghost\" id=\"btnMergeSession\" style=\"font-weight:700;border-color:#cbd5e1\">他卓と合算</button>" +
     "<button type=\"button\" class=\"btn-ghost\" id=\"btnEndSession\" style=\"color:#b91c1c;border-color:#fecaca;font-weight:700\">セッションを切る</button>" +
     "</div>" +
@@ -577,6 +638,11 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
   };
   if (recvEl) recvEl.oninput = updateCash;
   methodEl.dispatchEvent(new Event("change"));
+
+  const btnMoveTable = document.getElementById("btnMoveTable");
+  if (btnMoveTable) {
+    btnMoveTable.onclick = () => openMoveTableDialog(session, table);
+  }
 
   const btnMergeSession = document.getElementById("btnMergeSession");
   if (btnMergeSession) {
@@ -841,9 +907,14 @@ async function renderDetail() {
       "<p class=\"muted\" style=\"line-height:1.45\">注文・会計は「<strong>" +
       parentLab +
       "</strong>」にまとまっています。分割すると、この卓に付いていた注文が戻ります。</p>" +
-      "<div class=\"row\" style=\"margin-top:0.6rem\">" +
+      "<div class=\"row\" style=\"margin-top:0.6rem;gap:0.5rem;flex-wrap:wrap\">" +
+      "<button type=\"button\" class=\"btn-ghost\" id=\"btnMoveMergedTable\" style=\"border-color:#93c5fd;font-weight:700\">席移動</button>" +
       "<button type=\"button\" class=\"btn-primary\" id=\"btnSplitMerged\" style=\"width:auto;padding:0.5rem 0.85rem\">合算を分割する</button>" +
       "</div>";
+    const btnMoveM = document.getElementById("btnMoveMergedTable");
+    if (btnMoveM) {
+      btnMoveM.onclick = () => openMoveTableDialog(session, table);
+    }
     const btnSplit = document.getElementById("btnSplitMerged");
     if (btnSplit) {
       btnSplit.onclick = async () => {

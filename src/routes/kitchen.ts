@@ -17,6 +17,16 @@ import { tableDisplayLabel } from "../lib/table-display-code.js";
 
 const LINE_STATUSES = ["queued", "cooking", "done", "served"] as const;
 
+function kitchenOrderLineTableLabel(
+  sessionTable: { name: string; publicCode: string | null },
+  sourceTable: { name: string; publicCode: string | null } | null,
+): string {
+  if (sourceTable) {
+    return tableDisplayLabel(sourceTable.name, sourceTable.publicCode);
+  }
+  return tableDisplayLabel(sessionTable.name, sessionTable.publicCode);
+}
+
 export async function registerKitchen(app: FastifyInstance): Promise<void> {
   app.get<{
     Params: { storeId: string };
@@ -66,6 +76,7 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
         order: {
           include: {
             session: { include: { table: true } },
+            sourceTable: true,
           },
         },
       },
@@ -96,6 +107,8 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
         l.menuItem?.sellKind === "set" ? extractSetComponentsFromLineExtra(l.lineExtra) : [];
       const resolved =
         picks.length > 0 ? picks.filter((p) => compMenuById.has(p.menuItemId)) : [];
+      const srcTbl = l.order.sourceTable ?? null;
+      const tableName = kitchenOrderLineTableLabel(l.order.session.table, srcTbl);
 
       if (picks.length === 0 || resolved.length === 0) {
         outLines.push({
@@ -133,7 +146,7 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
               : null,
           orderId: l.orderId,
           orderCreatedAt: l.order.createdAt,
-          tableName: tableDisplayLabel(l.order.session.table.name, l.order.session.table.publicCode),
+          tableName,
           sessionId: l.order.sessionId,
           readyAt: l.readyAt,
           servedAt: l.servedAt,
@@ -167,7 +180,7 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
           setFixedSteps: null,
           orderId: l.orderId,
           orderCreatedAt: l.order.createdAt,
-          tableName: tableDisplayLabel(l.order.session.table.name, l.order.session.table.publicCode),
+          tableName,
           sessionId: l.order.sessionId,
           readyAt: l.readyAt,
           servedAt: l.servedAt,

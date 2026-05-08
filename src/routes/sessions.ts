@@ -250,6 +250,116 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
     return updated;
   });
 
+  /**
+   * 席移動: セッションの卓を変え、注文は同一セッションのままキッチン等の卓表示を追従させる。
+   * - open: session.tableId 更新、sourceTableId が旧卓の注文のみ新卓へ、未払い伝票ラベル更新
+   * - merged（合算子）: 子セッションの卓更新＋親セッション上の当該 sourceTableId の注文を新卓へ
+   */
+  app.patch<{
+    Params: { storeId: string; sessionId: string };
+    Body: { targetTableId?: unknown };
+  }>("/stores/:storeId/sessions/:sessionId/move-table", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+
+    const targetTableIdRaw = (req.body as { targetTableId?: unknown })?.targetTableId;
+    const targetTableId =
+      typeof targetTableIdRaw === "string" && targetTableIdRaw.trim() ? targetTableIdRaw.trim() : "";
+
+    if (!targetTableId) {
+      return reply.code(400).send({ error: "targetTableId required" });
+    }
+
+    try {
+      const updated = await prisma.$transaction(async (tx) => {
+        const session = await tx.diningSession.findFirst({
+          where: { id: req.params.sessionId, storeId: store.id },
+          include: { table: true },
+        });
+        if (!session) return { err: "NOT_FOUND" as const, session: null };
+        if (session.status !== "open" && session.status !== "merged") {
+          throw new Error("MOVE_STATUS");
+        }
+        if (session.tableId === targetTableId) {
+          throw new Error("MOVE_SAME");
+        }
+
+        const targetTable = await tx.table.findFirst({
+          where: { id: targetTableId, storeId: store.id, active: true },
+        });
+        if (!targetTable) {
+          throw new Error("MOVE_TABLE");
+        }
+
+        const blocking = await tx.diningSession.findFirst({
+          where: {
+            storeId: store.id,
+            tableId: targetTableId,
+            status: { in: ["open", "bashing_waiting", "merged"] },
+          },
+          select: { id: true },
+        });
+        if (blocking) {
+          throw new Error("MOVE_OCCUPIED");
+        }
+
+        const oldTableId = session.tableId;
+
+        if (session.status === "merged" && session.mergedIntoSessionId) {
+          await tx.salesOrder.updateMany({
+            where: { sessionId: session.mergedIntoSessionId, sourceTableId: oldTableId },
+            data: { sourceTableId: targetTableId },
+          });
+        } else {
+          await tx.salesOrder.updateMany({
+            where: { sessionId: session.id, sourceTableId: oldTableId },
+            data: { sourceTableId: targetTableId },
+          });
+        }
+
+        await tx.diningSession.update({
+          where: { id: session.id },
+          data: { tableId: targetTableId },
+        });
+
+        if (session.status === "open") {
+          await tx.bill.updateMany({
+            where: { sessionId: session.id, status: "open" },
+            data: { label: targetTable.name },
+          });
+        }
+
+        return {
+          err: null as null,
+          session: await tx.diningSession.findFirst({
+            where: { id: session.id },
+            include: { table: true, course: true, coursePriceTier: true, bill: true },
+          }),
+        };
+      });
+
+      if (updated.err === "NOT_FOUND" || !updated.session) {
+        return reply.code(404).send({ error: "session not found" });
+      }
+      return { ok: true, session: updated.session };
+    } catch (e) {
+      const code = e instanceof Error ? e.message : "";
+      if (code === "MOVE_STATUS") {
+        return reply.code(400).send({ error: "利用中または合算中のセッションだけ席移動できます" });
+      }
+      if (code === "MOVE_SAME") {
+        return reply.code(400).send({ error: "すでにその卓です" });
+      }
+      if (code === "MOVE_TABLE") {
+        return reply.code(400).send({ error: "移動先の卓が見つかりません" });
+      }
+      if (code === "MOVE_OCCUPIED") {
+        return reply.code(409).send({ error: "移動先の卓にほかの滞在があります" });
+      }
+      throw e;
+    }
+  });
+
   app.patch<{ Params: { storeId: string; sessionId: string } }>(
     "/stores/:storeId/sessions/:sessionId/close",
     async (req, reply) => {

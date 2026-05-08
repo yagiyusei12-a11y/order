@@ -1095,7 +1095,7 @@
 
     const api = (path, opt) => fetch(path, opt).then(async (r) => {
       const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error || r.statusText || String(r.status));
+      if (!r.ok) throw new Error(j.message || j.error || r.statusText || String(r.status));
       return j;
     });
 

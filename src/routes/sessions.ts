@@ -160,6 +160,12 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
         course: true,
         coursePriceTier: true,
         bill: true,
+        mergedIntoSession: {
+          select: {
+            id: true,
+            table: { select: { id: true, name: true, publicCode: true } },
+          },
+        },
         orders: {
           include: {
             lines: {
@@ -322,9 +328,9 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
   );
 
   /**
-   * 卓会計の合算: ソース卓の注文・会計（未精算）をターゲット卓のセッションへ移し、ソース卓のセッションを閉じる。
-   * - 両方 status=open のみ。コース卓は「ソースにコースがある場合はターゲットと同一コース・同一料金ティア」に限る。
-   * - 精算済み伝票が付いているセッションは合算不可。
+   * 卓会計の合算: ソース卓の注文・会計（未精算）をターゲット卓へ移す。ソース卓は status=merged のまま占有（分割で戻せる）。
+   * - 両方 status=open のみ。ターゲットが既に他卓に合算されている場合は不可。
+   * - コース卓は「ソースにコースがある場合はターゲットと同一コース・同一料金ティア」に限る。
    */
   app.post<{
     Params: { storeId: string };
@@ -353,6 +359,9 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
         if (from.status !== "open" || to.status !== "open") {
           throw new Error("MERGE_STATUS");
         }
+        if (to.mergedIntoSessionId) {
+          throw new Error("MERGE_TARGET_IS_MERGED_CHILD");
+        }
         if (from.tableId === to.tableId) {
           throw new Error("MERGE_SAME_TABLE");
         }
@@ -370,7 +379,14 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
         const nextChild = to.childCount + from.childCount;
         if (nextChild > nextGuest) throw new Error("MERGE_CHILD_COUNT");
 
-        await tx.salesOrder.updateMany({ where: { sessionId: from.id }, data: { sessionId: to.id } });
+        const ordersFrom = await tx.salesOrder.findMany({ where: { sessionId: from.id } });
+        for (const o of ordersFrom) {
+          const src = o.sourceTableId ?? from.tableId;
+          await tx.salesOrder.update({
+            where: { id: o.id },
+            data: { sessionId: to.id, sourceTableId: src },
+          });
+        }
 
         const toPacks = asStringIdArray(to.purchasedCourseOptionPackIds);
         const fromPacks = asStringIdArray(from.purchasedCourseOptionPackIds);
@@ -405,7 +421,10 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
 
         await tx.diningSession.update({
           where: { id: from.id },
-          data: { status: "closed", closedAt: new Date() },
+          data: {
+            status: "merged",
+            mergedIntoSessionId: to.id,
+          },
         });
 
         return tx.diningSession.findFirst({
@@ -418,6 +437,11 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       return { ok: true, session: targetSession };
     } catch (e) {
       const code = e instanceof Error ? e.message : "";
+      if (code === "MERGE_TARGET_IS_MERGED_CHILD") {
+        return reply
+          .code(400)
+          .send({ error: "すでに他卓に合算されている卓を、合算の受け手にはできません（先に分割してください）" });
+      }
       if (code === "MERGE_STATUS") {
         return reply.code(400).send({ error: "合算できるのは利用中（open）のセッション同士だけです" });
       }
@@ -434,6 +458,111 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       }
       if (code === "MERGE_CHILD_COUNT") {
         return reply.code(400).send({ error: "合算後の子供人数が来店人数を超えます" });
+      }
+      throw e;
+    }
+  });
+
+  /**
+   * 合算の分割: merged 状態の子セッションの卓に紐づく注文を親セッションから戻す。
+   */
+  app.post<{
+    Params: { storeId: string };
+    Body: { childSessionId?: unknown };
+  }>("/stores/:storeId/sessions/split-merged", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+
+    const childId = typeof req.body?.childSessionId === "string" ? req.body.childSessionId.trim() : "";
+    if (!childId) return reply.code(400).send({ error: "childSessionId required" });
+
+    try {
+      const out = await prisma.$transaction(async (tx) => {
+        const child = await tx.diningSession.findFirst({
+          where: { id: childId, storeId: store.id },
+          include: { table: true },
+        });
+        if (!child || child.status !== "merged" || !child.mergedIntoSessionId) {
+          throw new Error("SPLIT_NOT_MERGED_CHILD");
+        }
+        const parent = await tx.diningSession.findFirst({
+          where: { id: child.mergedIntoSessionId, storeId: store.id },
+          include: { bill: true },
+        });
+        if (!parent || parent.status !== "open") {
+          throw new Error("SPLIT_PARENT_GONE");
+        }
+        if (parent.bill && parent.bill.status !== "open") {
+          throw new Error("SPLIT_PARENT_BILL_NOT_OPEN");
+        }
+
+        const tId = child.tableId;
+        const moved = await tx.salesOrder.updateMany({
+          where: { sessionId: parent.id, sourceTableId: tId },
+          data: { sessionId: child.id, sourceTableId: null },
+        });
+
+        const nextPGuest = parent.guestCount - child.guestCount;
+        const nextPChild = parent.childCount - child.childCount;
+        if (nextPGuest < 1) throw new Error("SPLIT_PARENT_GUEST_INVALID");
+        if (nextPChild < 0 || nextPChild > nextPGuest) throw new Error("SPLIT_PARENT_CHILD_INVALID");
+
+        await tx.diningSession.update({
+          where: { id: parent.id },
+          data: { guestCount: nextPGuest, childCount: nextPChild },
+        });
+
+        await tx.diningSession.update({
+          where: { id: child.id },
+          data: {
+            status: "open",
+            mergedIntoSessionId: null,
+          },
+        });
+
+        if (moved.count > 0) {
+          const existingChildBill = await tx.bill.findFirst({ where: { sessionId: child.id } });
+          if (!existingChildBill) {
+            await tx.bill.create({
+              data: {
+                storeId: store.id,
+                sessionId: child.id,
+                totalAmount: 0,
+                status: "open",
+                label: child.table?.name ?? null,
+              },
+            });
+          }
+        }
+
+        await recomputeOpenBillTotalForSession(tx, store.id, parent.id);
+        await recomputeOpenBillTotalForSession(tx, store.id, child.id);
+
+        const parentFull = await tx.diningSession.findFirst({
+          where: { id: parent.id },
+          include: { table: true, course: true, coursePriceTier: true, bill: true },
+        });
+        const childFull = await tx.diningSession.findFirst({
+          where: { id: child.id },
+          include: { table: true, course: true, coursePriceTier: true, bill: true },
+        });
+        return { parent: parentFull, child: childFull, movedOrders: moved.count };
+      });
+
+      return { ok: true, ...out };
+    } catch (e) {
+      const code = e instanceof Error ? e.message : "";
+      if (code === "SPLIT_NOT_MERGED_CHILD") {
+        return reply.code(400).send({ error: "合算中（merged）の卓だけ分割できます" });
+      }
+      if (code === "SPLIT_PARENT_GONE") {
+        return reply.code(400).send({ error: "代表セッションが見つからないか利用中ではありません" });
+      }
+      if (code === "SPLIT_PARENT_BILL_NOT_OPEN") {
+        return reply.code(400).send({ error: "代表卓の伝票が未精算ではないため分割できません" });
+      }
+      if (code === "SPLIT_PARENT_GUEST_INVALID" || code === "SPLIT_PARENT_CHILD_INVALID") {
+        return reply.code(400).send({ error: "分割後の代表卓の人数が不整合になります" });
       }
       throw e;
     }

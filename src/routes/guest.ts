@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { minutesSinceMidnightInTimeZone } from "../lib/guest-category-hours.js";
@@ -24,8 +24,37 @@ import {
 } from "../lib/menu-set-order.js";
 import { SET_SERVE_LATER_LINE_KIND } from "../lib/set-order-bundle.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
-import { displayTableCode } from "../lib/table-display-code.js";
+import { displayTableCode, tableDisplayLabel } from "../lib/table-display-code.js";
 import { prisma } from "../db.js";
+
+/** 合算で merged になった卓のゲスト向けAPIは 409 で案内する */
+async function replyIfMergedGuestSession(
+  reply: FastifyReply,
+  session: { status: string; mergedIntoSessionId: string | null } | null,
+): Promise<boolean> {
+  if (!session || session.status !== "merged") return false;
+  const parentId = session.mergedIntoSessionId;
+  if (!parentId) {
+    await reply.code(409).send({
+      error: "merged_into_other_table",
+      message: "この卓は合算中です。代表の卓のQRコードからご注文・お会計をお願いします。",
+    });
+    return true;
+  }
+  const parent = await prisma.diningSession.findUnique({
+    where: { id: parentId },
+    include: { table: true },
+  });
+  const lab =
+    parent?.table != null
+      ? tableDisplayLabel(parent.table.name, parent.table.publicCode) || parent.table.name
+      : "代表の卓";
+  await reply.code(409).send({
+    error: "merged_into_other_table",
+    message: `この卓は合算中です。ご注文・お会計は「${lab}」のQRコードからお願いします。`,
+  });
+  return true;
+}
 
 type EatMode = "dine_in" | "takeout";
 function normalizeEatMode(raw: unknown): EatMode {
@@ -374,7 +403,11 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         customer: { select: { name: true, phone: true } },
       },
     });
-    if (!session || session.status !== "open") {
+    if (!session) {
+      return reply.code(404).send({ error: "session not found or closed" });
+    }
+    if (await replyIfMergedGuestSession(reply, session)) return;
+    if (session.status !== "open") {
       return reply.code(404).send({ error: "session not found or closed" });
     }
 
@@ -658,9 +691,18 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
   app.post<{ Params: { token: string } }>("/guest/:token/call-staff", async (req, reply) => {
     const sess = await prisma.diningSession.findUnique({
       where: { guestToken: req.params.token },
-      select: { storeId: true, status: true, table: { select: { publicCode: true } } },
+      select: {
+        storeId: true,
+        status: true,
+        mergedIntoSessionId: true,
+        table: { select: { publicCode: true } },
+      },
     });
-    if (!sess || sess.status !== "open") {
+    if (!sess) {
+      return reply.code(404).send({ error: "session not found or closed" });
+    }
+    if (await replyIfMergedGuestSession(reply, sess)) return;
+    if (sess.status !== "open") {
       return reply.code(404).send({ error: "session not found or closed" });
     }
     const seatCode = typeof sess.table?.publicCode === "string" ? sess.table.publicCode : "";
@@ -688,9 +730,13 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       }
       const sess = await prisma.diningSession.findUnique({
         where: { guestToken: req.params.token },
-        select: { id: true, status: true },
+        select: { id: true, status: true, mergedIntoSessionId: true },
       });
-      if (!sess || sess.status !== "open") {
+      if (!sess) {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+      if (await replyIfMergedGuestSession(reply, sess)) return;
+      if (sess.status !== "open") {
         return reply.code(404).send({ error: "session not found or closed" });
       }
       await prisma.diningSession.update({
@@ -716,6 +762,18 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     const hasName = "name" in bodyObj;
     const hasPhone = "phone" in bodyObj;
     const { name, phone } = normalizeOptionalProfile(bodyObj.name, bodyObj.phone);
+
+    const preSess = await prisma.diningSession.findUnique({
+      where: { guestToken: req.params.token },
+      select: { status: true, mergedIntoSessionId: true },
+    });
+    if (!preSess) {
+      return reply.code(404).send({ error: "session not found or closed" });
+    }
+    if (await replyIfMergedGuestSession(reply, preSess)) return;
+    if (preSess.status !== "open") {
+      return reply.code(404).send({ error: "session not found or closed" });
+    }
 
     try {
       const result = await prisma.$transaction(async (tx) => {
@@ -816,7 +874,11 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       where: { guestToken: req.params.token },
       include: { course: true, coursePriceTier: true },
     });
-    if (!session || session.status !== "open") {
+    if (!session) {
+      return reply.code(404).send({ error: "session not found or closed" });
+    }
+    if (await replyIfMergedGuestSession(reply, session)) return;
+    if (session.status !== "open") {
       return reply.code(404).send({ error: "session not found or closed" });
     }
 
@@ -1439,7 +1501,11 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       where: { guestToken: req.params.token },
       include: { course: true, coursePriceTier: true },
     });
-    if (!session || session.status !== "open") {
+    if (!session) {
+      return reply.code(404).send({ error: "session not found or closed" });
+    }
+    if (await replyIfMergedGuestSession(reply, session)) return;
+    if (session.status !== "open") {
       return reply.code(404).send({ error: "session not found or closed" });
     }
     if (!session.courseId) {
@@ -1581,7 +1647,11 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     const session = await prisma.diningSession.findUnique({
       where: { guestToken: req.params.token },
     });
-    if (!session || session.status !== "open") {
+    if (!session) {
+      return reply.code(404).send({ error: "session not found or closed" });
+    }
+    if (await replyIfMergedGuestSession(reply, session)) return;
+    if (session.status !== "open") {
       return reply.code(404).send({ error: "session not found or closed" });
     }
     const orders = await prisma.salesOrder.findMany({

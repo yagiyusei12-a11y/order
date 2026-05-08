@@ -78,6 +78,18 @@ export async function openSessionForTable(options: {
     };
   }
 
+  const mergedOnTable = await prisma.diningSession.findFirst({
+    where: { tableId: table.id, status: "merged" },
+  });
+  if (mergedOnTable) {
+    return {
+      ok: false,
+      error: "この卓は他卓に合算中です。新しいセッションは開始できません（分割後にお試しください）",
+      code: "CONFLICT",
+      existingSessionId: mergedOnTable.id,
+    };
+  }
+
   const resolved = await resolveCourseAndTierForSession({
     storeId,
     courseId: resolvedCourseId,

@@ -171,7 +171,8 @@ model Table {
   seatType   String            @default("")
   active     Boolean           @default(true)
   store      Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  sessions   DiningSession[]
+  sessions         DiningSession[]
+  sourceSalesOrders SalesOrder[]
 
   @@index([storeId])
 }
@@ -403,6 +404,8 @@ model DiningSession {
   /// ゲストの飲酒確認（null=未送信・酒類注文は不可。true=可、false=不可）
   guestAlcoholAllowed Boolean?
   status     String       @default("open")
+  /// 他卓に合算され注文が代表セッションに移ったとき。卓は占有のまま（分割で戻せる）
+  mergedIntoSessionId String?
   openedAt   DateTime     @default(now())
   closedAt   DateTime?
   customerId String?
@@ -411,6 +414,8 @@ model DiningSession {
   table      Table        @relation(fields: [tableId], references: [id], onDelete: Cascade)
   course          Course?          @relation(fields: [courseId], references: [id], onDelete: SetNull)
   coursePriceTier CoursePriceTier? @relation(fields: [coursePriceTierId], references: [id], onDelete: SetNull)
+  mergedIntoSession DiningSession?  @relation("SessionMerge", fields: [mergedIntoSessionId], references: [id], onDelete: SetNull)
+  mergedChildSessions DiningSession[] @relation("SessionMerge")
   /// 支払い済みのコース＋オプション（CourseOptionPack.id の JSON 配列）
   purchasedCourseOptionPackIds Json @default("[]")
   orders          SalesOrder[]
@@ -419,6 +424,7 @@ model DiningSession {
   @@index([storeId])
   @@index([tableId])
   @@index([customerId])
+  @@index([mergedIntoSessionId])
 }
 
 /// 受付：設定（店舗ごとに1行）
@@ -493,13 +499,17 @@ model ReceptionReservationSeat {
 model SalesOrder {
   id        String      @id @default(cuid())
   sessionId String
+  /// 合算後、注文が発生した元卓（卓マスタ id）。未設定＝代表セッションの卓由来
+  sourceTableId String?
   status    String      @default("submitted")
   note      String?
   createdAt DateTime    @default(now())
   session   DiningSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sourceTable Table?    @relation(fields: [sourceTableId], references: [id], onDelete: SetNull)
   lines     OrderLine[]
 
   @@index([sessionId])
+  @@index([sourceTableId])
 }
 
 model OrderLine {

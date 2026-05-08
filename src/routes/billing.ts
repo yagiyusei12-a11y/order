@@ -81,6 +81,7 @@ async function buildBillDetailPayload(
     lineExtra: unknown;
     eatMode: string;
     taxRatePercent: number;
+    sourceTableId: string | null;
   }[];
 } | null> {
   const bill = await prisma.bill.findFirst({
@@ -146,6 +147,7 @@ async function buildBillDetailPayload(
     lineExtra: unknown;
     eatMode: string;
     taxRatePercent: number;
+    sourceTableId: string | null;
   }[] = [];
   if (bill.session) {
     preview = sessionPreviewFromSession(bill.session as SessionForPreview);
@@ -171,6 +173,7 @@ async function buildBillDetailPayload(
       };
     }
     for (const o of bill.session.orders) {
+      const srcTable = (o as { sourceTableId?: string | null }).sourceTableId ?? null;
       for (const l of o.lines) {
         orderLines.push({
           id: l.id,
@@ -183,6 +186,7 @@ async function buildBillDetailPayload(
           lineExtra: l.lineExtra,
           eatMode: (l as { eatMode?: string }).eatMode ?? "dine_in",
           taxRatePercent: (l as { taxRatePercent?: number }).taxRatePercent ?? 10,
+          sourceTableId: srcTable,
         });
       }
     }

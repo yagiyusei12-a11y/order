@@ -451,7 +451,7 @@ async function computeDefaultSeatsForShift(storeId: string): Promise<
     select: { id: true, publicCode: true, capacity: true, mergeWith: true, seatType: true },
   });
   const sessions = await prisma.diningSession.findMany({
-    where: { storeId, status: { in: ["open", "bashing_waiting"] } },
+    where: { storeId, status: { in: ["open", "bashing_waiting", "merged"] } },
     select: { id: true, tableId: true, status: true, guestCount: true, openedAt: true },
   });
   const sessByTableId = new Map(sessions.map((s) => [s.tableId, s]));
@@ -500,6 +500,7 @@ async function computeDefaultSeatsForShift(storeId: string): Promise<
         seatType,
       });
     } else {
+      // merged（他卓に合算中）も卓は占有のまま
       out.push({
         id: pc,
         status: "occupied",
@@ -596,12 +597,20 @@ async function syncSeatToSessions(storeId: string, seatId: string, next: SeatSta
     where: { storeId, tableId: table.id, status: "bashing_waiting" },
     select: { id: true },
   });
+  const merged = await prisma.diningSession.findFirst({
+    where: { storeId, tableId: table.id, status: "merged" },
+    select: { id: true },
+  });
 
   if (next === "occupied") {
     const nextCount = Math.max(1, Number.isFinite(current) ? Math.floor(current) : 1);
     // If bashing_waiting exists, reuse it (avoid creating 2 sessions per table)
     if (!open && bash) {
       await prisma.diningSession.update({ where: { id: bash.id }, data: { status: "open", guestCount: nextCount, closedAt: null } });
+      return;
+    }
+    // 合算で merged の卓は open-table-session が拒否するため、受付からの新規オープンも試みない
+    if (!open && merged) {
       return;
     }
     if (!open) {

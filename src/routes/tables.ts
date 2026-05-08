@@ -156,10 +156,10 @@ export async function registerTables(app: FastifyInstance): Promise<void> {
         where: { id: req.params.tableId, storeId: req.params.storeId },
       });
       if (!t) return reply.code(404).send({ error: "table not found" });
-      const openSessions = await prisma.diningSession.count({
-        where: { tableId: t.id, status: "open" },
+      const blockingSessions = await prisma.diningSession.count({
+        where: { tableId: t.id, status: { in: ["open", "bashing_waiting", "merged"] } },
       });
-      if (openSessions > 0) {
+      if (blockingSessions > 0) {
         return reply
           .code(409)
           .send({ error: "この卓に開いている滞在があるため削除できません。会計を終えてから再度お試しください。" });

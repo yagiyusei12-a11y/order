@@ -73,8 +73,36 @@ function sessionForTable(tableId) {
 function currentTotal(session) {
   return Number(session && session.currentTotal) || 0;
 }
+function parentSessionOfMerged(session) {
+  if (!session || session.status !== "merged" || !session.mergedIntoSessionId) return null;
+  return sessionsCache.find((x) => x.id === session.mergedIntoSessionId) || null;
+}
+function floorSessionTotal(session) {
+  const p = parentSessionOfMerged(session);
+  if (p) return currentTotal(p);
+  return currentTotal(session);
+}
+function sourceTableBadgeHtml(sourceTableId) {
+  if (!sourceTableId) return "";
+  const t = tablesCache.find((x) => x.id === sourceTableId);
+  if (!t) return "";
+  const lab = displayTableCode(t.publicCode) || t.name || "";
+  if (!lab) return "";
+  return (
+    "<span class=\"badge\" style=\"margin-right:.35rem;background:#7c3aed;font-size:0.65rem\">" +
+    escapeHtml(lab) +
+    "</span>"
+  );
+}
 function statusText(session) {
-  return session.status === "bashing_waiting" ? "バッシング待ち" : "利用中";
+  if (session.status === "bashing_waiting") return "バッシング待ち";
+  if (session.status === "merged") {
+    const p = parentSessionOfMerged(session);
+    const pt = p && p.table;
+    const lab = pt ? displayTableCode(pt.publicCode) || pt.name || "代表卓" : "代表卓";
+    return "合算中（→ " + lab + "）";
+  }
+  return "利用中";
 }
 function tryOpenDrawer() {
   try {
@@ -103,9 +131,17 @@ function buildReceiptDoc(detail) {
   const rows = [];
   for (const l of detail.orderLines || []) {
     if (l.status === "cancelled") continue;
+    const srcLab = (function () {
+      if (!l.sourceTableId) return "";
+      const tb = tablesCache.find((x) => x.id === l.sourceTableId);
+      if (!tb) return "";
+      return displayTableCode(tb.publicCode) || tb.name || "";
+    })();
+    const srcSuffix = srcLab ? " <span style=\"color:#666\">(" + escapeHtml(srcLab) + ")</span>" : "";
     rows.push(
       "<tr><td>" +
         escapeHtml(l.nameSnapshot) +
+        srcSuffix +
         " ×" +
         l.qty +
         "</td><td style=\"text-align:right\">" +
@@ -152,7 +188,13 @@ function renderGrid() {
     const s = sessionForTable(t.id);
     const cls =
       "table-cell" +
-      (s ? (s.status === "bashing_waiting" ? " bashing" : " busy") : "") +
+      (s
+        ? s.status === "bashing_waiting"
+          ? " bashing"
+          : s.status === "merged"
+            ? " busy merged"
+            : " busy"
+        : "") +
       (selectedTableId === t.id ? " selected" : "");
     const meta = s
       ? (() => {
@@ -161,13 +203,13 @@ function renderGrid() {
           const ppl = cc > 0 ? gc + "人·子" + cc : gc + "人";
           return (
             "<span class=\"meta " +
-            (s.status === "bashing_waiting" ? "warn" : "") +
+            (s.status === "bashing_waiting" || s.status === "merged" ? "warn" : "") +
             "\">" +
             statusText(s) +
             " · " +
             ppl +
             "</span><span class=\"meta money\">" +
-            yen(currentTotal(s)) +
+            yen(floorSessionTotal(s)) +
             "</span>"
           );
         })()
@@ -212,7 +254,7 @@ function renderMiniSessions() {
         return cc > 0 ? gc + "人（子" + cc + "）" : gc + "人";
       })() +
       " · " +
-      yen(currentTotal(s));
+      yen(floorSessionTotal(s));
     box.appendChild(d);
   }
 }
@@ -289,7 +331,14 @@ function groupedOrderLines(detail) {
   const lines = (detail.orderLines || []).filter((l) => l.status !== "cancelled");
   const grouped = new Map();
   for (const l of lines) {
-    const key = [l.nameSnapshot || "", String(l.eatMode || "dine_in"), Number(l.unitPrice || 0), l.menuItemId || "", JSON.stringify(l.lineExtra ?? null)].join("::");
+    const key = [
+      l.nameSnapshot || "",
+      String(l.eatMode || "dine_in"),
+      Number(l.unitPrice || 0),
+      l.menuItemId || "",
+      String(l.sourceTableId || ""),
+      JSON.stringify(l.lineExtra ?? null),
+    ].join("::");
     if (!grouped.has(key)) {
       grouped.set(key, {
         key,
@@ -438,6 +487,7 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
         "<td>" +
         "<div class=\"ops-line-name\">" +
         (g.eatMode === "takeout" ? "<span class=\"badge\" style=\"margin-right:.35rem;background:#0ea5e9\">テイクアウト</span>" : "") +
+        (g.lines && g.lines[0] ? sourceTableBadgeHtml(g.lines[0].sourceTableId) : "") +
         escapeHtml(g.nameSnapshot) +
         "</div>" +
         (g.lines && g.lines[0] && orderLineExtraSubtext(g.lines[0].lineExtra)
@@ -544,7 +594,7 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
         "<p style=\"margin:0 0 0.45rem;font-weight:900\">「" +
         escapeHtml(table.name) +
         "」に注文を集約</p>" +
-        "<p style=\"margin:0 0 0.85rem;font-size:0.86rem;color:var(--muted);line-height:1.45\">選んだ卓の注文・未払い伝票をこの卓に移し、選んだ卓のセッションは閉じます。精算済みの卓は合算できません。</p>" +
+        "<p style=\"margin:0 0 0.85rem;font-size:0.86rem;color:var(--muted);line-height:1.45\">選んだ卓の注文・未払い伝票をこの卓に集約します。元の卓は空席にならず「合算中」として占有が続き、あとから分割できます。精算済みの卓は合算できません。</p>" +
         "<label style=\"display:block;font-size:0.78rem;font-weight:800;margin-bottom:0.25rem\">合算元の卓</label>" +
         "<select id=\"mergeFromSel\" style=\"width:100%;padding:0.5rem;margin-bottom:1rem;border-radius:8px;border:1px solid var(--border)\">" +
         others
@@ -578,7 +628,7 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
         const sel = box.querySelector("#mergeFromSel");
         const fromId = sel && sel.value ? String(sel.value) : "";
         if (!fromId) return;
-        if (!confirm("本当に合算しますか？元の卓のセッションは閉じられ、空席として扱われます。")) return;
+        if (!confirm("本当に合算しますか？元の卓は「合算中」のまま占有が続き、オペ画面の「分割」でいつでも戻せます。")) return;
         try {
           await api("/stores/" + encodeURIComponent(STORE) + "/sessions/merge", {
             method: "POST",
@@ -780,6 +830,42 @@ async function renderDetail() {
     };
     return;
   }
+  if (session.status === "merged") {
+    const p = parentSessionOfMerged(session);
+    const pt = p && p.table;
+    const parentLab = pt ? escapeHtml(pt.name || displayTableCode(pt.publicCode) || "代表卓") : "代表卓";
+    panel.innerHTML =
+      "<p><span class=\"badge\">" +
+      escapeHtml(table.name) +
+      "</span> · <strong style=\"color:#7c3aed\">合算中</strong></p>" +
+      "<p class=\"muted\" style=\"line-height:1.45\">注文・会計は「<strong>" +
+      parentLab +
+      "</strong>」にまとまっています。分割すると、この卓に付いていた注文が戻ります。</p>" +
+      "<div class=\"row\" style=\"margin-top:0.6rem\">" +
+      "<button type=\"button\" class=\"btn-primary\" id=\"btnSplitMerged\" style=\"width:auto;padding:0.5rem 0.85rem\">合算を分割する</button>" +
+      "</div>";
+    const btnSplit = document.getElementById("btnSplitMerged");
+    if (btnSplit) {
+      btnSplit.onclick = async () => {
+        if (!confirm("この卓の注文を代表卓から戻し、合算を解除しますか？")) return;
+        try {
+          await api("/stores/" + encodeURIComponent(STORE) + "/sessions/split-merged", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ childSessionId: session.id }),
+          });
+          log("分割しました");
+          await loadAll();
+          selectedTableId = table.id;
+          renderGrid();
+          await renderDetail();
+        } catch (e) {
+          log(String(e.message || e));
+        }
+      };
+    }
+    return;
+  }
   if (session.status === "bashing_waiting") {
     panel.innerHTML =
       "<p><span class=\"badge\">" +
@@ -815,7 +901,7 @@ async function renderDetail() {
 async function loadAll() {
   const [tablesRes, sessionsRes, coursesRes, billsRes, settingsRes] = await Promise.all([
     api("/stores/" + encodeURIComponent(STORE) + "/tables"),
-    api("/stores/" + encodeURIComponent(STORE) + "/sessions?status=open,bashing_waiting&includeTotals=1"),
+    api("/stores/" + encodeURIComponent(STORE) + "/sessions?status=open,bashing_waiting,merged&includeTotals=1"),
     api("/stores/" + encodeURIComponent(STORE) + "/courses"),
     api("/stores/" + encodeURIComponent(STORE) + "/bills?limit=200"),
     api("/stores/" + encodeURIComponent(STORE) + "/settings"),

@@ -17,7 +17,7 @@
     .wait-busy { color: var(--error-red); animation: pulse 2s infinite; }
     @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.72; } 100% { opacity: 1; } }
     .type-selector, .num-selector { display:grid; gap:8px; margin: 14px 0; }
-    .type-selector { grid-template-columns: 1fr 1fr 1fr; }
+    .type-selector { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
     .num-selector { grid-template-columns: repeat(3, 1fr); }
     .btn { padding: 14px; border: 2px solid #ddd; border-radius: 12px; background:#fff; font-weight: 800; cursor: pointer; font-size: 1.12em; }
     .btn.active { background: var(--accent); color:#fff; border-color: var(--accent); }
@@ -35,11 +35,8 @@
     </div>
     <div style="background:#f8f9fa; padding:16px; border-radius:18px; text-align:left;">
       <p style="margin:0 0 10px 0; font-weight:900;">1. お席の希望</p>
-      <div class="type-selector">
-        <button class="btn active" id="type-any">どこでも</button>
-        <button class="btn" id="type-counter">カウンター</button>
-        <button class="btn" id="type-table">テーブル</button>
-      </div>
+      <p style="margin:0 0 8px 0;font-size:0.82rem;color:#666;text-align:left;line-height:1.45;">「どこでも」は全席から案内します。種別ボタンは卓マスタの「席種別」に連動します（未設定の卓は「どこでのみ」対象になります）。</p>
+      <div class="type-selector" id="typeSelector"></div>
       <p style="margin:16px 0 10px 0; font-weight:900;">2. ご来店人数</p>
       <div class="num-selector" id="numGrid"></div>
       <div class="wait-display" id="waitContainer">
@@ -56,6 +53,7 @@
     const STORE_ID = __STORE_ID_JS__;
     const API_BASE = __API_URL_JS__;
 
+    /** "any" または卓マスタの seatType と一致する文字列 */
     let selectedType = "any";
     let selectedNum = 2;
     let seatStates = {};
@@ -128,9 +126,35 @@
       return await res.json().catch(() => ({}));
     }
 
-    function selectType(t) {
-      selectedType = t;
-      ["any","counter","table"].forEach((k) => document.getElementById("type-" + k).classList.toggle("active", k === t));
+    function distinctSeatTypesFromMaster(list) {
+      const set = new Set();
+      for (const row of list || []) {
+        const st = String(row.seatType || "").trim();
+        if (st) set.add(st);
+      }
+      return [...set].sort((a, b) => a.localeCompare(b, "ja"));
+    }
+
+    function renderSeatPreferenceButtons() {
+      const host = document.getElementById("typeSelector");
+      if (!host) return;
+      const types = distinctSeatTypesFromMaster(tableMaster);
+      if (selectedType !== "any" && !types.includes(selectedType)) selectedType = "any";
+      host.innerHTML = "";
+      const addBtn = (pref, label) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "btn" + (selectedType === pref ? " active" : "");
+        b.setAttribute("data-pref", pref);
+        b.textContent = label;
+        b.onclick = () => {
+          selectedType = pref;
+          renderSeatPreferenceButtons();
+        };
+        host.appendChild(b);
+      };
+      addBtn("any", "どこでも");
+      for (const st of types) addBtn(st, st);
     }
     function selectNum(n) {
       selectedNum = n;
@@ -206,6 +230,7 @@
         waitContainer.style.borderColor = "#ccc";
         waitContainer.style.background = "#fff";
       }
+      renderSeatPreferenceButtons();
     }
 
     async function handleCheckIn() {
@@ -214,20 +239,19 @@
       const wait = parseInt(document.getElementById("viewWaitTime").innerText || "0", 10) || 0;
 
       // 旧 front.html の席割りAI（完全空席→それ以外）
-      function getMasterTables(type) {
-        const labelOf = (code) => seatDisplayLabel(code);
+      function getMasterTables(pref) {
         const all = (Array.isArray(tableMaster) ? tableMaster : []).map((t) => ({
           code: String(t.code || ""),
           capacity: Number(t.capacity || 2),
           mergeWith: Array.isArray(t.mergeWith) ? t.mergeWith.filter((x) => typeof x === "string").map(String) : [],
+          seatType: String(t.seatType || "").trim(),
         })).filter((t) => t.code);
-        if (type === "counter") return all.filter((t) => labelOf(t.code).startsWith("C"));
-        if (type === "table") return all.filter((t) => !labelOf(t.code).startsWith("C"));
-        return all;
+        if (pref === "any") return all;
+        return all.filter((t) => t.seatType === pref);
       }
 
-      function pickSeats(n, type, requirePure) {
-        const tables = getMasterTables(type);
+      function pickSeats(n, pref, requirePure) {
+        const tables = getMasterTables(pref);
         const by = new Map(tables.map((t) => [t.code, t]));
         const used = new Set();
         for (const [id, s] of Object.entries(seatStates || {})) {
@@ -398,9 +422,6 @@
       }
     }
 
-    document.getElementById("type-any").onclick = () => selectType("any");
-    document.getElementById("type-counter").onclick = () => selectType("counter");
-    document.getElementById("type-table").onclick = () => selectType("table");
     document.getElementById("btnFullscreen").onclick = () => toggleFullscreen();
     document.addEventListener("fullscreenchange", () => syncFullscreenButton());
     syncFullscreenButton();
@@ -410,6 +431,7 @@
     };
 
     renderNums();
+    renderSeatPreferenceButtons();
     loadData().catch(() => {});
     setInterval(() => loadData().catch(() => {}), 3000);
   </script>

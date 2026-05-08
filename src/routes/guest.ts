@@ -897,6 +897,8 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
             if (!validated.ok) throw new Error("BAD_SET");
             const { byStep } = validated;
 
+            // セットの構成単品は「セットの一部」として扱う（ゲストメニュー表示と同様、
+            // カテゴリの visibleToGuest / 時間帯で弾かない。販売可否と酒類のみ検証）
             for (const st of setItem.setSteps) {
               const picked = byStep.get(st.id) ?? [];
               for (const compId of picked) {
@@ -904,12 +906,6 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                 if (!ch) throw new Error("BAD_SET");
                 const comp = ch.componentMenuItem;
                 if (!comp.isAvailable) throw new Error("BAD_ITEM");
-                if (!comp.category.visibleToGuest) throw new Error("BAD_ITEM");
-                const gw = comp.category.guestVisibleTimeWindow;
-                const slice = gw ? { startMin: gw.startMin, endMin: gw.endMin } : null;
-                if (!categoryGuestVisibleAt(comp.category, slice, nowMin)) {
-                  throw new Error("BAD_ITEM_TIME");
-                }
                 if (comp.containsAlcohol && sess?.guestAlcoholAllowed !== true) {
                   throw new Error("ALCOHOL_DENIED");
                 }
@@ -1069,7 +1065,8 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
             where: {
               id: menuItemId,
               isAvailable: true,
-              category: { storeId: session.storeId, visibleToGuest: true },
+              // セット構成単品はゲスト非表示カテゴリでも在庫確認に載る（トップレベル商品は上でゲスト可否済み）
+              category: { storeId: session.storeId },
             },
             include: {
               category: { include: { guestVisibleTimeWindow: true } },
@@ -1079,12 +1076,6 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
             },
           });
           if (!item) throw new Error("BAD_ITEM");
-          const cat = item.category;
-          const gw = cat.guestVisibleTimeWindow;
-          const slice = gw ? { startMin: gw.startMin, endMin: gw.endMin } : null;
-          if (!categoryGuestVisibleAt(cat, slice, nowMin)) {
-            throw new Error("BAD_ITEM_TIME");
-          }
           if (item.stockQty !== null && item.stockQty < needQty) {
             throw new Error("BAD_STOCK");
           }

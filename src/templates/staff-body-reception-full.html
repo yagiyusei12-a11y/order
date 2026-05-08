@@ -36,6 +36,10 @@
     @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
     .side-section { flex: 1; display: flex; flex-direction: column; gap: 5px; overflow: hidden; max-width: 300px; min-width: 250px; }
     .control-panel { background: #3d3d3d; padding: 8px; border-radius: 10px; color: white; font-size: 0.85em; display: flex; flex-direction: column; }
+    /* スタッフ人数・待ち固定分：ブラウザ標準の上下矢印（スピナー）を非表示 */
+    .control-panel input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+    .control-panel input[type="number"]::-webkit-outer-spin-button,
+    .control-panel input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
     .list-panel { flex: 1; overflow-y: auto; min-height: 0; padding-top: 0; }
     .wait-table { width: 100%; border-collapse: collapse; color: white; font-size: 0.85em; }
     .wait-table td { border-bottom: 1px solid #555; padding: 6px 4px; }

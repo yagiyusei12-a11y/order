@@ -608,17 +608,45 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         storeTimeZone: stSet.timezone,
       });
 
-      const fallbackMaster =
-        seatsWithBlocks
-          .map((x) => (x && typeof x === "object" && !Array.isArray(x) ? (x as any).id : ""))
-          .filter((x) => typeof x === "string" && x)
-          .map((id) => ({ code: id, name: id, capacity: 2, mergeWith: [], seatType: "" }));
+      const fallbackMaster = seatsWithBlocks
+        .map((x) => {
+          if (!x || typeof x !== "object" || Array.isArray(x)) return null;
+          const o = x as Record<string, unknown>;
+          const id = typeof o.id === "string" ? o.id : "";
+          if (!id) return null;
+          const capRaw = o.capacity;
+          const cap =
+            typeof capRaw === "number" && Number.isFinite(capRaw)
+              ? Math.max(1, Math.floor(capRaw))
+              : 2;
+          const mergeRaw = o.mergeWith;
+          const mergeWith = Array.isArray(mergeRaw)
+            ? (mergeRaw.filter((z) => typeof z === "string") as string[])
+            : [];
+          const seatType = String(o.seatType ?? "").trim();
+          return { code: id, name: id, capacity: cap, mergeWith, seatType };
+        })
+        .filter((row): row is { code: string; name: string; capacity: number; mergeWith: string[]; seatType: string } => row !== null);
+
+      const seatTypeOptSet = new Set<string>();
+      for (const t of filteredMaster) {
+        const st = String(t.seatType ?? "").trim();
+        if (st) seatTypeOptSet.add(st);
+      }
+      for (const row of fallbackMaster) {
+        if (row.seatType) seatTypeOptSet.add(row.seatType);
+      }
+      for (const d of derivedLive) {
+        if (d.seatType) seatTypeOptSet.add(d.seatType);
+      }
+      const seatTypeOptions = [...seatTypeOptSet].sort((a, b) => a.localeCompare(b, "ja"));
 
       return {
         config: conf ? conf.data : { staff: 6, override: false, manualWait: 30 },
         callReserved: Boolean(st?.callReserved),
         callType: st?.callType ?? "",
         entryQueue: (st?.entryQueue ?? []) as unknown,
+        seatTypeOptions,
         tableMaster: (filteredMaster.length > 0 ? filteredMaster.map((t) => ({
           code: t.publicCode,
           name: t.name,

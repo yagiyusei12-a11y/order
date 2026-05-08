@@ -1199,7 +1199,7 @@
               html +=
                 "<div style=\"margin-top:.65rem;padding-top:.65rem;border-top:1px solid rgba(255,255,255,.1)\">" +
                 "<div style=\"display:flex;align-items:center;gap:.5rem\"><strong>" +
-                esc(g.name || \"\") +
+                esc(g.name || "") +
                 "</strong>" +
                 (req ? "<span class=\"pill\" style=\"border-color:rgba(249,115,22,.45)\">必須</span>" : "<span class=\"pill\">任意</span>") +
                 "<span class=\"muted\" style=\"margin-left:auto;font-size:.75rem\">" +
@@ -1210,7 +1210,7 @@
               const useRadio = Number(g.maxSelect || 1) <= 1;
               for (const oi of g.items || []) {
                 const delta = Number(oi.priceDelta || 0);
-                const priceTxt = delta > 0 ? "+" + delta.toLocaleString(\"ja-JP\") + \"円\" : \"+0円\";
+                const priceTxt = delta > 0 ? "+" + delta.toLocaleString("ja-JP") + "円" : "+0円";
                 if (useRadio) {
                   html +=
                     "<label class=\"row\" style=\"align-items:center;gap:.45rem;margin:.35rem 0\"><input type=\"radio\" name=\"og-" +
@@ -1218,7 +1218,7 @@
                     "\" value=\"" +
                     esc(oi.id) +
                     "\" /> <span style=\"flex:1\">" +
-                    esc(oi.name || \"\") +
+                    esc(oi.name || "") +
                     "</span><span class=\"muted\" style=\"font-size:.78rem\">" +
                     priceTxt +
                     "</span></label>";
@@ -1229,7 +1229,7 @@
                     "\" value=\"" +
                     esc(oi.id) +
                     "\" /> <span style=\"flex:1\">" +
-                    esc(oi.name || \"\") +
+                    esc(oi.name || "") +
                     "</span><span class=\"muted\" style=\"font-size:.78rem\">" +
                     priceTxt +
                     "</span></label>";
@@ -1246,7 +1246,7 @@
             html +=
               "<div style=\"margin-top:.65rem;padding-top:.65rem;border-top:1px solid rgba(255,255,255,.1)\">" +
               "<div style=\"display:flex;align-items:center;gap:.5rem\"><strong>" +
-              esc(st.label || \"\") +
+              esc(st.label || "") +
               "</strong><span class=\"muted\" style=\"margin-left:auto;font-size:.75rem\">" +
               Number(st.minPick || 0) +
               "〜" +
@@ -1254,14 +1254,14 @@
               "個</span></div>";
             for (const ch of st.choices || []) {
               const ex = Number(ch.extraPrice || 0);
-              const exTxt = ex > 0 ? "+" + ex.toLocaleString(\"ja-JP\") + \"円\" : \"+0円\";
+              const exTxt = ex > 0 ? "+" + ex.toLocaleString("ja-JP") + "円" : "+0円";
               html +=
                 "<label class=\"row\" style=\"align-items:center;gap:.45rem;margin:.35rem 0\"><input type=\"checkbox\" name=\"st-" +
                 esc(st.id) +
                 "\" value=\"" +
                 esc(ch.menuItemId) +
                 "\" /> <span style=\"flex:1\">" +
-                esc(ch.name || \"\") +
+                esc(ch.name || "") +
                 "</span><span class=\"muted\" style=\"font-size:.78rem\">" +
                 exTxt +
                 "</span></label>";
@@ -1272,7 +1272,7 @@
                   const req = Number(g.minSelect || 0) > 0;
                   html +=
                     "<div class=\"muted\" style=\"font-size:.74rem;margin:.25rem 0\">" +
-                    esc((req ? \"(必須) \" : \"\") + (g.name || \"\")) +
+                    esc((req ? "(必須) " : "") + (g.name || "")) +
                     " " +
                     Number(g.minSelect || 0) +
                     "〜" +
@@ -1281,7 +1281,7 @@
                   const useRadio = Number(g.maxSelect || 1) <= 1;
                   for (const oi of g.items || []) {
                     const delta = Number(oi.priceDelta || 0);
-                    const priceTxt = delta > 0 ? "+" + delta.toLocaleString(\"ja-JP\") + \"円\" : \"+0円\";
+                    const priceTxt = delta > 0 ? "+" + delta.toLocaleString("ja-JP") + "円" : "+0円";
                     if (useRadio) {
                       html +=
                         "<label class=\"row\" style=\"align-items:center;gap:.45rem;margin:.28rem 0\"><input type=\"radio\" name=\"copt-" +
@@ -1293,7 +1293,7 @@
                         "\" value=\"" +
                         esc(oi.id) +
                         "\" /> <span style=\"flex:1\">" +
-                        esc(oi.name || \"\") +
+                        esc(oi.name || "") +
                         "</span><span class=\"muted\" style=\"font-size:.76rem\">" +
                         priceTxt +
                         "</span></label>";
@@ -1308,7 +1308,7 @@
                         "\" value=\"" +
                         esc(oi.id) +
                         "\" /> <span style=\"flex:1\">" +
-                        esc(oi.name || \"\") +
+                        esc(oi.name || "") +
                         "</span><span class=\"muted\" style=\"font-size:.76rem\">" +
                         priceTxt +
                         "</span></label>";

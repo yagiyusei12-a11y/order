@@ -160,6 +160,15 @@
         gap: 0.6rem;
         margin-top: 0.55rem;
       }
+      .go-card .img {
+        width: 100%;
+        aspect-ratio: 1.6;
+        object-fit: cover;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.10);
+        margin-bottom: 0.55rem;
+        background: rgba(0, 0, 0, 0.15);
+      }
       .pill {
         font-size: 0.78rem;
         padding: 0.2rem 0.5rem;
@@ -696,10 +705,12 @@
         }
         el.innerHTML = rows
           .map(({ cat, it }) => {
+            const imgHtml = it.imageUrl ? "<img class=\"img\" loading=\"lazy\" alt=\"\" src=\"" + esc(it.imageUrl) + "\" />" : "";
             return (
               "<section class=\"go-card\" data-cat=\"" +
               esc(cat.id) +
               "\">" +
+              imgHtml +
               "<div class=\"ttl\">" +
               esc(it.name) +
               "</div>" +

@@ -119,6 +119,13 @@ async function loadAll() {
   if (modeEl) {
     modeEl.value = configCache.netReserveSeatTypeMode === "require_select" ? "require_select" : "any";
   }
+  const priEl = $("nrGuestSeatPriority");
+  if (priEl) {
+    const pri = configCache.receptionGuestSeatTypePriority;
+    priEl.value = Array.isArray(pri)
+      ? pri.map((x) => String(x == null ? "" : x).trim()).filter(Boolean).join("\n")
+      : "";
+  }
   const rawW = configCache.netReserveBusinessWindows;
   const wins = Array.isArray(rawW) && rawW.length ? rawW : defaultBizWindows();
   renderBizWindows(wins);
@@ -189,6 +196,11 @@ async function saveAll() {
   nextConfig.netReserveFallbackToTemplateWindows = Boolean($("nrFallbackTemplate")?.checked);
   const stm = $("nrSeatTypeMode")?.value;
   nextConfig.netReserveSeatTypeMode = stm === "require_select" ? "require_select" : "any";
+  const priLines = String($("nrGuestSeatPriority")?.value || "")
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  nextConfig.receptionGuestSeatTypePriority = priLines;
   const biz = readBizWindowsFromDom();
   if (!biz.length) {
     alert("営業時間帯を1つ以上、正しい開始・終了で入力してください。");

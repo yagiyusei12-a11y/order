@@ -102,6 +102,23 @@
     </section>
 
     <section class="nr-card">
+      <div class="nr-head"><strong>ゲスト受付端末：お席の希望「どこでも」の優先順</strong></div>
+      <div class="nr-body">
+        <p class="nr-muted">
+          店内の受付画面でお客が<strong>どこでも</strong>を選んだとき、空き席の組み合わせが複数ある場合に<strong>どの席種別を先に案内するか</strong>の順です。
+          卓マスタの「種別」と<strong>完全一致</strong>する文字列を、上から順に1行に1つ書きます。書いていない種別や空欄の種別は後回しになります。
+        </p>
+        <p class="nr-muted">
+          人数に収まる範囲では、従来どおり<strong>合計席数が少ない（ぴったり寄せ）</strong>組み合わせを優先し、その次にこの順で比較します。特定の種別（カウンター等）をタップした場合はこの設定は使いません。
+        </p>
+        <label style="display:flex;flex-direction:column;gap:0.35rem;font-weight:800;font-size:0.9rem;max-width:min(520px,96vw)">
+          席種別の優先順（上ほど優先）
+          <textarea id="nrGuestSeatPriority" rows="6" style="font:inherit;padding:0.55rem 0.6rem;border-radius:10px;border:1px solid var(--border);resize:vertical" placeholder="例:&#10;カウンター&#10;掘りごたつ&#10;半個室"></textarea>
+        </label>
+      </div>
+    </section>
+
+    <section class="nr-card">
       <div class="nr-head"><strong>席ごとの収容人数・合体・種別</strong></div>
       <div class="nr-body">
         <p class="nr-muted">「合体可能」は publicCode をカンマ区切りで入力します（例: <code>T21,T22</code>）。</p>

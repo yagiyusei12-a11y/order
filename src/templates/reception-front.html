@@ -158,6 +158,37 @@
       return [...set].sort((p, q) => p.localeCompare(q, "ja"));
     }
 
+    /** receptionConfig.receptionGuestSeatTypePriority: 「どこでも」のとき席種別の優先（上ほど先に案内） */
+    function guestSeatTypePriorityList() {
+      const raw = receptionConf && receptionConf.receptionGuestSeatTypePriority;
+      if (!Array.isArray(raw)) return [];
+      return raw.map((x) => String(x == null ? "" : x).trim()).filter(Boolean);
+    }
+
+    function assignmentTypePriorityScore(ids, byMap, priorityList) {
+      let s = 0;
+      for (const id of ids) {
+        const st = String(byMap.get(id)?.seatType || "").trim();
+        const idx = priorityList.indexOf(st);
+        if (idx >= 0) s += idx;
+        else if (!st) s += 10000;
+        else s += 5000;
+      }
+      return s;
+    }
+
+    function isBetterGuestSeatAssignment(cand, best, byMap, priorityList) {
+      if (!best) return true;
+      if (cand.cap !== best.cap) return cand.cap < best.cap;
+      if (priorityList.length) {
+        const sc = assignmentTypePriorityScore(cand.ids, byMap, priorityList);
+        const sb = assignmentTypePriorityScore(best.ids, byMap, priorityList);
+        if (sc !== sb) return sc < sb;
+      }
+      if (cand.ids.length !== best.ids.length) return cand.ids.length < best.ids.length;
+      return cand.ids.join(",").localeCompare(best.ids.join(",")) < 0;
+    }
+
     async function refreshSeatTypesCatalog() {
       try {
         const res = await fetch(API_BASE + "/table-seat-types?t=" + Date.now(), { cache: "no-store" });
@@ -317,6 +348,7 @@
       }
 
       function pickSeats(n, pref, requirePure) {
+        const guestPri = pref === "any" ? guestSeatTypePriorityList() : [];
         const tables = getMasterTables(pref);
         const by = new Map(tables.map((t) => [t.code, t]));
         const used = new Set();
@@ -409,10 +441,7 @@
                 if (cap >= n) {
                   const ids = chosen.slice().sort();
                   const cand = { ids, cap };
-                  if (!best || cand.cap < best.cap || (cand.cap === best.cap && cand.ids.length < best.ids.length) ||
-                      (cand.cap === best.cap && cand.ids.length === best.ids.length && cand.ids.join(",").localeCompare(best.ids.join(",")) < 0)) {
-                    best = cand;
-                  }
+                  if (isBetterGuestSeatAssignment(cand, best, by, guestPri)) best = cand;
                 }
               }
             }

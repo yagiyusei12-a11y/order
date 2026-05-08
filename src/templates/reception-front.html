@@ -172,6 +172,13 @@
       return raw.map((x) => normalizeSeatTypeLabel(x)).filter(Boolean);
     }
 
+    /** receptionConfig.receptionWalkInPartySizeMax: ゲスト端末で 1〜N 名までボタン表示、N+1 名以上はスタッフ呼出 */
+    function getWalkInPartySizeMax() {
+      const n = Number(receptionConf.receptionWalkInPartySizeMax);
+      if (!Number.isFinite(n)) return 6;
+      return Math.max(1, Math.min(20, Math.floor(n)));
+    }
+
     function assignmentTypePriorityScore(ids, byMap, priorityList) {
       let s = 0;
       for (const id of ids) {
@@ -257,9 +264,12 @@
     }
 
     function renderNums() {
+      const maxN = getWalkInPartySizeMax();
+      if (selectedNum > maxN) selectedNum = maxN;
+      if (selectedNum < 1) selectedNum = 1;
       const grid = document.getElementById("numGrid");
       grid.innerHTML = "";
-      for (let i = 1; i <= 6; i++) {
+      for (let i = 1; i <= maxN; i++) {
         const b = document.createElement("button");
         b.type = "button";
         b.className = "btn" + (i === selectedNum ? " active" : "");
@@ -273,7 +283,7 @@
       big.className = "btn";
       big.style.gridColumn = "span 3";
       big.style.fontSize = "1em";
-      big.textContent = "7名様以上はこちら";
+      big.textContent = maxN + 1 + "名様以上はこちら";
       big.onclick = async () => {
         await apiEvent({ type: "callReserved", callType: "normal" }).catch(() => {});
         showOverlay("お席の確認をいたします。", "スタッフが参ります。");
@@ -335,6 +345,7 @@
         }
       }
       renderSeatPreferenceButtons();
+      renderNums();
     }
 
     async function handleCheckIn() {

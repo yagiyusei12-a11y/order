@@ -167,13 +167,26 @@ async function resetReservedCall() {
   await fetch(API_URL + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "resetCall" }) });
   loadData();
 }
+function syncWalkInPartyOverLabel() {
+  const el = document.getElementById("walkInPartySizeMax");
+  if (!el) return;
+  const walkRaw = parseInt(el.value, 10);
+  const walkInPartySizeMax = Number.isFinite(walkRaw) ? Math.max(1, Math.min(20, walkRaw)) : 6;
+  const overEl = document.getElementById("walkInPartyOverLabel");
+  if (overEl) overEl.textContent = String(walkInPartySizeMax + 1);
+}
+
 async function saveConfig() {
+  const walkRaw = parseInt(document.getElementById("walkInPartySizeMax").value, 10);
+  const walkInPartySizeMax = Number.isFinite(walkRaw) ? Math.max(1, Math.min(20, walkRaw)) : 6;
   const p = {
     ...configCache,
     staff: parseInt(document.getElementById("staffCount").value, 10),
     override: document.getElementById("waitOverride").checked,
     manualWait: parseInt(document.getElementById("manualWaitValue").value, 10),
+    receptionWalkInPartySizeMax: walkInPartySizeMax,
   };
+  syncWalkInPartyOverLabel();
   await fetch(API_URL + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "updateConfig", payload: p }) });
   configCache = p;
   loadData();
@@ -604,6 +617,12 @@ async function loadData() {
       document.getElementById("staffCount").value = data.config.staff || 6;
       document.getElementById("waitOverride").checked = data.config.override || false;
       document.getElementById("manualWaitValue").value = data.config.manualWait || 30;
+      const wMax = parseInt(data.config.receptionWalkInPartySizeMax, 10);
+      const walkN = Number.isFinite(wMax) && wMax >= 1 ? Math.min(20, wMax) : 6;
+      const wEl = document.getElementById("walkInPartySizeMax");
+      if (wEl) wEl.value = String(walkN);
+      const overEl = document.getElementById("walkInPartyOverLabel");
+      if (overEl) overEl.textContent = String(walkN + 1);
     }
     const alertBar = document.getElementById("reservedAlertBar");
     const callReserved = Boolean(data.callReserved);

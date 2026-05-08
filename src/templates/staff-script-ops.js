@@ -481,6 +481,7 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
     })() +
     "</span></div>" +
     "<div class=\"row\" style=\"margin:0.35rem 0 0.5rem;justify-content:flex-end;flex-wrap:wrap;gap:0.35rem\">" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"btnMergeSession\" style=\"font-weight:700;border-color:#cbd5e1\">他卓と合算</button>" +
     "<button type=\"button\" class=\"btn-ghost\" id=\"btnEndSession\" style=\"color:#b91c1c;border-color:#fecaca;font-weight:700\">セッションを切る</button>" +
     "</div>" +
     "<h3 class=\"ops-sec-title\">注文内容</h3>" +
@@ -526,6 +527,76 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
   };
   if (recvEl) recvEl.oninput = updateCash;
   methodEl.dispatchEvent(new Event("change"));
+
+  const btnMergeSession = document.getElementById("btnMergeSession");
+  if (btnMergeSession) {
+    btnMergeSession.onclick = () => {
+      const others = sessionsCache.filter((s) => s.status === "open" && s.id !== session.id);
+      if (!others.length) {
+        log("合算できる他卓（利用中）がありません");
+        return;
+      }
+      const box = document.createElement("div");
+      box.style.cssText =
+        "position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem";
+      box.innerHTML =
+        "<div class=\"card\" style=\"max-width:400px;padding:1.1rem;background:#fff;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.12)\">" +
+        "<p style=\"margin:0 0 0.45rem;font-weight:900\">「" +
+        escapeHtml(table.name) +
+        "」に注文を集約</p>" +
+        "<p style=\"margin:0 0 0.85rem;font-size:0.86rem;color:var(--muted);line-height:1.45\">選んだ卓の注文・未払い伝票をこの卓に移し、選んだ卓のセッションは閉じます。精算済みの卓は合算できません。</p>" +
+        "<label style=\"display:block;font-size:0.78rem;font-weight:800;margin-bottom:0.25rem\">合算元の卓</label>" +
+        "<select id=\"mergeFromSel\" style=\"width:100%;padding:0.5rem;margin-bottom:1rem;border-radius:8px;border:1px solid var(--border)\">" +
+        others
+          .map((s) => {
+            const nm = (s.table && s.table.name) || "—";
+            const gc = Number(s.guestCount || 0);
+            const cc = Number(s.childCount || 0);
+            const ppl = cc > 0 ? gc + "人（子" + cc + "）" : gc + "人";
+            return (
+              "<option value=\"" +
+              escapeHtml(s.id) +
+              "\">" +
+              escapeHtml(nm) +
+              " · " +
+              ppl +
+              " · " +
+              yen(currentTotal(s)) +
+              "</option>"
+            );
+          })
+          .join("") +
+        "</select>" +
+        "<div class=\"row\" style=\"gap:0.5rem;justify-content:flex-end\">" +
+        "<button type=\"button\" class=\"btn-ghost\" id=\"mergeCancel\">キャンセル</button>" +
+        "<button type=\"button\" class=\"btn-primary\" id=\"mergeOk\" style=\"width:auto;padding:0.45rem 0.85rem\">合算する</button>" +
+        "</div></div>";
+      document.body.appendChild(box);
+      const close = () => box.remove();
+      box.querySelector("#mergeCancel").onclick = close;
+      box.querySelector("#mergeOk").onclick = async () => {
+        const sel = box.querySelector("#mergeFromSel");
+        const fromId = sel && sel.value ? String(sel.value) : "";
+        if (!fromId) return;
+        if (!confirm("本当に合算しますか？元の卓のセッションは閉じられ、空席として扱われます。")) return;
+        try {
+          await api("/stores/" + encodeURIComponent(STORE) + "/sessions/merge", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ fromSessionId: fromId, toSessionId: session.id }),
+          });
+          close();
+          log("合算しました");
+          await loadAll();
+          selectedTableId = table.id;
+          renderGrid();
+          await renderDetail();
+        } catch (e) {
+          log(String(e.message || e));
+        }
+      };
+    };
+  }
 
   const btnEndSession = document.getElementById("btnEndSession");
   if (btnEndSession) {

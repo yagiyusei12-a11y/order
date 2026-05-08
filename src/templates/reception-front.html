@@ -139,6 +139,30 @@
       return await res.json().catch(() => ({}));
     }
 
+    function mergeSeatTypeLists(a, b) {
+      const set = new Set();
+      for (const x of a || []) {
+        const s = String(x == null ? "" : x).trim();
+        if (s) set.add(s);
+      }
+      for (const x of b || []) {
+        const s = String(x == null ? "" : x).trim();
+        if (s) set.add(s);
+      }
+      return [...set].sort((p, q) => p.localeCompare(q, "ja"));
+    }
+
+    async function refreshSeatTypesCatalog() {
+      try {
+        const res = await fetch(API_BASE + "/table-seat-types?t=" + Date.now(), { cache: "no-store" });
+        if (!res.ok) return;
+        const j = await res.json();
+        const arr = Array.isArray(j.seatTypes) ? j.seatTypes : [];
+        seatTypeOptionsFromApi = mergeSeatTypeLists(seatTypeOptionsFromApi, arr);
+        renderSeatPreferenceButtons();
+      } catch (_) {}
+    }
+
     function distinctSeatTypesForUi() {
       const set = new Set();
       for (const st0 of seatTypeOptionsFromApi || []) {
@@ -223,9 +247,13 @@
 
     async function loadData() {
       activeShiftKey = getActiveShiftKey();
+      await refreshSeatTypesCatalog();
       const data = await apiGetState(activeShiftKey);
       tableMaster = Array.isArray(data.tableMaster) ? data.tableMaster : [];
-      seatTypeOptionsFromApi = Array.isArray(data.seatTypeOptions) ? data.seatTypeOptions : [];
+      seatTypeOptionsFromApi = mergeSeatTypeLists(
+        seatTypeOptionsFromApi,
+        Array.isArray(data.seatTypeOptions) ? data.seatTypeOptions : [],
+      );
       receptionConf = data.config && typeof data.config === "object" ? data.config : {};
       const staff = parseInt(receptionConf.staff) || 6;
       const isOverride = receptionConf.override === true || receptionConf.override === "true";

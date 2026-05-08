@@ -286,18 +286,30 @@ function netReserveSeatTypeMode(c: Record<string, unknown>): "any" | "require_se
 /** 店舗プレフィックス付き卓コード（区切りは - または _）。受付・ネット予約の席一覧に使用 */
 const rxNetBookableTableCode = /^(?:[A-Za-z0-9_-]+[-_])?(C\d+|T\d+|\d+)$/i;
 
-async function distinctSeatTypesForNetReserve(storeId: string): Promise<string[]> {
-  const tables = await prisma.table.findMany({
+/** 有効卓の seatType から種別一覧（正規表現と無関係。受付端末のボタン・ネット予約の種別 UI 用） */
+async function listAllDistinctTableSeatTypes(storeId: string): Promise<string[]> {
+  const rows = await prisma.table.findMany({
     where: { storeId, active: true },
-    select: { publicCode: true, seatType: true },
+    select: { seatType: true },
   });
   const set = new Set<string>();
-  for (const t of tables) {
-    if (!rxNetBookableTableCode.test(t.publicCode)) continue;
-    const st = String(t.seatType ?? "").trim();
+  for (const r of rows) {
+    const st = String(r.seatType ?? "").trim();
     if (st) set.add(st);
   }
   return [...set].sort((a, b) => a.localeCompare(b, "ja"));
+}
+
+async function distinctSeatTypesForNetReserve(storeId: string): Promise<string[]> {
+  return listAllDistinctTableSeatTypes(storeId);
+}
+
+/** ネット予約の卓候補: 従来の C/T 形式または席種別が設定されている卓 */
+function isNetReserveTableRow(t: { publicCode: string; seatType?: string | null }): boolean {
+  const pc = String(t.publicCode ?? "").trim();
+  if (!pc) return false;
+  const st = String(t.seatType ?? "").trim();
+  return rxNetBookableTableCode.test(pc) || Boolean(st);
 }
 
 function filterNetSlotsNotPast(dateYmd: string, slotTimes: string[], timezone: string): string[] {
@@ -388,16 +400,18 @@ async function computeDefaultSeatsForShift(storeId: string): Promise<
     seatType: string;
   }[] = [];
   for (const t of tables) {
-    if (!rxSeatCode.test(t.publicCode)) continue;
+    const pc = String(t.publicCode ?? "").trim();
+    if (!pc) continue;
+    const seatType = String(t.seatType ?? "").trim();
+    if (!rxSeatCode.test(pc) && !seatType) continue;
     const s = sessByTableId.get(t.id);
     const mergeWith = Array.isArray(t.mergeWith)
       ? (t.mergeWith as unknown[]).filter((x) => typeof x === "string") as string[]
       : [];
     const capacity = Math.max(1, Number.isFinite(Number(t.capacity)) ? Number(t.capacity) : 2);
-    const seatType = String(t.seatType ?? "").trim();
     if (!s) {
       out.push({
-        id: t.publicCode,
+        id: pc,
         status: "vacant",
         current: 0,
         cleanStart: null,
@@ -410,7 +424,7 @@ async function computeDefaultSeatsForShift(storeId: string): Promise<
     }
     if (s.status === "bashing_waiting") {
       out.push({
-        id: t.publicCode,
+        id: pc,
         status: "cleaning",
         current: Number(s.guestCount || 0),
         cleanStart: Date.now(),
@@ -421,7 +435,7 @@ async function computeDefaultSeatsForShift(storeId: string): Promise<
       });
     } else {
       out.push({
-        id: t.publicCode,
+        id: pc,
         status: "occupied",
         current: Number(s.guestCount || 0),
         cleanStart: null,
@@ -532,6 +546,15 @@ async function syncSeatToSessions(storeId: string, seatId: string, next: SeatSta
 }
 
 export async function registerReception(app: FastifyInstance): Promise<void> {
+  /** 受付端末用: DB の席種別だけ返す（軽量・304 なし） */
+  app.get<{ Params: { storeId: string } }>("/reception/:storeId/table-seat-types", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    const seatTypes = await listAllDistinctTableSeatTypes(store.id);
+    reply.header("Cache-Control", "no-store");
+    return { seatTypes };
+  });
+
   /**
    * 旧 api.php 互換の read API
    * - shiftKey が無ければ「今日の lunch/dinner」を使う
@@ -551,7 +574,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
 
       await ensureShift(store.id, shiftKey);
 
-      const [conf, st, sh, reservations, derivedLive, tableMaster] = await Promise.all([
+      const [conf, st, sh, reservations, derivedLive, allTables, seatTypeOptions] = await Promise.all([
         prisma.receptionConfig.findUnique({ where: { storeId: store.id } }),
         prisma.receptionState.findUnique({ where: { storeId: store.id } }),
         prisma.receptionShift.findUnique({ where: { storeId_shiftKey: { storeId: store.id, shiftKey } } }),
@@ -562,6 +585,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           orderBy: { sortOrder: "asc" },
           select: { publicCode: true, capacity: true, mergeWith: true, name: true, seatType: true },
         }),
+        listAllDistinctTableSeatTypes(store.id),
       ]);
 
       // 旧 index.html の Etag キャッシュ互換（内容が変わらなければ 304）
@@ -571,9 +595,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         .map((s) => `${s.id}:${s.status}:${s.current}:${s.seatType}`)
         .sort()
         .join(",");
-      const rxSeatCode = rxNetBookableTableCode;
-      const filteredMaster = tableMaster.filter((t) => rxSeatCode.test(t.publicCode));
-      const tableMasterSig = filteredMaster
+      const tableMasterSig = allTables
         .map((t) => `${t.publicCode}:${String(t.seatType ?? "").trim()}`)
         .sort()
         .join("|");
@@ -630,32 +652,23 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         })
         .filter((row): row is { code: string; name: string; capacity: number; mergeWith: string[]; seatType: string } => row !== null);
 
-      const seatTypeOptSet = new Set<string>();
-      for (const t of tableMaster) {
-        const st = String(t.seatType ?? "").trim();
-        if (st) seatTypeOptSet.add(st);
-      }
-      for (const row of fallbackMaster) {
-        if (row.seatType) seatTypeOptSet.add(row.seatType);
-      }
-      for (const d of derivedLive) {
-        if (d.seatType) seatTypeOptSet.add(d.seatType);
-      }
-      const seatTypeOptions = [...seatTypeOptSet].sort((a, b) => a.localeCompare(b, "ja"));
-
       return {
         config: conf ? conf.data : { staff: 6, override: false, manualWait: 30 },
         callReserved: Boolean(st?.callReserved),
         callType: st?.callType ?? "",
         entryQueue: (st?.entryQueue ?? []) as unknown,
         seatTypeOptions,
-        tableMaster: (filteredMaster.length > 0 ? filteredMaster.map((t) => ({
-          code: t.publicCode,
-          name: t.name,
-          capacity: Math.max(1, Number.isFinite(Number(t.capacity)) ? Number(t.capacity) : 2),
-          mergeWith: Array.isArray(t.mergeWith) ? (t.mergeWith as unknown[]).filter((x) => typeof x === "string") : [],
-          seatType: String(t.seatType ?? "").trim(),
-        })) : fallbackMaster),
+        tableMaster: (() => {
+          const masterRows = allTables.filter((t) => isNetReserveTableRow(t));
+          if (masterRows.length === 0) return fallbackMaster;
+          return masterRows.map((t) => ({
+            code: t.publicCode,
+            name: t.name,
+            capacity: Math.max(1, Number.isFinite(Number(t.capacity)) ? Number(t.capacity) : 2),
+            mergeWith: Array.isArray(t.mergeWith) ? (t.mergeWith as unknown[]).filter((x) => typeof x === "string") : [],
+            seatType: String(t.seatType ?? "").trim(),
+          }));
+        })(),
         shifts: {
           [shiftKey]: { seats: seatsWithBlocks, waiting, updatedAt: sh?.updatedAt ? sh.updatedAt.getTime() : 0 },
         },
@@ -906,7 +919,6 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
     let slotTimes = listNetReserveSlotTimes(windows, step);
     slotTimes = filterNetSlotsNotPast(date, slotTimes, stSet.timezone);
 
-    const rxSeatCode = rxNetBookableTableCode;
     const maxMergeSize = Number.isFinite(Number(c.maxMergeSize)) ? Number(c.maxMergeSize) : 10;
     const allOrNothingGroups = Array.isArray(c.mergeAllOrNothingGroups) ? c.mergeAllOrNothingGroups : [];
     const n = Math.floor(partySize);
@@ -922,7 +934,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         select: { publicCode: true, capacity: true, mergeWith: true, seatType: true },
         orderBy: { sortOrder: "asc" },
       });
-      const bookable = tables.filter((t) => rxSeatCode.test(t.publicCode));
+      const bookable = tables.filter((t) => isNetReserveTableRow(t));
       const filtered =
         seatTypeMode === "require_select"
           ? bookable.filter((t) => String(t.seatType ?? "").trim() === seatTypeQ)
@@ -1028,11 +1040,10 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
             select: { publicCode: true, name: true, capacity: true, mergeWith: true, seatType: true },
             orderBy: { sortOrder: "asc" },
           });
-          const rxSeatCode = rxNetBookableTableCode;
 
           const used = await collectUsedSeatsForNetReservation(tx, store.id, date, time, lunchHr);
 
-          const bookable = tables.filter((t) => rxSeatCode.test(t.publicCode));
+          const bookable = tables.filter((t) => isNetReserveTableRow(t));
           const filtered =
             seatTypeMode === "require_select"
               ? bookable.filter((t) => String(t.seatType ?? "").trim() === seatTypeBody)

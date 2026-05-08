@@ -29,6 +29,17 @@ export function defaultNetReserveWindows(): NetReserveBusinessWindow[] {
   ];
 }
 
+/**
+ * 正規化済みの営業ウィンドウが空のとき、テンプレ（ランチ/ディナー帯）で埋めるか。
+ * receptionConfig.data.netReserveFallbackToTemplateWindows === false のときは空配列（枠なし）。
+ */
+export function effectiveNetReserveWindowsFromConfig(c: Record<string, unknown>): NetReserveBusinessWindow[] {
+  const raw = normalizeNetReserveWindows(c.netReserveBusinessWindows);
+  if (raw.length > 0) return raw;
+  const allowFallback = c.netReserveFallbackToTemplateWindows !== false;
+  return allowFallback ? defaultNetReserveWindows() : [];
+}
+
 /** 予約ロックキー: 2026-05-09_1115（有効な枠は listNetReserveSlotTimes で生成） */
 export function netReserveSlotKey(dateYmd: string, timeHHMM: string): string | null {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(timeHHMM || "").trim());
@@ -42,14 +53,18 @@ export function netReserveSlotKey(dateYmd: string, timeHHMM: string): string | n
   return `${dateYmd}_${suf}`;
 }
 
-export function shiftFromTimeHHMM(time: string): "lunch" | "dinner" | null {
+/**
+ * @param lunchEndHour ランチ側とみなす終端の「時」（0–23）。例: 15 なら 14:59 まで lunch、15:00 から dinner。
+ */
+export function shiftFromTimeHHMM(time: string, lunchEndHour = 15): "lunch" | "dinner" | null {
   const m = /^(\d{1,2}):(\d{2})$/.exec(time.trim());
   if (!m) return null;
   const hh = Number(m[1]);
   const mm = Number(m[2]);
   if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
   if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
-  return hh < 15 ? "lunch" : "dinner";
+  const boundary = Math.min(23, Math.max(0, Math.floor(lunchEndHour)));
+  return hh < boundary ? "lunch" : "dinner";
 }
 
 export function legacyDaypartShiftKey(dateYmd: string, part: "lunch" | "dinner"): string {

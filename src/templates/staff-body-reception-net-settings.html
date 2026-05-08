@@ -59,12 +59,21 @@
     <section class="nr-card">
       <div class="nr-head"><strong>ネット予約：営業時間（複数帯）</strong></div>
       <div class="nr-body">
-        <p class="nr-muted">お客様のネット予約ページで選べる時間枠を、営業時間内・指定刻みで生成します。未保存の空欄はサーバ側の既定（ランチ11:00〜15:00・ディナー17:00〜23:00）にフォールバックします。</p>
+        <p class="nr-muted">お客様のネット予約ページで選べる時間枠を、営業時間内・指定刻みで生成します。営業時間帯が未設定のとき、下の「テンプレ営業帯で埋める」がオンなら既定テンプレ（ランチ11:00〜15:00・ディナー17:00〜23:00）を使います。オフのときは枠を出さず、必ず時間帯を保存してください。</p>
         <div class="nr-row">
           <label>
             予約枠の刻み（分）
             <input type="number" id="nrSlotMinutes" min="5" max="60" step="5" value="15">
             <span class="nr-muted">例: 15 → 15分刻み</span>
+          </label>
+          <label>
+            ランチ／ディナー境界（時）
+            <input type="number" id="nrShiftLunchEnd" min="0" max="23" step="1" value="15">
+            <span class="nr-muted">例: 15 → 14:59 までランチ、15:00 からディナー（受付シフト・ロックキー用）</span>
+          </label>
+          <label style="flex-direction:row; align-items:center; gap:0.5rem; margin-top: 1.15rem;">
+            <input type="checkbox" id="nrFallbackTemplate" checked>
+            営業時間未設定時はテンプレ帯で埋める
           </label>
         </div>
         <div style="margin-top:0.75rem">

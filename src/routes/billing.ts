@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { computeCourseSessionTotal, formatCourseLineLabel } from "../lib/course-pricing.js";
 import { tableDisplayLabel } from "../lib/table-display-code.js";
+import { mergeStoreSettings } from "../lib/store-settings.js";
+import { startOfWallCalendarDayUtc, wallDateYmdInZone } from "../lib/store-wall-time.js";
 import { prisma } from "../db.js";
 
 type SessionForPreview = {
@@ -221,11 +223,12 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     const dateRx = /^\d{4}-\d{2}-\d{2}$/;
     if (from && !dateRx.test(from)) return reply.code(400).send({ error: "from must be YYYY-MM-DD" });
     if (to && !dateRx.test(to)) return reply.code(400).send({ error: "to must be YYYY-MM-DD" });
+    const tz = mergeStoreSettings(store.settings).timezone;
     const settledAtRange: { gte?: Date; lt?: Date } = {};
-    if (from) settledAtRange.gte = new Date(`${from}T00:00:00.000+09:00`);
+    if (from) settledAtRange.gte = startOfWallCalendarDayUtc(from, tz);
     if (to) {
-      const end = new Date(`${to}T00:00:00.000+09:00`);
-      end.setDate(end.getDate() + 1);
+      const end = startOfWallCalendarDayUtc(to, tz);
+      end.setTime(end.getTime() + 86400000);
       settledAtRange.lt = end;
     }
 
@@ -607,10 +610,10 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
     if (!store) return reply.code(404).send({ error: "store not found" });
 
-    const dateStr = req.query.date ?? new Date().toISOString().slice(0, 10);
-    const start = new Date(`${dateStr}T00:00:00.000+09:00`);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 1);
+    const tz = mergeStoreSettings(store.settings).timezone;
+    const dateStr = req.query.date ?? wallDateYmdInZone(new Date(), tz);
+    const start = startOfWallCalendarDayUtc(dateStr, tz);
+    const end = new Date(start.getTime() + 86400000);
 
     const payments = await prisma.payment.findMany({
       where: {

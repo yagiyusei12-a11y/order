@@ -18,6 +18,7 @@ import {
   type SetStepForValidation,
 } from "../lib/menu-set-order.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
+import { utcFromWallDateAndTime } from "../lib/store-wall-time.js";
 import { prisma } from "../db.js";
 import { openOrReuseSessionForTable } from "../lib/open-table-session.js";
 
@@ -44,10 +45,14 @@ function takeoutTablePublicCode(storeId: string): string {
 
 function normalizePickupAt(raw: unknown, tz: string): Date | null {
   if (typeof raw !== "string" || raw.trim() === "") return null;
-  // accept "YYYY-MM-DDTHH:mm" (local) or ISO
+  // accept "YYYY-MM-DDTHH:mm" (local wall time in store TZ) or ISO
   const s = raw.trim();
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s)) {
-    return new Date(`${s}:00.000${tz === "Asia/Tokyo" ? "+09:00" : ""}`);
+  const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})$/.exec(s);
+  if (m) {
+    const ymd = m[1];
+    const hh = parseInt(m[2], 10);
+    const mm = parseInt(m[3], 10);
+    return utcFromWallDateAndTime(ymd, hh, mm, tz);
   }
   const d = new Date(s);
   return Number.isFinite(d.getTime()) ? d : null;

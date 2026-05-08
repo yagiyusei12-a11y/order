@@ -106,6 +106,15 @@ async function loadAll() {
   if (slotEl) {
     slotEl.value = String(Number.isFinite(slotM) ? Math.max(5, Math.min(60, Math.floor(slotM))) : 15);
   }
+  const lunchEnd = Number(configCache.receptionShiftLunchEndHour);
+  const lunchEl = $("nrShiftLunchEnd");
+  if (lunchEl) {
+    lunchEl.value = String(Number.isFinite(lunchEnd) ? Math.max(0, Math.min(23, Math.floor(lunchEnd))) : 15);
+  }
+  const fbEl = $("nrFallbackTemplate");
+  if (fbEl) {
+    fbEl.checked = configCache.netReserveFallbackToTemplateWindows !== false;
+  }
   const rawW = configCache.netReserveBusinessWindows;
   const wins = Array.isArray(rawW) && rawW.length ? rawW : defaultBizWindows();
   renderBizWindows(wins);
@@ -165,6 +174,13 @@ async function saveAll() {
     return;
   }
   nextConfig.netReserveSlotMinutes = Math.floor(slotStep);
+  const lunchBoundary = Number($("nrShiftLunchEnd")?.value);
+  if (!Number.isFinite(lunchBoundary) || lunchBoundary < 0 || lunchBoundary > 23) {
+    alert("ランチ／ディナー境界は 0〜23 の整数で入力してください。");
+    return;
+  }
+  nextConfig.receptionShiftLunchEndHour = Math.floor(lunchBoundary);
+  nextConfig.netReserveFallbackToTemplateWindows = Boolean($("nrFallbackTemplate")?.checked);
   const biz = readBizWindowsFromDom();
   if (!biz.length) {
     alert("営業時間帯を1つ以上、正しい開始・終了で入力してください。");

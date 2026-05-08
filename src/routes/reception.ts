@@ -5,27 +5,33 @@ import { openSessionForTable } from "../lib/open-table-session.js";
 import { minutesSinceMidnightInTimeZone } from "../lib/guest-category-hours.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
 import {
-  normalizeNetReserveWindows,
-  defaultNetReserveWindows,
   netReserveSlotKey,
   shiftFromTimeHHMM,
   legacyDaypartShiftKey,
   listNetReserveSlotTimes,
   isTimeInNetReserveSlots,
+  effectiveNetReserveWindowsFromConfig,
 } from "../lib/net-reserve-slots.js";
+import {
+  addCalendarDaysInWallZone,
+  calendarDayDiffInWallZone,
+  startOfWallCalendarDayUtc,
+  storeNowWallClock,
+} from "../lib/store-wall-time.js";
 
 type SeatStatus = "vacant" | "reserved" | "occupied" | "cleaning" | "closed";
 
-function todayShiftKeyInJst(): string {
-  const now = new Date();
-  // JST date string YYYY-MM-DD
-  const jst = new Date(now.getTime() + (9 * 60 - now.getTimezoneOffset()) * 60 * 1000);
-  const y = jst.getUTCFullYear();
-  const m = String(jst.getUTCMonth() + 1).padStart(2, "0");
-  const d = String(jst.getUTCDate()).padStart(2, "0");
-  const hr = jst.getUTCHours();
-  const shift = hr < 15 ? "lunch" : "dinner";
-  return `${y}-${m}-${d}_${shift}`;
+/** receptionConfig.data: ランチ/ディナー境界（時）。未設定は 15。 */
+function receptionLunchEndHour(configData: Record<string, unknown>): number {
+  const n = Number(configData.receptionShiftLunchEndHour);
+  if (!Number.isFinite(n)) return 15;
+  return Math.min(23, Math.max(0, Math.floor(n)));
+}
+
+function buildTodayShiftKey(timeZone: string, lunchEndHour: number): string {
+  const { dateYmd, timeHHMM } = storeNowWallClock(timeZone);
+  const shift = shiftFromTimeHHMM(timeHHMM, lunchEndHour) ?? "dinner";
+  return `${dateYmd}_${shift}`;
 }
 
 function parseShiftKey(shiftKey: string): { date: string; shift: "lunch" | "dinner" } | null {
@@ -34,26 +40,16 @@ function parseShiftKey(shiftKey: string): { date: string; shift: "lunch" | "dinn
   return { date: m[1], shift: m[2] === "dinner" ? "dinner" : "lunch" };
 }
 
-function jstNowParts(): { date: string; timeHHMM: string; nowMs: number } {
-  const now = new Date();
-  const jst = new Date(now.getTime() + (9 * 60 - now.getTimezoneOffset()) * 60 * 1000);
-  const y = jst.getUTCFullYear();
-  const m = String(jst.getUTCMonth() + 1).padStart(2, "0");
-  const d = String(jst.getUTCDate()).padStart(2, "0");
-  const hh = String(jst.getUTCHours()).padStart(2, "0");
-  const mm = String(jst.getUTCMinutes()).padStart(2, "0");
-  return { date: `${y}-${m}-${d}`, timeHHMM: `${hh}:${mm}`, nowMs: now.getTime() };
-}
-
 function applyReservationBlocksToSeats(input: {
   shiftKey: string;
   seats: unknown[];
   reservations: unknown[];
+  storeTimeZone: string;
 }): unknown[] {
   const parsed = parseShiftKey(input.shiftKey);
   if (!parsed) return input.seats;
   const { date, shift } = parsed;
-  const now = jstNowParts();
+  const now = storeNowWallClock(input.storeTimeZone);
   const seats = input.seats.map((x) => (x && typeof x === "object" && !Array.isArray(x) ? { ...(x as Record<string, unknown>) } : x));
   const seatById = new Map<string, Record<string, unknown>>();
   for (const s of seats) {
@@ -91,8 +87,7 @@ function applyReservationBlocksToSeats(input: {
       } else {
         const hr = Number(m[1]);
         const min = Number(m[2]);
-        // JST の今日の日付と予約日付の差分を作る（予約日のローカル時刻と比較）
-        const base = new Date(`${date}T00:00:00.000+09:00`).getTime();
+        const base = startOfWallCalendarDayUtc(date, input.storeTimeZone).getTime();
         const resMs = base + (hr * 60 + min) * 60 * 1000;
         const diffHours = (resMs - now.nowMs) / (1000 * 60 * 60);
         if (diffHours < 2.5 && diffHours > -2) blockSeat = true;
@@ -112,19 +107,6 @@ function applyReservationBlocksToSeats(input: {
     }
   }
   return seats;
-}
-
-function jstTodayDateStr(): string {
-  return jstNowParts().date;
-}
-
-function dayDiffJst(fromDate: string, toDate: string): number | null {
-  // from/to: YYYY-MM-DD in JST
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || !/^\d{4}-\d{2}-\d{2}$/.test(toDate)) return null;
-  const fromMs = new Date(`${fromDate}T00:00:00.000+09:00`).getTime();
-  const toMs = new Date(`${toDate}T00:00:00.000+09:00`).getTime();
-  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) return null;
-  return Math.floor((toMs - fromMs) / (1000 * 60 * 60 * 24));
 }
 
 function pickReservationSeats(input: {
@@ -259,8 +241,9 @@ async function collectUsedSeatsForNetReservation(
   storeId: string,
   date: string,
   timeHHMM: string,
+  lunchEndHour: number,
 ): Promise<Set<string>> {
-  const shift = shiftFromTimeHHMM(timeHHMM);
+  const shift = shiftFromTimeHHMM(timeHHMM, lunchEndHour);
   if (!shift) return new Set();
   const legacyKey = legacyDaypartShiftKey(date, shift);
   const slotKey = netReserveSlotKey(date, timeHHMM);
@@ -288,11 +271,6 @@ async function collectUsedSeatsForNetReservation(
   return used;
 }
 
-function effectiveNetReserveWindows(c: Record<string, unknown>): ReturnType<typeof normalizeNetReserveWindows> {
-  const raw = normalizeNetReserveWindows(c.netReserveBusinessWindows);
-  return raw.length ? raw : defaultNetReserveWindows();
-}
-
 function netReserveSlotStepMinutes(c: Record<string, unknown>): number {
   const n = Number(c.netReserveSlotMinutes);
   if (!Number.isFinite(n)) return 15;
@@ -300,7 +278,8 @@ function netReserveSlotStepMinutes(c: Record<string, unknown>): number {
 }
 
 function filterNetSlotsNotPast(dateYmd: string, slotTimes: string[], timezone: string): string[] {
-  if (dateYmd !== jstTodayDateStr()) return dateYmd < jstTodayDateStr() ? [] : slotTimes;
+  const todayYmd = storeNowWallClock(timezone).dateYmd;
+  if (dateYmd !== todayYmd) return dateYmd < todayYmd ? [] : slotTimes;
   const nowMin = minutesSinceMidnightInTimeZone(new Date(), timezone);
   const buffer = 5;
   return slotTimes.filter((t) => {
@@ -483,9 +462,14 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
     async (req, reply) => {
       const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
       if (!store) return reply.code(404).send({ error: "store not found" });
-      const shiftKey = (req.query.shiftKey || "").trim() || todayShiftKeyInJst();
-
       await ensureReceptionRows(store.id);
+      const stSet = mergeStoreSettings(store.settings);
+      const confRow = await prisma.receptionConfig.findUnique({ where: { storeId: store.id } });
+      const cData = (confRow?.data as Record<string, unknown>) || {};
+      const lunchEnd = receptionLunchEndHour(cData);
+      const shiftKey =
+        (req.query.shiftKey || "").trim() || buildTodayShiftKey(stSet.timezone, lunchEnd);
+
       await ensureShift(store.id, shiftKey);
 
       const [conf, st, sh, reservations] = await Promise.all([
@@ -523,6 +507,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         shiftKey,
         seats: seats as unknown[],
         reservations: reservations.map((r) => r.data) as unknown[],
+        storeTimeZone: stSet.timezone,
       });
 
       const tableMaster = await prisma.table.findMany({
@@ -567,10 +552,17 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
       const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
       if (!store) return reply.code(404).send({ error: "store not found" });
       await ensureReceptionRows(store.id);
+      const stSetEv = mergeStoreSettings(store.settings);
+      const confEv = await prisma.receptionConfig.findUnique({ where: { storeId: store.id } });
+      const cEv = (confEv?.data as Record<string, unknown>) || {};
+      const lunchEndEv = receptionLunchEndHour(cEv);
 
       const b = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
       const type = typeof b.type === "string" ? b.type : "";
-      const shiftKey = typeof b.shiftKey === "string" && b.shiftKey.trim() ? b.shiftKey.trim() : todayShiftKeyInJst();
+      const shiftKey =
+        typeof b.shiftKey === "string" && b.shiftKey.trim()
+          ? b.shiftKey.trim()
+          : buildTodayShiftKey(stSetEv.timezone, lunchEndEv);
       await ensureShift(store.id, shiftKey);
 
       if (type === "updateConfig") {
@@ -717,8 +709,13 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
     const daysAhead = Number.isFinite(Number(c.netReserveDaysAhead)) ? Number(c.netReserveDaysAhead) : 30;
     const enableNote = c.netReserveEnableNote === undefined ? true : Boolean(c.netReserveEnableNote);
     const st = mergeStoreSettings(store.settings);
-    const windows = effectiveNetReserveWindows(c as Record<string, unknown>);
+    const windows = effectiveNetReserveWindowsFromConfig(c as Record<string, unknown>);
     const slotMinutes = netReserveSlotStepMinutes(c as Record<string, unknown>);
+    const todayYmd = storeNowWallClock(st.timezone).dateYmd;
+    const maxReservableYmd =
+      addCalendarDaysInWallZone(todayYmd, daysAhead, st.timezone) ?? todayYmd;
+    const shiftLunchEndHour = receptionLunchEndHour(c as Record<string, unknown>);
+    const netReserveFallbackToTemplateWindows = c.netReserveFallbackToTemplateWindows !== false;
     return {
       storeId: store.id,
       daysAhead,
@@ -726,6 +723,10 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
       timezone: st.timezone,
       slotMinutes,
       businessWindows: windows,
+      todayYmd,
+      maxReservableYmd,
+      shiftLunchEndHour,
+      netReserveFallbackToTemplateWindows,
     };
   });
 
@@ -751,13 +752,15 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "partySize must be 1..20" });
     }
 
-    const diff = dayDiffJst(jstTodayDateStr(), date);
+    const stSet = mergeStoreSettings(store.settings);
+    const todayYmd = storeNowWallClock(stSet.timezone).dateYmd;
+    const diff = calendarDayDiffInWallZone(todayYmd, date, stSet.timezone);
     if (diff === null) return reply.code(400).send({ error: "invalid date" });
     if (diff < 0) return reply.code(400).send({ error: "past date not allowed" });
     if (diff > daysAhead) return reply.code(403).send({ error: "date exceeds reservable range" });
 
-    const stSet = mergeStoreSettings(store.settings);
-    const windows = effectiveNetReserveWindows(c as Record<string, unknown>);
+    const lunchH = receptionLunchEndHour(c as Record<string, unknown>);
+    const windows = effectiveNetReserveWindowsFromConfig(c as Record<string, unknown>);
     const step = netReserveSlotStepMinutes(c as Record<string, unknown>);
     let slotTimes = listNetReserveSlotTimes(windows, step);
     slotTimes = filterNetSlotsNotPast(date, slotTimes, stSet.timezone);
@@ -780,7 +783,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
       }));
       const out: { time: string; available: boolean }[] = [];
       for (const time of slotTimes) {
-        const used = await collectUsedSeatsForNetReservation(tx, store.id, date, time);
+        const used = await collectUsedSeatsForNetReservation(tx, store.id, date, time, lunchH);
         const seats = pickReservationSeats({
           tables: tableMaster,
           used,
@@ -820,18 +823,20 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
     const note = enableNote ? noteRaw : "";
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return reply.code(400).send({ error: "invalid date" });
-    const shift = shiftFromTimeHHMM(time);
+    const lunchHr = receptionLunchEndHour(c as Record<string, unknown>);
+    const shift = shiftFromTimeHHMM(time, lunchHr);
     if (!shift) return reply.code(400).send({ error: "invalid time" });
     if (!name) return reply.code(400).send({ error: "name required" });
     if (!Number.isFinite(num) || num < 1 || num > 20) return reply.code(400).send({ error: "num must be 1..20" });
 
-    const diff = dayDiffJst(jstTodayDateStr(), date);
+    const stSet = mergeStoreSettings(store.settings);
+    const todayYmdR = storeNowWallClock(stSet.timezone).dateYmd;
+    const diff = calendarDayDiffInWallZone(todayYmdR, date, stSet.timezone);
     if (diff === null) return reply.code(400).send({ error: "invalid date" });
     if (diff < 0) return reply.code(400).send({ error: "past date not allowed" });
     if (diff > daysAhead) return reply.code(403).send({ error: "date exceeds reservable range" });
 
-    const stSet = mergeStoreSettings(store.settings);
-    const windows = effectiveNetReserveWindows(c as Record<string, unknown>);
+    const windows = effectiveNetReserveWindowsFromConfig(c as Record<string, unknown>);
     const step = netReserveSlotStepMinutes(c as Record<string, unknown>);
     const slotTimesAll = listNetReserveSlotTimes(windows, step);
     if (!isTimeInNetReserveSlots(time, slotTimesAll)) {
@@ -864,7 +869,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           });
           const rxSeatCode = /^(?:[A-Za-z0-9_-]+-)?(C\d+|T\d+|\d+)$/i;
 
-          const used = await collectUsedSeatsForNetReservation(tx, store.id, date, time);
+          const used = await collectUsedSeatsForNetReservation(tx, store.id, date, time, lunchHr);
 
           const tableMaster = tables.filter((t) => rxSeatCode.test(t.publicCode)).map((t) => ({
             code: t.publicCode,

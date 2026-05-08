@@ -373,26 +373,14 @@
         const freeCodes = tables.map((t) => t.code).filter((c) => c && !used.has(c));
         const freeSet = new Set(freeCodes);
 
+        const maxMergeSize = Number.isFinite(Number(receptionConf.maxMergeSize))
+          ? Math.floor(Number(receptionConf.maxMergeSize))
+          : 10;
+
         const allOrNothingGroups = Array.isArray(receptionConf.mergeAllOrNothingGroups)
           ? receptionConf.mergeAllOrNothingGroups
           : [];
-        const groups = allOrNothingGroups
-          .filter((g) => Array.isArray(g) && g.every((x) => typeof x === "string"))
-          .map((g) => g.map(String).filter((x) => freeSet.has(x)))
-          .filter((g) => g.length >= 2)
-          .map((arr) => ({ arr, set: new Set(arr) }));
 
-        function violatesAllOrNothing(sub) {
-          for (const g of groups) {
-            let hit = false;
-            for (const x of g.arr) { if (sub.has(x)) { hit = true; break; } }
-            if (!hit) continue;
-            for (const x of g.arr) { if (!sub.has(x)) return true; }
-          }
-          return false;
-        }
-
-        // adjacency graph (undirected)
         const adj = new Map();
         for (const c of freeCodes) adj.set(c, new Set());
         for (const t of tables) {
@@ -406,6 +394,44 @@
             a.add(o);
             b.add(t.code);
           }
+        }
+
+        const groups = [];
+        for (const g of allOrNothingGroups) {
+          if (!Array.isArray(g) || !g.every((x) => typeof x === "string")) continue;
+          const arrAll = g.map(String).filter((x) => freeSet.has(x));
+          if (arrAll.length < 2) continue;
+          const sub = new Set(arrAll);
+          const seen = new Set();
+          for (const start of arrAll) {
+            if (seen.has(start)) continue;
+            const comp = [];
+            const stack = [start];
+            seen.add(start);
+            while (stack.length) {
+              const cur = stack.pop();
+              comp.push(cur);
+              for (const nx of adj.get(cur) || []) {
+                if (!sub.has(nx) || seen.has(nx)) continue;
+                seen.add(nx);
+                stack.push(nx);
+              }
+            }
+            comp.sort();
+            if (comp.length < 2) continue;
+            if (comp.length > maxMergeSize) continue;
+            groups.push({ arr: comp, set: new Set(comp) });
+          }
+        }
+
+        function violatesAllOrNothing(sub) {
+          for (const g of groups) {
+            let hit = false;
+            for (const x of g.arr) { if (sub.has(x)) { hit = true; break; } }
+            if (!hit) continue;
+            for (const x of g.arr) { if (!sub.has(x)) return true; }
+          }
+          return false;
         }
 
         function isConnected(subArr) {
@@ -423,10 +449,6 @@
           }
           return seen.size === sub.size;
         }
-
-        const maxMergeSize = Number.isFinite(Number(receptionConf.maxMergeSize))
-          ? Math.floor(Number(receptionConf.maxMergeSize))
-          : 10;
 
         let best = null;
         const visited = new Set();

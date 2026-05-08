@@ -66,6 +66,24 @@
 
     let tableMaster = [];
 
+    /** 席の表示ラベル（staff 受付と同じ C01 形式） */
+    function seatDisplayLabel(id) {
+      const raw0 = String(id || "").trim();
+      const raw = raw0.toUpperCase();
+      const m = raw.match(/(?:^|[^A-Z0-9])(C|T)0*(\d+)\s*$/i);
+      if (m) {
+        const kind = String(m[1]).toUpperCase();
+        const n = parseInt(m[2], 10);
+        if (Number.isFinite(n)) return kind + String(n).padStart(2, "0");
+      }
+      if (/^\d+$/.test(raw)) {
+        const n = parseInt(raw, 10);
+        if (n >= 1 && n <= 10) return "C" + String(n).padStart(2, "0");
+        if (n >= 21) return "T" + String(n).padStart(2, "0");
+      }
+      return raw0;
+    }
+
     function syncFullscreenButton() {
       const btn = document.getElementById("btnFullscreen");
       if (!btn) return;
@@ -197,17 +215,7 @@
 
       // 旧 front.html の席割りAI（完全空席→それ以外）
       function getMasterTables(type) {
-        function labelOf(code) {
-          const raw = String(code || "").trim().toUpperCase();
-          const m = raw.match(/(?:^|[^A-Z0-9])(C|T)0*(\d+)\s*$/i);
-          if (m) return String(m[1]).toUpperCase() + String(parseInt(m[2], 10));
-          if (/^\d+$/.test(raw)) {
-            const n = parseInt(raw, 10);
-            if (n >= 1 && n <= 10) return "C" + n;
-            if (n >= 21) return "T" + n;
-          }
-          return raw;
-        }
+        const labelOf = (code) => seatDisplayLabel(code);
         const all = (Array.isArray(tableMaster) ? tableMaster : []).map((t) => ({
           code: String(t.code || ""),
           capacity: Number(t.capacity || 2),
@@ -334,7 +342,7 @@
         return;
       }
 
-      const seatText = foundIds.join("、");
+      const seatText = foundIds.map(seatDisplayLabel).join("、");
       const st =
         wait > 0
           ? new Date(Date.now() + wait * 60000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })

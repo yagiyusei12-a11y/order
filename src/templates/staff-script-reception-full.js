@@ -380,7 +380,7 @@ function updateReserveSeatSelector() {
       const btn = document.createElement("div");
       btn.className = "seat-check-btn";
       if (selectedResSeats.includes(id)) btn.classList.add("selected");
-      btn.innerText = id;
+      btn.innerText = seatLabel(id);
       btn.onclick = () => {
         if (selectedResSeats.includes(id)) {
           selectedResSeats = selectedResSeats.filter((s) => s !== id);
@@ -600,7 +600,7 @@ async function loadData() {
     }
     lastCallReserved = callReserved && !ignoreHere;
     if (data.entryQueue && data.entryQueue.length > 0) {
-      document.getElementById("entryText").innerText = `${data.entryQueue[0].seat}番に${data.entryQueue[0].num}名`;
+      document.getElementById("entryText").innerText = `${seatLabel(data.entryQueue[0].seat)}番に${data.entryQueue[0].num}名`;
       if (document.getElementById("entryPopup").style.display !== "block") { document.getElementById("entryPopup").style.display = "block"; playChime("mid"); }
     }
     existingReservations = data.reservations || [];
@@ -682,7 +682,7 @@ function renderSidePanels(waiting, staffCount, resList) {
       const tdSeats = document.createElement("td");
       tdSeats.style.color = "var(--reserved-yellow)";
       tdSeats.style.fontWeight = "bold";
-      tdSeats.textContent = Array.isArray(r.seats) ? r.seats.join(",") : "";
+      tdSeats.textContent = Array.isArray(r.seats) ? r.seats.map((x) => seatLabel(x)).join(",") : "";
 
       const tdAction = document.createElement("td");
       tdAction.style.textAlign = "right";
@@ -719,7 +719,7 @@ function renderSidePanels(waiting, staffCount, resList) {
     .forEach((s) => {
       const tr = document.createElement("tr");
       const td1 = document.createElement("td");
-      td1.textContent = String(s.id || "");
+      td1.textContent = seatLabel(s.id || "");
       const td2 = document.createElement("td");
       td2.textContent = "清掃";
       const td3 = document.createElement("td");
@@ -736,7 +736,7 @@ function renderSidePanels(waiting, staffCount, resList) {
   (waiting || []).forEach((w, i) => {
     const tr = document.createElement("tr");
     const td1 = document.createElement("td");
-    td1.textContent = String(w.seat || "");
+    td1.textContent = seatLabel(w.seat || "");
     const td2 = document.createElement("td");
     td2.textContent = String(w.startTime || "");
     const td3 = document.createElement("td");

@@ -206,6 +206,7 @@ type MenuItemPatchData = {
   imageUrl?: string | null;
   sortOrder?: number;
   isAvailable?: boolean;
+  allowTakeout?: boolean;
   categoryId?: string;
   kitchenStationId?: string | null;
   stockQty?: number | null;
@@ -310,6 +311,10 @@ async function buildMenuItemPatchData(
   }
   if (typeof body.isAvailable === "boolean") {
     data.isAvailable = body.isAvailable;
+  }
+  if (body && "allowTakeout" in body) {
+    if (typeof body.allowTakeout !== "boolean") return { error: "allowTakeout must be boolean" };
+    data.allowTakeout = body.allowTakeout;
   }
   if (body.kitchenStationId !== undefined) {
     if (body.kitchenStationId === null) {
@@ -737,6 +742,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       cookTimerSec?: number | null;
       cookTimerSec2?: number | null;
       containsAlcohol?: boolean;
+      allowTakeout?: boolean;
     };
   }>("/stores/:storeId/menu/items", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
@@ -810,6 +816,12 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       if (typeof ca !== "boolean") return reply.code(400).send({ error: "containsAlcohol must be boolean" });
       containsAlcoholFlag = ca;
     }
+    let allowTakeoutFlag = false;
+    if (req.body && typeof req.body === "object" && "allowTakeout" in req.body) {
+      const at = (req.body as { allowTakeout?: unknown }).allowTakeout;
+      if (typeof at !== "boolean") return reply.code(400).send({ error: "allowTakeout must be boolean" });
+      allowTakeoutFlag = at;
+    }
     const item = await prisma.menuItem.create({
       data: {
         categoryId: cat.id,
@@ -825,6 +837,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
         ...(cookTimerSec !== undefined ? { cookTimerSec } : {}),
         ...(cookTimerSec2 !== undefined ? { cookTimerSec2 } : {}),
         containsAlcohol: containsAlcoholFlag,
+        allowTakeout: allowTakeoutFlag,
       },
     });
     return item;

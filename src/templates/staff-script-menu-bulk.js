@@ -142,6 +142,10 @@ function renderTable() {
       "<td style=\"padding:0.45rem 0.6rem;font-size:0.78rem\">" +
       (item.isAvailable ? "表示" : "非表示") +
       "</td>";
+    html +=
+      "<td style=\"padding:0.45rem 0.6rem;font-size:0.78rem\">" +
+      (item.allowTakeout ? "<span class=\"badge\" style=\"background:#e0f2fe;color:#0369a1\">可</span>" : "—") +
+      "</td>";
     html += "</tr>";
   }
   tbody.innerHTML = html;
@@ -265,6 +269,9 @@ async function applyBulk() {
   }
   if ($("applyAvail").checked) {
     patch.isAvailable = $("bulkAvail").value === "true";
+  }
+  if ($("applyTakeout").checked) {
+    patch.allowTakeout = $("bulkTakeout").value === "true";
   }
   if ($("applyStock").checked) {
     const t = $("bulkStock").value.trim();

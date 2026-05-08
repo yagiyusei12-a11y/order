@@ -25,6 +25,7 @@
           <th style="padding:0.5rem 0.6rem">調理場</th>
           <th style="padding:0.5rem 0.6rem;width:4.5rem">形態</th>
           <th style="padding:0.5rem 0.6rem;width:5rem">店内表示</th>
+          <th style="padding:0.5rem 0.6rem;width:6.2rem">テイクアウト</th>
         </tr>
       </thead>
       <tbody id="bulkTableBody"></tbody>
@@ -102,6 +103,15 @@
         <select id="bulkAvail" style="margin:0">
           <option value="true">表示する</option>
           <option value="false">表示しない</option>
+        </select>
+      </div>
+      <div style="min-width:160px">
+        <label class="row" style="align-items:center;gap:0.45rem;margin:0 0 0.35rem">
+          <input type="checkbox" id="applyTakeout" /> テイクアウト可
+        </label>
+        <select id="bulkTakeout" style="margin:0">
+          <option value="false">不可</option>
+          <option value="true">可</option>
         </select>
       </div>
     </div>

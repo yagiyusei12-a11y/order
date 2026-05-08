@@ -823,6 +823,9 @@ function renderItemDetail(right) {
     "<label class=\"row\" style=\"margin-top:.45rem;font-size:.82rem;gap:.4rem;align-items:flex-start\"><input type=\"checkbox\" id=\"dContainsAlcohol\"" +
     (item.containsAlcohol ? " checked" : "") +
     " style=\"margin-top:.2rem\" /><span>アルコール商品（飲酒不可のお客様はゲストから注文できません）</span></label>" +
+    "<label class=\"row\" style=\"margin-top:.15rem;font-size:.82rem;gap:.4rem;align-items:flex-start\"><input type=\"checkbox\" id=\"dAllowTakeout\"" +
+    (item.allowTakeout ? " checked" : "") +
+    " style=\"margin-top:.2rem\" /><span>テイクアウト可（ゲスト/ネット注文で「テイクアウト」を選べる）</span></label>" +
     "<label>この商品に付けるオプショングループ（複数可）</label><div id=\"dOptGroups\" style=\"max-height:120px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:.35rem .5rem;background:#fff\">" +
     optionGroupsCache.map((g) => "<label class=\"row\" style=\"font-size:.78rem;gap:.35rem;margin:.2rem 0\"><input type=\"checkbox\" class=\"dOptChk\" value=\"" + escapeHtml(g.id) + "\"" + (linked.has(g.id) ? " checked" : "") + " /> " + escapeHtml(g.name) + "</label>").join("") +
     "</div>" +
@@ -903,6 +906,8 @@ function renderItemDetail(right) {
     const sellKind = sellSetChk && sellSetChk.checked ? "set" : "single";
     const chkAlc = right.querySelector("#dContainsAlcohol");
     const containsAlcohol = !!(chkAlc && chkAlc.checked);
+    const chkTakeout = right.querySelector("#dAllowTakeout");
+    const allowTakeout = !!(chkTakeout && chkTakeout.checked);
     const v0 = Number(item.masterVersion ?? 1);
     btnSave.disabled = true;
     const prevLabel = btnSave.textContent;
@@ -924,6 +929,7 @@ function renderItemDetail(right) {
           cookTimerSec2,
           sellKind,
           containsAlcohol,
+          allowTakeout,
           ifMasterVersion: v0,
         }),
       });

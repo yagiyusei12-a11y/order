@@ -80,7 +80,24 @@ function orderLineExtraSubtext(ln) {
       if (!st || typeof st !== "object") continue;
       const label = typeof /** @type {{ label?: string }} */ (st).label === "string" ? /** @type {{ label: string }} */ (st).label : "";
       const picks = /** @type {{ picks?: { name?: string }[] }} */ (st).picks;
-      const pickedNames = Array.isArray(picks) ? picks.map((p) => (p && p.name ? String(p.name) : "")).filter(Boolean) : [];
+      const pickedNames = Array.isArray(picks)
+        ? picks
+            .map((p) => {
+              if (!p || typeof p !== "object") return "";
+              const base = p.name ? String(p.name) : "";
+              const ex = /** @type {{ optionExtra?: any }} */ (p).optionExtra;
+              if (!ex || typeof ex !== "object" || ex.kind !== "single" || !Array.isArray(ex.options)) return base;
+              const optParts = [];
+              for (const g of ex.options) {
+                if (!g || typeof g !== "object") continue;
+                const picks2 = /** @type {{ picks?: { name?: string }[] }} */ (g).picks;
+                const nm = Array.isArray(picks2) ? picks2.map((x) => (x && x.name ? String(x.name) : "")).filter(Boolean) : [];
+                if (nm.length) optParts.push(nm.join("・"));
+              }
+              return optParts.length ? base + "（" + optParts.join(" / ") + "）" : base;
+            })
+            .filter(Boolean)
+        : [];
       /** setFixedSteps（DBの isFixed）を足して、古い注文でも標準付属を見えるようにする */
       const fixedNames =
         ln && Array.isArray(ln.setFixedSteps)

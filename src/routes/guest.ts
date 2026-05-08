@@ -212,6 +212,17 @@ function mapGuestSetMenuItem(
             guestVisibleEndMin: number | null;
             guestVisibleTimeWindow: { startMin: number; endMin: number } | null;
           };
+          optionLinks?: {
+            sortOrder: number;
+            optionGroup: {
+              id: string;
+              name: string;
+              active: boolean;
+              minSelect: number;
+              maxSelect: number;
+              items: { id: string; name: string; priceDelta: number; active: boolean }[];
+            } | null;
+          }[];
         };
       }[];
     }[];
@@ -229,6 +240,7 @@ function mapGuestSetMenuItem(
     stockQty: number | null;
     soldOut: boolean;
     containsAlcohol: boolean;
+    optionGroups?: Record<string, unknown>[];
   };
   for (const st of it.setSteps) {
     const choices: ChoiceRow[] = [];
@@ -247,6 +259,10 @@ function mapGuestSetMenuItem(
         soldOut,
         containsAlcohol: comp.containsAlcohol === true,
       };
+      try {
+        const opt = mapGuestOptionGroups(comp.optionLinks ?? []);
+        if (opt.length) row.optionGroups = opt;
+      } catch (_) {}
       if (ch.isFixed === true) {
         // 標準付属は「セットの一部」なので、カテゴリのゲスト表示設定に関わらず表示対象にする。
         //（ゲスト非表示カテゴリを参照しているだけでセット自体が消えるのを防ぐ）
@@ -500,8 +516,19 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                         isAvailable: true,
                         stockQty: true,
                         stockLowThreshold: true,
+                        containsAlcohol: true,
                         category: {
                           include: { guestVisibleTimeWindow: true },
+                        },
+                        optionLinks: {
+                          orderBy: { sortOrder: "asc" },
+                          include: {
+                            optionGroup: {
+                              include: {
+                                items: { orderBy: { sortOrder: "asc" } },
+                              },
+                            },
+                          },
                         },
                       },
                     },
@@ -740,6 +767,12 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         note?: string;
         setSelections?: GuestSetStepSelection[];
         optionSelections?: GuestOptionGroupSelection[];
+        /** セット構成単品のオプション（stepId + menuItemId） */
+        setComponentOptionSelections?: {
+          stepId: string;
+          menuItemId: string;
+          optionSelections?: GuestOptionGroupSelection[];
+        }[];
         /** セットで「後から提供」にしたステップ id（メニューで allowServeLaterSplit な項目のみ） */
         serveLaterDeferStepId?: string;
       }[];
@@ -871,6 +904,12 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                         componentMenuItem: {
                           include: {
                             category: { include: { guestVisibleTimeWindow: true } },
+                            optionLinks: {
+                              orderBy: { sortOrder: "asc" },
+                              include: {
+                                optionGroup: { include: { items: { orderBy: { sortOrder: "asc" } } } },
+                              },
+                            },
                           },
                         },
                       },
@@ -904,6 +943,25 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
             if (!validated.ok) throw new Error("BAD_SET");
             const { byStep } = validated;
 
+            const setComponentOptionSelectionsRaw = (l as { setComponentOptionSelections?: unknown }).setComponentOptionSelections;
+            const setCompOptRows: Array<{ stepId: string; menuItemId: string; optionSelections: unknown }> = [];
+            if (Array.isArray(setComponentOptionSelectionsRaw)) {
+              for (const row of setComponentOptionSelectionsRaw) {
+                if (!row || typeof row !== "object") continue;
+                const stepId = typeof (row as { stepId?: unknown }).stepId === "string" ? (row as { stepId: string }).stepId.trim() : "";
+                const menuItemId =
+                  typeof (row as { menuItemId?: unknown }).menuItemId === "string"
+                    ? (row as { menuItemId: string }).menuItemId.trim()
+                    : "";
+                if (!stepId || !menuItemId) continue;
+                setCompOptRows.push({
+                  stepId,
+                  menuItemId,
+                  optionSelections: (row as { optionSelections?: unknown }).optionSelections,
+                });
+              }
+            }
+
             // セットの構成単品は「セットの一部」として扱う（ゲストメニュー表示と同様、
             // カテゴリの visibleToGuest / 時間帯で弾かない。販売可否と酒類のみ検証）
             for (const st of setItem.setSteps) {
@@ -931,6 +989,39 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
               const def = stepsVal.find((x) => x.id === st.id)!;
               surcharge += surchargeExclusiveStepSumInclusive(def, picked, storeTaxRatePercent);
             }
+
+            // セット構成単品のオプション（単品 option priceDelta をセット単価に加算）
+            const compOptLineExtraByKey = new Map<string, Record<string, unknown>>();
+            for (const row of setCompOptRows) {
+              const stepRow = setItem.setSteps.find((s) => s.id === row.stepId);
+              if (!stepRow) throw new Error("BAD_SET_COMP_OPT");
+              const pickedIds = byStep.get(row.stepId) ?? [];
+              const fixedIds = stepRow.choices.filter((c) => c.isFixed === true).map((c) => c.componentMenuItemId);
+              const allowedPicked = new Set([...fixedIds, ...pickedIds]);
+              if (!allowedPicked.has(row.menuItemId)) throw new Error("BAD_SET_COMP_OPT");
+              const ch = stepRow.choices.find((c) => c.componentMenuItemId === row.menuItemId);
+              if (!ch) throw new Error("BAD_SET_COMP_OPT");
+              const comp = ch.componentMenuItem;
+              const linkedGroups = (comp.optionLinks || [])
+                .map((ol) => ol.optionGroup)
+                .filter((g): g is NonNullable<typeof g> => Boolean(g && g.active))
+                .map((g) => ({
+                  id: g.id,
+                  name: g.name,
+                  minSelect: g.minSelect,
+                  maxSelect: g.maxSelect,
+                  items: g.items.filter((i) => i.active).map((i) => ({ id: i.id, name: i.name, priceDelta: i.priceDelta })),
+                }))
+                .filter((g) => g.items.length > 0);
+              const vOpt = validateGuestOptionSelections(linkedGroups, row.optionSelections);
+              if (!vOpt.ok) throw new Error("BAD_SET_COMP_OPT");
+              surcharge += sumInclusiveOptionPriceDelta(linkedGroups, vOpt.byGroup);
+              const extra = buildSingleOptionsLineExtra(linkedGroups, vOpt.byGroup);
+              if (Array.isArray(extra.options) && extra.options.length) {
+                compOptLineExtraByKey.set(`${row.stepId}::${row.menuItemId}`, extra);
+              }
+            }
+
             const discRows = setItem.timeDiscounts.map((d) => ({
               discountKind: d.discountKind,
               value: d.value,
@@ -985,6 +1076,32 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
               );
               nameSnapshot = buildSetNameSnapshot(setItem.name, lineExtra);
             }
+
+            // セット lineExtra に「構成単品のオプションスナップショット」を埋め込む（表示用）
+            try {
+              const stepsAny = (lineExtra as { steps?: unknown }).steps;
+              if (Array.isArray(stepsAny) && compOptLineExtraByKey.size > 0) {
+                for (const stEx of stepsAny) {
+                  if (!stEx || typeof stEx !== "object") continue;
+                  const stepId =
+                    typeof (stEx as { stepId?: unknown }).stepId === "string"
+                      ? (stEx as { stepId: string }).stepId
+                      : "";
+                  const picksAny = (stEx as { picks?: unknown }).picks;
+                  if (!stepId || !Array.isArray(picksAny)) continue;
+                  for (const p of picksAny) {
+                    if (!p || typeof p !== "object") continue;
+                    const mid =
+                      typeof (p as { menuItemId?: unknown }).menuItemId === "string"
+                        ? (p as { menuItemId: string }).menuItemId
+                        : "";
+                    if (!mid) continue;
+                    const extra = compOptLineExtraByKey.get(`${stepId}::${mid}`);
+                    if (extra) (p as Record<string, unknown>).optionExtra = extra;
+                  }
+                }
+              }
+            } catch (_) {}
 
             needStock.set(setItem.id, (needStock.get(setItem.id) ?? 0) + l.qty);
             for (const st of setItem.setSteps) {
@@ -1237,6 +1354,9 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       }
       if (msg === "BAD_OPTIONS") {
         return reply.code(400).send({ error: "オプションの選択内容が正しくありません" });
+      }
+      if (msg === "BAD_SET_COMP_OPT") {
+        return reply.code(400).send({ error: "セット構成単品のオプション選択が正しくありません" });
       }
       throw e;
     }

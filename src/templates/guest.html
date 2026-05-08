@@ -1368,6 +1368,51 @@
       return setSelections;
     }
 
+    function collectSetComponentOptionSelections(host, item) {
+      const out = [];
+      for (const st of item.setSteps || []) {
+        const stepEl = host.querySelector("[data-step-id=\"" + selEsc(st.id) + "\"]");
+        if (!stepEl) continue;
+        const pickedIds = [...stepEl.querySelectorAll("input[type=checkbox]:checked")].map((x) => x.value);
+        for (const mid of pickedIds) {
+          const ch = (st.choices || []).find((c) => c.menuItemId === mid);
+          if (!ch || !ch.optionGroups || !ch.optionGroups.length) continue;
+          const optionSelections = [];
+          for (const g of ch.optionGroups) {
+            const useRadio = Number(g.maxSelect || 1) <= 1;
+            let ids = [];
+            if (useRadio) {
+              const r = stepEl.querySelector(
+                "input[type=radio][name=\"copt-" +
+                  selEsc(st.id) +
+                  "-" +
+                  selEsc(mid) +
+                  "-" +
+                  selEsc(g.id) +
+                  "\"]:checked"
+              );
+              if (r && r.value) ids = [r.value];
+            } else {
+              ids = [
+                ...stepEl.querySelectorAll(
+                  "input[type=checkbox][name=\"copt-" +
+                    selEsc(st.id) +
+                    "-" +
+                    selEsc(mid) +
+                    "-" +
+                    selEsc(g.id) +
+                    "\"]:checked"
+                ),
+              ].map((x) => x.value);
+            }
+            optionSelections.push({ optionGroupId: g.id, optionItemIds: ids });
+          }
+          out.push({ stepId: st.id, menuItemId: mid, optionSelections });
+        }
+      }
+      return out;
+    }
+
     function getServeLaterDeferStepId(panel, item) {
       const deferrable = (item.setSteps || []).filter((st) => st.allowServeLaterSplit);
       if (deferrable.length === 0) return "";
@@ -1421,6 +1466,33 @@
             }
           }
           if (names.length) parts.push(lab + ": " + names.join("、"));
+        }
+      }
+      if (
+        line.sellKind === "set" &&
+        line.setComponentOptionSelections &&
+        Array.isArray(line.setComponentOptionSelections) &&
+        item.setSteps
+      ) {
+        for (const row of line.setComponentOptionSelections) {
+          if (!row || !row.stepId || !row.menuItemId || !Array.isArray(row.optionSelections)) continue;
+          const st = (item.setSteps || []).find((s) => s.id === row.stepId);
+          if (!st) continue;
+          const mid = row.menuItemId;
+          const ch = (st.choices || []).find((c) => c.menuItemId === mid);
+          if (!ch || !ch.optionGroups || !ch.optionGroups.length) continue;
+          const optParts = [];
+          for (const g of ch.optionGroups) {
+            const sel = row.optionSelections.find((x) => x.optionGroupId === g.id);
+            const ids = (sel && sel.optionItemIds) || [];
+            if (!ids.length) continue;
+            const picked = ids
+              .map((oid) => (g.items || []).find((it) => it.id === oid))
+              .filter(Boolean)
+              .map((it) => it.name);
+            if (picked.length) optParts.push(picked.join("・"));
+          }
+          if (optParts.length) parts.push(String(ch.name || "").trim() + " オプション: " + optParts.join(" / "));
         }
       }
       if (line.optionSelections && line.optionSelections.length && item.optionGroups) {
@@ -1790,6 +1862,64 @@
               "</span><span class=\"opt-price\">" +
               priceTxt +
               "</span></label>";
+            if (ch.optionGroups && ch.optionGroups.length) {
+              bodyInner += "<div class=\"opt-comp\" style=\"margin:.2rem 0 .35rem .8rem;padding:.35rem .4rem;border-left:2px solid #e2e8f0;background:#f8fafc;border-radius:8px\">";
+              bodyInner += "<div class=\"muted\" style=\"font-size:.68rem;margin:0 0 .25rem\">オプション（" + escapeHtml(ch.name) + "）</div>";
+              for (const g of ch.optionGroups) {
+                const useRadio = Number(g.maxSelect || 1) <= 1;
+                bodyInner +=
+                  "<div class=\"opt-block\" data-comp-opt-group style=\"padding:.35rem .35rem .15rem;margin:.25rem 0;background:#fff;border:1px solid var(--border);border-radius:8px\">" +
+                  "<div class=\"opt-block-head\"><strong>" +
+                  escapeHtml(g.name) +
+                  "</strong>" +
+                  (g.minSelect > 0 ? "<span class=\"tag-req\">必須</span>" : "<span class=\"tag-opt\">任意</span>") +
+                  "<span class=\"tag-opt\" style=\"margin-left:auto\">" +
+                  g.minSelect +
+                  "〜" +
+                  g.maxSelect +
+                  (useRadio ? "個" : "個") +
+                  "</span></div>";
+                for (const oi of g.items || []) {
+                  const yen = Number(oi.priceDelta || 0);
+                  const priceTxt =
+                    yen > 0
+                      ? "+" +
+                        yen.toLocaleString("ja-JP") +
+                        "円 <span style=\"color:var(--muted);font-size:.68rem\">(税込目安)</span>"
+                      : "+¥0";
+                  const nm = "copt-" + escapeHtml(st.id) + "-" + escapeHtml(ch.menuItemId) + "-" + escapeHtml(g.id);
+                  if (useRadio) {
+                    bodyInner +=
+                      "<label class=\"opt-row\"><input type=\"radio\" name=\"" +
+                      nm +
+                      "\" value=\"" +
+                      escapeHtml(oi.id) +
+                      "\" /><span class=\"opt-name\">" +
+                      escapeHtml(oi.name) +
+                      "</span><span class=\"opt-price\">" +
+                      priceTxt +
+                      "</span></label>";
+                  } else {
+                    bodyInner +=
+                      "<label class=\"opt-row\"><input type=\"checkbox\" name=\"" +
+                      nm +
+                      "\" value=\"" +
+                      escapeHtml(oi.id) +
+                      "\" data-min=\"" +
+                      g.minSelect +
+                      "\" data-max=\"" +
+                      g.maxSelect +
+                      "\" /><span class=\"opt-name\">" +
+                      escapeHtml(oi.name) +
+                      "</span><span class=\"opt-price\">" +
+                      priceTxt +
+                      "</span></label>";
+                  }
+                }
+                bodyInner += "</div>";
+              }
+              bodyInner += "</div>";
+            }
           }
           bodyInner += "</div></div>";
         }
@@ -1938,6 +2068,18 @@
             const up = computeSetUnitPrice(item, sel);
             const unit = up != null ? up : Number(item.price || 0);
             syncDetailAddPrice(panel, unit, Number(panel.querySelector("[data-qty]").textContent));
+
+            // 選択解除された構成単品のオプションもクリア（必須オプションの残りを防ぐ）
+            if (!inpX.checked) {
+              try {
+                const stepId2 = stepId;
+                const mid2 = inpX.value;
+                const nmPrefix = "copt-" + stepId2 + "-" + mid2 + "-";
+                panel.querySelectorAll("input[name^=\"" + nmPrefix + "\"]").forEach((x) => {
+                  if (x.type === "checkbox" || x.type === "radio") x.checked = false;
+                });
+              } catch (_) {}
+            }
           });
         });
         const getQty = wireQty(panel, item, () => {
@@ -1977,6 +2119,7 @@
             toast("酒類はご注文いただけません");
             return;
           }
+          const setComponentOptionSelections = collectSetComponentOptionSelections(panel, item);
           const cartKey =
             "s:" +
             item.id +
@@ -1995,6 +2138,8 @@
           cur.unitPrice = unitPrice;
           cur.setSelections = setSelections;
           cur.name = item.name;
+          if (setComponentOptionSelections && setComponentOptionSelections.length) cur.setComponentOptionSelections = setComponentOptionSelections;
+          else delete cur.setComponentOptionSelections;
           if (serveLaterDeferStepId) cur.serveLaterDeferStepId = serveLaterDeferStepId;
           else delete cur.serveLaterDeferStepId;
           cur.qty = (cur.qty || 0) + q;
@@ -2600,6 +2745,7 @@
           if (x.sellKind === "set" && x.setSelections) o.setSelections = x.setSelections;
           if (x.optionSelections && x.optionSelections.length) o.optionSelections = x.optionSelections;
           if (x.serveLaterDeferStepId) o.serveLaterDeferStepId = x.serveLaterDeferStepId;
+          if (x.setComponentOptionSelections && x.setComponentOptionSelections.length) o.setComponentOptionSelections = x.setComponentOptionSelections;
           return o;
         });
       if (lines.length === 0) return;

@@ -170,14 +170,14 @@ function renderTakeoutPickupWindows(list, selectedIds) {
           (sel.has(w.id) ? " checked" : "") +
           " />" +
           "<span>" +
-          escapeHtml(w.name || \"\") +
+          escapeHtml(w.name || "") +
           " <span class=\"muted\" style=\"font-size:.72rem\">(" +
           escapeHtml(guestMinToTimeInputValue(w.startMin)) +
           "〜" +
           escapeHtml(guestMinToTimeInputValue(w.endMin)) +
           ")</span></span></label>"
       )
-      .join(\"\");
+      .join("");
 }
 
 async function loadAll() {

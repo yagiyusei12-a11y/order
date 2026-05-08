@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance } from "fastify";
 import type { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { minutesSinceMidnightInTimeZone } from "../lib/guest-category-hours.js";
@@ -24,36 +24,54 @@ import {
 } from "../lib/menu-set-order.js";
 import { SET_SERVE_LATER_LINE_KIND } from "../lib/set-order-bundle.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
-import { displayTableCode, tableDisplayLabel } from "../lib/table-display-code.js";
+import { displayTableCode } from "../lib/table-display-code.js";
 import { prisma } from "../db.js";
 
-/** 合算で merged になった卓のゲスト向けAPIは 409 で案内する */
-async function replyIfMergedGuestSession(
-  reply: FastifyReply,
-  session: { status: string; mergedIntoSessionId: string | null } | null,
-): Promise<boolean> {
-  if (!session || session.status !== "merged") return false;
-  const parentId = session.mergedIntoSessionId;
-  if (!parentId) {
-    await reply.code(409).send({
-      error: "merged_into_other_table",
-      message: "この卓は合算中です。代表の卓のQRコードからご注文・お会計をお願いします。",
-    });
-    return true;
+type GuestBillingContext = {
+  billingSessionId: string;
+  /** 合算子卓の QR からの注文のみ設定（代表卓直の注文は null） */
+  orderSourceTableId: string | null;
+};
+
+/**
+ * ゲスト注文・メニューの請求先セッション。
+ * - open: 自分自身
+ * - merged: 親（open）セッション。注文は sourceTableId に子卓を付ける
+ */
+async function resolveGuestBillingContext(session: {
+  id: string;
+  status: string;
+  storeId: string;
+  tableId: string;
+  mergedIntoSessionId: string | null;
+}): Promise<
+  | { ok: true; ctx: GuestBillingContext }
+  | { ok: false; status: 404 | 409; body: { error: string; message?: string } }
+> {
+  if (session.status === "open") {
+    return { ok: true, ctx: { billingSessionId: session.id, orderSourceTableId: null } };
   }
-  const parent = await prisma.diningSession.findUnique({
-    where: { id: parentId },
-    include: { table: true },
-  });
-  const lab =
-    parent?.table != null
-      ? tableDisplayLabel(parent.table.name, parent.table.publicCode) || parent.table.name
-      : "代表の卓";
-  await reply.code(409).send({
-    error: "merged_into_other_table",
-    message: `この卓は合算中です。ご注文・お会計は「${lab}」のQRコードからお願いします。`,
-  });
-  return true;
+  if (session.status === "merged" && session.mergedIntoSessionId) {
+    const parent = await prisma.diningSession.findFirst({
+      where: { id: session.mergedIntoSessionId, storeId: session.storeId, status: "open" },
+      select: { id: true },
+    });
+    if (!parent) {
+      return {
+        ok: false,
+        status: 409,
+        body: {
+          error: "merge_parent_unavailable",
+          message: "代表卓のセッションが利用中ではありません。スタッフにお声がけください。",
+        },
+      };
+    }
+    return {
+      ok: true,
+      ctx: { billingSessionId: parent.id, orderSourceTableId: session.tableId },
+    };
+  }
+  return { ok: false, status: 404, body: { error: "session not found or closed" } };
 }
 
 type EatMode = "dine_in" | "takeout";
@@ -393,20 +411,35 @@ function normalizeOptionalProfile(
 
 export async function registerGuest(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { token: string } }>("/guest/:token/menu", async (req, reply) => {
-    const session = await prisma.diningSession.findUnique({
-      where: { guestToken: req.params.token },
-      include: {
-        course: {
-          include: { includedItems: { select: { menuItemId: true } } },
-        },
-        coursePriceTier: true,
-        customer: { select: { name: true, phone: true } },
+    const menuInclude = {
+      course: {
+        include: { includedItems: { select: { menuItemId: true } } },
       },
+      coursePriceTier: true,
+      customer: { select: { name: true, phone: true } },
+    } as const;
+    const tokenSession = await prisma.diningSession.findUnique({
+      where: { guestToken: req.params.token },
+      include: menuInclude,
     });
-    if (!session) {
+    if (!tokenSession) {
       return reply.code(404).send({ error: "session not found or closed" });
     }
-    if (await replyIfMergedGuestSession(reply, session)) return;
+    const billing = await resolveGuestBillingContext(tokenSession);
+    if (!billing.ok) {
+      return reply.code(billing.status).send(billing.body);
+    }
+    let session = tokenSession;
+    if (billing.ctx.billingSessionId !== tokenSession.id) {
+      const parentSession = await prisma.diningSession.findUnique({
+        where: { id: billing.ctx.billingSessionId },
+        include: menuInclude,
+      });
+      if (!parentSession || parentSession.status !== "open") {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+      session = parentSession;
+    }
     if (session.status !== "open") {
       return reply.code(404).send({ error: "session not found or closed" });
     }
@@ -701,8 +734,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     if (!sess) {
       return reply.code(404).send({ error: "session not found or closed" });
     }
-    if (await replyIfMergedGuestSession(reply, sess)) return;
-    if (sess.status !== "open") {
+    if (sess.status !== "open" && sess.status !== "merged") {
       return reply.code(404).send({ error: "session not found or closed" });
     }
     const seatCode = typeof sess.table?.publicCode === "string" ? sess.table.publicCode : "";
@@ -730,17 +762,17 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       }
       const sess = await prisma.diningSession.findUnique({
         where: { guestToken: req.params.token },
-        select: { id: true, status: true, mergedIntoSessionId: true },
+        select: { id: true, status: true, storeId: true, tableId: true, mergedIntoSessionId: true },
       });
       if (!sess) {
         return reply.code(404).send({ error: "session not found or closed" });
       }
-      if (await replyIfMergedGuestSession(reply, sess)) return;
-      if (sess.status !== "open") {
-        return reply.code(404).send({ error: "session not found or closed" });
+      const billing = await resolveGuestBillingContext(sess);
+      if (!billing.ok) {
+        return reply.code(billing.status).send(billing.body);
       }
       await prisma.diningSession.update({
-        where: { id: sess.id },
+        where: { id: billing.ctx.billingSessionId },
         data: { guestAlcoholAllowed: v },
       });
       return { ok: true };
@@ -765,22 +797,38 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
 
     const preSess = await prisma.diningSession.findUnique({
       where: { guestToken: req.params.token },
-      select: { status: true, mergedIntoSessionId: true },
+      select: { id: true, status: true, storeId: true, tableId: true, mergedIntoSessionId: true },
     });
     if (!preSess) {
       return reply.code(404).send({ error: "session not found or closed" });
     }
-    if (await replyIfMergedGuestSession(reply, preSess)) return;
-    if (preSess.status !== "open") {
+    if (preSess.status !== "open" && preSess.status !== "merged") {
       return reply.code(404).send({ error: "session not found or closed" });
+    }
+    const preBilling = await resolveGuestBillingContext(preSess);
+    if (!preBilling.ok) {
+      return reply.code(preBilling.status).send(preBilling.body);
     }
 
     try {
       const result = await prisma.$transaction(async (tx) => {
         const sess = await tx.diningSession.findUnique({
           where: { guestToken: req.params.token },
+          select: { id: true, status: true, storeId: true, tableId: true, mergedIntoSessionId: true, customerId: true },
         });
-        if (!sess || sess.status !== "open") {
+        if (!sess || (sess.status !== "open" && sess.status !== "merged")) {
+          const e = new Error("NO_SESSION");
+          throw e;
+        }
+        const billing = await resolveGuestBillingContext(sess);
+        if (!billing.ok) {
+          const e = new Error("NO_SESSION");
+          throw e;
+        }
+        const targetId = billing.ctx.billingSessionId;
+
+        const target = await tx.diningSession.findUnique({ where: { id: targetId } });
+        if (!target || target.status !== "open") {
           const e = new Error("NO_SESSION");
           throw e;
         }
@@ -801,14 +849,14 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
           },
         });
 
-        if (sess.customerId != null && sess.customerId !== customer.id) {
+        if (target.customerId != null && target.customerId !== customer.id) {
           const e = new Error("DEVICE_CONFLICT");
           throw e;
         }
 
-        if (sess.customerId == null) {
+        if (target.customerId == null) {
           await tx.diningSession.update({
-            where: { id: sess.id },
+            where: { id: targetId },
             data: { customerId: customer.id },
           });
           const updated = await tx.customer.update({
@@ -870,16 +918,27 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       note?: string;
     };
   }>("/guest/:token/orders", async (req, reply) => {
-    const session = await prisma.diningSession.findUnique({
+    const tokenSession = await prisma.diningSession.findUnique({
       where: { guestToken: req.params.token },
       include: { course: true, coursePriceTier: true },
     });
-    if (!session) {
+    if (!tokenSession) {
       return reply.code(404).send({ error: "session not found or closed" });
     }
-    if (await replyIfMergedGuestSession(reply, session)) return;
-    if (session.status !== "open") {
-      return reply.code(404).send({ error: "session not found or closed" });
+    const billing = await resolveGuestBillingContext(tokenSession);
+    if (!billing.ok) {
+      return reply.code(billing.status).send(billing.body);
+    }
+    let billSession = tokenSession;
+    if (billing.ctx.billingSessionId !== tokenSession.id) {
+      const parentS = await prisma.diningSession.findUnique({
+        where: { id: billing.ctx.billingSessionId },
+        include: { course: true, coursePriceTier: true },
+      });
+      if (!parentS || parentS.status !== "open") {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+      billSession = parentS;
     }
 
     const lines = req.body?.lines;
@@ -888,17 +947,17 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     }
 
     const storeRow = await prisma.store.findUnique({
-      where: { id: session.storeId },
+      where: { id: billSession.storeId },
       select: { settings: true },
     });
     const st = mergeStoreSettings(storeRow?.settings);
     const nowMin = minutesSinceMidnightInTimeZone(new Date(), st.timezone);
     const storeTaxRatePercent = st.taxRatePercent;
 
-    if (session.courseId && session.course && session.coursePriceTier) {
+    if (billSession.courseId && billSession.course && billSession.coursePriceTier) {
       const lo = computeGuestLastOrderPayload(
-        session.openedAt,
-        session.coursePriceTier.durationMinutes,
+        billSession.openedAt,
+        billSession.coursePriceTier.durationMinutes,
         st.guestCourseLastOrderMinutesBeforeEnd,
         st.guestEnforceLastOrder,
       );
@@ -907,10 +966,14 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       }
     }
 
+    const billingId = billing.ctx.billingSessionId;
+    const orderSourceTableId = billing.ctx.orderSourceTableId;
+    const orderStoreId = billSession.storeId;
+
     try {
       const order = await prisma.$transaction(async (tx) => {
         const sess = await tx.diningSession.findUnique({
-          where: { id: session.id },
+          where: { id: billingId },
           include: {
             course: {
               include: { includedItems: { select: { menuItemId: true } } },
@@ -989,7 +1052,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                 id: l.menuItemId,
                 isAvailable: true,
                 sellKind: "set",
-                category: { storeId: session.storeId, visibleToGuest: true },
+                category: { storeId: orderStoreId, visibleToGuest: true },
               },
               include: {
                 category: { include: { guestVisibleTimeWindow: true } },
@@ -1260,7 +1323,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                 id: l.menuItemId,
                 isAvailable: true,
                 sellKind: "single",
-                category: { storeId: session.storeId, visibleToGuest: true },
+                category: { storeId: orderStoreId, visibleToGuest: true },
               },
               include: {
                 category: { include: { guestVisibleTimeWindow: true } },
@@ -1365,7 +1428,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
               id: menuItemId,
               isAvailable: true,
               // セット構成単品はゲスト非表示カテゴリでも在庫確認に載る（トップレベル商品は上でゲスト可否済み）
-              category: { storeId: session.storeId },
+              category: { storeId: orderStoreId },
             },
             include: {
               category: { include: { guestVisibleTimeWindow: true } },
@@ -1398,7 +1461,8 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
 
         const so = await tx.salesOrder.create({
           data: {
-            sessionId: session.id,
+            sessionId: billingId,
+            ...(orderSourceTableId ? { sourceTableId: orderSourceTableId } : {}),
             status: "submitted",
             note: req.body?.note?.trim() || null,
           },
@@ -1497,35 +1561,46 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     if (typeof packId !== "string" || !packId.trim()) {
       return reply.code(400).send({ error: "packId required" });
     }
-    const session = await prisma.diningSession.findUnique({
+    const tokenSession = await prisma.diningSession.findUnique({
       where: { guestToken: req.params.token },
       include: { course: true, coursePriceTier: true },
     });
-    if (!session) {
+    if (!tokenSession) {
       return reply.code(404).send({ error: "session not found or closed" });
     }
-    if (await replyIfMergedGuestSession(reply, session)) return;
-    if (session.status !== "open") {
-      return reply.code(404).send({ error: "session not found or closed" });
+    const packBilling = await resolveGuestBillingContext(tokenSession);
+    if (!packBilling.ok) {
+      return reply.code(packBilling.status).send(packBilling.body);
     }
-    if (!session.courseId) {
+    let billSession = tokenSession;
+    if (packBilling.ctx.billingSessionId !== tokenSession.id) {
+      const parentS = await prisma.diningSession.findUnique({
+        where: { id: packBilling.ctx.billingSessionId },
+        include: { course: true, coursePriceTier: true },
+      });
+      if (!parentS || parentS.status !== "open") {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+      billSession = parentS;
+    }
+    if (!billSession.courseId) {
       return reply.code(400).send({ error: "no course on this session" });
     }
     const pack = await prisma.courseOptionPack.findFirst({
-      where: { id: packId.trim(), courseId: session.courseId },
+      where: { id: packId.trim(), courseId: billSession.courseId },
     });
     if (!pack) {
       return reply.code(404).send({ error: "option pack not found" });
     }
     const storeRow0 = await prisma.store.findUnique({
-      where: { id: session.storeId },
+      where: { id: billSession.storeId },
       select: { settings: true },
     });
     const st0 = mergeStoreSettings(storeRow0?.settings);
-    if (session.courseId && session.course && session.coursePriceTier) {
+    if (billSession.courseId && billSession.course && billSession.coursePriceTier) {
       const lo = computeGuestLastOrderPayload(
-        session.openedAt,
-        session.coursePriceTier.durationMinutes,
+        billSession.openedAt,
+        billSession.coursePriceTier.durationMinutes,
         st0.guestCourseLastOrderMinutesBeforeEnd,
         st0.guestEnforceLastOrder,
       );
@@ -1533,12 +1608,12 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         return reply.code(403).send({ error: "ラストオーダーの時間を過ぎています" });
       }
     }
-    const current = parsePurchasedCourseOptionPackIds(session.purchasedCourseOptionPackIds);
+    const current = parsePurchasedCourseOptionPackIds(billSession.purchasedCourseOptionPackIds);
     if (current.includes(pack.id)) {
       return reply.code(409).send({ error: "すでに追加済みです" });
     }
     const scopePre = packChargeScopeFromDb(pack.chargeScope);
-    const gcPre = Math.max(1, session.guestCount);
+    const gcPre = Math.max(1, billSession.guestCount);
     let peopleCountPurchase: number | null = null;
     if (scopePre === "per_person_pick") {
       const pc = bodyObj.peopleCount;
@@ -1551,9 +1626,12 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       peopleCountPurchase = pc;
     }
 
+    const packBillingId = packBilling.ctx.billingSessionId;
+    const packOrderSourceTableId = packBilling.ctx.orderSourceTableId;
+
     try {
       const order = await prisma.$transaction(async (tx) => {
-        const sess = await tx.diningSession.findUnique({ where: { id: session.id } });
+        const sess = await tx.diningSession.findUnique({ where: { id: packBillingId } });
         if (!sess || sess.status !== "open") throw new Error("SESSION_GONE");
         const cur = parsePurchasedCourseOptionPackIds(sess.purchasedCourseOptionPackIds);
         if (cur.includes(pack.id)) throw new Error("ALREADY");
@@ -1594,7 +1672,8 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
             : `[コース＋オプション] ${packRow.name}（×${qty}名）`;
         const so = await tx.salesOrder.create({
           data: {
-            sessionId: sess.id,
+            sessionId: packBillingId,
+            ...(packOrderSourceTableId ? { sourceTableId: packOrderSourceTableId } : {}),
             status: "submitted",
             note: null,
           },
@@ -1646,16 +1725,17 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { token: string } }>("/guest/:token/orders", async (req, reply) => {
     const session = await prisma.diningSession.findUnique({
       where: { guestToken: req.params.token },
+      select: { id: true, status: true, storeId: true, tableId: true, mergedIntoSessionId: true },
     });
     if (!session) {
       return reply.code(404).send({ error: "session not found or closed" });
     }
-    if (await replyIfMergedGuestSession(reply, session)) return;
-    if (session.status !== "open") {
-      return reply.code(404).send({ error: "session not found or closed" });
+    const listBilling = await resolveGuestBillingContext(session);
+    if (!listBilling.ok) {
+      return reply.code(listBilling.status).send(listBilling.body);
     }
     const orders = await prisma.salesOrder.findMany({
-      where: { sessionId: session.id },
+      where: { sessionId: listBilling.ctx.billingSessionId },
       orderBy: { createdAt: "desc" },
       include: { lines: true },
     });

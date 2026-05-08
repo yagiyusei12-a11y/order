@@ -298,7 +298,16 @@
       align-items: center;
       z-index: 30;
     }
-    footer.go-cart .info { flex: 1; min-width: 0; }
+    footer.go-cart .info {
+      flex: 1;
+      min-width: 0;
+      cursor: pointer;
+      user-select: none;
+      border-radius: 10px;
+      padding: 0.15rem 0.35rem;
+      margin: -0.15rem -0.35rem;
+    }
+    footer.go-cart .info:active { opacity: 0.85; }
     footer.go-cart .count { font-size: 0.72rem; color: var(--muted); }
     footer.go-cart .sum { font-size: 1.05rem; font-weight: 800; font-variant-numeric: tabular-nums; }
     footer.go-cart button.submit {
@@ -338,6 +347,164 @@
     }
     .toast.show { opacity: 1; }
 
+    /* ========== カート / 注文履歴シート（固定フッターとは別レイヤー） ========== */
+    .guest-sheet {
+      position: fixed;
+      inset: 0;
+      z-index: 90;
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 0;
+      background: rgba(0, 0, 0, 0.55);
+    }
+    .guest-sheet.is-open {
+      display: flex;
+    }
+    .guest-sheet-bg {
+      position: absolute;
+      inset: 0;
+    }
+    .guest-sheet-panel {
+      position: relative;
+      width: 100%;
+      max-width: 28rem;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      animation: sheetIn 0.28s ease-out;
+    }
+    .guest-sheet-pad {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .guest-sheet-pad .detail-title {
+      flex-shrink: 0;
+      margin: 0 0 0.5rem;
+    }
+    .guest-cart-lines {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding-right: 0.15rem;
+    }
+    .guest-cart-line {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.65rem 0.7rem;
+      margin-bottom: 0.5rem;
+      font-size: 0.82rem;
+      background: var(--surface2);
+    }
+    .guest-cart-line-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.5rem;
+      align-items: flex-start;
+    }
+    .guest-cart-line-head .nm {
+      font-weight: 700;
+      line-height: 1.35;
+      min-width: 0;
+      flex: 1;
+    }
+    .guest-cart-line-head .pr {
+      font-weight: 800;
+      color: var(--accent);
+      flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+    }
+    .guest-cart-line-sub {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-top: 0.35rem;
+      white-space: pre-line;
+      line-height: 1.45;
+    }
+    .guest-cart-line-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      margin-top: 0.45rem;
+      flex-wrap: wrap;
+    }
+    .guest-cart-btn {
+      padding: 0.32rem 0.55rem;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--text);
+      font: inherit;
+      font-size: 0.72rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .guest-cart-btn.danger {
+      color: #fecaca;
+      border-color: rgba(248, 113, 113, 0.35);
+    }
+    .guest-cart-qty {
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      min-width: 1.75rem;
+      text-align: center;
+      font-size: 0.88rem;
+    }
+    .guest-sheet-bar {
+      flex-shrink: 0;
+      padding: 0.65rem 1rem calc(0.65rem + env(safe-area-inset-bottom));
+      border-top: 1px solid var(--line);
+      display: flex;
+      gap: 0.55rem;
+      align-items: center;
+      background: #0f131a;
+    }
+    .guest-sheet-bar .guest-sheet-sum {
+      flex: 1;
+      min-width: 0;
+      font-size: 0.95rem;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      color: var(--accent);
+    }
+    .guest-sheet-bar .submit {
+      flex-shrink: 0;
+      padding: 0.65rem 1.1rem;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(180deg, #fb923c, var(--accent));
+      color: #fff;
+      font-weight: 800;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .guest-sheet-bar .submit:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .guest-history-card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.65rem 0.75rem;
+      margin-bottom: 0.5rem;
+      font-size: 0.82rem;
+      line-height: 1.45;
+      background: var(--surface2);
+    }
+    .guest-history-card .meta {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+    }
+    .guest-history-line {
+      font-size: 0.78rem;
+      margin-top: 0.2rem;
+    }
+
     #err {
       margin: 0.65rem;
       padding: 0.75rem;
@@ -349,7 +516,8 @@
       border: 1px solid rgba(248, 113, 113, 0.35);
     }
 
-    #orders { padding: 0 0.75rem 1rem; }
+    /* 注文履歴はシート表示に統一（メニュー下の埋め込みは使わない） */
+    #orders { display: none; }
     #orders h2 {
       font-size: 0.78rem;
       color: var(--muted);
@@ -752,7 +920,7 @@
 <body>
   <header class="go-topbar">
     <div class="go-topicons">
-      <button type="button" class="go-iconbtn" id="btnHistory" title="注文履歴" aria-label="注文履歴">
+      <button type="button" class="go-iconbtn" id="btnHistory" title="注文履歴を表示" aria-label="注文履歴を表示">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
       </button>
       <button type="button" class="go-iconbtn go-call" id="btnStaff" title="呼出（店員を呼ぶ）" aria-label="呼出（店員を呼ぶ）">呼出</button>
@@ -762,7 +930,7 @@
       <div class="sub" id="hdr">読み込み中…</div>
     </div>
     <div class="go-topicons">
-      <button type="button" class="go-iconbtn" id="btnCartScroll" title="カート" aria-label="カートへ">
+      <button type="button" class="go-iconbtn" id="btnCartScroll" title="カートの内容を表示" aria-label="カートの内容を表示">
         <svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>
       </button>
     </div>
@@ -791,7 +959,7 @@
   <div id="orders"></div>
 
   <footer class="go-cart" id="cartFooter">
-    <div class="info">
+    <div class="info" id="cartFooterInfo" role="button" tabindex="0" aria-label="カートの内容を表示">
       <div class="count" id="cartCount">カート 0点</div>
       <div class="sum" id="cartSum">¥0</div>
     </div>
@@ -800,6 +968,32 @@
   <div class="toast" id="toast"></div>
 
   <div id="detailSheet" aria-hidden="true"></div>
+
+  <div id="cartSheet" class="guest-sheet" aria-hidden="true">
+    <div class="guest-sheet-bg" id="cartSheetBg" tabindex="-1"></div>
+    <div class="detail-panel guest-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="cartSheetTitle">
+      <button type="button" class="detail-close" id="cartSheetCloseBtn" aria-label="閉じる">×</button>
+      <div class="detail-scroll guest-sheet-pad" style="padding-top: 2.25rem">
+        <h2 class="detail-title" id="cartSheetTitle">カート</h2>
+        <div id="cartSheetBody" class="guest-cart-lines"></div>
+      </div>
+      <div class="guest-sheet-bar">
+        <div class="guest-sheet-sum" id="cartSheetBarSum">¥0</div>
+        <button type="button" class="submit" id="cartSheetOrderBtn">注文する</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="historySheet" class="guest-sheet" aria-hidden="true">
+    <div class="guest-sheet-bg" id="historySheetBg" tabindex="-1"></div>
+    <div class="detail-panel guest-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="historySheetTitle">
+      <button type="button" class="detail-close" id="historySheetCloseBtn" aria-label="閉じる">×</button>
+      <div class="detail-scroll guest-sheet-pad" style="padding-top: 2.25rem; padding-bottom: 1rem">
+        <h2 class="detail-title" id="historySheetTitle">注文履歴</h2>
+        <div id="historySheetBody"></div>
+      </div>
+    </div>
+  </div>
 
   <div class="agegate" id="ageGate" style="display:none" role="dialog" aria-modal="true" aria-labelledby="ageGateQuestion">
     <div class="agegate-card">
@@ -884,8 +1078,10 @@
     let lastOrderTimer = null;
     let lastOrderDeadlineTs = 0;
     let lastOrderClosedFlag = false;
-    /** コース対象単品でオプション差額を請求する（店舗設定・既定はオン） */
-    let guestCourseIncludedChargeOptionExtras = true;
+    /** @type {unknown[]} */
+    let guestMenuCategories = [];
+    /** @type {unknown[]} */
+    let ordersCache = [];
 
     function fmtMoney(n) {
       if (!guestShowMenuPrices) return "—";
@@ -986,6 +1182,7 @@
       document.getElementById("cartCount").textContent = "カート " + count + "点";
       document.getElementById("cartSum").textContent = cartSumLabel(sum);
       document.getElementById("submit").disabled = count === 0 || lastOrderClosedFlag;
+      syncCartSheetIfOpen();
     }
 
     function toast(t) {
@@ -1188,6 +1385,247 @@
       return sum;
     }
 
+    function guestCartLineSubtext(line) {
+      const parts = [];
+      const item = menuItemById.get(line.menuItemId);
+      if (!item) return "";
+      if (line.sellKind === "set" && item.setSteps && line.setSelections) {
+        for (const st of item.setSteps) {
+          const lab = String(st.label || "").trim() || "項目";
+          const names = [];
+          const seen = new Set();
+          for (const fc of st.fixedChoices || []) {
+            const id = fc.menuItemId;
+            if (!id || seen.has(id)) continue;
+            seen.add(id);
+            names.push(String(fc.name || "").trim() || "（名称未設定）");
+          }
+          const sel = line.setSelections.find((x) => x.stepId === st.id);
+          if (sel && sel.menuItemIds) {
+            for (const mid of sel.menuItemIds) {
+              if (seen.has(mid)) continue;
+              seen.add(mid);
+              const ch = (st.choices || []).find((c) => c.menuItemId === mid);
+              if (ch) names.push(String(ch.name || "").trim() || "（名称未設定）");
+            }
+          }
+          if (names.length) parts.push(lab + ": " + names.join("、"));
+        }
+      }
+      if (line.optionSelections && line.optionSelections.length && item.optionGroups) {
+        for (const g of item.optionGroups) {
+          const row = line.optionSelections.find((x) => x.optionGroupId === g.id);
+          const ids = (row && row.optionItemIds) || [];
+          if (ids.length === 0) continue;
+          const nm = [];
+          for (const oid of ids) {
+            const oi = (g.items || []).find((x) => x.id === oid);
+            if (oi) nm.push(oi.name);
+          }
+          if (nm.length) parts.push(g.name + ": " + nm.join("・"));
+        }
+      }
+      return parts.join("\n");
+    }
+
+    function syncCartSheetIfOpen() {
+      const host = document.getElementById("cartSheet");
+      if (!host || !host.classList.contains("is-open")) return;
+      fillCartSheetBody();
+    }
+
+    function fillCartSheetBody() {
+      const body = document.getElementById("cartSheetBody");
+      const barSum = document.getElementById("cartSheetBarSum");
+      const orderBtn = document.getElementById("cartSheetOrderBtn");
+      const submitBtn = document.getElementById("submit");
+      if (!body || !barSum || !orderBtn) return;
+      const lines = Object.values(cart)
+        .filter((x) => x.qty > 0)
+        .sort((a, b) => String(a.cartKey || "").localeCompare(String(b.cartKey || "")));
+      const sum = lines.reduce((s, x) => s + x.unitPrice * x.qty, 0);
+      barSum.textContent = cartSumLabel(sum);
+      if (submitBtn) orderBtn.disabled = submitBtn.disabled;
+      body.innerHTML = "";
+      if (lines.length === 0) {
+        const p = document.createElement("p");
+        p.className = "muted";
+        p.style.margin = "0.35rem 0 0";
+        p.style.fontSize = "0.82rem";
+        p.textContent = "カートに商品がありません";
+        body.appendChild(p);
+        return;
+      }
+      for (const line of lines) {
+        const wrap = document.createElement("div");
+        wrap.className = "guest-cart-line";
+        const head = document.createElement("div");
+        head.className = "guest-cart-line-head";
+        const nm = document.createElement("div");
+        nm.className = "nm";
+        const defIt = menuItemById.get(line.menuItemId);
+        nm.textContent = String(line.name || (defIt && defIt.name) || "商品");
+        const pr = document.createElement("div");
+        pr.className = "pr";
+        pr.textContent = guestShowMenuPrices ? "¥" + (line.unitPrice * line.qty).toLocaleString("ja-JP") : "—";
+        head.appendChild(nm);
+        head.appendChild(pr);
+        wrap.appendChild(head);
+        const sub = guestCartLineSubtext(line);
+        if (sub) {
+          const subEl = document.createElement("div");
+          subEl.className = "guest-cart-line-sub";
+          subEl.textContent = sub;
+          wrap.appendChild(subEl);
+        }
+        const act = document.createElement("div");
+        act.className = "guest-cart-line-actions";
+        const btnMinus = document.createElement("button");
+        btnMinus.type = "button";
+        btnMinus.className = "guest-cart-btn";
+        btnMinus.textContent = "−";
+        btnMinus.title = "1つ減らす";
+        const ck = line.cartKey;
+        btnMinus.onclick = () => adjustCartLineQty(ck, -1);
+        const qtySpan = document.createElement("span");
+        qtySpan.className = "guest-cart-qty";
+        qtySpan.textContent = String(line.qty);
+        const btnPlus = document.createElement("button");
+        btnPlus.type = "button";
+        btnPlus.className = "guest-cart-btn";
+        btnPlus.textContent = "+";
+        btnPlus.title = "1つ増やす";
+        btnPlus.onclick = () => adjustCartLineQty(ck, 1);
+        const btnRm = document.createElement("button");
+        btnRm.type = "button";
+        btnRm.className = "guest-cart-btn danger";
+        btnRm.textContent = "削除";
+        btnRm.onclick = () => removeCartLine(ck);
+        act.appendChild(btnMinus);
+        act.appendChild(qtySpan);
+        act.appendChild(btnPlus);
+        act.appendChild(btnRm);
+        wrap.appendChild(act);
+        body.appendChild(wrap);
+      }
+    }
+
+    function removeCartLine(cartKey) {
+      if (cart[cartKey]) delete cart[cartKey];
+      clampCartToStock(guestMenuCategories);
+      renderCart();
+    }
+
+    function adjustCartLineQty(cartKey, delta) {
+      const line = cart[cartKey];
+      if (!line || !(line.qty > 0)) return;
+      if (delta < 0) {
+        if (line.qty + delta <= 0) {
+          removeCartLine(cartKey);
+          return;
+        }
+        line.qty += delta;
+        clampCartToStock(guestMenuCategories);
+        renderCart();
+        return;
+      }
+      const item = menuItemById.get(line.menuItemId);
+      if (!item) {
+        toast("メニューを再読込してください");
+        return;
+      }
+      if (line.sellKind === "set" && line.setSelections) {
+        if (!setStockAllows(item, line.setSelections, line.qty + delta)) {
+          toast("在庫の上限です");
+          return;
+        }
+      } else if (item.stockQty != null) {
+        if (totalCartQtyForMenuItem(line.menuItemId) + delta > item.stockQty) {
+          toast("在庫の上限です");
+          return;
+        }
+      }
+      line.qty += delta;
+      clampCartToStock(guestMenuCategories);
+      renderCart();
+    }
+
+    function closeCartSheet() {
+      const host = document.getElementById("cartSheet");
+      if (!host) return;
+      host.classList.remove("is-open");
+      host.setAttribute("aria-hidden", "true");
+    }
+
+    function openCartSheet() {
+      closeDetail();
+      closeHistorySheet();
+      const host = document.getElementById("cartSheet");
+      if (!host) return;
+      host.classList.add("is-open");
+      host.setAttribute("aria-hidden", "false");
+      fillCartSheetBody();
+    }
+
+    function closeHistorySheet() {
+      const host = document.getElementById("historySheet");
+      if (!host) return;
+      host.classList.remove("is-open");
+      host.setAttribute("aria-hidden", "true");
+    }
+
+    async function openHistorySheet() {
+      closeDetail();
+      closeCartSheet();
+      const host = document.getElementById("historySheet");
+      const body = document.getElementById("historySheetBody");
+      if (!host || !body) return;
+      host.classList.add("is-open");
+      host.setAttribute("aria-hidden", "false");
+      body.innerHTML = "<p class=\"muted\" style=\"margin:0;font-size:0.82rem\">読み込み中…</p>";
+      try {
+        await loadOrders();
+        renderHistorySheetBody();
+      } catch (e) {
+        body.textContent = String(e.message || e);
+      }
+    }
+
+    function renderHistorySheetBody() {
+      const body = document.getElementById("historySheetBody");
+      if (!body) return;
+      body.innerHTML = "";
+      const list = ordersCache || [];
+      if (list.length === 0) {
+        const p = document.createElement("p");
+        p.className = "muted";
+        p.style.margin = "0";
+        p.style.fontSize = "0.82rem";
+        p.textContent = "まだ注文がありません";
+        body.appendChild(p);
+        return;
+      }
+      for (const o of list) {
+        const card = document.createElement("div");
+        card.className = "guest-history-card";
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent =
+          new Date(o.createdAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) +
+          " · " +
+          String(o.status || "");
+        card.appendChild(meta);
+        for (const ln of o.lines || []) {
+          const row = document.createElement("div");
+          row.className = "guest-history-line";
+          const lineSum = guestShowMenuPrices ? "¥" + (ln.unitPrice * ln.qty).toLocaleString("ja-JP") : "—";
+          row.textContent = ln.nameSnapshot + " ×" + ln.qty + " " + lineSum;
+          card.appendChild(row);
+        }
+        body.appendChild(card);
+      }
+    }
+
     function wireQty(panel, item, getUnitPrice) {
       const minus = panel.querySelector("[data-qty-min]");
       const plus = panel.querySelector("[data-qty-plus]");
@@ -1262,6 +1700,9 @@
           return;
         }
       }
+
+      closeCartSheet();
+      closeHistorySheet();
 
       const host = document.getElementById("detailSheet");
       const imgHtml = item.imageUrl
@@ -1927,6 +2368,7 @@
       } catch (_) {}
 
       const cats = data.categories || [];
+      guestMenuCategories = cats;
       menuItemById = new Map();
       for (const c of cats) {
         for (const it of c.items || []) menuItemById.set(it.id, it);
@@ -2074,18 +2516,10 @@
 
     async function loadOrders() {
       const data = await api("/guest/" + encodeURIComponent(TOKEN) + "/orders");
-      const box = document.getElementById("orders");
-      const list = data.orders || [];
-      if (list.length === 0) {
-        box.innerHTML = "";
-        return;
+      ordersCache = data.orders || [];
+      if (document.getElementById("historySheet") && document.getElementById("historySheet").classList.contains("is-open")) {
+        renderHistorySheetBody();
       }
-      let html = "<h2 id=\"orderHistoryAnchor\">注文履歴</h2>";
-      for (const o of list) {
-        const lines = (o.lines || []).map((l) => l.nameSnapshot + " ×" + l.qty + " " + fmtMoney(l.unitPrice * l.qty)).join("<br>");
-        html += "<div class=\"order-card\"><strong>" + new Date(o.createdAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) + "</strong> · " + (o.status || "") + "<br>" + lines + "</div>";
-      }
-      box.innerHTML = html;
     }
 
     document.getElementById("submit").onclick = async () => {
@@ -2121,6 +2555,7 @@
         });
         for (const k of Object.keys(cart)) delete cart[k];
         renderCart();
+        closeCartSheet();
         toast("注文を送信しました");
         await loadOrders();
         await loadMenu();
@@ -2132,11 +2567,7 @@
       }
     };
 
-    document.getElementById("btnHistory").onclick = () => {
-      const box = document.getElementById("orders");
-      if (box && box.innerHTML.trim()) box.scrollIntoView({ behavior: "smooth", block: "start" });
-      else toast("まだ注文履歴がありません");
-    };
+    document.getElementById("btnHistory").onclick = () => void openHistorySheet();
     document.getElementById("btnStaff").onclick = async () => {
       try {
         await api("/guest/" + encodeURIComponent(TOKEN) + "/call-staff", {
@@ -2149,8 +2580,28 @@
         toast(String(e.message || e));
       }
     };
-    document.getElementById("btnCartScroll").onclick = () => {
-      document.getElementById("cartFooter").scrollIntoView({ behavior: "smooth", block: "end" });
+    document.getElementById("btnCartScroll").onclick = () => openCartSheet();
+
+    function wireCartFooterOpen() {
+      const info = document.getElementById("cartFooterInfo");
+      if (!info) return;
+      info.onclick = () => openCartSheet();
+      info.onkeydown = (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") {
+          ev.preventDefault();
+          openCartSheet();
+        }
+      };
+    }
+    wireCartFooterOpen();
+
+    document.getElementById("cartSheetCloseBtn").onclick = () => closeCartSheet();
+    document.getElementById("cartSheetBg").onclick = () => closeCartSheet();
+    document.getElementById("historySheetCloseBtn").onclick = () => closeHistorySheet();
+    document.getElementById("historySheetBg").onclick = () => closeHistorySheet();
+
+    document.getElementById("cartSheetOrderBtn").onclick = () => {
+      document.getElementById("submit").click();
     };
 
     document.getElementById("btnSaveProfile").onclick = async () => {

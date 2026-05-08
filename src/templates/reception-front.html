@@ -145,14 +145,21 @@
       return await res.json().catch(() => ({}));
     }
 
+    function normalizeSeatTypeLabel(s) {
+      return String(s == null ? "" : s)
+        .trim()
+        .replace(/\s+/g, " ")
+        .normalize("NFKC");
+    }
+
     function mergeSeatTypeLists(a, b) {
       const set = new Set();
       for (const x of a || []) {
-        const s = String(x == null ? "" : x).trim();
+        const s = normalizeSeatTypeLabel(x);
         if (s) set.add(s);
       }
       for (const x of b || []) {
-        const s = String(x == null ? "" : x).trim();
+        const s = normalizeSeatTypeLabel(x);
         if (s) set.add(s);
       }
       return [...set].sort((p, q) => p.localeCompare(q, "ja"));
@@ -162,14 +169,20 @@
     function guestSeatTypePriorityList() {
       const raw = receptionConf && receptionConf.receptionGuestSeatTypePriority;
       if (!Array.isArray(raw)) return [];
-      return raw.map((x) => String(x == null ? "" : x).trim()).filter(Boolean);
+      return raw.map((x) => normalizeSeatTypeLabel(x)).filter(Boolean);
     }
 
     function assignmentTypePriorityScore(ids, byMap, priorityList) {
       let s = 0;
       for (const id of ids) {
-        const st = String(byMap.get(id)?.seatType || "").trim();
-        const idx = priorityList.indexOf(st);
+        const st = normalizeSeatTypeLabel(byMap.get(id)?.seatType);
+        let idx = -1;
+        for (let i = 0; i < priorityList.length; i++) {
+          if (normalizeSeatTypeLabel(priorityList[i]) === st) {
+            idx = i;
+            break;
+          }
+        }
         if (idx >= 0) s += idx;
         else if (!st) s += 10000;
         else s += 5000;
@@ -203,15 +216,15 @@
     function distinctSeatTypesForUi() {
       const set = new Set();
       for (const st0 of seatTypeOptionsFromApi || []) {
-        const st = String(st0 || "").trim();
+        const st = normalizeSeatTypeLabel(st0);
         if (st) set.add(st);
       }
       for (const row of tableMaster || []) {
-        const st = String(row.seatType || "").trim();
+        const st = normalizeSeatTypeLabel(row.seatType);
         if (st) set.add(st);
       }
       for (const s of Object.values(seatStates || {})) {
-        const st = s && String(s.seatType || "").trim();
+        const st = s && normalizeSeatTypeLabel(s.seatType);
         if (st) set.add(st);
       }
       return [...set].sort((a, b) => a.localeCompare(b, "ja"));
@@ -344,7 +357,8 @@
           seatType: String(t.seatType || "").trim(),
         })).filter((t) => t.code);
         if (pref === "any") return all;
-        return all.filter((t) => t.seatType === pref);
+        const p = normalizeSeatTypeLabel(pref);
+        return all.filter((t) => normalizeSeatTypeLabel(t.seatType) === p);
       }
 
       function pickSeats(n, pref, requirePure) {

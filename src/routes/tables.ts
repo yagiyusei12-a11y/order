@@ -5,7 +5,10 @@ import type { Prisma } from "@prisma/client";
 
 function normalizeTableSeatType(raw: unknown): string | undefined {
   if (raw === undefined) return undefined;
-  const s = String(raw ?? "").trim();
+  const s = String(raw ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .normalize("NFKC");
   if (s.length > 40) return undefined;
   return s;
 }

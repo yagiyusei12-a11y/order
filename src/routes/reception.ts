@@ -303,6 +303,14 @@ function netReserveSeatTypeMode(c: Record<string, unknown>): "any" | "require_se
   return c.netReserveSeatTypeMode === "require_select" ? "require_select" : "any";
 }
 
+/** 卓マスタの種別とクエリを同一視（全角半角・結合文字・余分な空白の差で卓0件→全枠満席にならないように） */
+function normalizeSeatTypeLabel(s: unknown): string {
+  return String(s ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .normalize("NFKC");
+}
+
 /** 店舗プレフィックス付き卓コード（区切りは - または _）。受付・ネット予約の席一覧に使用 */
 const rxNetBookableTableCode = /^(?:[A-Za-z0-9_-]+[-_])?(C\d+|T\d+|\d+)$/i;
 
@@ -314,7 +322,7 @@ async function listAllDistinctTableSeatTypes(storeId: string): Promise<string[]>
   });
   const set = new Set<string>();
   for (const r of rows) {
-    const st = String(r.seatType ?? "").trim();
+    const st = normalizeSeatTypeLabel(r.seatType);
     if (st) set.add(st);
   }
   return [...set].sort((a, b) => a.localeCompare(b, "ja"));
@@ -328,7 +336,7 @@ async function distinctSeatTypesForNetReserve(storeId: string): Promise<string[]
 function isNetReserveTableRow(t: { publicCode: string; seatType?: string | null }): boolean {
   const pc = String(t.publicCode ?? "").trim();
   if (!pc) return false;
-  const st = String(t.seatType ?? "").trim();
+  const st = normalizeSeatTypeLabel(t.seatType);
   return rxNetBookableTableCode.test(pc) || Boolean(st);
 }
 
@@ -944,7 +952,8 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
     const daysAhead = Number.isFinite(Number(c.netReserveDaysAhead)) ? Number(c.netReserveDaysAhead) : 30;
     const seatTypeMode = netReserveSeatTypeMode(c as Record<string, unknown>);
     const seatTypeQ = typeof req.query.seatType === "string" ? req.query.seatType.trim() : "";
-    if (seatTypeMode === "require_select" && !seatTypeQ) {
+    const seatTypeNorm = normalizeSeatTypeLabel(seatTypeQ);
+    if (seatTypeMode === "require_select" && !seatTypeNorm) {
       return reply.code(400).send({ error: "seatType required" });
     }
 
@@ -973,7 +982,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
     const n = Math.floor(partySize);
     const allowedTypes = await distinctSeatTypesForNetReserve(store.id);
     const allowedTypeSet = new Set(allowedTypes);
-    if (seatTypeMode === "require_select" && seatTypeQ && !allowedTypeSet.has(seatTypeQ)) {
+    if (seatTypeMode === "require_select" && seatTypeNorm && !allowedTypeSet.has(seatTypeNorm)) {
       return reply.code(400).send({ error: "invalid seatType" });
     }
 
@@ -986,7 +995,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
       const bookable = tables.filter((t) => isNetReserveTableRow(t));
       const filtered =
         seatTypeMode === "require_select"
-          ? bookable.filter((t) => String(t.seatType ?? "").trim() === seatTypeQ)
+          ? bookable.filter((t) => normalizeSeatTypeLabel(t.seatType) === seatTypeNorm)
           : bookable;
       const tableMaster = filtered.map((t) => ({
         code: t.publicCode,
@@ -1008,7 +1017,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
       return out;
     });
 
-    return { date, partySize: n, timezone: stSet.timezone, slots, seatType: seatTypeQ || null };
+    return { date, partySize: n, timezone: stSet.timezone, slots, seatType: seatTypeNorm || null };
   });
 
   /**
@@ -1027,7 +1036,8 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
     const daysAhead = Number.isFinite(Number(c.netReserveDaysAhead)) ? Number(c.netReserveDaysAhead) : 30;
     const enableNote = c.netReserveEnableNote === undefined ? true : Boolean(c.netReserveEnableNote);
     const seatTypeMode = netReserveSeatTypeMode(c as Record<string, unknown>);
-    const seatTypeBody = typeof req.body?.seatType === "string" ? req.body.seatType.trim() : "";
+    const seatTypeBodyRaw = typeof req.body?.seatType === "string" ? req.body.seatType.trim() : "";
+    const seatTypeBody = normalizeSeatTypeLabel(seatTypeBodyRaw);
     const allowedTypes = await distinctSeatTypesForNetReserve(store.id);
     const allowedTypeSet = new Set(allowedTypes);
     if (seatTypeMode === "require_select") {
@@ -1095,7 +1105,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           const bookable = tables.filter((t) => isNetReserveTableRow(t));
           const filtered =
             seatTypeMode === "require_select"
-              ? bookable.filter((t) => String(t.seatType ?? "").trim() === seatTypeBody)
+              ? bookable.filter((t) => normalizeSeatTypeLabel(t.seatType) === seatTypeBody)
               : bookable;
           const tableMaster = filtered.map((t) => ({
             code: t.publicCode,

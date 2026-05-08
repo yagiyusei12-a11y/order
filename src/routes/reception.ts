@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
@@ -21,6 +22,16 @@ import {
 import { displayTableCode, tableDisplayLabel } from "../lib/table-display-code.js";
 
 type SeatStatus = "vacant" | "reserved" | "occupied" | "cleaning" | "closed";
+
+/**
+ * If-None-Match 用 ETag。Node の OutgoingMessage はヘッダ値を Latin-1 扱いのため、
+ * 席種別（日本語など）を liveSeatSig / tableMasterSig に直書きすると例外 → 500 になりうる。
+ */
+function receptionStateWeakEtag(parts: (string | number)[]): string {
+  const raw = parts.join("\x1e");
+  const digest = createHash("sha256").update(raw, "utf8").digest("hex");
+  return `W/"${digest}"`;
+}
 
 /** receptionConfig.data: ランチ/ディナー境界（時）。未設定は 15。 */
 function receptionLunchEndHour(configData: Record<string, unknown>): number {
@@ -50,7 +61,12 @@ function applyReservationBlocksToSeats(input: {
   const parsed = parseShiftKey(input.shiftKey);
   if (!parsed) return input.seats;
   const { date, shift } = parsed;
-  const now = storeNowWallClock(input.storeTimeZone);
+  let now;
+  try {
+    now = storeNowWallClock(input.storeTimeZone);
+  } catch {
+    now = storeNowWallClock("Asia/Tokyo");
+  }
   const seats = input.seats.map((x) => (x && typeof x === "object" && !Array.isArray(x) ? { ...(x as Record<string, unknown>) } : x));
   const seatById = new Map<string, Record<string, unknown>>();
   for (const s of seats) {
@@ -632,14 +648,14 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         .map((t) => `${t.publicCode}:${String(t.seatType ?? "").trim()}`)
         .sort()
         .join("|");
-      const etag = `W/"${[
+      const etag = receptionStateWeakEtag([
         conf?.updatedAt?.getTime?.() ?? 0,
         st?.updatedAt?.getTime?.() ?? 0,
         sh?.updatedAt?.getTime?.() ?? 0,
         maxResUpdatedAt,
         liveSeatSig,
         tableMasterSig,
-      ].join("-")}"`;
+      ]);
       const inm = (req.headers["if-none-match"] || "").toString();
       const skip304 = String(req.query.skip304 || "") === "1";
       reply.header("Etag", etag);

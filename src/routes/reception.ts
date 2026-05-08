@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { openSessionForTable } from "../lib/open-table-session.js";
 import { minutesSinceMidnightInTimeZone } from "../lib/guest-category-hours.js";
@@ -81,20 +81,24 @@ function applyReservationBlocksToSeats(input: {
     let hasFuture = false;
     if (!timeStr) {
       blockSeat = true;
-    } else {
-      const m = /^(\d{1,2}):(\d{2})$/.exec(timeStr.trim());
-      if (!m) {
-        blockSeat = true;
       } else {
-        const hr = Number(m[1]);
-        const min = Number(m[2]);
-        const base = startOfWallCalendarDayUtc(date, input.storeTimeZone).getTime();
-        const resMs = base + (hr * 60 + min) * 60 * 1000;
-        const diffHours = (resMs - now.nowMs) / (1000 * 60 * 60);
-        if (diffHours < 2.5 && diffHours > -2) blockSeat = true;
-        else if (diffHours >= 2.5) hasFuture = true;
+        const m = /^(\d{1,2}):(\d{2})$/.exec(timeStr.trim());
+        if (!m) {
+          blockSeat = true;
+        } else {
+          const hr = Number(m[1]);
+          const min = Number(m[2]);
+          try {
+            const base = startOfWallCalendarDayUtc(date, input.storeTimeZone).getTime();
+            const resMs = base + (hr * 60 + min) * 60 * 1000;
+            const diffHours = (resMs - now.nowMs) / (1000 * 60 * 60);
+            if (diffHours < 2.5 && diffHours > -2) blockSeat = true;
+            else if (diffHours >= 2.5) hasFuture = true;
+          } catch {
+            blockSeat = true;
+          }
+        }
       }
-    }
 
     for (const sidRaw of seatsArr) {
       const sid = typeof sidRaw === "string" ? sidRaw : "";
@@ -361,9 +365,15 @@ async function ensureShift(storeId: string, shiftKey: string): Promise<void> {
     select: { id: true },
   });
   if (found) return;
-  await prisma.receptionShift.create({
-    data: { storeId, shiftKey, seats: [], waiting: [] },
-  });
+  try {
+    await prisma.receptionShift.create({
+      data: { storeId, shiftKey, seats: [], waiting: [] },
+    });
+  } catch (e: unknown) {
+    // findUnique 直後に別リクエストが同じ shift を作成した場合のユニーク衝突
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") return;
+    throw e;
+  }
 }
 
 async function computeDefaultSeatsForShift(storeId: string): Promise<

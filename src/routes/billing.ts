@@ -315,6 +315,32 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     };
   });
 
+  function parseDateOrDateTimeToUtcRange(
+    qFrom: string | undefined,
+    qTo: string | undefined,
+    timeZone: string,
+  ): { gte?: Date; lt?: Date } {
+    const from = qFrom?.trim() || "";
+    const to = qTo?.trim() || "";
+    const dateRx = /^\d{4}-\d{2}-\d{2}$/;
+    const out: { gte?: Date; lt?: Date } = {};
+    if (from) {
+      out.gte = dateRx.test(from) ? startOfWallCalendarDayUtc(from, timeZone) : new Date(from);
+      if (!Number.isFinite(out.gte.getTime())) throw new Error("from must be YYYY-MM-DD or ISO datetime");
+    }
+    if (to) {
+      if (dateRx.test(to)) {
+        const end = startOfWallCalendarDayUtc(to, timeZone);
+        end.setTime(end.getTime() + 86400000);
+        out.lt = end;
+      } else {
+        out.lt = new Date(to);
+      }
+      if (!Number.isFinite(out.lt.getTime())) throw new Error("to must be YYYY-MM-DD or ISO datetime");
+    }
+    return out;
+  }
+
   app.get<{
     Params: { storeId: string };
     Querystring: { all?: string };
@@ -388,6 +414,238 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     const payload = await buildBillDetailPayload(req.params.storeId, req.params.billId);
     if (!payload) return reply.code(404).send({ error: "bill not found" });
     return payload;
+  });
+
+  /**
+   * reports: 売上サマリ（確定=settledAt基準 / 未精算=openは別枠）
+   */
+  app.get<{
+    Params: { storeId: string };
+    Querystring: { from?: string; to?: string };
+  }>("/stores/:storeId/reports/summary", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    const tz = mergeStoreSettings(store.settings).timezone;
+    let settledAtRange: { gte?: Date; lt?: Date } = {};
+    try {
+      settledAtRange = parseDateOrDateTimeToUtcRange(req.query.from, req.query.to, tz);
+    } catch (e) {
+      return reply.code(400).send({ error: String((e as Error).message || e) });
+    }
+
+    const confirmedBills = await prisma.bill.findMany({
+      where: {
+        storeId: store.id,
+        status: "settled",
+        ...(settledAtRange.gte || settledAtRange.lt ? { settledAt: settledAtRange } : {}),
+      },
+      select: { id: true, totalAmount: true, settledAt: true },
+    });
+    const confirmedTotal = confirmedBills.reduce((s, b) => s + b.totalAmount, 0);
+
+    // 未精算は参考値（createdAt基準で同じ期間に作られたものを pending として表示）
+    const pendingRange = settledAtRange;
+    const pendingBills = await prisma.bill.findMany({
+      where: {
+        storeId: store.id,
+        status: "open",
+        ...(pendingRange.gte || pendingRange.lt ? { createdAt: pendingRange } : {}),
+      },
+      select: { id: true, totalAmount: true, createdAt: true },
+    });
+    const pendingTotal = pendingBills.reduce((s, b) => s + b.totalAmount, 0);
+
+    return {
+      storeId: store.id,
+      timeZone: tz,
+      range: { from: req.query.from ?? null, to: req.query.to ?? null },
+      confirmed: { count: confirmedBills.length, totalAmount: confirmedTotal },
+      pending: { count: pendingBills.length, totalAmount: pendingTotal },
+    };
+  });
+
+  /**
+   * reports: 日別売上（確定=settledAt基準）
+   */
+  app.get<{
+    Params: { storeId: string };
+    Querystring: { from?: string; to?: string };
+  }>("/stores/:storeId/reports/daily", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    const tz = mergeStoreSettings(store.settings).timezone;
+    let settledAtRange: { gte?: Date; lt?: Date } = {};
+    try {
+      settledAtRange = parseDateOrDateTimeToUtcRange(req.query.from, req.query.to, tz);
+    } catch (e) {
+      return reply.code(400).send({ error: String((e as Error).message || e) });
+    }
+
+    const bills = await prisma.bill.findMany({
+      where: {
+        storeId: store.id,
+        status: "settled",
+        ...(settledAtRange.gte || settledAtRange.lt ? { settledAt: settledAtRange } : {}),
+      },
+      select: { settledAt: true, totalAmount: true },
+    });
+
+    const byDate: Record<string, { count: number; totalAmount: number }> = {};
+    for (const b of bills) {
+      if (!b.settledAt) continue;
+      const ymd = wallDateYmdInZone(b.settledAt, tz);
+      if (!byDate[ymd]) byDate[ymd] = { count: 0, totalAmount: 0 };
+      byDate[ymd].count += 1;
+      byDate[ymd].totalAmount += b.totalAmount;
+    }
+
+    return {
+      storeId: store.id,
+      timeZone: tz,
+      rows: Object.entries(byDate)
+        .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+        .map(([date, v]) => ({ date, count: v.count, totalAmount: v.totalAmount })),
+    };
+  });
+
+  /**
+   * reports: 決済方法別（確定=settledAt基準）
+   */
+  app.get<{
+    Params: { storeId: string };
+    Querystring: { from?: string; to?: string };
+  }>("/stores/:storeId/reports/payments-by-method", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    const tz = mergeStoreSettings(store.settings).timezone;
+    let settledAtRange: { gte?: Date; lt?: Date } = {};
+    try {
+      settledAtRange = parseDateOrDateTimeToUtcRange(req.query.from, req.query.to, tz);
+    } catch (e) {
+      return reply.code(400).send({ error: String((e as Error).message || e) });
+    }
+
+    const payments = await prisma.payment.findMany({
+      where: {
+        bill: {
+          storeId: store.id,
+          status: "settled",
+          ...(settledAtRange.gte || settledAtRange.lt ? { settledAt: settledAtRange } : {}),
+        },
+      },
+    });
+
+    const byMethod: Record<string, number> = {};
+    for (const p of payments) {
+      byMethod[p.methodCode] = (byMethod[p.methodCode] ?? 0) + p.amount;
+    }
+
+    const defs = await prisma.paymentMethodDefinition.findMany();
+    const labelByCode = Object.fromEntries(defs.map((d) => [d.code, d.labelJa]));
+
+    return {
+      storeId: store.id,
+      timeZone: tz,
+      range: { from: req.query.from ?? null, to: req.query.to ?? null },
+      rows: Object.entries(byMethod)
+        .map(([code, amount]) => ({
+          methodCode: code,
+          labelJa: labelByCode[code] ?? code,
+          amount,
+        }))
+        .sort((a, b) => b.amount - a.amount),
+    };
+  });
+
+  /**
+   * reports: 割引した売上一覧（確定=settledAt基準）
+   * - bill.discountJson と orderLine.discountJson を拾う\n+   */
+  app.get<{
+    Params: { storeId: string };
+    Querystring: { from?: string; to?: string; kind?: string };
+  }>("/stores/:storeId/reports/discounted-bills", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    const tz = mergeStoreSettings(store.settings).timezone;
+    let settledAtRange: { gte?: Date; lt?: Date } = {};
+    try {
+      settledAtRange = parseDateOrDateTimeToUtcRange(req.query.from, req.query.to, tz);
+    } catch (e) {
+      return reply.code(400).send({ error: String((e as Error).message || e) });
+    }
+    const kind = typeof req.query.kind === "string" && req.query.kind.trim() ? req.query.kind.trim() : null;
+
+    const settledBills = await prisma.bill.findMany({
+      where: {
+        storeId: store.id,
+        status: "settled",
+        ...(settledAtRange.gte || settledAtRange.lt ? { settledAt: settledAtRange } : {}),
+      },
+      select: {
+        id: true,
+        totalAmount: true,
+        discountJson: true,
+        settledAt: true,
+        session: { select: { id: true, table: { select: { name: true, publicCode: true } } } },
+      },
+      orderBy: [{ settledAt: "desc" }, { createdAt: "desc" }],
+      take: 200,
+    });
+
+    const sessionIds = settledBills.map((b) => b.session?.id).filter((x): x is string => typeof x === "string");
+    const lineDiscByBillId = new Set<string>();
+    if (sessionIds.length) {
+      const lines = await prisma.orderLine.findMany({
+        where: {
+          discountJson: { not: Prisma.DbNull },
+          order: { sessionId: { in: sessionIds } },
+        },
+        select: { order: { select: { sessionId: true } } },
+        take: 2000,
+      });
+      const billIdBySessionId = new Map<string, string>();
+      for (const b of settledBills) if (b.session?.id) billIdBySessionId.set(b.session.id, b.id);
+      for (const l of lines) {
+        const sid = l.order?.sessionId;
+        if (!sid) continue;
+        const bid = billIdBySessionId.get(sid);
+        if (bid) lineDiscByBillId.add(bid);
+      }
+    }
+
+    function billDiscountKind(raw: unknown): string | null {
+      const p = parseBillDiscount(raw);
+      return p ? p.kind : null;
+    }
+
+    const rows = settledBills
+      .map((b) => {
+        const k = b.discountJson != null ? billDiscountKind(b.discountJson) : null;
+        const hasBillDisc = k != null;
+        const hasLineDisc = lineDiscByBillId.has(b.id);
+        const tableName = b.session?.table
+          ? tableDisplayLabel(b.session.table.name, b.session.table.publicCode) || null
+          : null;
+        return {
+          billId: b.id,
+          settledAt: b.settledAt,
+          tableName,
+          totalAmount: b.totalAmount,
+          hasBillDiscount: hasBillDisc,
+          billDiscountKind: k,
+          hasLineDiscount: hasLineDisc,
+        };
+      })
+      .filter((r) => r.hasBillDiscount || r.hasLineDiscount)
+      .filter((r) => (kind ? r.billDiscountKind === kind : true));
+
+    return {
+      storeId: store.id,
+      timeZone: tz,
+      range: { from: req.query.from ?? null, to: req.query.to ?? null },
+      kind,
+      rows,
+    };
   });
 
   /** 卓全体割引（税込小計＝コース＋注文の行割引後に対してさらに値引き） */
@@ -823,41 +1081,5 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     return { payments: created, bill: { ...updated, paidTotal, remainder: updated!.totalAmount - paidTotal } };
   });
 
-  app.get<{
-    Params: { storeId: string };
-    Querystring: { date?: string };
-  }>("/stores/:storeId/reports/payments-by-method", async (req, reply) => {
-    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
-    if (!store) return reply.code(404).send({ error: "store not found" });
-
-    const tz = mergeStoreSettings(store.settings).timezone;
-    const dateStr = req.query.date ?? wallDateYmdInZone(new Date(), tz);
-    const start = startOfWallCalendarDayUtc(dateStr, tz);
-    const end = new Date(start.getTime() + 86400000);
-
-    const payments = await prisma.payment.findMany({
-      where: {
-        bill: { storeId: store.id },
-        createdAt: { gte: start, lt: end },
-      },
-    });
-
-    const byMethod: Record<string, number> = {};
-    for (const p of payments) {
-      byMethod[p.methodCode] = (byMethod[p.methodCode] ?? 0) + p.amount;
-    }
-
-    const defs = await prisma.paymentMethodDefinition.findMany();
-    const labelByCode = Object.fromEntries(defs.map((d) => [d.code, d.labelJa]));
-
-    return {
-      storeId: store.id,
-      date: dateStr,
-      rows: Object.entries(byMethod).map(([code, amount]) => ({
-        methodCode: code,
-        labelJa: labelByCode[code] ?? code,
-        amount,
-      })),
-    };
-  });
+  // reports/payments-by-method は settledAt 基準の from/to 版に統一（上で定義）
 }

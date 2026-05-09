@@ -7,6 +7,8 @@
  *
  * --dry-run: DBへ書き込まず件数・不一致行のみ表示
  *
+ * 合計0円の伝票も取り込む。支払列の合計と「合計金額」がずれる行は、合計金額に合わせて支払内訳を円単位に按分する（警告ログ付き）。
+ *
  * 会計割引: CSV の「会計割引」列を `Bill.discountJson` に保存（kind=yen, value=円）。
  * 冪等キー用に `label` にも `|d{円}` を付与（例: import:123|A|d500）。
  *
@@ -147,6 +149,38 @@ function parseArgs(): { file: string; dryRun: boolean } {
 
 type PayRow = { methodCode: string; amount: number };
 
+/**
+ * CSV の支払列合計と「合計金額」が一致しない行（端数・POS と CSV のズレ）を、合計金額を正として支払内訳に按分する。
+ */
+function allocatePaymentsToTotal(payments: PayRow[], totalAmount: number): PayRow[] {
+  if (payments.length === 0 || totalAmount <= 0) return [];
+  const sum = payments.reduce((s, p) => s + p.amount, 0);
+  if (sum <= 0) return [];
+  if (sum === totalAmount) return payments.map((p) => ({ ...p }));
+
+  const scaled = payments.map((p) => ({
+    methodCode: p.methodCode,
+    frac: (p.amount * totalAmount) / sum,
+  }));
+  const floors = scaled.map((x) => Math.floor(x.frac));
+  let remainder = totalAmount - floors.reduce((a, b) => a + b, 0);
+  const idxByFrac = [...scaled.keys()].sort((a, b) => {
+    const fa = scaled[a].frac - floors[a];
+    const fb = scaled[b].frac - floors[b];
+    return fb - fa;
+  });
+  const out = floors.map((amt, i) => ({
+    methodCode: scaled[i].methodCode,
+    amount: amt,
+  }));
+  for (const j of idxByFrac) {
+    if (remainder <= 0) break;
+    out[j].amount++;
+    remainder--;
+  }
+  return out.filter((p) => p.amount > 0);
+}
+
 function buildPaymentsFromRow(
   cells: string[],
   idx: Map<string, number>,
@@ -280,10 +314,11 @@ async function main(): Promise<void> {
   );
 
   let imported = 0;
-  let skipped = 0;
   let skippedMismatch = 0;
   let skippedDup = 0;
   let skippedAggregate = 0;
+  let skippedNegativeTotal = 0;
+  let paymentScaledToTotal = 0;
 
   // lines[0]=ヘッダ, lines[1]=集計行 → i>=2 からが伝票行
   for (let i = 2; i < lines.length; i++) {
@@ -308,8 +343,8 @@ async function main(): Promise<void> {
       continue;
     }
 
-    if (totalAmount <= 0) {
-      skipped++;
+    if (totalAmount < 0) {
+      skippedNegativeTotal++;
       continue;
     }
 
@@ -343,18 +378,43 @@ async function main(): Promise<void> {
         }
       : Prisma.DbNull;
 
-    const { payments, sum } = buildPaymentsFromRow(cells, idx);
-    if (sum !== totalAmount) {
-      console.warn(
-        `[skip mismatch] line ${lineNo} 伝票 ${ticketNo} total=${totalAmount} paymentsSum=${sum} label=${label}`,
-      );
-      skippedMismatch++;
-      continue;
-    }
-    if (payments.length === 0) {
+    let payments = buildPaymentsFromRow(cells, idx).payments;
+    let sum = payments.reduce((s, p) => s + p.amount, 0);
+
+    if (totalAmount === 0) {
+      if (sum !== 0) {
+        console.warn(
+          `[skip mismatch] line ${lineNo} 伝票 ${ticketNo} total=0 but paymentsSum=${sum} label=${label}`,
+        );
+        skippedMismatch++;
+        continue;
+      }
+      payments = [];
+    } else if (payments.length === 0) {
       console.warn(`[skip no payments] line ${lineNo} 伝票 ${ticketNo}`);
       skippedMismatch++;
       continue;
+    } else if (sum !== totalAmount) {
+      if (sum <= 0) {
+        console.warn(
+          `[skip mismatch] line ${lineNo} 伝票 ${ticketNo} total=${totalAmount} paymentsSum=${sum} label=${label}`,
+        );
+        skippedMismatch++;
+        continue;
+      }
+      const scaled = allocatePaymentsToTotal(payments, totalAmount);
+      if (!scaled.length) {
+        console.warn(
+          `[skip mismatch] line ${lineNo} 伝票 ${ticketNo} could not allocate payments to total=${totalAmount} label=${label}`,
+        );
+        skippedMismatch++;
+        continue;
+      }
+      paymentScaledToTotal++;
+      console.warn(
+        `[payments scaled] line ${lineNo} 伝票 ${ticketNo} total=${totalAmount} csvPaymentsSum=${sum} -> allocated=${scaled.reduce((a, p) => a + p.amount, 0)}`,
+      );
+      payments = scaled;
     }
 
     if (dryRun) {
@@ -396,10 +456,11 @@ async function main(): Promise<void> {
       {
         dryRun,
         imported,
-        skippedZeroOrInvalid: skipped,
+        skippedNegativeTotal,
         skippedAggregateRows: skippedAggregate,
         skippedPaymentMismatch: skippedMismatch,
         skippedDuplicateLabel: skippedDup,
+        paymentScaledToMatchTotal: paymentScaledToTotal,
       },
       null,
       2,

@@ -1292,6 +1292,27 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
   if (btnEndSession) {
     btnEndSession.onclick = async () => {
       const rem = Number(detail.remainder || 0);
+      const mergedChildren = (sessionsCache || []).filter(
+        (s) => s && s.status === "merged" && s.mergedIntoSessionId && String(s.mergedIntoSessionId) === String(session.id),
+      );
+      if (mergedChildren.length) {
+        const list = mergedChildren
+          .map((ch) => {
+            const t = (tablesCache || []).find((x) => x && String(x.id) === String(ch.tableId));
+            return t ? displayTableCode(t.publicCode) || t.name || "子卓" : "子卓";
+          })
+          .filter(Boolean)
+          .join(" / ");
+        if (
+          !confirm(
+            "この卓は代表卓として合算中の卓があります（" +
+              list +
+              "）。\nセッションを切る前に、子卓側の「合算を分割する」で戻せます。\nこのままバッシング待ちにしますか？",
+          )
+        ) {
+          return;
+        }
+      }
       let msg = "この卓のセッションを切り、バッシング待ち（片付け待ち）にしますか？\n空席に戻すのはバッシング完了後です。";
       if (rem > 0) {
         msg =

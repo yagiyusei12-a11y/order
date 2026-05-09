@@ -586,7 +586,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
           where: { id: child.mergedIntoSessionId, storeId: store.id },
           include: { bill: true },
         });
-        if (!parent || parent.status !== "open") {
+        if (!parent || (parent.status !== "open" && parent.status !== "bashing_waiting")) {
           throw new Error("SPLIT_PARENT_GONE");
         }
         if (parent.bill && parent.bill.status !== "open") {
@@ -612,7 +612,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
         await tx.diningSession.update({
           where: { id: child.id },
           data: {
-            status: "open",
+            status: parent.status === "bashing_waiting" ? "bashing_waiting" : "open",
             mergedIntoSessionId: null,
           },
         });
@@ -653,7 +653,9 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({ error: "合算中（merged）の卓だけ分割できます" });
       }
       if (code === "SPLIT_PARENT_GONE") {
-        return reply.code(400).send({ error: "代表セッションが見つからないか利用中ではありません" });
+        return reply
+          .code(400)
+          .send({ error: "代表セッションが見つからないか、利用中/バッシング待ちではありません" });
       }
       if (code === "SPLIT_PARENT_BILL_NOT_OPEN") {
         return reply.code(400).send({ error: "代表卓の伝票が未精算ではないため分割できません" });

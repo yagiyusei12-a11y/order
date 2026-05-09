@@ -536,6 +536,77 @@
       font-size: 0.78rem;
       margin-top: 0.2rem;
     }
+    .guest-history-line--reorder {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 0.45rem 0.65rem;
+      padding: 0.45rem 0;
+      margin-top: 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .guest-history-line--reorder:last-child {
+      border-bottom: none;
+    }
+    .guest-history-line-main {
+      flex: 1;
+      min-width: min(100%, 12rem);
+    }
+    .guest-history-name {
+      display: block;
+      font-weight: 700;
+      margin-bottom: 0.15rem;
+      font-size: 0.8rem;
+    }
+    .guest-history-prev {
+      font-size: 0.72rem;
+      opacity: 0.72;
+    }
+    .guest-history-reorder {
+      display: flex;
+      align-items: center;
+      gap: 0.28rem;
+      flex-shrink: 0;
+    }
+    .guest-history-qbtn {
+      width: 2rem;
+      height: 2rem;
+      padding: 0;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text);
+      font-size: 1rem;
+      font-weight: 800;
+      cursor: pointer;
+      line-height: 1;
+    }
+    .guest-history-qbtn:active {
+      opacity: 0.85;
+    }
+    .guest-history-qty {
+      min-width: 1.35rem;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+      font-weight: 800;
+      font-size: 0.88rem;
+    }
+    .guest-history-addbtn {
+      padding: 0.38rem 0.55rem;
+      margin-left: 0.15rem;
+      border-radius: 8px;
+      border: 1px solid rgba(249, 115, 22, 0.55);
+      background: rgba(249, 115, 22, 0.18);
+      color: #fdba74;
+      font-size: 0.72rem;
+      font-weight: 800;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .guest-history-addbtn:active {
+      opacity: 0.88;
+    }
 
     #err {
       margin: 0.65rem;
@@ -1771,11 +1842,253 @@
       host.setAttribute("aria-hidden", "false");
       body.innerHTML = "<p class=\"muted\" style=\"margin:0;font-size:0.82rem\">読み込み中…</p>";
       try {
+        await loadMenu();
         await loadOrders();
         renderHistorySheetBody();
       } catch (e) {
         body.textContent = String(e.message || e);
       }
+    }
+
+    const SERVE_LATER_LINE_KIND = "set_serve_later";
+
+    /**
+     * @param {*} ln API の注文明細（OrderLine）
+     */
+    function parseHistoryLineForReorder(ln) {
+      const mid = ln.menuItemId;
+      if (!mid || typeof mid !== "string") return { ok: false, reason: "no_menu" };
+      const ex = ln.lineExtra && typeof ln.lineExtra === "object" ? ln.lineExtra : null;
+      if (ex && ex.kind === SERVE_LATER_LINE_KIND) return { ok: false, reason: "serve_later_child" };
+
+      const eatMode = ln.eatMode === "takeout" ? "takeout" : "dine_in";
+
+      if (ex && ex.kind === "set" && Array.isArray(ex.steps)) {
+        const setSelections = ex.steps.map((st) => ({
+          stepId: st.stepId,
+          menuItemIds: (st.picks || [])
+            .map((p) => (p && p.menuItemId ? String(p.menuItemId) : ""))
+            .filter(Boolean),
+        }));
+        const setComponentOptionSelections = [];
+        for (const st of ex.steps) {
+          const sid = typeof st.stepId === "string" ? st.stepId : "";
+          if (!sid) continue;
+          for (const p of st.picks || []) {
+            if (!p || typeof p !== "object") continue;
+            const oe = p.optionExtra;
+            if (!oe || oe.kind !== "single" || !Array.isArray(oe.options)) continue;
+            const midPick = typeof p.menuItemId === "string" ? p.menuItemId : "";
+            if (!midPick) continue;
+            const optionSelections = oe.options.map((gr) => ({
+              optionGroupId: gr.groupId,
+              optionItemIds: (gr.picks || []).map((x) => x.optionItemId).filter(Boolean),
+            }));
+            if (optionSelections.length)
+              setComponentOptionSelections.push({
+                stepId: sid,
+                menuItemId: midPick,
+                optionSelections,
+              });
+          }
+        }
+        let serveLaterDeferStepId = "";
+        if (typeof ex.serveLaterDeferredStepId === "string" && ex.serveLaterDeferredStepId.trim()) {
+          serveLaterDeferStepId = ex.serveLaterDeferredStepId.trim();
+        }
+
+        return {
+          ok: true,
+          sellKind: "set",
+          setSelections,
+          setComponentOptionSelections:
+            setComponentOptionSelections.length > 0 ? setComponentOptionSelections : undefined,
+          serveLaterDeferStepId: serveLaterDeferStepId || undefined,
+          eatMode,
+        };
+      }
+
+      if (ex && ex.kind === "single" && Array.isArray(ex.options)) {
+        const optionSelections = ex.options.map((gr) => ({
+          optionGroupId: gr.groupId,
+          optionItemIds: (gr.picks || []).map((x) => x.optionItemId).filter(Boolean),
+        }));
+        return { ok: true, sellKind: "options", optionSelections, eatMode };
+      }
+
+      return { ok: true, sellKind: "plain", eatMode };
+    }
+
+    function mergeHistoryIntoCart(ln, qty) {
+      const q = Math.max(1, Math.min(99, Math.floor(Number(qty) || 1)));
+      const parsed = parseHistoryLineForReorder(ln);
+      if (!parsed.ok) {
+        if (parsed.reason === "serve_later_child") toast("この明細は再注文できません");
+        else toast("この注文は再注文できません");
+        return;
+      }
+      const item = menuItemById.get(ln.menuItemId);
+      if (!item) {
+        toast("メニューが見つかりません。一覧を再読み込みしてください。");
+        return;
+      }
+      if (ln.status === "cancelled") {
+        toast("取り消された注文です");
+        return;
+      }
+      if (lastOrderClosedFlag) {
+        toast("ラストオーダーの時間を過ぎています");
+        return;
+      }
+
+      if (parsed.sellKind === "set") {
+        if (item.sellKind !== "set") {
+          toast("メニューが変更されているため再注文できません");
+          return;
+        }
+        const setSelections = parsed.setSelections;
+        for (const st of item.setSteps || []) {
+          const sel = setSelections.find((x) => x.stepId === st.id);
+          const n = sel && sel.menuItemIds ? sel.menuItemIds.length : 0;
+          if (n < st.minPick || n > st.maxPick) {
+            toast("セットの内容が変わった可能性があります。メニューから選び直してください");
+            return;
+          }
+        }
+        const unitPrice = computeSetUnitPrice(item, setSelections);
+        if (unitPrice == null) {
+          toast("セットの選択を復元できませんでした");
+          return;
+        }
+        if (!setStockAllows(item, setSelections, q)) {
+          toast("在庫が不足しています");
+          return;
+        }
+        if (alcoholRestricted && setSelectionHasAlcohol(item, setSelections)) {
+          toast("酒類はご注文いただけません");
+          return;
+        }
+        const serveLaterDeferStepId = parsed.serveLaterDeferStepId || "";
+        if (serveLaterDeferStepId) {
+          const st0 = (item.setSteps || []).find((s) => s.id === serveLaterDeferStepId);
+          if (!st0 || !st0.allowServeLaterSplit) {
+            toast("「後から提供」はメニューから選び直してください");
+            return;
+          }
+        }
+        const cartKey =
+          "s:" +
+          item.id +
+          ":" +
+          stableSetKey(setSelections) +
+          (serveLaterDeferStepId ? "|sl:" + serveLaterDeferStepId : "");
+        const cur = cart[cartKey] || {
+          cartKey,
+          menuItemId: item.id,
+          name: item.name,
+          unitPrice,
+          qty: 0,
+          sellKind: "set",
+          setSelections,
+        };
+        cur.unitPrice = unitPrice;
+        cur.setSelections = setSelections;
+        cur.name = item.name;
+        cur.eatMode = parsed.eatMode;
+        if (parsed.setComponentOptionSelections && parsed.setComponentOptionSelections.length) {
+          cur.setComponentOptionSelections = parsed.setComponentOptionSelections;
+        } else delete cur.setComponentOptionSelections;
+        if (serveLaterDeferStepId) cur.serveLaterDeferStepId = serveLaterDeferStepId;
+        else delete cur.serveLaterDeferStepId;
+        cur.qty = (cur.qty || 0) + q;
+        cart[cartKey] = cur;
+        renderCart();
+        toast(item.name + " をカートに追加");
+        closeHistorySheet();
+        return;
+      }
+
+      if (parsed.sellKind === "options") {
+        if (item.sellKind !== "single" || !item.optionGroups || !item.optionGroups.length) {
+          toast("メニューが変更されているため再注文できません");
+          return;
+        }
+        const optionSelections = parsed.optionSelections;
+        for (const g of item.optionGroups || []) {
+          const sel = optionSelections.find((x) => x.optionGroupId === g.id);
+          const n = sel && sel.optionItemIds ? sel.optionItemIds.length : 0;
+          if (n < g.minSelect || n > g.maxSelect) {
+            toast("オプションの組み合わせが変わりました。メニューから選び直してください");
+            return;
+          }
+        }
+        const unitPrice = computeOptionUnitPrice(item, optionSelections);
+        const cartKey = "o:" + item.id + ":" + stableOptionKey(optionSelections);
+        if (item.stockQty != null && totalCartQtyForMenuItem(item.id) + q > item.stockQty) {
+          toast("これ以上は在庫がありません");
+          return;
+        }
+        const fakeLine = {
+          menuItemId: item.id,
+          sellKind: "single",
+          optionSelections,
+          qty: q,
+        };
+        if (alcoholRestricted && cartLineBlocksAlcohol(fakeLine)) {
+          toast("酒類はご注文いただけません");
+          return;
+        }
+        const cur = cart[cartKey] || {
+          cartKey,
+          menuItemId: item.id,
+          name: item.name,
+          unitPrice,
+          qty: 0,
+          sellKind: "single",
+          optionSelections,
+        };
+        cur.unitPrice = unitPrice;
+        cur.optionSelections = optionSelections;
+        cur.name = item.name;
+        cur.eatMode = parsed.eatMode;
+        cur.qty = (cur.qty || 0) + q;
+        cart[cartKey] = cur;
+        renderCart();
+        toast(item.name + " をカートに追加");
+        closeHistorySheet();
+        return;
+      }
+
+      if (item.sellKind !== "single") {
+        toast("メニューが変更されているため再注文できません");
+        return;
+      }
+      const base = singleGuestChargeBase(item);
+      const cartKey = item.id;
+      if (item.stockQty != null && totalCartQtyForMenuItem(item.id) + q > item.stockQty) {
+        toast("これ以上は在庫がありません");
+        return;
+      }
+      if (alcoholRestricted && item.containsAlcohol) {
+        toast("酒類はご注文いただけません");
+        return;
+      }
+      const cur = cart[cartKey] || {
+        cartKey,
+        menuItemId: item.id,
+        name: item.name,
+        unitPrice: base,
+        qty: 0,
+        sellKind: "single",
+      };
+      cur.unitPrice = base;
+      cur.name = item.name;
+      cur.eatMode = parsed.eatMode;
+      cur.qty = (cur.qty || 0) + q;
+      cart[cartKey] = cur;
+      renderCart();
+      toast(item.name + " をカートに追加");
+      closeHistorySheet();
     }
 
     function renderHistorySheetBody() {
@@ -1797,16 +2110,74 @@
         card.className = "guest-history-card";
         const meta = document.createElement("div");
         meta.className = "meta";
-        meta.textContent =
-          new Date(o.createdAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) +
-          " · " +
-          String(o.status || "");
+        meta.textContent = new Date(o.createdAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
         card.appendChild(meta);
         for (const ln of o.lines || []) {
+          if (ln.status === "cancelled") continue;
           const row = document.createElement("div");
-          row.className = "guest-history-line";
+          row.className = "guest-history-line guest-history-line--reorder";
+          const main = document.createElement("div");
+          main.className = "guest-history-line-main";
           const lineSum = guestShowMenuPrices ? "¥" + (ln.unitPrice * ln.qty).toLocaleString("ja-JP") : "—";
-          row.textContent = ln.nameSnapshot + " ×" + ln.qty + " " + lineSum;
+          const nm = document.createElement("span");
+          nm.className = "guest-history-name";
+          nm.textContent = ln.nameSnapshot || "";
+          const prev = document.createElement("span");
+          prev.className = "guest-history-prev";
+          prev.textContent = "前回 ×" + ln.qty + " " + lineSum;
+          main.appendChild(nm);
+          main.appendChild(prev);
+
+          const controls = document.createElement("div");
+          controls.className = "guest-history-reorder";
+          const minus = document.createElement("button");
+          minus.type = "button";
+          minus.className = "guest-history-qbtn";
+          minus.setAttribute("aria-label", "数量を減らす");
+          minus.textContent = "−";
+          const num = document.createElement("span");
+          num.className = "guest-history-qty";
+          num.textContent = "1";
+          let rq = 1;
+          const plus = document.createElement("button");
+          plus.type = "button";
+          plus.className = "guest-history-qbtn";
+          plus.setAttribute("aria-label", "数量を増やす");
+          plus.textContent = "+";
+          const addBtn = document.createElement("button");
+          addBtn.type = "button";
+          addBtn.className = "guest-history-addbtn";
+          addBtn.textContent = "カートに追加";
+
+          minus.onclick = () => {
+            if (rq <= 1) return;
+            rq -= 1;
+            num.textContent = String(rq);
+          };
+          plus.onclick = () => {
+            if (rq >= 99) return;
+            rq += 1;
+            num.textContent = String(rq);
+          };
+          addBtn.onclick = () => mergeHistoryIntoCart(ln, rq);
+
+          const preview = parseHistoryLineForReorder(ln);
+          if (!preview.ok && preview.reason === "serve_later_child") {
+            addBtn.disabled = true;
+            addBtn.style.opacity = "0.45";
+            addBtn.title = "この明細は再注文できません";
+          } else if (!ln.menuItemId) {
+            addBtn.disabled = true;
+            addBtn.style.opacity = "0.45";
+            addBtn.title = "再注文できない注文です";
+          }
+
+          controls.appendChild(minus);
+          controls.appendChild(num);
+          controls.appendChild(plus);
+          controls.appendChild(addBtn);
+          row.appendChild(main);
+          row.appendChild(controls);
           card.appendChild(row);
         }
         body.appendChild(card);

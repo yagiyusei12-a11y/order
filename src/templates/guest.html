@@ -1937,12 +1937,9 @@
       const eatMode = ln.eatMode === "takeout" ? "takeout" : "dine_in";
 
       const hasSetSteps = ex && Array.isArray(ex.steps) && ex.steps.length > 0;
+      /** steps が無いのに kind だけ "set" の古い／欠損データはオプション or 単品へフォールバックする */
       const hasSingleOptions =
-        ex &&
-        Array.isArray(ex.options) &&
-        ex.options.length > 0 &&
-        ex.kind !== "set" &&
-        !hasSetSteps;
+        ex && Array.isArray(ex.options) && ex.options.length > 0 && !hasSetSteps;
 
       if (hasSetSteps) {
         const setSelections = ex.steps.map((st) => ({
@@ -2165,7 +2162,11 @@
       }
 
       if (item.sellKind !== "single") {
-        toast("メニューが変更されているため再注文できません");
+        if (item.sellKind === "set" && parsed.sellKind === "plain") {
+          toast("注文データにセットの内容がありません。メニューから選び直してください");
+        } else {
+          toast("メニューが変更されているため再注文できません");
+        }
         return;
       }
       const base = singleGuestChargeBase(item);

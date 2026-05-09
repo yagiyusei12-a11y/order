@@ -908,7 +908,7 @@ function render(waiting, staffCount, resList) {
     empty.innerHTML =
       '<div><strong>表示できる卓がありません</strong><br><span style="opacity:.85;font-size:.88em">この店舗に「有効」な卓（公開コード付き）が登録されているか、<a href="/staff-app/' +
       encodeURIComponent(STORE) +
-      '/tables" style="color:var(--accent)">席マスタ</a>で確認してください。</span></div>';
+      '/settings#tab=tables" style="color:var(--accent)">席マスタ</a>で確認してください。</span></div>';
     map.appendChild(empty);
     document.getElementById("totalGuestCount").innerText = "0";
     renderSidePanels(waiting, staffCount, resList);

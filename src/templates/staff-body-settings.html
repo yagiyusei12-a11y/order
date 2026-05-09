@@ -10,6 +10,7 @@
     <button type="button" data-stab="menuCourse">メニュー/コース</button>
     <button type="button" data-stab="netReserve">ネット予約</button>
     <button type="button" data-stab="kitchen">キッチン</button>
+    <button type="button" data-stab="tables">席マスタ</button>
     <button type="button" data-stab="reports">レポート</button>
     <button type="button" data-stab="accounts">アカウント</button>
   </div>
@@ -353,6 +354,31 @@
     </div>
   </div>
 
+  <div id="settingsTab-tables" data-stab-panel="tables" style="display:none">
+    <p class="muted" style="margin:0 0 1rem;font-size:0.82rem">
+      卓の追加・並び・QR用コード・席種別を管理します。POS「卓」一覧の表示順はここでの並びに追随します。
+    </p>
+    <div class="row" style="margin-bottom:0.75rem;justify-content:space-between;flex-wrap:wrap;gap:0.35rem">
+      <button type="button" class="btn-ghost" id="btnRefTables">一覧を再読込</button>
+      <span class="muted" style="font-size:0.78rem">左の⋮⋮をドラッグして並び替え（POS「卓」一覧の順・利用中は先頭固定）</span>
+      <span class="muted" style="font-size:0.78rem">卓QRのURLは固定コードごとに不変。お客様がQRから人数・単品／コースを選んで注文開始できます（オペのセッション開始は任意）</span>
+    </div>
+    <div id="tablesMaster" class="card" style="padding:0;overflow:hidden"></div>
+    <div class="card" style="margin-top:1rem">
+      <strong style="font-size:0.88rem">席を追加</strong>
+      <p class="muted" style="font-size:0.72rem;margin:0.35rem 0 0.5rem">卓の呼び名と、QR用URLに使う固定コードを登録します。</p>
+      <label for="newTableName" style="margin-top:0.65rem">席名（店内表示・キッチン卓名）</label>
+      <input id="newTableName" type="text" placeholder="例: カウンター3" />
+      <label for="newTableCode">卓QR用コード（空欄なら自動発行）</label>
+      <p class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.35rem"><code>/table-app/コード</code> の末尾。英数字・ハイフン推奨。変更するとQRのURLも変わります。</p>
+      <input id="newTableCode" type="text" placeholder="例: counter-3" autocomplete="off" />
+      <label for="newTableSeatType">席種別（任意・ネット予約の種別指定用）</label>
+      <p class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.35rem">例: カウンター、テーブル。複数卓で同じ文字列にすると同一種別としてまとまります。</p>
+      <input id="newTableSeatType" type="text" placeholder="空欄で種別なし" maxlength="40" autocomplete="off" />
+      <button type="button" class="btn-primary" id="btnAddTable">席を追加</button>
+    </div>
+  </div>
+
   <div id="settingsTab-reports" data-stab-panel="reports" style="display:none">
     <div class="card" style="border-color:#93c5fd">
       <strong style="font-size:0.9rem">伝票訂正ポリシー（店舗全体）</strong>
@@ -403,7 +429,7 @@
       <strong style="font-size:0.9rem">クイックリンク</strong>
       <div class="row" style="margin-top:0.5rem;flex-wrap:wrap;gap:0.35rem">
         <a class="btn-ghost" href="/staff-app/__STORE_PATH__/menu" style="text-decoration:none;display:inline-block">メニュー</a>
-        <a class="btn-ghost" href="/staff-app/__STORE_PATH__/tables" style="text-decoration:none;display:inline-block">席マスタ</a>
+        <a class="btn-ghost" href="/staff-app/__STORE_PATH__/settings#tab=tables" style="text-decoration:none;display:inline-block">席マスタ</a>
         <a class="btn-ghost" href="/staff-app/__STORE_PATH__/courses" style="text-decoration:none;display:inline-block">コース</a>
         <a class="btn-ghost" href="/staff-app/__STORE_PATH__/ops" style="text-decoration:none;display:inline-block">卓・会計</a>
       </div>

@@ -7,17 +7,15 @@
  *
  * --dry-run: DBへ書き込まず件数・不一致行のみ表示
  *
- * 会計割引: `Bill.discountJson` が無いDB（マイグレーション未適用）でも動くよう、
- * 割引額は `label` に `|d{円}` で埋め込む（例: import:123|A|d500）。列がある環境でも同様。
+ * 会計割引: CSV の「会計割引」列を `Bill.discountJson` に保存（kind=yen, value=円）。
+ * 冪等キー用に `label` にも `|d{円}` を付与（例: import:123|A|d500）。
  *
- * Bill / Payment とも Prisma の `create()` は使わない。クライアントがスキーマ上の列（例:
- * `Bill.discountJson`, `Payment.voidedAt`）を INSERT に含め、DB が古いと失敗するため。
- * 初期マイグレーション相当の列だけを raw INSERT する。
+ * Bill / Payment は Prisma の `create()` を使わず raw INSERT（Payment は voidedAt を含めない）。
  */
 import { randomUUID } from "node:crypto";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 
 const STORE_ID = "harunoyukoto";
 /** seed に店舗が無い環境でもインポートできるよう、存在しなければ作成する */
@@ -331,10 +329,19 @@ async function main(): Promise<void> {
 
     const discIdx = idx.get("会計割引");
     const discRaw = discIdx != null ? parseIntCell(cells[discIdx] ?? "") : null;
-    /** 冪等キー。会計割引ありは `|d{abs}` を付与（discountJson 列が無いDBでも保持） */
+    const hasAccountingDiscount = discRaw != null && discRaw !== 0;
+    /** 冪等キー。会計割引ありは `|d{abs}` を付与 */
     const label =
       `import:${ticketNo}|${ticketSymbol || "-"}` +
-      (discRaw != null && discRaw !== 0 ? `|d${Math.abs(discRaw)}` : "");
+      (hasAccountingDiscount ? `|d${Math.abs(discRaw!)}` : "");
+    /** レポート「割引」一覧用（parseBillDiscount と同一形） */
+    const discountJsonParam: Prisma.InputJsonValue | typeof Prisma.DbNull = hasAccountingDiscount
+      ? {
+          kind: "yen",
+          value: Math.abs(discRaw!),
+          label: "外部POS会計割引",
+        }
+      : Prisma.DbNull;
 
     const { payments, sum } = buildPaymentsFromRow(cells, idx);
     if (sum !== totalAmount) {
@@ -368,8 +375,8 @@ async function main(): Promise<void> {
     await prisma.$transaction(async (tx) => {
       const billId = randomUUID();
       await tx.$executeRaw`
-        INSERT INTO "Bill" ("id", "storeId", "sessionId", "label", "totalAmount", "status", "createdAt", "settledAt")
-        VALUES (${billId}, ${STORE_ID}, NULL, ${label}, ${totalAmount}, ${"settled"}, ${createdAt}, ${settledAt})
+        INSERT INTO "Bill" ("id", "storeId", "sessionId", "label", "discountJson", "totalAmount", "status", "createdAt", "settledAt")
+        VALUES (${billId}, ${STORE_ID}, NULL, ${label}, ${discountJsonParam}, ${totalAmount}, ${"settled"}, ${createdAt}, ${settledAt})
       `;
       const payNote = `CSV取引詳細 ${ticketNo}`;
       for (const p of payments) {

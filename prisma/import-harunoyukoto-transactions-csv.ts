@@ -32,11 +32,28 @@ const EXTRA_PAYMENT_METHODS: { code: string; labelJa: string; sortOrder: number 
 /** 長時間無音にならないよう、投入（または dry-run の試算）件数をこの間隔で表示 */
 const PROGRESS_LOG_EVERY = 100;
 
+/** 重複スキップなどで新規投入が増えなくても、CSV を読んでいることが分かるよう走査行ごとに表示 */
+const ROW_SCAN_LOG_EVERY = 500;
+
 function logImportProgress(imported: number, dryRun: boolean): void {
   if (imported > 0 && imported % PROGRESS_LOG_EVERY === 0) {
     const mode = dryRun ? "dry-run " : "";
     console.log(`[harunoyukoto-sales] ${mode}進捗: ${imported} 伝票`);
   }
+}
+
+function logRowScanProgress(
+  completedDataRows: number,
+  imported: number,
+  skippedDup: number,
+  skippedMismatch: number,
+  dryRun: boolean,
+): void {
+  if (completedDataRows <= 0 || completedDataRows % ROW_SCAN_LOG_EVERY !== 0) return;
+  const mode = dryRun ? "dry-run " : "";
+  console.log(
+    `[harunoyukoto-sales] ${mode}CSV ${completedDataRows} 行処理済み（新規投入 ${imported} / 重複スキップ ${skippedDup} / 支払不一致 ${skippedMismatch}）`,
+  );
 }
 
 function loadDotEnv(): void {
@@ -260,6 +277,10 @@ async function main(): Promise<void> {
     await ensurePaymentMethods();
   }
 
+  console.log(
+    `[harunoyukoto-sales] 伝票データ行 ${lines.length - 2} 件を処理します${dryRun ? "（dry-run）" : ""}…`,
+  );
+
   let imported = 0;
   let skipped = 0;
   let skippedMismatch = 0;
@@ -268,6 +289,11 @@ async function main(): Promise<void> {
 
   // lines[0]=ヘッダ, lines[1]=集計行 → i>=2 からが伝票行
   for (let i = 2; i < lines.length; i++) {
+    const completedDataRows = i - 2;
+    if (completedDataRows > 0 && completedDataRows % ROW_SCAN_LOG_EVERY === 0) {
+      logRowScanProgress(completedDataRows, imported, skippedDup, skippedMismatch, dryRun);
+    }
+
     const line = lines[i];
     const lineNo = i + 1;
     const cells = parseCsvLine(line);

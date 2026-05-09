@@ -694,8 +694,8 @@
       padding: 1rem 1rem 0.5rem;
       -webkit-overflow-scrolling: touch;
     }
-    .detail-title { margin: 0 0 0.35rem; font-size: 1.15rem; font-weight: 800; line-height: 1.35; }
-    .detail-desc { margin: 0 0 1rem; font-size: 0.82rem; color: var(--muted); line-height: 1.55; }
+    .detail-title { margin: 0 0 0.35rem; font-size: 1.2rem; font-weight: 800; line-height: 1.35; }
+    .detail-desc { margin: 0 0 1rem; font-size: 0.9rem; color: rgba(226, 232, 240, 0.82); line-height: 1.6; }
 
     .opt-block { margin-bottom: 1.1rem; }
     .opt-step-choices {
@@ -705,13 +705,24 @@
       padding-right: 0.2rem;
       margin: 0 -0.15rem 0 0;
     }
+    .opt-step-choices::-webkit-scrollbar { width: 10px; }
+    .opt-step-choices::-webkit-scrollbar-thumb {
+      background: rgba(226, 232, 240, 0.25);
+      border-radius: 999px;
+      border: 2px solid rgba(0, 0, 0, 0);
+      background-clip: padding-box;
+    }
+    .opt-step-choices::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 999px;
+    }
     .opt-block-head {
       display: flex;
       align-items: center;
       gap: 0.45rem;
       margin-bottom: 0.5rem;
     }
-    .opt-block-head strong { font-size: 0.88rem; }
+    .opt-block-head strong { font-size: 0.98rem; }
     .tag-req {
       font-size: 0.62rem;
       font-weight: 800;
@@ -732,13 +743,13 @@
       display: flex;
       align-items: flex-start;
       gap: 0.55rem;
-      padding: 0.55rem 0.65rem;
+      padding: 0.7rem 0.75rem;
       margin-bottom: 0.35rem;
       border-radius: 12px;
       border: 1px solid var(--line);
-      background: var(--surface2);
+      background: rgba(255, 255, 255, 0.055);
       cursor: pointer;
-      font-size: 0.86rem;
+      font-size: 0.95rem;
     }
     .opt-row input { accent-color: var(--accent); width: 1.1rem; height: 1.1rem; flex-shrink: 0; margin-top: 0.15rem; }
     .opt-row .opt-name {
@@ -746,16 +757,20 @@
       min-width: 0;
       white-space: normal;
       word-break: break-word;
-      line-height: 1.4;
+      line-height: 1.5;
     }
     .opt-row .opt-price {
-      font-size: 0.78rem;
+      font-size: 0.86rem;
       font-weight: 700;
       color: var(--accent);
       font-variant-numeric: tabular-nums;
       flex-shrink: 0;
       align-self: flex-start;
       padding-top: 0.08rem;
+    }
+    .opt-row:focus-within {
+      outline: 2px solid rgba(251, 146, 60, 0.55);
+      outline-offset: 1px;
     }
     .opt-row.is-disabled { opacity: 0.45; pointer-events: none; }
     .opt-row-fixed {

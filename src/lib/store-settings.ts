@@ -41,6 +41,8 @@ export type StoreSettingsShape = {
     kind: "percent" | "yen";
     value: number;
   }[];
+  /** 会計画面で「レジ機能（現金の受取額/お釣り）」を有効にする支払い方法コード */
+  opsRegisterMethodCodes: string[];
 };
 
 export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
@@ -55,6 +57,7 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     guestCourseIncludedChargeOptionExtras: true,
     takeoutPickupTimeWindowIds: [],
     opsDiscountPresets: [],
+    opsRegisterMethodCodes: [],
   };
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return d;
   const o = raw as Record<string, unknown>;
@@ -109,6 +112,13 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
       presets.push({ id, name, kind, value });
     }
     d.opsDiscountPresets = presets.slice(0, 40);
+  }
+  if (Array.isArray(o.opsRegisterMethodCodes)) {
+    const codes = o.opsRegisterMethodCodes
+      .filter((x) => typeof x === "string")
+      .map((x) => x.trim())
+      .filter(Boolean);
+    d.opsRegisterMethodCodes = [...new Set(codes)].slice(0, 30);
   }
   return d;
 }

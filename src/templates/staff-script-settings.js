@@ -202,6 +202,7 @@ async function loadAll() {
   if (incOpt) incOpt.checked = s.guestCourseIncludedChargeOptionExtras !== false;
   renderTakeoutPickupWindows(twRes.timeWindows || [], s.takeoutPickupTimeWindowIds || []);
   renderOpsDiscountPresets(s.opsDiscountPresets || []);
+  const registerCodes = new Set(Array.isArray(s.opsRegisterMethodCodes) ? s.opsRegisterMethodCodes : []);
 
   const sl = document.getElementById("staffList");
   const users = staff.staffUsers || [];
@@ -328,6 +329,11 @@ async function loadAll() {
     enabled.checked = m.enabled;
     enabled.title = "会計画面の入金手段として使うか";
 
+    const reg = document.createElement("input");
+    reg.type = "checkbox";
+    reg.checked = registerCodes.has(m.code);
+    reg.title = "会計画面でレジ機能（受取額/お釣り）を表示する";
+
     const ord = document.createElement("input");
     ord.type = "number";
     ord.step = "1";
@@ -356,6 +362,19 @@ async function loadAll() {
             sortOrder: so,
           }),
         });
+        // レジ機能フラグ（店舗 settings）も保存
+        try {
+          const nextSet = new Set(registerCodes);
+          if (reg.checked) nextSet.add(m.code);
+          else nextSet.delete(m.code);
+          await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ settings: { opsRegisterMethodCodes: [...nextSet] } }),
+          });
+        } catch (e2) {
+          log(String(e2 && e2.message ? e2.message : e2));
+        }
         log("決済手段を更新しました");
         await loadAll();
       } catch (e) {
@@ -398,6 +417,15 @@ async function loadAll() {
     lab.appendChild(enabled);
     lab.appendChild(document.createTextNode("会計で選べるようにする"));
 
+    const labReg = document.createElement("label");
+    labReg.className = "row";
+    labReg.style.margin = "0";
+    labReg.style.alignItems = "center";
+    labReg.style.gap = "0.35rem";
+    labReg.style.fontSize = "0.78rem";
+    labReg.appendChild(reg);
+    labReg.appendChild(document.createTextNode("レジ機能（現金）"));
+
     const ordWrap = document.createElement("div");
     ordWrap.style.display = "flex";
     ordWrap.style.flexDirection = "column";
@@ -416,6 +444,7 @@ async function loadAll() {
     actions.style.flexWrap = "wrap";
     actions.style.alignItems = "flex-end";
     actions.appendChild(lab);
+    actions.appendChild(labReg);
     actions.appendChild(ordWrap);
     actions.appendChild(save);
     actions.appendChild(del);

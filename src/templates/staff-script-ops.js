@@ -985,7 +985,7 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
     detail = await api(billPath(billId));
   }
   const remainder = Number(detail.remainder || 0);
-  const tb = taxBreakdownFromLines(detail.orderLines || []);
+  const tb = taxBreakdownFromLines(linesForTaxBreakdown(detail));
   const netTotal = tb.netTotal;
   const taxAmount = tb.taxTotal;
   const taxDetailHtml =
@@ -1140,6 +1140,9 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
   const recvEl = document.getElementById("cashReceived");
   const changeEl = document.getElementById("cashChange");
   const afterBox = document.getElementById("afterPayment");
+  const registerCodes = new Set(
+    Array.isArray(storeSettingsCache.opsRegisterMethodCodes) ? storeSettingsCache.opsRegisterMethodCodes : []
+  );
 
   const updateCash = () => {
     const received = Number((recvEl && recvEl.value) || 0);
@@ -1147,7 +1150,7 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
     changeEl.textContent = yen(change);
   };
   methodEl.onchange = () => {
-    const isCash = methodEl.value === "cash";
+    const isCash = registerCodes.has(methodEl.value);
     cashArea.style.display = isCash ? "block" : "none";
     if (isCash) bindCashKeypad();
   };
@@ -1270,7 +1273,7 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
   }
 
   document.getElementById("btnConfirmPayment").onclick = async () => {
-    const isCash = methodEl.value === "cash";
+    const isCash = registerCodes.has(methodEl.value);
     let note = null;
     let change = 0;
     if (isCash) {

@@ -9,7 +9,11 @@
  *
  * 会計割引: `Bill.discountJson` が無いDB（マイグレーション未適用）でも動くよう、
  * 割引額は `label` に `|d{円}` で埋め込む（例: import:123|A|d500）。列がある環境でも同様。
+ *
+ * Bill 挿入は Prisma の `create()` を使わない。クライアントがスキーマ上の全列を INSERT に
+ * 含め `discountJson` 等の未作成列を参照するため。列を限定した raw INSERT を使う。
  */
+import { randomUUID } from "node:crypto";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { PrismaClient } from "@prisma/client";
@@ -324,21 +328,15 @@ async function main(): Promise<void> {
     }
 
     await prisma.$transaction(async (tx) => {
-      const bill = await tx.bill.create({
-        data: {
-          storeId: STORE_ID,
-          sessionId: null,
-          label,
-          totalAmount,
-          status: "settled",
-          settledAt,
-          createdAt,
-        },
-      });
+      const billId = randomUUID();
+      await tx.$executeRaw`
+        INSERT INTO "Bill" ("id", "storeId", "sessionId", "label", "totalAmount", "status", "createdAt", "settledAt")
+        VALUES (${billId}, ${STORE_ID}, NULL, ${label}, ${totalAmount}, ${"settled"}, ${createdAt}, ${settledAt})
+      `;
       for (const p of payments) {
         await tx.payment.create({
           data: {
-            billId: bill.id,
+            billId,
             methodCode: p.methodCode,
             amount: p.amount,
             note: `CSV取引詳細 ${ticketNo}`,

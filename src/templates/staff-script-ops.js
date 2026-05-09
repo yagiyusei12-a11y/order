@@ -1526,7 +1526,36 @@ async function renderDetail() {
           renderGrid();
           await renderDetail();
         } catch (e) {
-          log(String(e.message || e));
+          const msg = String(e.message || e);
+          log(msg);
+          // 親（代表）セッションが既に閉じられている等で分割できない場合、卓だけ強制解放できる導線を出す
+          if (
+            msg.includes("代表セッションが見つからない") ||
+            msg.includes("利用中/バッシング待ちではありません") ||
+            msg.includes("SPLIT_PARENT_GONE")
+          ) {
+            if (
+              confirm(
+                "代表卓のセッションが見つからないため通常の分割ができません。\nこの卓だけを強制的に空席に戻しますか？（注文は代表卓側に残る可能性があります）",
+              ) &&
+              confirm("本当にこの卓だけを空席に戻しますか？")
+            ) {
+              try {
+                await api("/stores/" + encodeURIComponent(STORE) + "/sessions/force-clear-merged", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ childSessionId: session.id }),
+                });
+                log("強制的に空席に戻しました");
+                await loadAll();
+                selectedTableId = table.id;
+                renderGrid();
+                await renderDetail();
+              } catch (e2) {
+                log(String(e2.message || e2));
+              }
+            }
+          }
         }
       };
     }

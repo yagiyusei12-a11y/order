@@ -666,4 +666,60 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       throw e;
     }
   });
+
+  /**
+   * 親（代表）セッションが閉じられて通常分割できない場合に、merged の子卓だけを解放する。
+   * - 注文（salesOrder）は移動しない（親側に残る想定）。卓の占有解除が目的。
+   */
+  app.post<{
+    Params: { storeId: string };
+    Body: { childSessionId?: unknown };
+  }>("/stores/:storeId/sessions/force-clear-merged", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+
+    const childId = typeof req.body?.childSessionId === "string" ? req.body.childSessionId.trim() : "";
+    if (!childId) return reply.code(400).send({ error: "childSessionId required" });
+
+    try {
+      const out = await prisma.$transaction(async (tx) => {
+        const child = await tx.diningSession.findFirst({
+          where: { id: childId, storeId: store.id },
+        });
+        if (!child || child.status !== "merged" || !child.mergedIntoSessionId) {
+          throw new Error("FORCE_NOT_MERGED_CHILD");
+        }
+
+        const parent = await tx.diningSession.findFirst({
+          where: { id: child.mergedIntoSessionId, storeId: store.id },
+        });
+        if (parent && (parent.status === "open" || parent.status === "bashing_waiting")) {
+          throw new Error("FORCE_PARENT_ACTIVE");
+        }
+
+        const updated = await tx.diningSession.update({
+          where: { id: child.id },
+          data: {
+            status: "closed",
+            closedAt: new Date(),
+            mergedIntoSessionId: null,
+          },
+        });
+        return updated;
+      });
+
+      return { ok: true, session: out };
+    } catch (e) {
+      const code = e instanceof Error ? e.message : "";
+      if (code === "FORCE_NOT_MERGED_CHILD") {
+        return reply.code(400).send({ error: "合算中（merged）の卓だけ解放できます" });
+      }
+      if (code === "FORCE_PARENT_ACTIVE") {
+        return reply
+          .code(400)
+          .send({ error: "代表卓が利用中/バッシング待ちのため、強制解除はできません（通常の分割を使ってください）" });
+      }
+      throw e;
+    }
+  });
 }

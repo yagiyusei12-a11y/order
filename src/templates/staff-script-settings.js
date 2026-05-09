@@ -180,6 +180,177 @@ function renderTakeoutPickupWindows(list, selectedIds) {
       .join("");
 }
 
+/** 左サイドバー（localStorage・staff-frame の applyStaffSidebarPrefs と整合） */
+const STAFF_SIDEBAR_LABELS = {
+  home: "ホーム",
+  ops: "卓・会計",
+  reception: "受付",
+  netReserve: "予約設定",
+  handy: "口頭注文",
+  tables: "席マスタ",
+  kitchen: "キッチン",
+  hallReady: "調理済・提供",
+  takeout: "テイクアウト",
+  menu: "メニュー",
+  customers: "お客様",
+  reports: "レポート",
+  courses: "コース",
+  settings: "設定",
+};
+
+function staffSidebarStorageKey() {
+  return "staffSidebarNav_v1_" + STORE;
+}
+
+function staffSidebarDefaultKeys() {
+  if (Array.isArray(window.STAFF_SIDEBAR_NAV_KEYS_DEFAULT)) {
+    return [...window.STAFF_SIDEBAR_NAV_KEYS_DEFAULT];
+  }
+  return [
+    "home",
+    "ops",
+    "reception",
+    "netReserve",
+    "handy",
+    "tables",
+    "kitchen",
+    "hallReady",
+    "takeout",
+    "menu",
+    "customers",
+    "reports",
+    "courses",
+    "settings",
+  ];
+}
+
+function normalizeStaffSidebarPrefs(parsed) {
+  const defaults = staffSidebarDefaultKeys();
+  const hiddenRaw = parsed && Array.isArray(parsed.hidden) ? parsed.hidden : [];
+  const hidden = [...new Set(hiddenRaw.map((x) => String(x)))];
+  let order = parsed && Array.isArray(parsed.order) ? parsed.order.map((x) => String(x)) : [...defaults];
+  const seen = new Set(order);
+  for (const k of defaults) {
+    if (!seen.has(k)) {
+      order.push(k);
+      seen.add(k);
+    }
+  }
+  return { order, hidden };
+}
+
+function readStaffSidebarPrefsFromStorage() {
+  try {
+    const raw = localStorage.getItem(staffSidebarStorageKey());
+    if (!raw) return normalizeStaffSidebarPrefs(null);
+    const parsed = JSON.parse(raw);
+    return normalizeStaffSidebarPrefs(parsed);
+  } catch (_) {
+    return normalizeStaffSidebarPrefs(null);
+  }
+}
+
+let staffSidebarEditorState = {
+  order: [],
+  hidden: /** @type {Set<string>} */ (new Set()),
+};
+
+/** @param {{ fromStorage?: boolean }} [opts] fromStorage 既定 true（load 時）。並べ替え直後は false でメモリ状態を描画 */
+function renderStaffSidebarEditor(opts) {
+  const host = document.getElementById("staffSidebarEditorHost");
+  if (!host) return;
+  const fromStorage = !opts || opts.fromStorage !== false;
+  if (fromStorage) {
+    const { order, hidden } = readStaffSidebarPrefsFromStorage();
+    staffSidebarEditorState.order = order;
+    staffSidebarEditorState.hidden = new Set(hidden);
+  }
+  host.innerHTML = "";
+  staffSidebarEditorState.order.forEach((key, idx) => {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.style.alignItems = "center";
+    row.style.gap = "0.5rem";
+    row.style.flexWrap = "wrap";
+    row.style.marginBottom = "0.35rem";
+
+    const chk = document.createElement("input");
+    chk.type = "checkbox";
+    chk.checked = !staffSidebarEditorState.hidden.has(key);
+    chk.title = "表示";
+    chk.addEventListener("change", () => {
+      if (chk.checked) staffSidebarEditorState.hidden.delete(key);
+      else staffSidebarEditorState.hidden.add(key);
+    });
+
+    const label = document.createElement("span");
+    label.style.flex = "1";
+    label.style.minWidth = "8rem";
+    label.style.fontSize = "0.82rem";
+    label.textContent = STAFF_SIDEBAR_LABELS[key] || key;
+
+    const up = document.createElement("button");
+    up.type = "button";
+    up.className = "btn-ghost";
+    up.style.width = "auto";
+    up.textContent = "上へ";
+    up.disabled = idx === 0;
+    up.onclick = () => moveStaffSidebarRow(idx, -1);
+
+    const down = document.createElement("button");
+    down.type = "button";
+    down.className = "btn-ghost";
+    down.style.width = "auto";
+    down.textContent = "下へ";
+    down.disabled = idx === staffSidebarEditorState.order.length - 1;
+    down.onclick = () => moveStaffSidebarRow(idx, 1);
+
+    row.appendChild(chk);
+    row.appendChild(label);
+    row.appendChild(up);
+    row.appendChild(down);
+    host.appendChild(row);
+  });
+}
+
+function moveStaffSidebarRow(index, delta) {
+  const arr = staffSidebarEditorState.order;
+  const j = index + delta;
+  if (j < 0 || j >= arr.length) return;
+  const tmp = arr[index];
+  arr[index] = arr[j];
+  arr[j] = tmp;
+  renderStaffSidebarEditor({ fromStorage: false });
+}
+
+function saveStaffSidebarPrefsFromEditor() {
+  const order = [...staffSidebarEditorState.order];
+  const hidden = [...staffSidebarEditorState.hidden];
+  try {
+    localStorage.setItem(staffSidebarStorageKey(), JSON.stringify({ order, hidden }));
+  } catch (e) {
+    log(String(e.message || e));
+    return;
+  }
+  if (typeof window.applyStaffSidebarPrefs === "function") {
+    window.applyStaffSidebarPrefs();
+    log("サイドメニューの設定を保存し、左メニューに反映しました");
+  } else {
+    log("保存しました。別ページへ移動すると左メニューに反映されます。");
+  }
+}
+
+function resetStaffSidebarPrefs() {
+  try {
+    localStorage.removeItem(staffSidebarStorageKey());
+  } catch (_) {}
+  renderStaffSidebarEditor();
+  if (typeof window.applyStaffSidebarPrefs === "function") {
+    window.applyStaffSidebarPrefs();
+  }
+  log("サイドメニューを既定に戻しました");
+}
+
 async function loadAll() {
   log("");
   const [st, staff, pay, twRes] = await Promise.all([
@@ -484,6 +655,7 @@ async function loadAll() {
   }
 
   renderTimeWindows(twRes.timeWindows || []);
+  renderStaffSidebarEditor();
 }
 
 function newPresetId() {
@@ -1063,6 +1235,21 @@ if (btnSaveTakeoutPickup) {
     } catch (e) {
       log(String(e.message || e));
     }
+  };
+}
+
+const btnSaveStaffSidebar = document.getElementById("btnSaveStaffSidebar");
+if (btnSaveStaffSidebar) {
+  btnSaveStaffSidebar.onclick = () => {
+    log("");
+    saveStaffSidebarPrefsFromEditor();
+  };
+}
+const btnResetStaffSidebar = document.getElementById("btnResetStaffSidebar");
+if (btnResetStaffSidebar) {
+  btnResetStaffSidebar.onclick = () => {
+    log("");
+    resetStaffSidebarPrefs();
   };
 }
 

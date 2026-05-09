@@ -614,14 +614,23 @@ async function syncSeatToSessions(storeId: string, seatId: string, next: SeatSta
       return;
     }
     if (!open) {
-      await openSessionForTable({
+      const storeRow = await prisma.store.findUnique({
+        where: { id: storeId },
+        select: { settings: true },
+      });
+      const st = mergeStoreSettings(storeRow?.settings);
+      const opened = await openSessionForTable({
         tableId: table.id,
         storeId,
         guestCount: nextCount,
         childCount: 0,
         courseId: null,
         mode: "reuseIfOpen",
+        requireCourseWhenStarting: st.requireCourseWhenStartingSession,
       });
+      if (!opened.ok) {
+        return;
+      }
       return;
     }
     // Keep guestCount in sync

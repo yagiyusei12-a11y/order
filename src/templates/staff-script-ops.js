@@ -1163,6 +1163,31 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
     orderTableBody ||
     "<tr><td class=\"muted\" colspan=\"2\">コース・注文なし</td></tr>";
 
+  let opsCourseOptionsHtml = "<option value=\"\">コースなし</option>";
+  for (const c of coursesCache) {
+    const tiers = c.priceTiers || [];
+    for (const t of tiers) {
+      const v = c.id + "|" + t.id;
+      const selected =
+        session.courseId === c.id && session.coursePriceTierId === t.id ? " selected" : "";
+      const childBit = t.childPricePerPerson != null ? " · 子" + t.childPricePerPerson + "円" : "";
+      opsCourseOptionsHtml +=
+        "<option value=\"" +
+        escapeHtml(v) +
+        "\"" +
+        selected +
+        ">" +
+        escapeHtml(c.name) +
+        " · " +
+        t.durationMinutes +
+        "分 · 大人" +
+        t.pricePerPerson +
+        "円/人" +
+        childBit +
+        "</option>";
+    }
+  }
+
   panel.innerHTML =
     "<div class=\"ops-register-head\"><span class=\"badge\">" +
     escapeHtml(table.name) +
@@ -1179,6 +1204,29 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
     "<button type=\"button\" class=\"btn-ghost\" id=\"btnMergeSession\" style=\"font-weight:700;border-color:#cbd5e1\">他卓と合算</button>" +
     "<button type=\"button\" class=\"btn-ghost\" id=\"btnEndSession\" style=\"color:#b91c1c;border-color:#fecaca;font-weight:700\">セッションを切る</button>" +
     "</div>" +
+    "<div class=\"card\" style=\"padding:0.65rem 0.75rem;margin:0 0 0.65rem\">" +
+    "<strong style=\"font-size:0.85rem\">人数・コース</strong>" +
+    "<p class=\"muted\" style=\"font-size:0.72rem;margin:0.35rem 0 0.45rem;line-height:1.45\">コース料は人数と下のパターンから自動計算されます。単品の過去の注文単価は変わりません。</p>" +
+    "<div class=\"row\" style=\"margin-top:0.35rem;gap:0.65rem;flex-wrap:wrap;align-items:flex-end\">" +
+    "<div><label for=\"opsSessGuestCount\" style=\"font-size:0.72rem;display:block\">来店人数（延べ）</label>" +
+    "<input id=\"opsSessGuestCount\" type=\"number\" min=\"1\" max=\"99\" step=\"1\" value=\"" +
+    Number(session.guestCount || 1) +
+    "\" style=\"width:5rem;padding:0.35rem 0.45rem;border-radius:8px;border:1px solid var(--border)\" /></div>" +
+    "<div><label for=\"opsSessChildCount\" style=\"font-size:0.72rem;display:block\">うち子ども</label>" +
+    "<input id=\"opsSessChildCount\" type=\"number\" min=\"0\" max=\"99\" step=\"1\" value=\"" +
+    Number(session.childCount || 0) +
+    "\" style=\"width:5rem;padding:0.35rem 0.45rem;border-radius:8px;border:1px solid var(--border)\" /></div>" +
+    "<button type=\"button\" class=\"btn-primary\" id=\"btnOpsSessCounts\" style=\"width:auto;padding:0.45rem 0.75rem\">人数を反映</button>" +
+    "</div>" +
+    "<div class=\"row\" style=\"margin-top:0.55rem;gap:0.5rem;flex-wrap:wrap;align-items:flex-end\">" +
+    "<div style=\"flex:1;min-width:14rem\">" +
+    "<label for=\"opsSessCourse\" style=\"font-size:0.72rem;display:block\">コース（時間パターン）</label>" +
+    "<select id=\"opsSessCourse\" style=\"width:100%;max-width:22rem;padding:0.4rem 0.45rem;border-radius:8px;border:1px solid var(--border)\">" +
+    opsCourseOptionsHtml +
+    "</select></div>" +
+    "<button type=\"button\" class=\"btn-primary\" id=\"btnOpsSessCourseApply\" style=\"width:auto;padding:0.45rem 0.75rem\">コースを適用</button>" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"btnOpsSessCourseClear\" style=\"width:auto;padding:0.45rem 0.75rem;border-color:#fecaca;color:#b91c1c;font-weight:700\">コース解除</button>" +
+    "</div></div>" +
     "<div class=\"card\" style=\"padding:0.55rem 0.75rem;margin:0 0 0.65rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.35rem\">" +
     "<span style=\"font-size:0.82rem\"><strong>卓割引</strong> · <span class=\"muted\">" +
     escapeHtml(billDiscLabel) +
@@ -1248,6 +1296,100 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
   const btnMoveTable = document.getElementById("btnMoveTable");
   if (btnMoveTable) {
     btnMoveTable.onclick = () => openMoveTableDialog(session, table);
+  }
+
+  const btnOpsSessCounts = document.getElementById("btnOpsSessCounts");
+  if (btnOpsSessCounts) {
+    btnOpsSessCounts.onclick = async () => {
+      const gc = Number(document.getElementById("opsSessGuestCount").value);
+      const cc = Number(document.getElementById("opsSessChildCount").value);
+      if (!Number.isInteger(gc) || gc < 1 || gc > 99) {
+        log("来店人数は1〜99の整数で");
+        return;
+      }
+      if (!Number.isInteger(cc) || cc < 0 || cc > gc) {
+        log("子ども人数は0〜来店人数の整数で");
+        return;
+      }
+      try {
+        await api("/stores/" + encodeURIComponent(STORE) + "/sessions/" + encodeURIComponent(session.id), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ guestCount: gc, childCount: cc }),
+        });
+        log("人数を更新しました");
+        await loadAll();
+        selectedTableId = table.id;
+        renderGrid();
+        await renderDetail();
+      } catch (e) {
+        log(String(e.message || e));
+      }
+    };
+  }
+
+  const btnOpsCourseApply = document.getElementById("btnOpsSessCourseApply");
+  const selOpsCourse = document.getElementById("opsSessCourse");
+  if (btnOpsCourseApply && selOpsCourse) {
+    btnOpsCourseApply.onclick = async () => {
+      const raw = selOpsCourse.value || "";
+      let courseId = null;
+      let coursePriceTierId = undefined;
+      if (raw) {
+        const parts = raw.split("|");
+        courseId = parts[0] || null;
+        if (parts[1]) coursePriceTierId = parts[1];
+      }
+      try {
+        await api(
+          "/stores/" + encodeURIComponent(STORE) + "/sessions/" + encodeURIComponent(session.id) + "/course",
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(
+              courseId ? { courseId, coursePriceTierId } : { courseId: null },
+            ),
+          },
+        );
+        log(courseId ? "コースを適用しました" : "コースを解除しました");
+        await loadAll();
+        selectedTableId = table.id;
+        renderGrid();
+        await renderDetail();
+      } catch (e) {
+        log(String(e.message || e));
+      }
+    };
+  }
+
+  const btnOpsCourseClear = document.getElementById("btnOpsSessCourseClear");
+  if (btnOpsCourseClear) {
+    btnOpsCourseClear.onclick = async () => {
+      if (
+        !confirm(
+          "コース料を伝票から外します（コース内単品として注文済みの単価は変わりません）。よろしいですか？",
+        )
+      ) {
+        return;
+      }
+      try {
+        await api(
+          "/stores/" + encodeURIComponent(STORE) + "/sessions/" + encodeURIComponent(session.id) + "/course",
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ courseId: null }),
+          },
+        );
+        log("コースを解除しました");
+        await loadAll();
+        selectedTableId = table.id;
+        renderGrid();
+        await renderDetail();
+      } catch (e) {
+        log(String(e.message || e));
+      }
+    };
   }
 
   const btnBillDiscount = document.getElementById("btnBillDiscount");

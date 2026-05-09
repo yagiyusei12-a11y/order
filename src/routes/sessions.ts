@@ -4,6 +4,8 @@ import { prisma } from "../db.js";
 import { computeCourseSessionTotal } from "../lib/course-pricing.js";
 import { computeSessionSuggestedTotal, parseBillDiscount } from "../lib/ops-discount.js";
 import { openSessionForTable } from "../lib/open-table-session.js";
+import { mergeStoreSettings } from "../lib/store-settings.js";
+import { resolveCourseAndTierForSession } from "../lib/course-tier-resolve.js";
 
 function asStringIdArray(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
@@ -102,6 +104,8 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       coursePriceTierId = tierRaw;
     }
 
+    const st = mergeStoreSettings(store.settings);
+
     const result = await openSessionForTable({
       tableId,
       storeId: store.id,
@@ -110,6 +114,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       courseId,
       coursePriceTierId,
       mode: "failIfOpen",
+      requireCourseWhenStarting: st.requireCourseWhenStartingSession,
     });
     if (!result.ok) {
       if (result.code === "CONFLICT") {
@@ -121,6 +126,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       if (result.code === "BAD_COUNT") return reply.code(400).send({ error: "guestCount must be integer 1-99" });
       if (result.code === "BAD_COURSE") return reply.code(400).send({ error: "course not found" });
       if (result.code === "BAD_TIER") return reply.code(400).send({ error: result.error });
+      if (result.code === "COURSE_REQUIRED") return reply.code(400).send({ error: result.error });
       return reply.code(400).send({ error: result.error });
     }
     const full = await prisma.diningSession.findUniqueOrThrow({
@@ -232,12 +238,118 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
     if (body.guestCount === undefined && body.childCount === undefined) {
       return reply.code(400).send({ error: "guestCount or childCount required" });
     }
-    const updated = await prisma.diningSession.update({
-      where: { id: session.id },
-      data: { guestCount: nextGuest, childCount: nextChild },
-      include: { table: true, course: true },
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.diningSession.update({
+        where: { id: session.id },
+        data: { guestCount: nextGuest, childCount: nextChild },
+        include: { table: true, course: true },
+      });
+      await recomputeOpenBillTotalForSession(tx, session.storeId, session.id);
+      return u;
     });
     return updated;
+  });
+
+  /** セッションのコース（時間パターン）を変更・解除。open のみ。合算子セッションは不可。 */
+  app.patch<{
+    Params: { storeId: string; sessionId: string };
+    Body: { courseId?: unknown; coursePriceTierId?: unknown };
+  }>("/stores/:storeId/sessions/:sessionId/course", async (req, reply) => {
+    const storeId = req.params.storeId;
+    const sessionId = req.params.sessionId;
+    const raw = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+    if (!("courseId" in raw)) {
+      return reply.code(400).send({ error: "courseId が必要です（コース解除は null）" });
+    }
+    const cidRaw = raw.courseId;
+    let courseIdIn: string | null;
+    if (cidRaw === null || cidRaw === "") {
+      courseIdIn = null;
+    } else if (typeof cidRaw === "string") {
+      courseIdIn = cidRaw;
+    } else {
+      return reply.code(400).send({ error: "courseId が不正です" });
+    }
+
+    const tierRaw = (raw as { coursePriceTierId?: unknown }).coursePriceTierId;
+    let tierPass: string | null | undefined;
+    if (tierRaw === undefined || tierRaw === null || tierRaw === "") {
+      tierPass = courseIdIn === null ? null : undefined;
+    } else if (typeof tierRaw === "string") {
+      tierPass = tierRaw;
+    } else {
+      return reply.code(400).send({ error: "coursePriceTierId が不正です" });
+    }
+
+    try {
+      const updated = await prisma.$transaction(async (tx) => {
+        const sess = await tx.diningSession.findFirst({
+          where: { id: sessionId, storeId },
+          select: {
+            id: true,
+            status: true,
+            courseId: true,
+            mergedIntoSessionId: true,
+          },
+        });
+        if (!sess) return { err: "NOT_FOUND" as const, row: null };
+        if (sess.status !== "open") {
+          throw new Error("NOT_OPEN");
+        }
+        if (sess.mergedIntoSessionId) {
+          throw new Error("MERGED_CHILD");
+        }
+
+        const resolved = await resolveCourseAndTierForSession({
+          storeId,
+          courseId: courseIdIn,
+          coursePriceTierId: tierPass,
+        });
+        if (!resolved.ok) {
+          throw new Error(resolved.code === "BAD_COURSE" ? "BAD_COURSE" : "BAD_TIER:" + resolved.error);
+        }
+
+        const prevCourseId = sess.courseId;
+        const courseChanged = prevCourseId !== resolved.courseId;
+
+        await tx.diningSession.update({
+          where: { id: sess.id },
+          data: {
+            courseId: resolved.courseId,
+            coursePriceTierId: resolved.coursePriceTierId,
+            ...(courseChanged ? { purchasedCourseOptionPackIds: [] } : {}),
+          },
+        });
+
+        await recomputeOpenBillTotalForSession(tx, storeId, sess.id);
+
+        const row = await tx.diningSession.findFirst({
+          where: { id: sess.id },
+          include: { table: true, course: true, coursePriceTier: true },
+        });
+        return { err: null as null, row };
+      });
+
+      if (updated.err === "NOT_FOUND" || !updated.row) {
+        return reply.code(404).send({ error: "session not found" });
+      }
+      return updated.row;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      if (msg === "NOT_OPEN") {
+        return reply.code(400).send({ error: "open のセッションだけ変更できます" });
+      }
+      if (msg === "MERGED_CHILD") {
+        return reply
+          .code(400)
+          .send({ error: "合算中の卓セッションはここからコースを変更できません（代表卓で会計してください）" });
+      }
+      if (msg === "BAD_COURSE") return reply.code(400).send({ error: "course not found" });
+      if (msg.startsWith("BAD_TIER:")) {
+        return reply.code(400).send({ error: msg.slice("BAD_TIER:".length) });
+      }
+      throw e;
+    }
   });
 
   /**

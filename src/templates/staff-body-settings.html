@@ -44,47 +44,6 @@
       <button type="button" class="btn-primary" id="btnSaveTaxModes">税・表示モードを保存</button>
     </div>
 
-    <div class="card" id="settings-last-order" style="border-color:#3b82f6">
-      <strong style="font-size:0.9rem">ラストオーダー時刻</strong>
-      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
-        コースに入った卓は、<strong>選んだ時間パターン（例: 90分）の制限</strong>の終了を基準にします。「終了の何分前」に注文を締め切るかを下で指定してください。ゲスト画面のカウントダウンと、締め後の注文拒否に使います。
-      </p>
-      <label for="stLoMin">締め切り（コース終了の何分前）</label>
-      <p class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.35rem">
-        例: 制限90分・30分の場合、セッション開始から60分後がラストオーダー締め。0に近いほど終了ギリギリまで注文可能に近づきます。
-      </p>
-      <input id="stLoMin" type="number" min="0" max="1440" step="1" />
-      <label class="row" style="margin-top:0.6rem;align-items:center;gap:0.4rem;font-size:0.82rem">
-        <input type="checkbox" id="stLoEnforce" /> <span>締め時刻以降の新規注文を拒否する（推奨）</span>
-      </label>
-      <button type="button" class="btn-primary" id="btnSaveLastOrder" style="margin-top:0.65rem">ラストオーダー設定を保存</button>
-    </div>
-
-    <div class="card" style="border-color:#fdba74;margin-top:1rem">
-      <strong style="font-size:0.9rem">ゲスト（コース・テイクアウト）</strong>
-      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
-        コース卓でゲストがテイクアウトを選べるかを絞り込めます。単品マスタの「テイクアウト可」と併用されます。税率は店内（標準）とテイクアウト（軽減8%）で計算されます。
-      </p>
-      <label class="row" style="align-items:flex-start;gap:0.45rem;font-size:0.82rem;margin:0.35rem 0">
-        <input type="checkbox" id="stGuestCourseIncTakeout" style="margin-top:0.15rem;flex-shrink:0" />
-        <span>コース対象（放題内）の単品をテイクアウトにできる</span>
-      </label>
-      <label class="row" style="align-items:flex-start;gap:0.45rem;font-size:0.82rem;margin:0.35rem 0">
-        <input type="checkbox" id="stGuestCourseAddonTakeout" style="margin-top:0.15rem;flex-shrink:0" />
-        <span>コース外（追加料金）の単品・セットをテイクアウトにできる</span>
-      </label>
-      <label class="row" style="align-items:flex-start;gap:0.45rem;font-size:0.82rem;margin:0.35rem 0">
-        <input type="checkbox" id="stGuestEatModeTaxNote" style="margin-top:0.15rem;flex-shrink:0" />
-        <span>ゲストの商品詳細で、店内／テイクアウトの税率の違いの説明を表示する</span>
-      </label>
-      <label for="stGuestCourseMenuNotice">コース利用時のメニュー案内（任意・空なら既定文）</label>
-      <p class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.35rem">
-        ゲスト画面のメニュー上部に表示されます（コース卓のみ）。
-      </p>
-      <textarea id="stGuestCourseMenuNotice" rows="3" maxlength="800" placeholder="空欄のときは既定の説明文を表示" style="width:100%;max-width:40rem;box-sizing:border-box;font-family:inherit;font-size:0.85rem"></textarea>
-      <button type="button" class="btn-primary" id="btnSaveGuestCourseTakeout" style="margin-top:0.65rem">ゲスト（コース・テイクアウト）を保存</button>
-    </div>
-
     <div class="card">
       <strong style="font-size:0.9rem">店舗</strong>
       <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">画面上部の店舗IDとは別に、表示用の店舗名を更新できます。</p>
@@ -125,18 +84,6 @@
         <button type="button" class="btn-primary" id="btnSaveStaffSidebar">保存して反映</button>
         <button type="button" class="btn-ghost" id="btnResetStaffSidebar">既定に戻す</button>
       </div>
-    </div>
-
-    <div class="card" style="margin-top:1rem">
-      <strong style="font-size:0.9rem">コース・ゲスト（オプション差額）</strong>
-      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
-        コース対象の単品について、トッピング等のオプション差額を請求するかだけを設定します。対象商品・時間別料金はコース管理へ。
-      </p>
-      <label class="row" style="margin-top:0.65rem;align-items:flex-start;gap:0.45rem;font-size:0.82rem">
-        <input type="checkbox" id="stIncOptCharge" style="margin-top:0.15rem;flex-shrink:0" />
-        <span>コース対象単品の<strong>オプション差額</strong>を追加請求する<br /><span class="muted" style="font-size:0.72rem;line-height:1.45">オン＝トッピング等の差額が税込で加算（既定）。オフ＝対象単品はオプション含め注文行0円（選択内容は伝票に残ります）。</span></span>
-      </label>
-      <button type="button" class="btn-primary" id="btnSaveCourseGuest" style="margin-top:0.65rem">オプション設定を保存</button>
     </div>
   </div>
 
@@ -179,12 +126,77 @@
     <div class="card">
       <strong style="font-size:0.9rem">メニュー/コースの運用設定</strong>
       <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
-        ここで“表示モード”などの運用設定をまとめます。マスタ編集（商品/コースの追加・編集）は各ページで行います。
+        ゲスト向けコース・テイクアウト・ラストオーダーなどの運用はこのタブでまとめます。税率やタイムゾーンは「基本」タブです。マスタ編集（商品/コースの追加）は各ページへ。
       </p>
       <div class="row" style="gap:0.35rem;flex-wrap:wrap">
         <a class="btn-ghost" href="/staff-app/__STORE_PATH__/menu" style="text-decoration:none;display:inline-block">メニュー編集へ</a>
         <a class="btn-ghost" href="/staff-app/__STORE_PATH__/courses" style="text-decoration:none;display:inline-block">コース編集へ</a>
       </div>
+    </div>
+
+    <div class="card" id="settings-course-start-policy" style="margin-top:1rem;border-color:#94a3b8">
+      <strong style="font-size:0.9rem">卓開始時のコース</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        卓QR・スタッフのセッション開始時に、コース（時間パターン）の選択を必須にするかどうかです。オフのときはコースなしで開店し、レジ（卓オペ）から後からコースを付与できます。
+      </p>
+      <label class="row" style="align-items:flex-start;gap:0.45rem;font-size:0.82rem;margin:0.35rem 0">
+        <input type="checkbox" id="stRequireCourseStart" style="margin-top:0.15rem;flex-shrink:0" />
+        <span>セッション開始時にコースを必須にする</span>
+      </label>
+      <button type="button" class="btn-primary" id="btnSaveCourseStartPolicy" style="margin-top:0.65rem">卓開始・コース方針を保存</button>
+    </div>
+
+    <div class="card" id="settings-last-order" style="margin-top:1rem;border-color:#3b82f6">
+      <strong style="font-size:0.9rem">ラストオーダー時刻</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        コースに入った卓は、<strong>選んだ時間パターン（例: 90分）の制限</strong>の終了を基準にします。「終了の何分前」に注文を締め切るかを下で指定してください。ゲスト画面のカウントダウンと、締め後の注文拒否に使います。
+      </p>
+      <label for="stLoMin">締め切り（コース終了の何分前）</label>
+      <p class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.35rem">
+        例: 制限90分・30分の場合、セッション開始から60分後がラストオーダー締め。0に近いほど終了ギリギリまで注文可能に近づきます。
+      </p>
+      <input id="stLoMin" type="number" min="0" max="1440" step="1" />
+      <label class="row" style="margin-top:0.6rem;align-items:center;gap:0.4rem;font-size:0.82rem">
+        <input type="checkbox" id="stLoEnforce" /> <span>締め時刻以降の新規注文を拒否する（推奨）</span>
+      </label>
+      <button type="button" class="btn-primary" id="btnSaveLastOrder" style="margin-top:0.65rem">ラストオーダー設定を保存</button>
+    </div>
+
+    <div class="card" style="border-color:#fdba74;margin-top:1rem">
+      <strong style="font-size:0.9rem">ゲスト（コース・テイクアウト）</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        コース卓でゲストがテイクアウトを選べるかを絞り込めます。単品マスタの「テイクアウト可」と併用されます。税率は店内（標準）とテイクアウト（軽減8%）で計算されます。
+      </p>
+      <label class="row" style="align-items:flex-start;gap:0.45rem;font-size:0.82rem;margin:0.35rem 0">
+        <input type="checkbox" id="stGuestCourseIncTakeout" style="margin-top:0.15rem;flex-shrink:0" />
+        <span>コース対象（放題内）の単品をテイクアウトにできる</span>
+      </label>
+      <label class="row" style="align-items:flex-start;gap:0.45rem;font-size:0.82rem;margin:0.35rem 0">
+        <input type="checkbox" id="stGuestCourseAddonTakeout" style="margin-top:0.15rem;flex-shrink:0" />
+        <span>コース外（追加料金）の単品・セットをテイクアウトにできる</span>
+      </label>
+      <label class="row" style="align-items:flex-start;gap:0.45rem;font-size:0.82rem;margin:0.35rem 0">
+        <input type="checkbox" id="stGuestEatModeTaxNote" style="margin-top:0.15rem;flex-shrink:0" />
+        <span>ゲストの商品詳細で、店内／テイクアウトの税率の違いの説明を表示する</span>
+      </label>
+      <label for="stGuestCourseMenuNotice">コース利用時のメニュー案内（任意・空なら既定文）</label>
+      <p class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.35rem">
+        ゲスト画面のメニュー上部に表示されます（コース卓のみ）。
+      </p>
+      <textarea id="stGuestCourseMenuNotice" rows="3" maxlength="800" placeholder="空欄のときは既定の説明文を表示" style="width:100%;max-width:40rem;box-sizing:border-box;font-family:inherit;font-size:0.85rem"></textarea>
+      <button type="button" class="btn-primary" id="btnSaveGuestCourseTakeout" style="margin-top:0.65rem">ゲスト（コース・テイクアウト）を保存</button>
+    </div>
+
+    <div class="card" style="margin-top:1rem">
+      <strong style="font-size:0.9rem">コース・ゲスト（オプション差額）</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        コース対象の単品について、トッピング等のオプション差額を請求するかだけを設定します。対象商品・時間別料金はコース管理へ。
+      </p>
+      <label class="row" style="margin-top:0.65rem;align-items:flex-start;gap:0.45rem;font-size:0.82rem">
+        <input type="checkbox" id="stIncOptCharge" style="margin-top:0.15rem;flex-shrink:0" />
+        <span>コース対象単品の<strong>オプション差額</strong>を追加請求する<br /><span class="muted" style="font-size:0.72rem;line-height:1.45">オン＝トッピング等の差額が税込で加算（既定）。オフ＝対象単品はオプション含め注文行0円（選択内容は伝票に残ります）。</span></span>
+      </label>
+      <button type="button" class="btn-primary" id="btnSaveCourseGuest" style="margin-top:0.65rem">オプション設定を保存</button>
     </div>
 
     <div class="card" style="margin-top:1rem">

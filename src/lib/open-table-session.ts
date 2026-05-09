@@ -12,7 +12,7 @@ export type OpenSessionResult =
   | {
       ok: false;
       error: string;
-      code: "BAD_TABLE" | "BAD_COUNT" | "BAD_COURSE" | "CONFLICT" | "BAD_TIER";
+      code: "BAD_TABLE" | "BAD_COUNT" | "BAD_COURSE" | "CONFLICT" | "BAD_TIER" | "COURSE_REQUIRED";
       existingSessionId?: string;
     };
 
@@ -33,6 +33,8 @@ export async function openSessionForTable(options: {
   /** コースに時間別料金がある場合。1件だけなら省略可。 */
   coursePriceTierId?: string | null;
   mode: OpenSessionMode;
+  /** 店舗設定。新規作成時のみ、コース未選択を拒否する */
+  requireCourseWhenStarting?: boolean;
 }): Promise<OpenSessionResult> {
   const { tableId, storeId, guestCount, courseId, mode } = options;
   const childCountRaw = options.childCount;
@@ -102,6 +104,13 @@ export async function openSessionForTable(options: {
       code: resolved.code === "BAD_COURSE" ? "BAD_COURSE" : "BAD_TIER",
     };
   }
+  if (options.requireCourseWhenStarting && !resolved.courseId) {
+    return {
+      ok: false,
+      error: "この店舗ではセッション開始時にコースを選択してください",
+      code: "COURSE_REQUIRED",
+    };
+  }
   resolvedCourseId = resolved.courseId;
   const resolvedTierId = resolved.coursePriceTierId;
 
@@ -137,6 +146,7 @@ export function openOrReuseSessionForTable(input: {
   childCount?: number;
   courseId: string | null;
   coursePriceTierId?: string | null;
+  requireCourseWhenStarting?: boolean;
 }): Promise<OpenSessionResult> {
   return openSessionForTable({ ...input, mode: "reuseIfOpen" });
 }

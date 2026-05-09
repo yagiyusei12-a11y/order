@@ -61,6 +61,11 @@ export type StoreSettingsShape = {
   guestShowEatModeTaxNote: boolean;
   /** コース利用時、メニュー上の案内文（空ならアプリ既定文） */
   guestCourseMenuNotice: string;
+  /**
+   * true のとき、卓QR・スタッフのセッション新規開始でコース（時間パターン）が必須。
+   * false のときコースなし開始が可能で、レジから後からコースを付与できる。
+   */
+  requireCourseWhenStartingSession: boolean;
   /** テイクアウト受取の候補に使う時間帯マスタ（複数） */
   takeoutPickupTimeWindowIds: string[];
   /** オペ割引のプリセット（レジで選択） */
@@ -99,6 +104,7 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     guestCourseAddonAllowTakeout: true,
     guestShowEatModeTaxNote: false,
     guestCourseMenuNotice: "",
+    requireCourseWhenStartingSession: false,
     takeoutPickupTimeWindowIds: [],
     opsDiscountPresets: [],
     opsRegisterMethodCodes: [],
@@ -167,6 +173,9 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
   }
   if (typeof o.guestCourseMenuNotice === "string") {
     d.guestCourseMenuNotice = o.guestCourseMenuNotice.trim().slice(0, 800);
+  }
+  if (typeof o.requireCourseWhenStartingSession === "boolean") {
+    d.requireCourseWhenStartingSession = o.requireCourseWhenStartingSession;
   }
   if (Array.isArray(o.takeoutPickupTimeWindowIds)) {
     const ids = o.takeoutPickupTimeWindowIds

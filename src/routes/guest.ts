@@ -743,6 +743,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         guestCourseAddonAllowTakeout: st.guestCourseAddonAllowTakeout,
         guestShowEatModeTaxNote: st.guestShowEatModeTaxNote,
         guestCourseMenuNotice: st.guestCourseMenuNotice,
+        requireCourseWhenStartingSession: st.requireCourseWhenStartingSession,
       },
       categories: categoriesFiltered.map((c) => ({
         id: c.id,

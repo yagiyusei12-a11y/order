@@ -47,6 +47,7 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
         menuPriceTaxMode: st.menuPriceTaxMode,
         coursePriceTaxMode: st.coursePriceTaxMode,
         taxRatePercent: st.taxRatePercent,
+        requireCourseWhenStartingSession: st.requireCourseWhenStartingSession,
       },
       table: {
         id: table.id,
@@ -77,6 +78,12 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
       where: { publicCode: req.params.publicCode },
     });
     if (!table || !table.active) return reply.code(404).send({ error: "table not found" });
+
+    const storeRow = await prisma.store.findUnique({
+      where: { id: table.storeId },
+      select: { settings: true },
+    });
+    const st = mergeStoreSettings(storeRow?.settings);
 
     const body = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
     const guestCount = body.guestCount;
@@ -121,11 +128,13 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
       childCount,
       courseId,
       coursePriceTierId,
+      requireCourseWhenStarting: st.requireCourseWhenStartingSession,
     });
     if (!result.ok) {
       if (result.code === "BAD_COUNT") return reply.code(400).send({ error: "guestCount must be integer 1-99" });
       if (result.code === "BAD_COURSE") return reply.code(400).send({ error: "course not found" });
       if (result.code === "BAD_TIER") return reply.code(400).send({ error: result.error });
+      if (result.code === "COURSE_REQUIRED") return reply.code(400).send({ error: result.error });
       return reply.code(400).send({ error: result.error });
     }
     return {

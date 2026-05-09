@@ -648,6 +648,8 @@ async function loadAll() {
   if (getn) getn.checked = s.guestShowEatModeTaxNote === true;
   const gcm = document.getElementById("stGuestCourseMenuNotice");
   if (gcm) gcm.value = typeof s.guestCourseMenuNotice === "string" ? s.guestCourseMenuNotice : "";
+  const crs = document.getElementById("stRequireCourseStart");
+  if (crs) crs.checked = s.requireCourseWhenStartingSession === true;
   const incOpt = document.getElementById("stIncOptCharge");
   if (incOpt) incOpt.checked = s.guestCourseIncludedChargeOptionExtras !== false;
   const ksb = document.getElementById("stKitShowCourseBadge");
@@ -1500,6 +1502,25 @@ if (btnSaveBillCorrectionPolicy) {
         body: JSON.stringify({ settings: { billCorrectionPolicy } }),
       });
       log("訂正ポリシーを保存しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+}
+
+const btnSaveCourseStartPolicy = document.getElementById("btnSaveCourseStartPolicy");
+if (btnSaveCourseStartPolicy) {
+  btnSaveCourseStartPolicy.onclick = async () => {
+    log("");
+    const requireCourseWhenStartingSession = document.getElementById("stRequireCourseStart").checked;
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings: { requireCourseWhenStartingSession } }),
+      });
+      log("卓開始・コース方針を保存しました");
       await loadAll();
     } catch (e) {
       log(String(e.message || e));

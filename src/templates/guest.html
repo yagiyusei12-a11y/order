@@ -1141,6 +1141,7 @@
   </header>
 
   <div id="lastOrderBanner" role="status" aria-live="polite"></div>
+  <p id="courseMenuNotice" class="muted course-menu-notice" style="display:none;font-size:0.82rem;margin:0 0 0.45rem;line-height:1.45;padding:0 0.15rem"></p>
   <div id="courseMenuFilterWrap" class="course-menu-filter-wrap" style="display: none" hidden>
     <button type="button" id="btnCourseItemsOnly" class="course-menu-filter-btn" aria-pressed="false">
       コース対象商品のみを表示
@@ -1359,6 +1360,7 @@
     let ordersCache = [];
     let activeGuestCatId = "";
     let courseIncludedOnly = false;
+    let guestShowEatModeTaxNote = false;
     function courseFilterStorageKey() {
       return "guestCourseIncludedOnly_" + String(TOKEN || "x");
     }
@@ -2765,6 +2767,9 @@
           "<span class=\"opt-name\">店内</span></label>" +
           "<label class=\"opt-row\" style=\"cursor:pointer;margin:0\"><input type=\"radio\" name=\"eatmode\" value=\"takeout\" />" +
           "<span class=\"opt-name\">テイクアウト（税率8%）</span></label>" +
+          (guestShowEatModeTaxNote
+            ? "<p class=\"muted\" style=\"font-size:.72rem;margin:.35rem 0 0;line-height:1.4\">店内とテイクアウトでは軽減税率・標準税率などにより、税込表示・請求額が異なる場合があります。</p>"
+            : "") +
           "</div>";
       }
 
@@ -3183,6 +3188,7 @@
       taxRatePercent = Number((data.store && data.store.taxRatePercent) || 10);
       guestCourseIncludedChargeOptionExtras =
         !data.store || data.store.guestCourseIncludedChargeOptionExtras !== false;
+      guestShowEatModeTaxNote = !!(data.store && data.store.guestShowEatModeTaxNote === true);
       const s = data.session;
       const cc = Number(s.childCount || 0);
       let hdr = "人数 " + (s.guestCount || "—");
@@ -3216,6 +3222,20 @@
         }
       } catch (_) {}
       startLastOrderTicker(data.lastOrder);
+
+      try {
+        const noticeEl = document.getElementById("courseMenuNotice");
+        if (noticeEl) {
+          const custom =
+            data.store &&
+            typeof data.store.guestCourseMenuNotice === "string" &&
+            String(data.store.guestCourseMenuNotice).trim();
+          noticeEl.textContent = custom
+            ? String(custom).trim()
+            : "コースに含まれる商品のほか、追加でご注文いただけるメニューも一覧に表示されます。「コース対象商品のみを表示」で絞り込めます。";
+          noticeEl.style.display = s.course ? "" : "none";
+        }
+      } catch (_) {}
 
       const filterWrap = document.getElementById("courseMenuFilterWrap");
       const filterBtn = document.getElementById("btnCourseItemsOnly");

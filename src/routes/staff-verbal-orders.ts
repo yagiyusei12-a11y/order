@@ -1,6 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import { minutesSinceMidnightInTimeZone } from "../lib/guest-category-hours.js";
 import { applyGuestItemTimeDiscounts } from "../lib/guest-time-pricing.js";
+import {
+  baseNetFromStoredPrice,
+  eatModeTaxRatePercent,
+  normalizeEatMode,
+  taxIncludedFromNet,
+  type EatMode,
+} from "../lib/order-line-tax.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
 import { prisma } from "../db.js";
 
@@ -18,7 +25,7 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
   app.post<{
     Params: { storeId: string; sessionId: string };
     Body: {
-      lines: { menuItemId: string; qty: number; note?: string }[];
+      lines: { menuItemId: string; qty: number; note?: string; eatMode?: unknown }[];
       note?: string;
     };
   }>("/stores/:storeId/sessions/:sessionId/verbal-order", async (req, reply) => {
@@ -95,12 +102,45 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
           }
         }
 
+        const includedTierIds = new Set<string>();
+        const gcTier = sess.guestCount ?? 0;
+        if (sess.courseId) {
+          const linkT = await tx.courseMenuItem.findMany({
+            where: { courseId: sess.courseId },
+            include: { menuItem: { select: { sellKind: true } } },
+          });
+          for (const row of linkT) {
+            if (
+              row.menuItem &&
+              row.menuItem.sellKind !== "set" &&
+              gcTier >= row.minGuestCount
+            ) {
+              includedTierIds.add(row.menuItemId);
+            }
+          }
+          const pidsT = parsePurchasedCourseOptionPackIds(sess.purchasedCourseOptionPackIds);
+          if (pidsT.length > 0 && sess.courseId) {
+            const pimT = await tx.courseOptionPackMenuItem.findMany({
+              where: {
+                packId: { in: pidsT },
+                pack: { courseId: sess.courseId },
+              },
+              include: { menuItem: { select: { sellKind: true } } },
+            });
+            for (const r of pimT) {
+              if (r.menuItem && r.menuItem.sellKind !== "set") includedTierIds.add(r.menuItemId);
+            }
+          }
+        }
+
         type Resolved = {
           menuItemId: string;
           qty: number;
           note: string | null;
           unitPrice: number;
           nameSnapshot: string;
+          eatMode: EatMode;
+          taxRatePercent: number;
         };
         const resolved: Resolved[] = [];
         const needStock = new Map<string, number>();
@@ -140,6 +180,17 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
           });
           if (!item) throw new Error("BAD_ITEM");
 
+          const eatMode = normalizeEatMode((l as { eatMode?: unknown }).eatMode);
+          const lineTaxPct = eatModeTaxRatePercent(eatMode, st.taxRatePercent);
+          if (eatMode === "takeout") {
+            if (item.allowTakeout !== true) throw new Error("BAD_TAKEOUT");
+            if (sess.courseId) {
+              const inc = includedTierIds.has(item.id);
+              if (inc && !st.guestCourseIncludedAllowTakeout) throw new Error("BAD_TAKEOUT_COURSE");
+              if (!inc && !st.guestCourseAddonAllowTakeout) throw new Error("BAD_TAKEOUT_COURSE");
+            }
+          }
+
           const activeGroups = item.optionLinks
             .map((ol) => ol.optionGroup)
             .filter((g): g is NonNullable<typeof g> => Boolean(g && g.active));
@@ -150,10 +201,9 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
             }
           }
 
-          const baseTaxIncluded =
-            (item.priceTaxMode === "exclusive" ? "exclusive" : st.menuPriceTaxMode) === "exclusive"
-              ? Math.round(item.price * (1 + st.taxRatePercent / 100))
-              : item.price;
+          const priceTaxMode = item.priceTaxMode === "exclusive" ? "exclusive" : st.menuPriceTaxMode;
+          const baseNet = baseNetFromStoredPrice(item.price, priceTaxMode, st.taxRatePercent);
+          const baseTaxIncluded = taxIncludedFromNet(baseNet, lineTaxPct);
           const discRows = item.timeDiscounts.map((d) => ({
             discountKind: d.discountKind,
             value: d.value,
@@ -168,6 +218,8 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
             note: l.note?.trim() || null,
             unitPrice,
             nameSnapshot: item.name,
+            eatMode,
+            taxRatePercent: lineTaxPct,
           });
         }
 
@@ -221,6 +273,8 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
               qty: r.qty,
               note: r.note,
               status: "queued",
+              eatMode: r.eatMode,
+              taxRatePercent: r.taxRatePercent,
             },
           });
         }
@@ -252,6 +306,14 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
         return reply
           .code(400)
           .send({ error: "オプション必須の商品はハンディでは選べません（卓・会計またはゲストから注文してください）" });
+      }
+      if (msg === "BAD_TAKEOUT") {
+        return reply.code(400).send({ error: "テイクアウトにできない商品が含まれています（商品マスタのテイクアウト可を確認）" });
+      }
+      if (msg === "BAD_TAKEOUT_COURSE") {
+        return reply
+          .code(400)
+          .send({ error: "店舗設定のコース×テイクアウトにより、この区分では出せません" });
       }
       throw e;
     }

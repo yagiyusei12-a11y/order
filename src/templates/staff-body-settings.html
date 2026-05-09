@@ -60,6 +60,31 @@
       <button type="button" class="btn-primary" id="btnSaveLastOrder" style="margin-top:0.65rem">ラストオーダー設定を保存</button>
     </div>
 
+    <div class="card" style="border-color:#fdba74;margin-top:1rem">
+      <strong style="font-size:0.9rem">ゲスト（コース・テイクアウト）</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        コース卓でゲストがテイクアウトを選べるかを絞り込めます。単品マスタの「テイクアウト可」と併用されます。税率は店内（標準）とテイクアウト（軽減8%）で計算されます。
+      </p>
+      <label class="row" style="align-items:flex-start;gap:0.45rem;font-size:0.82rem;margin:0.35rem 0">
+        <input type="checkbox" id="stGuestCourseIncTakeout" style="margin-top:0.15rem;flex-shrink:0" />
+        <span>コース対象（放題内）の単品をテイクアウトにできる</span>
+      </label>
+      <label class="row" style="align-items:flex-start;gap:0.45rem;font-size:0.82rem;margin:0.35rem 0">
+        <input type="checkbox" id="stGuestCourseAddonTakeout" style="margin-top:0.15rem;flex-shrink:0" />
+        <span>コース外（追加料金）の単品・セットをテイクアウトにできる</span>
+      </label>
+      <label class="row" style="align-items:flex-start;gap:0.45rem;font-size:0.82rem;margin:0.35rem 0">
+        <input type="checkbox" id="stGuestEatModeTaxNote" style="margin-top:0.15rem;flex-shrink:0" />
+        <span>ゲストの商品詳細で、店内／テイクアウトの税率の違いの説明を表示する</span>
+      </label>
+      <label for="stGuestCourseMenuNotice">コース利用時のメニュー案内（任意・空なら既定文）</label>
+      <p class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.35rem">
+        ゲスト画面のメニュー上部に表示されます（コース卓のみ）。
+      </p>
+      <textarea id="stGuestCourseMenuNotice" rows="3" maxlength="800" placeholder="空欄のときは既定の説明文を表示" style="width:100%;max-width:40rem;box-sizing:border-box;font-family:inherit;font-size:0.85rem"></textarea>
+      <button type="button" class="btn-primary" id="btnSaveGuestCourseTakeout" style="margin-top:0.65rem">ゲスト（コース・テイクアウト）を保存</button>
+    </div>
+
     <div class="card">
       <strong style="font-size:0.9rem">店舗</strong>
       <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">画面上部の店舗IDとは別に、表示用の店舗名を更新できます。</p>

@@ -23,6 +23,14 @@ import {
   type SetStepForValidation,
 } from "../lib/menu-set-order.js";
 import { SET_SERVE_LATER_LINE_KIND } from "../lib/set-order-bundle.js";
+import {
+  baseNetFromStoredPrice,
+  eatModeTaxRatePercent,
+  normalizeEatMode,
+  retaxInclusiveYen,
+  taxIncludedFromNet,
+  type EatMode,
+} from "../lib/order-line-tax.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
 import { displayTableCode } from "../lib/table-display-code.js";
 import { prisma } from "../db.js";
@@ -72,33 +80,6 @@ async function resolveGuestBillingContext(session: {
     };
   }
   return { ok: false, status: 404, body: { error: "session not found or closed" } };
-}
-
-type EatMode = "dine_in" | "takeout";
-function normalizeEatMode(raw: unknown): EatMode {
-  return raw === "takeout" ? "takeout" : "dine_in";
-}
-function eatModeTaxRatePercent(eatMode: EatMode, storeTaxRatePercent: number): number {
-  return eatMode === "takeout" ? 8 : storeTaxRatePercent;
-}
-function retaxInclusiveYen(
-  taxIncludedYen: number,
-  fromTaxRatePercent: number,
-  toTaxRatePercent: number,
-): number {
-  const net = Math.round(Number(taxIncludedYen || 0) / (1 + fromTaxRatePercent / 100));
-  return Math.round(net * (1 + toTaxRatePercent / 100));
-}
-function baseNetFromStoredPrice(
-  storedPrice: number,
-  storedMode: "inclusive" | "exclusive",
-  storeTaxRatePercent: number,
-): number {
-  if (storedMode === "exclusive") return storedPrice;
-  return Math.round(storedPrice / (1 + storeTaxRatePercent / 100));
-}
-function taxIncludedFromNet(netExclusiveYen: number, taxRatePercent: number): number {
-  return Math.round(netExclusiveYen * (1 + taxRatePercent / 100));
 }
 
 function mapGuestMenuItem(
@@ -758,6 +739,10 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         coursePriceTaxMode: st.coursePriceTaxMode,
         taxRatePercent: st.taxRatePercent,
         guestCourseIncludedChargeOptionExtras: st.guestCourseIncludedChargeOptionExtras,
+        guestCourseIncludedAllowTakeout: st.guestCourseIncludedAllowTakeout,
+        guestCourseAddonAllowTakeout: st.guestCourseAddonAllowTakeout,
+        guestShowEatModeTaxNote: st.guestShowEatModeTaxNote,
+        guestCourseMenuNotice: st.guestCourseMenuNotice,
       },
       categories: categoriesFiltered.map((c) => ({
         id: c.id,
@@ -774,7 +759,9 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                 nowMin,
               );
               if (!row) return null;
-              return { ...row, courseTier: "addon" as const };
+              let allowTakeoutOut = (row as { allowTakeout?: boolean }).allowTakeout === true;
+              if (session.courseId && !st.guestCourseAddonAllowTakeout) allowTakeoutOut = false;
+              return { ...row, courseTier: "addon" as const, allowTakeout: allowTakeoutOut };
             }
             const single = mapGuestMenuItem(it, st.menuPriceTaxMode, st.taxRatePercent, nowMin);
             const opt = mapGuestOptionGroups(it.optionLinks ?? []);
@@ -785,7 +772,14 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                 : includedSingleIds.has(it.id)
                   ? ("included" as const)
                   : ("addon" as const);
-            return { ...single, courseTier };
+            let allowTakeoutOut = (single as { allowTakeout?: boolean }).allowTakeout === true;
+            if (session.courseId && courseTier === "included" && !st.guestCourseIncludedAllowTakeout) {
+              allowTakeoutOut = false;
+            }
+            if (session.courseId && courseTier === "addon" && !st.guestCourseAddonAllowTakeout) {
+              allowTakeoutOut = false;
+            }
+            return { ...single, courseTier, allowTakeout: allowTakeoutOut };
           })
           .filter(Boolean),
       })),
@@ -1159,6 +1153,9 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
             });
             if (!setItem) throw new Error("BAD_ITEM");
             if (eatMode === "takeout" && setItem.allowTakeout !== true) throw new Error("BAD_TAKEOUT");
+            if (eatMode === "takeout" && sess?.courseId && !st.guestCourseAddonAllowTakeout) {
+              throw new Error("BAD_TAKEOUT_COURSE");
+            }
             const sc = setItem.category;
             const gw0 = sc.guestVisibleTimeWindow;
             const sl0 = gw0 ? { startMin: gw0.startMin, endMin: gw0.endMin } : null;
@@ -1419,6 +1416,11 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
             });
             if (!plainItem) throw new Error("BAD_ITEM");
             if (eatMode === "takeout" && plainItem.allowTakeout !== true) throw new Error("BAD_TAKEOUT");
+            if (eatMode === "takeout" && sess?.courseId) {
+              const inc = includedSingles.has(plainItem.id);
+              if (inc && !st.guestCourseIncludedAllowTakeout) throw new Error("BAD_TAKEOUT_COURSE");
+              if (!inc && !st.guestCourseAddonAllowTakeout) throw new Error("BAD_TAKEOUT_COURSE");
+            }
             const cat0 = plainItem.category;
             const gw0 = cat0.guestVisibleTimeWindow;
             const sl0 = gw0 ? { startMin: gw0.startMin, endMin: gw0.endMin } : null;
@@ -1619,6 +1621,11 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       }
       if (msg === "BAD_TAKEOUT") {
         return reply.code(400).send({ error: "テイクアウト不可の商品が含まれています" });
+      }
+      if (msg === "BAD_TAKEOUT_COURSE") {
+        return reply
+          .code(400)
+          .send({ error: "このコース設定では、選択した区分ではテイクアウトできない商品が含まれています" });
       }
       if (msg === "BAD_SET_COMP_OPT") {
         return reply.code(400).send({ error: "セット構成単品のオプション選択が正しくありません" });

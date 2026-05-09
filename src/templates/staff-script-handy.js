@@ -1,4 +1,4 @@
-/** @typedef {{ id: string; name: string; sellKind?: string; isAvailable?: boolean; price?: number; optionLinks?: { optionGroupId: string }[] }} HandyItem */
+/** @typedef {{ id: string; name: string; sellKind?: string; isAvailable?: boolean; allowTakeout?: boolean; price?: number; optionLinks?: { optionGroupId: string }[] }} HandyItem */
 
 let sessionsCache = [];
 /** @type {{ categories: { id: string; name: string; items: HandyItem[] }[] }} */
@@ -71,6 +71,21 @@ function itemHandyOk(it) {
     if (g.minSelect > 0 && activeItems.length > 0) return { ok: false, reason: "opt" };
   }
   return { ok: true };
+}
+
+/** @returns {"dine_in" | "takeout"} */
+function handyEatModeSelected() {
+  const t = document.getElementById("handyEatTakeout");
+  return t && t.checked ? "takeout" : "dine_in";
+}
+
+function wireHandyEatModeRadios() {
+  for (const el of document.querySelectorAll('input[name="handyEatMode"]')) {
+    el.addEventListener("change", () => {
+      renderItems();
+      log("");
+    });
+  }
 }
 
 function flatItems() {
@@ -294,11 +309,13 @@ function renderItems() {
     return;
   }
 
+  const takeoutMode = handyEatModeSelected() === "takeout";
   for (const it of items) {
     const row = document.createElement("div");
     row.className = "handy-row";
     const hi = itemHandyOk(it);
-    if (!hi.ok) row.classList.add("dim");
+    const takeoutBlocked = takeoutMode && it.allowTakeout !== true;
+    if (!hi.ok || takeoutBlocked) row.classList.add("dim");
     const left = document.createElement("div");
     left.style.minWidth = "0";
     const rLabel =
@@ -308,7 +325,9 @@ function renderItems() {
           ? "オプション必須"
           : hi.reason === "off"
             ? "販売停止"
-            : "";
+            : takeoutBlocked
+              ? "テイクアウト不可"
+              : "";
     left.innerHTML =
       "<div style=\"font-weight:700\">" +
       escapeHtml(it.name) +
@@ -323,9 +342,9 @@ function renderItems() {
     btn.type = "button";
     btn.className = "btn-primary add";
     btn.textContent = "＋";
-    btn.disabled = !hi.ok;
+    btn.disabled = !hi.ok || takeoutBlocked;
     btn.onclick = () => {
-      if (!hi.ok) return;
+      if (!hi.ok || takeoutBlocked) return;
       const cur = cart.get(it.id) || { id: it.id, name: it.name, qty: 0, lineNote: "" };
       cur.qty += 1;
       cart.set(it.id, cur);
@@ -391,10 +410,20 @@ async function submitOrder() {
   if (!sid) return log("セッションを選んでください（開店中がない場合は卓・会計で開始）");
   if (cart.size === 0) return log("カートが空です");
 
+  const eatMode = handyEatModeSelected();
   const lines = [];
   for (const [, row] of cart) {
     if (row.qty > 0) {
-      lines.push({ menuItemId: row.id, qty: row.qty, note: row.lineNote || undefined });
+      const meta = flatItems().find((x) => x.id === row.id);
+      if (eatMode === "takeout" && meta && meta.allowTakeout !== true) {
+        return log("テイクアウトにできない商品がカートに含まれています（提供区分を店内にするか、カートを調整）");
+      }
+      lines.push({
+        menuItemId: row.id,
+        qty: row.qty,
+        note: row.lineNote || undefined,
+        eatMode,
+      });
     }
   }
   if (!lines.length) return log("カートが空です");
@@ -444,6 +473,7 @@ document.getElementById("handySubmit").onclick = () => submitOrder();
 
 (async () => {
   try {
+    wireHandyEatModeRadios();
     await loadMenuAndOptions();
     renderItems();
     await Promise.all([loadSessions(), loadCustomers()]);

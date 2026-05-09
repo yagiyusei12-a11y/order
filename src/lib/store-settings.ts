@@ -53,6 +53,14 @@ export type StoreSettingsShape = {
    * false のとき本体・オプションとも税込0円（選択は伝票に残る）。
    */
   guestCourseIncludedChargeOptionExtras: boolean;
+  /** コース利用中、コース対象（放題内）の単品をテイクアウト表示・注文に含めてよいか。false なら店内のみ。 */
+  guestCourseIncludedAllowTakeout: boolean;
+  /** コース利用中、コース外（追加料金）の単品・セットをテイクアウトに含めてよいか。 */
+  guestCourseAddonAllowTakeout: boolean;
+  /** ゲストの商品詳細で、テイクアウト時の税率差などの補足文を出す */
+  guestShowEatModeTaxNote: boolean;
+  /** コース利用時、メニュー上の案内文（空ならアプリ既定文） */
+  guestCourseMenuNotice: string;
   /** テイクアウト受取の候補に使う時間帯マスタ（複数） */
   takeoutPickupTimeWindowIds: string[];
   /** オペ割引のプリセット（レジで選択） */
@@ -87,6 +95,10 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     guestCourseLastOrderMinutesBeforeEnd: 30,
     guestEnforceLastOrder: true,
     guestCourseIncludedChargeOptionExtras: true,
+    guestCourseIncludedAllowTakeout: true,
+    guestCourseAddonAllowTakeout: true,
+    guestShowEatModeTaxNote: false,
+    guestCourseMenuNotice: "",
     takeoutPickupTimeWindowIds: [],
     opsDiscountPresets: [],
     opsRegisterMethodCodes: [],
@@ -143,6 +155,18 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
   }
   if (typeof o.guestCourseIncludedChargeOptionExtras === "boolean") {
     d.guestCourseIncludedChargeOptionExtras = o.guestCourseIncludedChargeOptionExtras;
+  }
+  if (typeof o.guestCourseIncludedAllowTakeout === "boolean") {
+    d.guestCourseIncludedAllowTakeout = o.guestCourseIncludedAllowTakeout;
+  }
+  if (typeof o.guestCourseAddonAllowTakeout === "boolean") {
+    d.guestCourseAddonAllowTakeout = o.guestCourseAddonAllowTakeout;
+  }
+  if (typeof o.guestShowEatModeTaxNote === "boolean") {
+    d.guestShowEatModeTaxNote = o.guestShowEatModeTaxNote;
+  }
+  if (typeof o.guestCourseMenuNotice === "string") {
+    d.guestCourseMenuNotice = o.guestCourseMenuNotice.trim().slice(0, 800);
   }
   if (Array.isArray(o.takeoutPickupTimeWindowIds)) {
     const ids = o.takeoutPickupTimeWindowIds

@@ -61,7 +61,21 @@
       <input id="handySearch" type="search" placeholder="名前の一部" autocomplete="off" />
     </section>
 
-    <div id="handyItemList" class="handy-item-list handy-card" style="padding:0;overflow:hidden"></div>
+    <div id="handyItemList" class="handy-item-list handy-card" style="padding:0"></div>
+
+    <section class="handy-card handy-section">
+      <div class="handy-section-head">
+        <span class="handy-section-title">提供区分</span>
+      </div>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.82rem;margin:0.25rem 0">
+        <input type="radio" name="handyEatMode" id="handyEatDineIn" value="dine_in" checked />
+        <span>店内（標準税率で計上）</span>
+      </label>
+      <label class="row" style="align-items:flex-start;gap:0.45rem;font-size:0.82rem;margin:0.25rem 0">
+        <input type="radio" name="handyEatMode" id="handyEatTakeout" value="takeout" style="margin-top:0.15rem;flex-shrink:0" />
+        <span>テイクアウト（軽減税率・メニューで「テイクアウト可」のみ）</span>
+      </label>
+    </section>
 
     <section class="handy-card handy-section handy-cart-section">
       <div class="handy-section-head">

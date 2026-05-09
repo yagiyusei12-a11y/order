@@ -640,6 +640,14 @@ async function loadAll() {
   const loEnf = document.getElementById("stLoEnforce");
   if (loMin) loMin.value = String(s.guestCourseLastOrderMinutesBeforeEnd ?? 30);
   if (loEnf) loEnf.checked = s.guestEnforceLastOrder !== false;
+  const gci = document.getElementById("stGuestCourseIncTakeout");
+  if (gci) gci.checked = s.guestCourseIncludedAllowTakeout !== false;
+  const gca = document.getElementById("stGuestCourseAddonTakeout");
+  if (gca) gca.checked = s.guestCourseAddonAllowTakeout !== false;
+  const getn = document.getElementById("stGuestEatModeTaxNote");
+  if (getn) getn.checked = s.guestShowEatModeTaxNote === true;
+  const gcm = document.getElementById("stGuestCourseMenuNotice");
+  if (gcm) gcm.value = typeof s.guestCourseMenuNotice === "string" ? s.guestCourseMenuNotice : "";
   const incOpt = document.getElementById("stIncOptCharge");
   if (incOpt) incOpt.checked = s.guestCourseIncludedChargeOptionExtras !== false;
   const ksb = document.getElementById("stKitShowCourseBadge");
@@ -1492,6 +1500,35 @@ if (btnSaveBillCorrectionPolicy) {
         body: JSON.stringify({ settings: { billCorrectionPolicy } }),
       });
       log("訂正ポリシーを保存しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+}
+
+const btnSaveGuestCourseTakeout = document.getElementById("btnSaveGuestCourseTakeout");
+if (btnSaveGuestCourseTakeout) {
+  btnSaveGuestCourseTakeout.onclick = async () => {
+    log("");
+    const guestCourseIncludedAllowTakeout = document.getElementById("stGuestCourseIncTakeout").checked;
+    const guestCourseAddonAllowTakeout = document.getElementById("stGuestCourseAddonTakeout").checked;
+    const guestShowEatModeTaxNote = document.getElementById("stGuestEatModeTaxNote").checked;
+    let guestCourseMenuNotice = String(document.getElementById("stGuestCourseMenuNotice").value || "").trim().slice(0, 800);
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          settings: {
+            guestCourseIncludedAllowTakeout,
+            guestCourseAddonAllowTakeout,
+            guestShowEatModeTaxNote,
+            guestCourseMenuNotice: guestCourseMenuNotice || "",
+          },
+        }),
+      });
+      log("ゲスト（コース・テイクアウト）を保存しました");
       await loadAll();
     } catch (e) {
       log(String(e.message || e));

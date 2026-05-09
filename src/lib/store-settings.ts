@@ -34,6 +34,13 @@ export type StoreSettingsShape = {
   guestCourseIncludedChargeOptionExtras: boolean;
   /** テイクアウト受取の候補に使う時間帯マスタ（複数） */
   takeoutPickupTimeWindowIds: string[];
+  /** オペ割引のプリセット（レジで選択） */
+  opsDiscountPresets: {
+    id: string;
+    name: string;
+    kind: "percent" | "yen";
+    value: number;
+  }[];
 };
 
 export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
@@ -47,6 +54,7 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     guestEnforceLastOrder: true,
     guestCourseIncludedChargeOptionExtras: true,
     takeoutPickupTimeWindowIds: [],
+    opsDiscountPresets: [],
   };
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return d;
   const o = raw as Record<string, unknown>;
@@ -85,6 +93,22 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
       .filter(Boolean);
     // unique + cap to avoid bloat
     d.takeoutPickupTimeWindowIds = [...new Set(ids)].slice(0, 50);
+  }
+  if (Array.isArray(o.opsDiscountPresets)) {
+    const presets: StoreSettingsShape["opsDiscountPresets"] = [];
+    for (const row of o.opsDiscountPresets) {
+      if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+      const r = row as Record<string, unknown>;
+      const id = typeof r.id === "string" ? r.id.trim().slice(0, 40) : "";
+      const name = typeof r.name === "string" ? r.name.trim().slice(0, 80) : "";
+      const kind = r.kind === "percent" || r.kind === "yen" ? r.kind : null;
+      const value =
+        typeof r.value === "number" && Number.isFinite(r.value) ? Math.floor(r.value) : null;
+      if (!id || !name || !kind || value === null || value < 0) continue;
+      if (kind === "percent" && value > 100) continue;
+      presets.push({ id, name, kind, value });
+    }
+    d.opsDiscountPresets = presets.slice(0, 40);
   }
   return d;
 }

@@ -201,6 +201,7 @@ async function loadAll() {
   const incOpt = document.getElementById("stIncOptCharge");
   if (incOpt) incOpt.checked = s.guestCourseIncludedChargeOptionExtras !== false;
   renderTakeoutPickupWindows(twRes.timeWindows || [], s.takeoutPickupTimeWindowIds || []);
+  renderOpsDiscountPresets(s.opsDiscountPresets || []);
 
   const sl = document.getElementById("staffList");
   const users = staff.staffUsers || [];
@@ -425,6 +426,101 @@ async function loadAll() {
   }
 
   renderTimeWindows(twRes.timeWindows || []);
+}
+
+function newPresetId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return "p_" + crypto.randomUUID().replace(/-/g, "").slice(0, 12);
+  return "p_" + Date.now() + "_" + Math.floor(Math.random() * 1e6);
+}
+
+function renderOpsDiscountPresets(presets) {
+  const tbody = document.getElementById("opsDiscountPresetsBody");
+  if (!tbody) return;
+  const arr = Array.isArray(presets) ? presets : [];
+  tbody.innerHTML = arr
+    .map((p) => {
+      const id = typeof p.id === "string" && p.id ? p.id : newPresetId();
+      return (
+        "<tr data-preset-id=\"" +
+        escapeHtml(id) +
+        "\"><td><input type=\"text\" data-p-name style=\"width:100%;margin:0\" value=\"" +
+        escapeHtml(p.name || "") +
+        "\" placeholder=\"例: 常連割引\" /></td>" +
+        "<td><select data-p-kind style=\"margin:0;max-width:7rem\">" +
+        "<option value=\"yen\"" +
+        (p.kind !== "percent" ? " selected" : "") +
+        ">円引き</option>" +
+        "<option value=\"percent\"" +
+        (p.kind === "percent" ? " selected" : "") +
+        ">％引き</option></select></td>" +
+        "<td><input type=\"number\" data-p-val min=\"0\" step=\"1\" style=\"width:4.5rem;margin:0\" value=\"" +
+        escapeHtml(String(Number(p.value) || 0)) +
+        "\" /></td>" +
+        "<td><button type=\"button\" class=\"btn-ghost\" data-p-del style=\"padding:0.35rem 0.5rem\">削除</button></td></tr>"
+      );
+    })
+    .join("");
+  tbody.querySelectorAll("[data-p-del]").forEach((b) => {
+    b.onclick = () => {
+      const tr = b.closest("tr");
+      if (tr) tr.remove();
+    };
+  });
+}
+
+const btnOpsPresetAdd = document.getElementById("btnOpsPresetAdd");
+if (btnOpsPresetAdd) {
+  btnOpsPresetAdd.onclick = () => {
+    const tbody = document.getElementById("opsDiscountPresetsBody");
+    if (!tbody) return;
+    const tr = document.createElement("tr");
+    tr.setAttribute("data-preset-id", newPresetId());
+    tr.innerHTML =
+      "<td><input type=\"text\" data-p-name style=\"width:100%;margin:0\" placeholder=\"名称\" /></td>" +
+      "<td><select data-p-kind style=\"margin:0;max-width:7rem\"><option value=\"yen\">円引き</option><option value=\"percent\">％引き</option></select></td>" +
+      "<td><input type=\"number\" data-p-val min=\"0\" step=\"1\" style=\"width:4.5rem;margin:0\" value=\"0\" /></td>" +
+      "<td><button type=\"button\" class=\"btn-ghost\" data-p-del style=\"padding:0.35rem 0.5rem\">削除</button></td>";
+    tr.querySelector("[data-p-del]").onclick = () => tr.remove();
+    tbody.appendChild(tr);
+  };
+}
+
+const btnSaveOpsDiscountPresets = document.getElementById("btnSaveOpsDiscountPresets");
+if (btnSaveOpsDiscountPresets) {
+  btnSaveOpsDiscountPresets.onclick = async () => {
+    log("");
+    const tbody = document.getElementById("opsDiscountPresetsBody");
+    if (!tbody) return;
+    const rows = tbody.querySelectorAll("tr[data-preset-id]");
+    const out = [];
+    for (const tr of rows) {
+      const id = tr.getAttribute("data-preset-id") || newPresetId();
+      const name = tr.querySelector("[data-p-name]") ? String(tr.querySelector("[data-p-name]").value || "").trim() : "";
+      const kindRaw = tr.querySelector("[data-p-kind]") ? String(tr.querySelector("[data-p-kind]").value || "yen") : "yen";
+      const kind = kindRaw === "percent" ? "percent" : "yen";
+      const value = Math.max(0, Math.floor(Number(tr.querySelector("[data-p-val]") && tr.querySelector("[data-p-val]").value)));
+      if (!name) {
+        log("名称が空の行があります");
+        return;
+      }
+      if (kind === "percent" && value > 100) {
+        log("％引きは100以下で入力してください（" + name + "）");
+        return;
+      }
+      out.push({ id, name, kind, value });
+    }
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings: { opsDiscountPresets: out } }),
+      });
+      log("プリセットを保存しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
 }
 
 document.getElementById("btnSaveStore").onclick = async () => {

@@ -137,6 +137,8 @@ model Bill {
   storeId     String
   sessionId   String?   @unique
   label       String?
+  /// 卓全体割引 JSON（kind: percent|yen, value, label?, presetId?）
+  discountJson Json?
   totalAmount Int
   status      String    @default("open")
   payments    Payment[]
@@ -526,6 +528,8 @@ model OrderLine {
   eatMode      String     @default("dine_in")
   /// 明細ごとの税率（%）。店内は店舗設定、テイクアウトは 8。
   taxRatePercent Int      @default(10)
+  /// 行割引 JSON（kind, value, scope: line|unit, label?, presetId?）
+  discountJson Json?
   status       String     @default("queued")
   /// キッチンで「調理済」にした日時（提供待ちの並び順用）
   readyAt      DateTime?

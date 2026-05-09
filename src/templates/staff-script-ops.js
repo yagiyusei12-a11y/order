@@ -4,7 +4,7 @@ let sessionsCache = [];
 let coursesCache = [];
 let billsBySessionId = new Map();
 let paymentMethodsCache = [];
-let storeSettingsCache = { menuPriceTaxMode: "inclusive", taxRatePercent: 10 };
+let storeSettingsCache = { menuPriceTaxMode: "inclusive", taxRatePercent: 10, opsDiscountPresets: [] };
 const pendingGroupedQty = new Map();
 const pendingGroupedTimer = new Map();
 const groupedFlushInFlight = new Set();
@@ -44,12 +44,24 @@ function yen(v) {
   return Number(v || 0).toLocaleString("ja-JP") + "円";
 }
 
+function formatOpsDiscountLabel(d) {
+  if (!d || typeof d !== "object") return "";
+  const k = d.kind === "percent" ? "%" : "円";
+  const v = Number(d.value || 0);
+  const name = typeof d.label === "string" && d.label.trim() ? d.label.trim() : "";
+  const num = d.kind === "percent" ? v + "%" : yen(v);
+  return name ? name + " " + num : num;
+}
+
 function taxBreakdownFromLines(orderLines) {
   const byRate = new Map();
   for (const l of orderLines || []) {
     if (!l || l.status === "cancelled") continue;
     const rate = Number(l.taxRatePercent || 0);
-    const gross = Number(l.lineTotal || (Number(l.unitPrice || 0) * Number(l.qty || 0)) || 0);
+    const gross =
+      l.lineGross != null
+        ? Number(l.lineGross)
+        : Number(l.lineTotal || (Number(l.unitPrice || 0) * Number(l.qty || 0)) || 0);
     const net = rate > 0 ? Math.round(gross / (1 + rate / 100)) : gross;
     const tax = gross - net;
     const cur = byRate.get(rate) || { rate, gross: 0, net: 0, tax: 0 };
@@ -130,6 +142,283 @@ function openMoveTableDialog(session, table) {
     }
   };
 }
+
+function opsDiscountPresetRows(kindFilter) {
+  const presets = Array.isArray(storeSettingsCache.opsDiscountPresets) ? storeSettingsCache.opsDiscountPresets : [];
+  return presets.filter((p) => !kindFilter || p.kind === kindFilter);
+}
+
+function openBillDiscountModal(detail, session, table) {
+  const presets = opsDiscountPresetRows(null);
+  const cur = detail.billDiscountJson || null;
+  const box = document.createElement("div");
+  box.style.cssText =
+    "position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem";
+  let presetOpts =
+    "<option value=\"\">— プリセットから入力 —</option>" +
+    presets
+      .map(
+        (p) =>
+          "<option value=\"" +
+          escapeHtml(p.id) +
+          "\" data-kind=\"" +
+          escapeHtml(p.kind) +
+          "\" data-val=\"" +
+          escapeHtml(String(p.value)) +
+          "\" data-name=\"" +
+          escapeHtml(p.name) +
+          "\">" +
+          escapeHtml(p.name) +
+          " (" +
+          (p.kind === "percent" ? p.value + "%" : p.value + "円") +
+          ")</option>"
+      )
+      .join("");
+  box.innerHTML =
+    "<div class=\"card\" style=\"max-width:440px;padding:1.1rem;background:#fff;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.12)\">" +
+    "<p style=\"margin:0 0 0.45rem;font-weight:900\">卓全体の割引</p>" +
+    "<p style=\"margin:0 0 0.75rem;font-size:0.82rem;color:var(--muted);line-height:1.45\">コース料金と注文（行割引後）の合計に対して、さらに値引きします。</p>" +
+    "<label style=\"display:block;font-size:0.72rem;margin-bottom:0.2rem\">プリセット</label>" +
+    "<select id=\"bdPreset\" style=\"width:100%;padding:0.45rem;margin-bottom:0.65rem;border-radius:8px;border:1px solid var(--border)\">" +
+    presetOpts +
+    "</select>" +
+    "<label style=\"display:block;font-size:0.72rem;margin-bottom:0.2rem\">割引名称（任意・伝票メモ用）</label>" +
+    "<input id=\"bdLabel\" type=\"text\" style=\"width:100%;padding:0.45rem;margin-bottom:0.65rem;border-radius:8px;border:1px solid var(--border)\" placeholder=\"例: SNS投稿割引\" value=\"" +
+    escapeHtml(cur && cur.label ? cur.label : "") +
+    "\" />" +
+    "<div class=\"row\" style=\"gap:0.75rem;margin-bottom:0.65rem;flex-wrap:wrap\">" +
+    "<label class=\"row\" style=\"gap:0.35rem;font-size:0.82rem\"><input type=\"radio\" name=\"bdKind\" value=\"yen\" " +
+    (!cur || cur.kind === "yen" ? "checked" : "") +
+    " /> 円引き</label>" +
+    "<label class=\"row\" style=\"gap:0.35rem;font-size:0.82rem\"><input type=\"radio\" name=\"bdKind\" value=\"percent\" " +
+    (cur && cur.kind === "percent" ? "checked" : "") +
+    " /> ％引き</label></div>" +
+    "<label style=\"display:block;font-size:0.72rem;margin-bottom:0.2rem\">値（円 or %）</label>" +
+    "<input id=\"bdVal\" type=\"number\" min=\"0\" step=\"1\" style=\"width:100%;padding:0.45rem;margin-bottom:0.85rem;border-radius:8px;border:1px solid var(--border)\" value=\"" +
+    (cur ? escapeHtml(String(cur.value)) : "0") +
+    "\" />" +
+    "<div class=\"row\" style=\"gap:0.5rem;justify-content:flex-end;flex-wrap:wrap\">" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"bdClear\">解除</button>" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"bdCancel\">キャンセル</button>" +
+    "<button type=\"button\" class=\"btn-primary\" id=\"bdOk\">適用</button>" +
+    "</div></div>";
+  document.body.appendChild(box);
+  const close = () => box.remove();
+  const presetSel = box.querySelector("#bdPreset");
+  const labEl = box.querySelector("#bdLabel");
+  const valEl = box.querySelector("#bdVal");
+  presetSel.onchange = () => {
+    const opt = presetSel.selectedOptions[0];
+    if (!opt || !opt.value) return;
+    const k = opt.getAttribute("data-kind");
+    const v = opt.getAttribute("data-val");
+    const nm = opt.getAttribute("data-name") || "";
+    box.querySelectorAll('input[name="bdKind"]').forEach((r) => {
+      if (r instanceof HTMLInputElement) r.checked = r.value === k;
+    });
+    if (valEl) valEl.value = v || "0";
+    if (labEl && nm) labEl.value = nm;
+  };
+  box.querySelector("#bdCancel").onclick = close;
+  box.querySelector("#bdClear").onclick = async () => {
+    try {
+      await api(billPath(detail.id) + "/discount", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ discount: null }),
+      });
+      close();
+      log("卓割引を解除しました");
+      const fresh = await api(billPath(detail.id));
+      applyBillDetailToCaches(fresh);
+      await loadAll();
+      selectedTableId = table.id;
+      renderGrid();
+      await renderRegisterFlow(session, table, fresh);
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+  box.querySelector("#bdOk").onclick = async () => {
+    const kind = box.querySelector('input[name="bdKind"]:checked');
+    const kindVal = kind && kind.value === "percent" ? "percent" : "yen";
+    const value = Math.max(0, Math.floor(Number(valEl.value || 0)));
+    const label = labEl && labEl.value ? String(labEl.value).trim().slice(0, 80) : "";
+    const ps = presetSel && presetSel.value ? presetSel.value : "";
+    if (kindVal === "percent" && value > 100) {
+      log("割引率は100以下で指定してください");
+      return;
+    }
+    const payload = {
+      kind: kindVal,
+      value,
+      ...(label ? { label } : {}),
+      ...(ps ? { presetId: ps } : {}),
+    };
+    try {
+      await api(billPath(detail.id) + "/discount", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ discount: payload }),
+      });
+      close();
+      log("卓割引を適用しました");
+      const fresh = await api(billPath(detail.id));
+      applyBillDetailToCaches(fresh);
+      await loadAll();
+      selectedTableId = table.id;
+      renderGrid();
+      await renderRegisterFlow(session, table, fresh);
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+}
+
+function openLineDiscountModal(detail, group, session, table) {
+  const lines = group.lines || [];
+  const lineIds = lines.map((x) => x.id).filter(Boolean);
+  if (!lineIds.length) return;
+  const firstDisc = lines[0] && lines[0].discountJson ? lines[0].discountJson : null;
+  const curScope = firstDisc && firstDisc.scope === "unit" ? "unit" : "line";
+  const cur = firstDisc || null;
+  const presets = opsDiscountPresetRows(null);
+  let presetOpts =
+    "<option value=\"\">— プリセットから入力 —</option>" +
+    presets
+      .map(
+        (p) =>
+          "<option value=\"" +
+          escapeHtml(p.id) +
+          "\" data-kind=\"" +
+          escapeHtml(p.kind) +
+          "\" data-val=\"" +
+          escapeHtml(String(p.value)) +
+          "\" data-name=\"" +
+          escapeHtml(p.name) +
+          "\">" +
+          escapeHtml(p.name) +
+          " (" +
+          (p.kind === "percent" ? p.value + "%" : p.value + "円") +
+          ")</option>"
+      )
+      .join("");
+  const box = document.createElement("div");
+  box.style.cssText =
+    "position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem";
+  box.innerHTML =
+    "<div class=\"card\" style=\"max-width:460px;padding:1.1rem;background:#fff;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.12)\">" +
+    "<p style=\"margin:0 0 0.45rem;font-weight:900\">商品行の割引（このまとまりの全明細に適用）</p>" +
+    "<p style=\"margin:0 0 0.75rem;font-size:0.82rem;color:var(--muted);line-height:1.45\">同一商品が複数行ある場合も、このグループ内の<strong>すべての明細行</strong>に同じ割引規則を付けます。<br/>" +
+    "<strong>行全体</strong>＝数量ぶんまとめて / <strong>1個分だけ</strong>＝その数量のうち1単位分相当のみ値引き。</p>" +
+    "<label style=\"display:block;font-size:0.72rem;margin-bottom:0.2rem\">プリセット</label>" +
+    "<select id=\"ldPreset\" style=\"width:100%;padding:0.45rem;margin-bottom:0.65rem;border-radius:8px;border:1px solid var(--border)\">" +
+    presetOpts +
+    "</select>" +
+    "<label style=\"display:block;font-size:0.72rem;margin-bottom:0.2rem\">割引名称（任意）</label>" +
+    "<input id=\"ldLabel\" type=\"text\" style=\"width:100%;padding:0.45rem;margin-bottom:0.65rem;border-radius:8px;border:1px solid var(--border)\" placeholder=\"例: オーナー割\" value=\"" +
+    escapeHtml(cur && cur.label ? cur.label : "") +
+    "\" />" +
+    "<div style=\"margin-bottom:0.65rem;font-size:0.82rem\">" +
+    "<span class=\"muted\" style=\"font-size:0.72rem;display:block;margin-bottom:0.35rem\">対象の量</span>" +
+    "<label class=\"row\" style=\"gap:0.35rem;margin-right:1rem\"><input type=\"radio\" name=\"ldScope\" value=\"line\" " +
+    (curScope === "line" ? "checked" : "") +
+    " /> 行全体（全個数）</label>" +
+    "<label class=\"row\" style=\"gap:0.35rem\"><input type=\"radio\" name=\"ldScope\" value=\"unit\" " +
+    (curScope === "unit" ? "checked" : "") +
+    " /> 1個分だけ</label></div>" +
+    "<div class=\"row\" style=\"gap:0.75rem;margin-bottom:0.65rem;flex-wrap:wrap\">" +
+    "<label class=\"row\" style=\"gap:0.35rem;font-size:0.82rem\"><input type=\"radio\" name=\"ldKind\" value=\"yen\" " +
+    (!cur || cur.kind === "yen" ? "checked" : "") +
+    " /> 円引き</label>" +
+    "<label class=\"row\" style=\"gap:0.35rem;font-size:0.82rem\"><input type=\"radio\" name=\"ldKind\" value=\"percent\" " +
+    (cur && cur.kind === "percent" ? "checked" : "") +
+    " /> ％引き</label></div>" +
+    "<label style=\"display:block;font-size:0.72rem;margin-bottom:0.2rem\">値（円 or %）</label>" +
+    "<input id=\"ldVal\" type=\"number\" min=\"0\" step=\"1\" style=\"width:100%;padding:0.45rem;margin-bottom:0.85rem;border-radius:8px;border:1px solid var(--border)\" value=\"" +
+    (cur ? escapeHtml(String(cur.value)) : "0") +
+    "\" />" +
+    "<div class=\"row\" style=\"gap:0.5rem;justify-content:flex-end;flex-wrap:wrap\">" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"ldClear\">解除</button>" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"ldCancel\">キャンセル</button>" +
+    "<button type=\"button\" class=\"btn-primary\" id=\"ldOk\">適用</button>" +
+    "</div></div>";
+  document.body.appendChild(box);
+  const close = () => box.remove();
+  const presetSel = box.querySelector("#ldPreset");
+  const labEl = box.querySelector("#ldLabel");
+  const valEl = box.querySelector("#ldVal");
+  presetSel.onchange = () => {
+    const opt = presetSel.selectedOptions[0];
+    if (!opt || !opt.value) return;
+    const k = opt.getAttribute("data-kind");
+    const v = opt.getAttribute("data-val");
+    const nm = opt.getAttribute("data-name") || "";
+    box.querySelectorAll('input[name="ldKind"]').forEach((r) => {
+      if (r instanceof HTMLInputElement) r.checked = r.value === k;
+    });
+    if (valEl) valEl.value = v || "0";
+    if (labEl && nm) labEl.value = nm;
+  };
+  box.querySelector("#ldCancel").onclick = close;
+  box.querySelector("#ldClear").onclick = async () => {
+    try {
+      await api(billPath(detail.id) + "/order-lines/discount", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lineIds: lineIds, discount: null }),
+      });
+      close();
+      log("行割引を解除しました");
+      const fresh = await api(billPath(detail.id));
+      applyBillDetailToCaches(fresh);
+      await loadAll();
+      selectedTableId = table.id;
+      renderGrid();
+      await renderRegisterFlow(session, table, fresh);
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+  box.querySelector("#ldOk").onclick = async () => {
+    const kindEl = box.querySelector('input[name="ldKind"]:checked');
+    const kindVal = kindEl && kindEl.value === "percent" ? "percent" : "yen";
+    const scopeEl = box.querySelector('input[name="ldScope"]:checked');
+    const scope = scopeEl && scopeEl.value === "unit" ? "unit" : "line";
+    const value = Math.max(0, Math.floor(Number(valEl.value || 0)));
+    const label = labEl && labEl.value ? String(labEl.value).trim().slice(0, 80) : "";
+    const ps = presetSel && presetSel.value ? presetSel.value : "";
+    if (kindVal === "percent" && value > 100) {
+      log("割引率は100以下で指定してください");
+      return;
+    }
+    const payload = {
+      kind: kindVal,
+      value,
+      scope,
+      ...(label ? { label } : {}),
+      ...(ps ? { presetId: ps } : {}),
+    };
+    try {
+      await api(billPath(detail.id) + "/order-lines/discount", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lineIds: lineIds, discount: payload }),
+      });
+      close();
+      log("行割引を適用しました");
+      const fresh = await api(billPath(detail.id));
+      applyBillDetailToCaches(fresh);
+      await loadAll();
+      selectedTableId = table.id;
+      renderGrid();
+      await renderRegisterFlow(session, table, fresh);
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+}
+
 function currentTotal(session) {
   return Number(session && session.currentTotal) || 0;
 }
@@ -397,6 +686,7 @@ function groupedOrderLines(detail) {
       Number(l.unitPrice || 0),
       l.menuItemId || "",
       String(l.sourceTableId || ""),
+      JSON.stringify(l.discountJson ?? null),
       JSON.stringify(l.lineExtra ?? null),
     ].join("::");
     if (!grouped.has(key)) {
@@ -538,44 +828,66 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
     .map((m) => "<option value=\"" + escapeHtml(m.code) + "\">" + escapeHtml(m.labelJa || m.code) + "</option>")
     .join("");
   const groupedLines = groupedOrderLines(detail);
+  const pv = detail.preview || {};
+  const ordersDiscAmt = Number(pv.ordersDiscount || 0);
+  const billDiscAmt = Number(pv.billDiscountAmount || 0);
+  const billDiscLabel =
+    detail.billDiscountJson && formatOpsDiscountLabel(detail.billDiscountJson)
+      ? "現在: " + formatOpsDiscountLabel(detail.billDiscountJson)
+      : "卓割引なし";
   const orderRows = groupedLines
     .map(
-      (g) =>
-        "<tr data-group-key=\"" +
-        escapeHtml(g.key) +
-        "\">" +
-        "<td>" +
-        "<div class=\"ops-line-name\">" +
-        (g.eatMode === "takeout" ? "<span class=\"badge\" style=\"margin-right:.35rem;background:#0ea5e9\">テイクアウト</span>" : "") +
-        (g.lines && g.lines[0] ? sourceTableBadgeHtml(g.lines[0].sourceTableId) : "") +
-        escapeHtml(g.nameSnapshot) +
-        "</div>" +
-        (g.lines && g.lines[0] && orderLineExtraSubtext(g.lines[0].lineExtra)
-          ? "<div class=\"ops-line-sub\" style=\"font-size:0.72rem;white-space:pre-line;line-height:1.35;margin-top:0.15rem\">" +
-            escapeHtml(orderLineExtraSubtext(g.lines[0].lineExtra)) +
-            "</div>"
-          : "") +
-        "<div class=\"ops-line-sub\">" +
-        yen(g.unitPrice) +
-        " / 点</div>" +
-        "<div class=\"ops-line-actions\">" +
-        "<button type=\"button\" class=\"btn-ghost ops-act-btn\" data-line-dec=\"" +
-        escapeHtml(g.key) +
-        "\">-</button>" +
-        "<span class=\"ops-qty-pill\" data-group-qty>×" +
-        g.qty +
-        "</span>" +
-        "<button type=\"button\" class=\"btn-ghost ops-act-btn\" data-line-inc=\"" +
-        escapeHtml(g.key) +
-        "\">+</button>" +
-        "<button type=\"button\" class=\"btn-ghost ops-act-del\" data-line-del=\"" +
-        escapeHtml(g.key) +
-        "\">削除</button>" +
-        "</div>" +
-        "</td>" +
-        "<td class=\"ops-line-total\" data-group-total>" +
-        yen(g.lineTotal) +
-        "</td></tr>"
+      (g) => {
+        let discSum = 0;
+        for (const ln of g.lines || []) discSum += Number(ln.lineDiscountAmount || 0);
+        const discBlock =
+          discSum > 0
+            ? "<div class=\"ops-line-sub\" style=\"color:#059669;font-size:0.72rem;font-weight:700\">値引 −" +
+              yen(discSum) +
+              "</div>"
+            : "";
+        return (
+          "<tr data-group-key=\"" +
+          escapeHtml(g.key) +
+          "\">" +
+          "<td>" +
+          "<div class=\"ops-line-name\">" +
+          (g.eatMode === "takeout" ? "<span class=\"badge\" style=\"margin-right:.35rem;background:#0ea5e9\">テイクアウト</span>" : "") +
+          (g.lines && g.lines[0] ? sourceTableBadgeHtml(g.lines[0].sourceTableId) : "") +
+          escapeHtml(g.nameSnapshot) +
+          "</div>" +
+          discBlock +
+          (g.lines && g.lines[0] && orderLineExtraSubtext(g.lines[0].lineExtra)
+            ? "<div class=\"ops-line-sub\" style=\"font-size:0.72rem;white-space:pre-line;line-height:1.35;margin-top:0.15rem\">" +
+              escapeHtml(orderLineExtraSubtext(g.lines[0].lineExtra)) +
+              "</div>"
+            : "") +
+          "<div class=\"ops-line-sub\">" +
+          yen(g.unitPrice) +
+          " / 点</div>" +
+          "<div class=\"ops-line-actions\">" +
+          "<button type=\"button\" class=\"btn-ghost ops-act-btn\" data-line-dec=\"" +
+          escapeHtml(g.key) +
+          "\">-</button>" +
+          "<span class=\"ops-qty-pill\" data-group-qty>×" +
+          g.qty +
+          "</span>" +
+          "<button type=\"button\" class=\"btn-ghost ops-act-btn\" data-line-inc=\"" +
+          escapeHtml(g.key) +
+          "\">+</button>" +
+          "<button type=\"button\" class=\"btn-ghost ops-act-del\" data-line-del=\"" +
+          escapeHtml(g.key) +
+          "\">削除</button>" +
+          "<button type=\"button\" class=\"btn-ghost ops-line-disc\" data-disc-key=\"" +
+          escapeHtml(g.key) +
+          "\" style=\"border-color:#86efac;font-weight:700\">割引</button>" +
+          "</div>" +
+          "</td>" +
+          "<td class=\"ops-line-total\" data-group-total>" +
+          yen(g.lineTotal) +
+          "</td></tr>"
+        );
+      }
     )
     .join("");
 
@@ -595,10 +907,25 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
     "<button type=\"button\" class=\"btn-ghost\" id=\"btnMergeSession\" style=\"font-weight:700;border-color:#cbd5e1\">他卓と合算</button>" +
     "<button type=\"button\" class=\"btn-ghost\" id=\"btnEndSession\" style=\"color:#b91c1c;border-color:#fecaca;font-weight:700\">セッションを切る</button>" +
     "</div>" +
+    "<div class=\"card\" style=\"padding:0.55rem 0.75rem;margin:0 0 0.65rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.35rem\">" +
+    "<span style=\"font-size:0.82rem\"><strong>卓割引</strong> · <span class=\"muted\">" +
+    escapeHtml(billDiscLabel) +
+    "</span></span>" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"btnBillDiscount\" style=\"font-weight:700;border-color:#86efac\">設定</button></div>" +
     "<h3 class=\"ops-sec-title\">注文内容</h3>" +
     "<div class=\"card ops-order-card\"><table class=\"ops-order-table\">" +
     (orderRows || "<tr><td class=\"muted\">注文なし</td><td></td></tr>") +
     "</table></div>" +
+    (ordersDiscAmt > 0
+      ? "<div class=\"row ops-total-row\"><span class=\"muted\">注文値引（商品行）</span><strong style=\"color:#059669\">−" +
+        yen(ordersDiscAmt) +
+        "</strong></div>"
+      : "") +
+    (billDiscAmt > 0
+      ? "<div class=\"row ops-total-row\"><span class=\"muted\">卓割引（全体）</span><strong style=\"color:#059669\">−" +
+        yen(billDiscAmt) +
+        "</strong></div>"
+      : "") +
     "<div class=\"row ops-total-row\"><span class=\"muted\">税抜合計</span><strong>" +
     yen(netTotal) +
     "</strong></div>" +
@@ -643,6 +970,18 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
   if (btnMoveTable) {
     btnMoveTable.onclick = () => openMoveTableDialog(session, table);
   }
+
+  const btnBillDiscount = document.getElementById("btnBillDiscount");
+  if (btnBillDiscount) {
+    btnBillDiscount.onclick = () => openBillDiscountModal(detail, session, table);
+  }
+  panel.querySelectorAll(".ops-line-disc").forEach((btn) => {
+    btn.onclick = () => {
+      const k = btn.getAttribute("data-disc-key") || "";
+      const grp = groupedLines.find((x) => x.key === k);
+      if (grp) openLineDiscountModal(detail, grp, session, table);
+    };
+  });
 
   const btnMergeSession = document.getElementById("btnMergeSession");
   if (btnMergeSession) {

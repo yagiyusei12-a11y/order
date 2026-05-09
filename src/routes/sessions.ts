@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { computeCourseSessionTotal } from "../lib/course-pricing.js";
+import { computeSessionSuggestedTotal, parseBillDiscount } from "../lib/ops-discount.js";
 import { openSessionForTable } from "../lib/open-table-session.js";
 
 function asStringIdArray(raw: unknown): string[] {
@@ -42,14 +43,8 @@ async function recomputeOpenBillTotalForSession(
           session.childCount,
         )
       : 0;
-  let ordersTotal = 0;
-  for (const o of session.orders) {
-    for (const l of o.lines) {
-      if (l.status === "cancelled") continue;
-      ordersTotal += l.unitPrice * l.qty;
-    }
-  }
-  const suggested = courseTotal + ordersTotal;
+  const billDisc = parseBillDiscount(session.bill.discountJson);
+  const suggested = computeSessionSuggestedTotal(courseTotal, session.orders, billDisc).suggestedTotal;
   if (session.bill.totalAmount !== suggested) {
     await tx.bill.update({ where: { id: session.bill.id }, data: { totalAmount: suggested } });
   }
@@ -169,7 +164,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
         orders: {
           include: {
             lines: {
-              select: { unitPrice: true, qty: true, status: true },
+              select: { unitPrice: true, qty: true, status: true, discountJson: true },
             },
           },
         },
@@ -192,16 +187,11 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
           s.courseId && s.coursePriceTier
             ? computeCourseSessionTotal(s.coursePriceTier, s.courseId, s.guestCount, s.childCount)
             : 0;
-        let ordersTotal = 0;
-        for (const o of s.orders) {
-          for (const l of o.lines) {
-            if (l.status === "cancelled") continue;
-            ordersTotal += l.unitPrice * l.qty;
-          }
-        }
+        const billDisc = parseBillDiscount(s.bill?.discountJson);
+        const suggested = computeSessionSuggestedTotal(courseTotal, s.orders, billDisc).suggestedTotal;
         return {
           ...s,
-          currentTotal: courseTotal + ordersTotal,
+          currentTotal: suggested,
           orders: undefined,
         };
       }),
@@ -403,6 +393,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
           course: true,
           coursePriceTier: true,
           orders: { include: { lines: true } },
+          bill: true,
         },
       });
       if (!session) return reply.code(404).send({ error: "session not found" });
@@ -417,13 +408,8 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
             )
           : 0;
 
-      let ordersTotal = 0;
-      for (const o of session.orders) {
-        for (const l of o.lines) {
-          if (l.status === "cancelled") continue;
-          ordersTotal += l.unitPrice * l.qty;
-        }
-      }
+      const billDisc = parseBillDiscount(session.bill?.discountJson);
+      const tot = computeSessionSuggestedTotal(courseTotal, session.orders, billDisc);
 
       return {
         sessionId: session.id,
@@ -431,8 +417,9 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
         childCount: session.childCount,
         course: session.course,
         courseTotal,
-        ordersTotal,
-        suggestedTotal: courseTotal + ordersTotal,
+        ordersTotal: tot.ordersNet,
+        suggestedTotal: tot.suggestedTotal,
+        preview: tot,
       };
     }
   );

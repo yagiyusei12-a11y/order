@@ -6,6 +6,9 @@
  *   npx tsx prisma/import-harunoyukoto-transactions-csv.ts --file "path/to.csv" [--dry-run]
  *
  * --dry-run: DBへ書き込まず件数・不一致行のみ表示
+ *
+ * 会計割引: `Bill.discountJson` が無いDB（マイグレーション未適用）でも動くよう、
+ * 割引額は `label` に `|d{円}` で埋め込む（例: import:123|A|d500）。列がある環境でも同様。
  */
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -272,7 +275,6 @@ async function main(): Promise<void> {
     }
 
     const ticketSymbol = (cells[idx.get("伝票記号")!] ?? "").trim();
-    const label = `import:${ticketNo}|${ticketSymbol || "-"}`;
 
     const enterIdx = idx.get("入店時間");
     const exitIdx = idx.get("退店時間");
@@ -288,14 +290,10 @@ async function main(): Promise<void> {
 
     const discIdx = idx.get("会計割引");
     const discRaw = discIdx != null ? parseIntCell(cells[discIdx] ?? "") : null;
-    const discountJson =
-      discRaw != null && discRaw !== 0
-        ? ({
-            kind: "yen" as const,
-            value: Math.abs(discRaw),
-            label: "インポート:会計割引",
-          })
-        : undefined;
+    /** 冪等キー。会計割引ありは `|d{abs}` を付与（discountJson 列が無いDBでも保持） */
+    const label =
+      `import:${ticketNo}|${ticketSymbol || "-"}` +
+      (discRaw != null && discRaw !== 0 ? `|d${Math.abs(discRaw)}` : "");
 
     const { payments, sum } = buildPaymentsFromRow(cells, idx);
     if (sum !== totalAmount) {
@@ -335,7 +333,6 @@ async function main(): Promise<void> {
           status: "settled",
           settledAt,
           createdAt,
-          ...(discountJson ? { discountJson: discountJson as object } : {}),
         },
       });
       for (const p of payments) {

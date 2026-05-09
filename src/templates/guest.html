@@ -1377,15 +1377,26 @@
       let extras = 0;
       for (const st of item.setSteps || []) {
         const sel = setSelections.find((x) => x.stepId === st.id);
-        if (!sel) return null;
-        for (const fc of st.fixedChoices || []) {
-          extras += choiceExtraInclusive(fc);
-        }
-        for (const mid of sel.menuItemIds || []) {
+        const ids = sel && sel.menuItemIds ? sel.menuItemIds : [];
+        const fixedSet = new Set((st.fixedChoices || []).map((c) => c.menuItemId));
+        const seen = new Set();
+        for (const mid of ids) {
           const ch = (st.choices || []).find((c) => c.menuItemId === mid);
-          if (!ch) return null;
-          extras += choiceExtraInclusive(ch);
+          const fc = (st.fixedChoices || []).find((c) => c.menuItemId === mid);
+          const row = ch || fc;
+          if (!row) return null;
+          if (seen.has(mid)) continue;
+          seen.add(mid);
+          extras += choiceExtraInclusive(row);
         }
+        for (const fc of st.fixedChoices || []) {
+          if (!seen.has(fc.menuItemId)) {
+            seen.add(fc.menuItemId);
+            extras += choiceExtraInclusive(fc);
+          }
+        }
+        const userPickCount = ids.filter((id) => !fixedSet.has(id)).length;
+        if (userPickCount < st.minPick || userPickCount > st.maxPick) return null;
       }
       return Number(item.price || 0) + extras;
     }
@@ -1832,6 +1843,8 @@
       host.setAttribute("aria-hidden", "true");
     }
 
+    const SERVE_LATER_LINE_KIND = "set_serve_later";
+
     async function openHistorySheet() {
       closeDetail();
       closeCartSheet();
@@ -1844,13 +1857,52 @@
       try {
         await loadMenu();
         await loadOrders();
+        await ensureReorderMenuItemsInCache();
         renderHistorySheetBody();
       } catch (e) {
         body.textContent = String(e.message || e);
       }
     }
 
-    const SERVE_LATER_LINE_KIND = "set_serve_later";
+    async function ensureReorderMenuItemsInCache() {
+      const ids = new Set();
+      for (const o of ordersCache || []) {
+        for (const ln of o.lines || []) {
+          const ex = ln.lineExtra && typeof ln.lineExtra === "object" ? ln.lineExtra : null;
+          if (ex && ex.kind === SERVE_LATER_LINE_KIND) continue;
+          if (ln.menuItemId) ids.add(ln.menuItemId);
+        }
+      }
+      const missing = [...ids].filter((id) => !menuItemById.has(id));
+      if (missing.length === 0) return;
+      try {
+        const res = await api(
+          "/guest/" + encodeURIComponent(TOKEN) + "/reorder-menu-items?ids=" + missing.map(encodeURIComponent).join(",")
+        );
+        for (const it of res.items || []) {
+          if (it && it.id) menuItemById.set(it.id, it);
+        }
+      } catch (_) {}
+    }
+
+    function enrichHistorySetSelectionsFromOrder(order, ln, setSelections, lineExtra) {
+      if (!order || !lineExtra || lineExtra.kind !== "set") return setSelections;
+      const bid = typeof lineExtra.bundleId === "string" ? lineExtra.bundleId.trim() : "";
+      const defStep =
+        typeof lineExtra.serveLaterDeferredStepId === "string" ? lineExtra.serveLaterDeferredStepId.trim() : "";
+      if (!bid || !defStep) return setSelections;
+      if (setSelections.some((x) => x.stepId === defStep)) return setSelections;
+      for (const ol of order.lines || []) {
+        if (ol.id === ln.id) continue;
+        const ox = ol.lineExtra && typeof ol.lineExtra === "object" ? ol.lineExtra : null;
+        if (!ox || ox.kind !== SERVE_LATER_LINE_KIND) continue;
+        if (ox.bundleId !== bid) continue;
+        if (ol.menuItemId) {
+          return setSelections.concat([{ stepId: defStep, menuItemIds: [ol.menuItemId] }]);
+        }
+      }
+      return setSelections;
+    }
 
     /**
      * @param {*} ln API の注文明細（OrderLine）
@@ -1881,7 +1933,7 @@
             const midPick = typeof p.menuItemId === "string" ? p.menuItemId : "";
             if (!midPick) continue;
             const optionSelections = oe.options.map((gr) => ({
-              optionGroupId: gr.groupId,
+              optionGroupId: gr.groupId || gr.optionGroupId,
               optionItemIds: (gr.picks || []).map((x) => x.optionItemId).filter(Boolean),
             }));
             if (optionSelections.length)
@@ -1910,7 +1962,7 @@
 
       if (ex && ex.kind === "single" && Array.isArray(ex.options)) {
         const optionSelections = ex.options.map((gr) => ({
-          optionGroupId: gr.groupId,
+          optionGroupId: gr.groupId || gr.optionGroupId,
           optionItemIds: (gr.picks || []).map((x) => x.optionItemId).filter(Boolean),
         }));
         return { ok: true, sellKind: "options", optionSelections, eatMode };
@@ -1919,7 +1971,7 @@
       return { ok: true, sellKind: "plain", eatMode };
     }
 
-    function mergeHistoryIntoCart(ln, qty) {
+    function mergeHistoryIntoCart(order, ln, qty) {
       const q = Math.max(1, Math.min(99, Math.floor(Number(qty) || 1)));
       const parsed = parseHistoryLineForReorder(ln);
       if (!parsed.ok) {
@@ -1929,7 +1981,7 @@
       }
       const item = menuItemById.get(ln.menuItemId);
       if (!item) {
-        toast("メニューが見つかりません。一覧を再読み込みしてください。");
+        toast("メニューに載っていない商品です。スタッフへお問い合わせください。");
         return;
       }
       if (ln.status === "cancelled") {
@@ -1946,11 +1998,17 @@
           toast("メニューが変更されているため再注文できません");
           return;
         }
-        const setSelections = parsed.setSelections;
+        const ex0 = ln.lineExtra && typeof ln.lineExtra === "object" ? ln.lineExtra : null;
+        let setSelections =
+          ex0 && ex0.kind === "set" && order
+            ? enrichHistorySetSelectionsFromOrder(order, ln, parsed.setSelections, ex0)
+            : parsed.setSelections;
         for (const st of item.setSteps || []) {
           const sel = setSelections.find((x) => x.stepId === st.id);
-          const n = sel && sel.menuItemIds ? sel.menuItemIds.length : 0;
-          if (n < st.minPick || n > st.maxPick) {
+          const ids = sel && sel.menuItemIds ? sel.menuItemIds : [];
+          const fixedSet = new Set((st.fixedChoices || []).map((c) => c.menuItemId));
+          const userPickCount = ids.filter((id) => !fixedSet.has(id)).length;
+          if (userPickCount < st.minPick || userPickCount > st.maxPick) {
             toast("セットの内容が変わった可能性があります。メニューから選び直してください");
             return;
           }
@@ -2159,13 +2217,16 @@
             rq += 1;
             num.textContent = String(rq);
           };
-          addBtn.onclick = () => mergeHistoryIntoCart(ln, rq);
+          addBtn.onclick = () => mergeHistoryIntoCart(o, ln, rq);
 
           const preview = parseHistoryLineForReorder(ln);
-          if (!preview.ok && preview.reason === "serve_later_child") {
+          if (!preview.ok) {
             addBtn.disabled = true;
             addBtn.style.opacity = "0.45";
-            addBtn.title = "この明細は再注文できません";
+            addBtn.title =
+              preview.reason === "serve_later_child"
+                ? "この明細は再注文できません"
+                : "再注文できない注文です";
           } else if (!ln.menuItemId) {
             addBtn.disabled = true;
             addBtn.style.opacity = "0.45";
@@ -3247,6 +3308,7 @@
       const data = await api("/guest/" + encodeURIComponent(TOKEN) + "/orders");
       ordersCache = data.orders || [];
       if (document.getElementById("historySheet") && document.getElementById("historySheet").classList.contains("is-open")) {
+        await ensureReorderMenuItemsInCache();
         renderHistorySheetBody();
       }
     }

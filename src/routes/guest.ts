@@ -1741,4 +1741,167 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     });
     return { orders };
   });
+
+  /**
+   * ゲストメニューに出ていない ID（時間帯・カテゴリ非表示など）でも、注文履歴から再注文できるよう
+   * 同一店舗の単品・セットをゲスト向け JSON 形で返す。
+   */
+  app.get<{ Params: { token: string }; Querystring: { ids?: string } }>(
+    "/guest/:token/reorder-menu-items",
+    async (req, reply) => {
+      const menuInclude = {
+        course: {
+          include: { includedItems: { select: { menuItemId: true } } },
+        },
+        coursePriceTier: true,
+      } as const;
+      const tokenSession = await prisma.diningSession.findUnique({
+        where: { guestToken: req.params.token },
+        include: menuInclude,
+      });
+      if (!tokenSession) {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+      const billing = await resolveGuestBillingContext(tokenSession);
+      if (!billing.ok) {
+        return reply.code(billing.status).send(billing.body);
+      }
+      let session = tokenSession;
+      if (billing.ctx.billingSessionId !== tokenSession.id) {
+        const parentSession = await prisma.diningSession.findUnique({
+          where: { id: billing.ctx.billingSessionId },
+          include: menuInclude,
+        });
+        if (!parentSession || parentSession.status !== "open") {
+          return reply.code(404).send({ error: "session not found or closed" });
+        }
+        session = parentSession;
+      }
+      if (session.status !== "open") {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+
+      const raw = typeof req.query.ids === "string" ? req.query.ids.trim() : "";
+      const idList = [...new Set(raw.split(",").map((x) => x.trim()).filter(Boolean))].slice(0, 80);
+      if (idList.length === 0) return { items: [] as Record<string, unknown>[] };
+
+      const storeRow = await prisma.store.findUnique({
+        where: { id: session.storeId },
+        select: { settings: true },
+      });
+      const st = mergeStoreSettings(storeRow?.settings);
+      const nowMin = minutesSinceMidnightInTimeZone(new Date(), st.timezone);
+
+      const includedSingleIds = new Set<string>();
+      const gcForCourse = session.guestCount;
+      if (session.courseId) {
+        const linkRows = await prisma.courseMenuItem.findMany({
+          where: { courseId: session.courseId },
+          include: { menuItem: { select: { id: true, sellKind: true } } },
+        });
+        for (const row of linkRows) {
+          if (
+            row.menuItem &&
+            row.menuItem.sellKind !== "set" &&
+            gcForCourse >= row.minGuestCount
+          ) {
+            includedSingleIds.add(row.menuItemId);
+          }
+        }
+        const purchasedPackIds = parsePurchasedCourseOptionPackIds(session.purchasedCourseOptionPackIds);
+        if (purchasedPackIds.length > 0) {
+          const pim = await prisma.courseOptionPackMenuItem.findMany({
+            where: {
+              packId: { in: purchasedPackIds },
+              pack: { courseId: session.courseId },
+            },
+            include: { menuItem: { select: { sellKind: true } } },
+          });
+          for (const r of pim) {
+            if (r.menuItem && r.menuItem.sellKind !== "set") includedSingleIds.add(r.menuItemId);
+          }
+        }
+      }
+
+      const itemInclude = {
+        timeDiscounts: {
+          include: { timeWindow: { select: { startMin: true, endMin: true } } },
+        },
+        optionLinks: {
+          orderBy: { sortOrder: "asc" as const },
+          include: {
+            optionGroup: {
+              include: {
+                items: { orderBy: { sortOrder: "asc" as const } },
+              },
+            },
+          },
+        },
+        setSteps: {
+          orderBy: { sortOrder: "asc" as const },
+          include: {
+            choices: {
+              orderBy: { sortOrder: "asc" as const },
+              include: {
+                componentMenuItem: {
+                  select: {
+                    id: true,
+                    name: true,
+                    isAvailable: true,
+                    stockQty: true,
+                    stockLowThreshold: true,
+                    containsAlcohol: true,
+                    allowTakeout: true,
+                    category: {
+                      include: { guestVisibleTimeWindow: true },
+                    },
+                    optionLinks: {
+                      orderBy: { sortOrder: "asc" as const },
+                      include: {
+                        optionGroup: {
+                          include: {
+                            items: { orderBy: { sortOrder: "asc" as const } },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      } as const;
+
+      const rows = await prisma.menuItem.findMany({
+        where: {
+          id: { in: idList },
+          isAvailable: true,
+          category: { storeId: session.storeId },
+        },
+        include: itemInclude,
+      });
+
+      const itemsOut: Record<string, unknown>[] = [];
+      for (const it of rows) {
+        if (it.sellKind === "set") {
+          const row = mapGuestSetMenuItem(it as never, st.menuPriceTaxMode, st.taxRatePercent, nowMin);
+          if (!row) continue;
+          itemsOut.push({ ...row, courseTier: "addon" as const });
+        } else {
+          const single = mapGuestMenuItem(it, st.menuPriceTaxMode, st.taxRatePercent, nowMin);
+          const opt = mapGuestOptionGroups(it.optionLinks ?? []);
+          if (opt.length) (single as Record<string, unknown>).optionGroups = opt;
+          const courseTier =
+            session.courseId == null
+              ? null
+              : includedSingleIds.has(it.id)
+                ? ("included" as const)
+                : ("addon" as const);
+          itemsOut.push({ ...single, courseTier });
+        }
+      }
+      return { items: itemsOut };
+    },
+  );
 }

@@ -2632,12 +2632,7 @@
                   "</span></div>";
                 for (const oi of g.items || []) {
                   const yen = Number(oi.priceDelta || 0);
-                  const priceTxt =
-                    yen > 0
-                      ? "+" +
-                        yen.toLocaleString("ja-JP") +
-                        "円 <span style=\"color:var(--muted);font-size:.68rem\">(税込目安)</span>"
-                      : "+¥0";
+                  const priceTxt = fmtGuestOptionDeltaHtml(yen);
                   const nm = "copt-" + escapeHtml(st.id) + "-" + escapeHtml(ch.menuItemId) + "-" + escapeHtml(g.id);
                   if (useRadio) {
                     bodyInner +=

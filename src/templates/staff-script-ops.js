@@ -525,6 +525,25 @@ function buildReceiptDoc(detail) {
         "</td></tr>"
     );
   }
+  // 現金（受取/お釣り）を note から復元してレシートに載せる
+  const cash = (function () {
+    let received = null;
+    let change = null;
+    for (const p of detail.payments || []) {
+      const note = p && typeof p.note === "string" ? p.note : "";
+      const m1 = note.match(/received:(\d+)/);
+      const m2 = note.match(/change:(\d+)/);
+      if (m1) {
+        const n = parseInt(m1[1], 10);
+        if (Number.isFinite(n)) received = Math.max(received ?? 0, n);
+      }
+      if (m2) {
+        const n2 = parseInt(m2[1], 10);
+        if (Number.isFinite(n2)) change = Math.max(change ?? 0, n2);
+      }
+    }
+    return { received, change };
+  })();
   return (
     "<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\"><title>レシート</title><style>body{font-family:sans-serif;padding:12px}table{width:100%;border-collapse:collapse}td{padding:2px 0}</style></head><body>" +
     "<h3>レシート</h3><p>伝票: " +
@@ -533,7 +552,11 @@ function buildReceiptDoc(detail) {
     rows.join("") +
     "</table><hr><p><strong>合計 " +
     yen(detail.totalAmount) +
-    "</strong></p></body></html>"
+    "</strong></p>" +
+    (cash.received != null
+      ? "<p>現金お預かり: " + yen(cash.received) + "<br>お釣り: " + yen(cash.change ?? 0) + "</p>"
+      : "") +
+    "</body></html>"
   );
 }
 function buildInvoiceDoc(detail, changeAmount) {
@@ -1042,7 +1065,7 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
       ? "<tr class=\"ops-course-line-row\">" +
         "<td>" +
         "<div class=\"ops-line-name\">" +
-        "<span class=\"badge\" style=\"margin-right:.35rem;background:#7c3aed\">コース</span>" +
+        "<span class=\"badge\" style=\"margin-right:.35rem;background:#7c3aed;color:#fff;font-weight:900\">コース</span>" +
         escapeHtml(detail.courseLine.name) +
         "</div>" +
         "<div class=\"ops-line-sub\">コース料（税込・人数計算）</div>" +

@@ -3,6 +3,13 @@
   <p class="muted" style="margin-top:-0.35rem;margin-bottom:1rem">各コースに<strong>複数の時間・料金パターン</strong>（例: 60分・90分）を登録できます。卓開始時にパターンを選びます。対象商品は「対象商品を選択」からダイアログで指定してください。</p>
   <div class="row" style="margin-bottom:0.75rem">
     <button type="button" class="btn-ghost" id="btnRefCourses">再読込</button>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:.45rem">
+      <span class="muted" style="font-size:.78rem">金額表示</span>
+      <select id="coursesPriceMode" style="min-width:10rem">
+        <option value="gross">税込</option>
+        <option value="net">税抜</option>
+      </select>
+    </div>
   </div>
   <div id="coursesList" class="card" style="padding:0;overflow:hidden"></div>
   <div class="card" style="margin-top:1rem">

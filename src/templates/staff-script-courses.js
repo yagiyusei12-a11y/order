@@ -11,17 +11,57 @@ function log(t) {
   if (el) el.textContent = t || "";
 }
 
+const COURSES_PRICE_MODE_KEY = "coursesPriceMode";
+let storeSettingsCache = { menuPriceTaxMode: "inclusive", taxRatePercent: 10 };
+
+function taxRateFactor() {
+  const r = Number(storeSettingsCache && storeSettingsCache.taxRatePercent);
+  if (!Number.isFinite(r) || r <= 0) return 1;
+  return 1 + r / 100;
+}
+
+function netYenFromGross(grossYen) {
+  const g = Number(grossYen) || 0;
+  return Math.round(g / taxRateFactor());
+}
+
+function grossYenFromNet(netYen) {
+  const n = Number(netYen) || 0;
+  return Math.round(n * taxRateFactor());
+}
+
+function defaultCoursesPriceMode() {
+  return storeSettingsCache && storeSettingsCache.menuPriceTaxMode === "exclusive" ? "net" : "gross";
+}
+
+function getCoursesPriceMode() {
+  const v = String(localStorage.getItem(COURSES_PRICE_MODE_KEY) || "");
+  if (v === "net" || v === "gross") return v;
+  return defaultCoursesPriceMode();
+}
+
+function setCoursesPriceMode(v) {
+  if (v !== "net" && v !== "gross") return;
+  localStorage.setItem(COURSES_PRICE_MODE_KEY, v);
+}
+
 function formatTiersSummary(tiers) {
   if (!tiers || !tiers.length) return "料金プラン未設定";
+  const mode = getCoursesPriceMode();
   return tiers
     .map(function (t) {
-      const child = t.childPricePerPerson != null ? " · 子" + t.childPricePerPerson : "";
-      return t.durationMinutes + "分·大人" + t.pricePerPerson + "円" + child;
+      const adult = mode === "net" ? netYenFromGross(t.pricePerPerson) : t.pricePerPerson;
+      const childUnit =
+        t.childPricePerPerson != null ? (mode === "net" ? netYenFromGross(t.childPricePerPerson) : t.childPricePerPerson) : null;
+      const child = childUnit != null ? " · 子" + childUnit : "";
+      const suffix = mode === "net" ? "円（税抜）" : "円（税込）";
+      return t.durationMinutes + "分·大人" + adult + suffix + child;
     })
     .join(" / ");
 }
 
 function buildTierRowEl(t) {
+  const mode = getCoursesPriceMode();
   const wrap = document.createElement("div");
   wrap.setAttribute("data-tier-row", "1");
   wrap.style.cssText =
@@ -37,17 +77,17 @@ function buildTierRowEl(t) {
   pp.type = "number";
   pp.min = "0";
   pp.setAttribute("data-pp", "1");
-  pp.value = t && t.pricePerPerson != null ? String(t.pricePerPerson) : "2980";
-  pp.title = "大人（円/人）";
+  const ppVal = t && t.pricePerPerson != null ? Number(t.pricePerPerson) : 2980;
+  pp.value = String(mode === "net" ? netYenFromGross(ppVal) : ppVal);
+  pp.title = mode === "net" ? "大人（円/人・税抜表示）" : "大人（円/人・税込表示）";
   const cp = document.createElement("input");
   cp.type = "number";
   cp.min = "0";
   cp.setAttribute("data-cp", "1");
   cp.placeholder = "子（任意）";
-  cp.value =
-    t && t.childPricePerPerson != null && t.childPricePerPerson !== ""
-      ? String(t.childPricePerPerson)
-      : "";
+  const cpRawVal =
+    t && t.childPricePerPerson != null && t.childPricePerPerson !== "" ? Number(t.childPricePerPerson) : null;
+  cp.value = cpRawVal == null ? "" : String(mode === "net" ? netYenFromGross(cpRawVal) : cpRawVal);
   const rm = document.createElement("button");
   rm.type = "button";
   rm.className = "btn-ghost";
@@ -61,7 +101,10 @@ function buildTierRowEl(t) {
   l1.innerHTML = "<span class=\"muted\" style=\"font-size:0.68rem;display:block\">時間（分）</span>";
   l1.appendChild(dm);
   const l2 = document.createElement("div");
-  l2.innerHTML = "<span class=\"muted\" style=\"font-size:0.68rem;display:block\">大人（円/人）</span>";
+  l2.innerHTML =
+    "<span class=\"muted\" style=\"font-size:0.68rem;display:block\">大人（円/人" +
+    (mode === "net" ? "・税抜" : "・税込") +
+    "）</span>";
   l2.appendChild(pp);
   const l3 = document.createElement("div");
   l3.innerHTML = "<span class=\"muted\" style=\"font-size:0.68rem;display:block\">子供（任意）</span>";
@@ -74,6 +117,7 @@ function buildTierRowEl(t) {
 }
 
 function collectPriceTiers(container) {
+  const mode = getCoursesPriceMode();
   const rows = container.querySelectorAll("[data-tier-row]");
   const out = [];
   for (let i = 0; i < rows.length; i++) {
@@ -83,11 +127,11 @@ function collectPriceTiers(container) {
     const cpRaw = row.querySelector("[data-cp]").value.trim();
     if (!Number.isInteger(dm) || dm <= 0) throw new Error("時間は正の整数で（行" + (i + 1) + "）");
     if (!Number.isInteger(pp) || pp < 0) throw new Error("大人料金は0以上の整数で（行" + (i + 1) + "）");
-    const o = { durationMinutes: dm, pricePerPerson: pp, sortOrder: i };
+    const o = { durationMinutes: dm, pricePerPerson: mode === "net" ? grossYenFromNet(pp) : pp, sortOrder: i };
     if (cpRaw !== "") {
       const n = Number(cpRaw);
       if (!Number.isInteger(n) || n < 0) throw new Error("子供料金は空欄か整数で（行" + (i + 1) + "）");
-      o.childPricePerPerson = n;
+      o.childPricePerPerson = mode === "net" ? grossYenFromNet(n) : n;
     }
     out.push(o);
   }
@@ -682,14 +726,24 @@ function openCourseOptionPacksModal(course) {
 }
 
 async function loadAll() {
-  const [cRes, mRes] = await Promise.all([
+  const [cRes, mRes, sRes] = await Promise.all([
     api("/stores/" + encodeURIComponent(STORE) + "/courses?all=1"),
     api("/stores/" + encodeURIComponent(STORE) + "/menu/full"),
+    api("/stores/" + encodeURIComponent(STORE) + "/settings"),
   ]);
   coursesCache = cRes.courses || [];
   menuCategoriesCache = mRes.categories || [];
+  storeSettingsCache = sRes && sRes.settings ? sRes.settings : storeSettingsCache;
+  syncCoursesPriceModeUi();
   render();
   initAddTierRows();
+}
+
+function syncCoursesPriceModeUi() {
+  const sel = document.getElementById("coursesPriceMode");
+  if (!sel) return;
+  const v = getCoursesPriceMode();
+  sel.value = v;
 }
 
 function render() {
@@ -965,6 +1019,16 @@ function render() {
 document.getElementById("btnRefCourses").onclick = () => {
   loadAll().catch((e) => log(String(e.message || e)));
 };
+
+const coursesPriceModeSel = document.getElementById("coursesPriceMode");
+if (coursesPriceModeSel) {
+  coursesPriceModeSel.addEventListener("change", () => {
+    setCoursesPriceMode(coursesPriceModeSel.value);
+    syncCoursesPriceModeUi();
+    render();
+    initAddTierRows();
+  });
+}
 
 document.getElementById("btnAddTierRowNew").onclick = () => {
   const box = document.getElementById("addTierRows");

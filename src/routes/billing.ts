@@ -321,7 +321,8 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       settledAtRange.lt = end;
     }
 
-    const sortSettled = req.query.sort === "settledAt";
+    /** 精算伝票は既定で精算日時が新しい順。createdAt 順が必要なら sort=createdAt */
+    const sortSettled = status === "settled" && req.query.sort !== "createdAt";
     const bills = await prisma.bill.findMany({
       where: {
         storeId: store.id,

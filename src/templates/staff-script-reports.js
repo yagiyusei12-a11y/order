@@ -123,7 +123,11 @@ async function loadSummary(q) {
     (res.pending.count || 0) +
     "件</div></div></div>";
   const hint = document.getElementById("repHint");
-  if (hint) hint.textContent = "集計タイムゾーン: " + escapeHtml(res.timeZone || "");
+  if (hint) {
+    const rangeNote = q ? "" : " 期間は指定なし（全期間）。";
+    hint.textContent =
+      "集計タイムゾーン: " + escapeHtml(res.timeZone || "") + rangeNote;
+  }
 }
 
 async function loadDaily(q) {
@@ -233,8 +237,7 @@ async function loadBills(q) {
   const methodEl = document.getElementById("repMethodCode");
   const status = stSel && stSel.value ? stSel.value : "settled";
   const methodCode = methodEl && methodEl.value.trim() ? methodEl.value.trim() : "";
-  // 既存 bills API は from/to が YYYY-MM-DD だが、未精算/取消は createdAt で見るため、ここは簡易表示に寄せる
-  // - settled のときは sort=settledAt + 日付範囲（YYYY-MM-DD）に変換\n+  const fromEl = document.getElementById("repFrom");
+  const fromEl = document.getElementById("repFrom");
   const toEl = document.getElementById("repTo");
   const fromDt = fromEl && fromEl.value ? new Date(fromEl.value) : null;
   const toDt = toEl && toEl.value ? new Date(toEl.value) : null;
@@ -243,7 +246,10 @@ async function loadBills(q) {
   }
   const billQs = [];
   billQs.push("status=" + encodeURIComponent(status));
-  billQs.push("limit=80");
+  /** 期間どちらも空なら直近を多めに（API は sort=settledAt で精算が新しい順） */
+  const noDateRange =
+    status === "settled" && !(fromEl && fromEl.value) && !(toEl && toEl.value);
+  billQs.push("limit=" + (noDateRange ? "200" : "80"));
   if (status === "settled" && fromDt && Number.isFinite(fromDt.getTime())) billQs.push("from=" + encodeURIComponent(ymd(fromDt)));
   if (status === "settled" && toDt && Number.isFinite(toDt.getTime())) billQs.push("to=" + encodeURIComponent(ymd(toDt)));
   if (status === "settled") billQs.push("sort=settledAt");
@@ -860,12 +866,5 @@ if (billStatusSel) billStatusSel.onchange = () => runAll().catch((e) => log(Stri
 const methodInp = document.getElementById("repMethodCode");
 if (methodInp) methodInp.onchange = () => runAll().catch((e) => log(String(e.message || e)));
 
-// 初期値: 今日
-const fromEl = document.getElementById("repFrom");
-const toEl = document.getElementById("repTo");
-if (fromEl && toEl) {
-  const s = startOfTodayLocal();
-  fromEl.value = dtLocalValue(s);
-  toEl.value = dtLocalValue(addDays(s, 1));
-}
+// 初期値: 期間なし（全期間集計・伝票は精算日の新しい順）
 runAll().catch((e) => log(String(e.message || e)));

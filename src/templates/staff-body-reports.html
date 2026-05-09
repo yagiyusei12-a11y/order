@@ -2,6 +2,7 @@
   <h2 class="page-title">売上レポート</h2>
   <p class="muted" style="margin-top:-0.35rem;margin-bottom:1rem">
     確定売上は <strong>精算完了日時（settledAt）</strong> 基準で集計します。未精算（open）は別枠（pending）で表示します。
+    開始・終了を空にすると<strong>全期間</strong>を集計し、伝票一覧は精算が新しい順（最大200件）です。
   </p>
 
   <div class="card">
@@ -19,6 +20,7 @@
         <button type="button" class="btn-ghost" data-rep-preset="yesterday">昨日</button>
         <button type="button" class="btn-ghost" data-rep-preset="thisMonth">今月</button>
         <button type="button" class="btn-ghost" data-rep-preset="lastMonth">先月</button>
+        <button type="button" class="btn-ghost" data-rep-preset="clear">期間クリア</button>
       </div>
       <button type="button" class="btn-primary" id="btnLoadRep">更新</button>
     </div>

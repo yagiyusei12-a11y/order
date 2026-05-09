@@ -44,7 +44,22 @@ function qsFromInputs() {
   const fromEl = document.getElementById("repFrom");
   const toEl = document.getElementById("repTo");
   const fromIso = parseDtLocalToIso(fromEl && fromEl.value);
-  const toIso = parseDtLocalToIso(toEl && toEl.value);
+  let toIso = parseDtLocalToIso(toEl && toEl.value);
+  /** 終了が「その日の 0:00」のとき、日付だけ選んだ想定でその日終わりまで含める（0:00 だとその瞬間より前のみになり当日分が全部落ちる） */
+  if (toEl && toEl.value && toIso) {
+    const d = new Date(toEl.value);
+    if (
+      Number.isFinite(d.getTime()) &&
+      d.getHours() === 0 &&
+      d.getMinutes() === 0 &&
+      d.getSeconds() === 0 &&
+      d.getMilliseconds() === 0
+    ) {
+      const end = new Date(d.getTime());
+      end.setHours(23, 59, 59, 999);
+      toIso = end.toISOString();
+    }
+  }
   const q = [];
   if (fromIso) q.push("from=" + encodeURIComponent(fromIso));
   if (toIso) q.push("to=" + encodeURIComponent(toIso));

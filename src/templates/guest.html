@@ -283,6 +283,38 @@
     }
     #lastOrderBanner strong { font-variant-numeric: tabular-nums; color: #fde68a; }
 
+    .course-menu-filter-wrap {
+      display: none;
+      padding: 0.35rem 0.75rem 0.5rem;
+      background: linear-gradient(180deg, rgba(22, 26, 32, 0.98), rgba(15, 17, 21, 0.96));
+      border-bottom: 1px solid var(--line);
+      text-align: center;
+    }
+    .course-menu-filter-btn {
+      width: 100%;
+      max-width: 28rem;
+      margin: 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+      padding: 0.48rem 0.7rem;
+      font-family: inherit;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .course-menu-filter-btn.is-active {
+      background: rgba(5, 150, 105, 0.22);
+      border-color: rgba(52, 211, 153, 0.45);
+      color: #6ee7b7;
+    }
+
     /* ========== フッターカート ========== */
     footer.go-cart {
       position: fixed;
@@ -937,6 +969,11 @@
   </header>
 
   <div id="lastOrderBanner" role="status" aria-live="polite"></div>
+  <div id="courseMenuFilterWrap" class="course-menu-filter-wrap" style="display: none" hidden>
+    <button type="button" id="btnCourseItemsOnly" class="course-menu-filter-btn" aria-pressed="false">
+      コース対象商品のみを表示
+    </button>
+  </div>
 
   <div id="err"></div>
   <div id="safetyNote" class="safety-note" style="display:none"></div>
@@ -1114,6 +1151,31 @@
     let guestMenuCategories = [];
     /** @type {unknown[]} */
     let ordersCache = [];
+    let activeGuestCatId = "";
+    let courseIncludedOnly = false;
+    function courseFilterStorageKey() {
+      return "guestCourseIncludedOnly_" + String(TOKEN || "x");
+    }
+    function readCourseFilterPref() {
+      try {
+        return sessionStorage.getItem(courseFilterStorageKey()) === "1";
+      } catch (_) {
+        return false;
+      }
+    }
+    function writeCourseFilterPref(on) {
+      try {
+        sessionStorage.setItem(courseFilterStorageKey(), on ? "1" : "0");
+      } catch (_) {}
+    }
+    function syncGuestMenuCardsVisibility() {
+      document.querySelectorAll("#menu .go-card").forEach((card) => {
+        const catOk = !activeGuestCatId || card.dataset.cat === activeGuestCatId;
+        const inc = card.dataset.courseIncluded === "1";
+        const courseOk = !courseIncludedOnly || inc;
+        card.style.display = catOk && courseOk ? "" : "none";
+      });
+    }
 
     function fmtMoney(n) {
       if (!guestShowMenuPrices) return "—";
@@ -2460,6 +2522,33 @@
       if (alcoholRestricted) hdr += " · アルコール商品は制限中";
       document.getElementById("hdr").textContent = hdr;
       startLastOrderTicker(data.lastOrder);
+
+      const filterWrap = document.getElementById("courseMenuFilterWrap");
+      const filterBtn = document.getElementById("btnCourseItemsOnly");
+      if (filterWrap && filterBtn) {
+        if (s.course) {
+          filterWrap.style.display = "block";
+          filterWrap.removeAttribute("hidden");
+          courseIncludedOnly = readCourseFilterPref();
+          filterBtn.setAttribute("aria-pressed", courseIncludedOnly ? "true" : "false");
+          filterBtn.classList.toggle("is-active", courseIncludedOnly);
+          filterBtn.onclick = function () {
+            courseIncludedOnly = !courseIncludedOnly;
+            writeCourseFilterPref(courseIncludedOnly);
+            filterBtn.setAttribute("aria-pressed", courseIncludedOnly ? "true" : "false");
+            filterBtn.classList.toggle("is-active", courseIncludedOnly);
+            syncGuestMenuCardsVisibility();
+          };
+        } else {
+          filterWrap.style.display = "none";
+          filterWrap.setAttribute("hidden", "");
+          courseIncludedOnly = false;
+          filterBtn.onclick = null;
+          filterBtn.classList.remove("is-active");
+          filterBtn.setAttribute("aria-pressed", "false");
+        }
+      }
+
       const sn = document.getElementById("safetyNote");
       if (sn) {
         sn.style.display = alcoholRestricted ? "block" : "none";
@@ -2653,6 +2742,7 @@
 
       const tabs = document.getElementById("catTabs");
       tabs.innerHTML = "";
+      activeGuestCatId = "";
       const allBtn = document.createElement("button");
       allBtn.type = "button";
       allBtn.className = "go-tab is-active";
@@ -2671,14 +2761,8 @@
         const t = ev.target.closest(".go-tab");
         if (!t) return;
         [...tabs.querySelectorAll(".go-tab")].forEach((x) => x.classList.toggle("is-active", x === t));
-        const id = t.dataset.cat || "";
-        document.querySelectorAll(".go-card").forEach((card) => {
-          if (!id || card.dataset.cat === id) {
-            card.style.display = "";
-          } else {
-            card.style.display = "none";
-          }
-        });
+        activeGuestCatId = t.dataset.cat || "";
+        syncGuestMenuCardsVisibility();
       };
 
       const root = document.getElementById("menu");
@@ -2691,6 +2775,7 @@
           const card = document.createElement("article");
           card.className = "go-card";
           card.dataset.cat = c.id;
+          card.dataset.courseIncluded = it.courseTier === "included" ? "1" : "0";
           if (blocked) card.classList.add("is-dim");
 
           const media = document.createElement("div");
@@ -2784,6 +2869,7 @@
           root.appendChild(card);
         }
       }
+      syncGuestMenuCardsVisibility();
     }
 
     async function loadOrders() {

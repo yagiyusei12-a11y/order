@@ -29,6 +29,16 @@ const EXTRA_PAYMENT_METHODS: { code: string; labelJa: string; sortOrder: number 
   { code: "mo_settlement", labelJa: "MO決済", sortOrder: 27 },
 ];
 
+/** 長時間無音にならないよう、投入（または dry-run の試算）件数をこの間隔で表示 */
+const PROGRESS_LOG_EVERY = 100;
+
+function logImportProgress(imported: number, dryRun: boolean): void {
+  if (imported > 0 && imported % PROGRESS_LOG_EVERY === 0) {
+    const mode = dryRun ? "dry-run " : "";
+    console.log(`[harunoyukoto-sales] ${mode}進捗: ${imported} 伝票`);
+  }
+}
+
 function loadDotEnv(): void {
   const p = join(process.cwd(), ".env");
   if (!existsSync(p)) return;
@@ -316,6 +326,7 @@ async function main(): Promise<void> {
 
     if (dryRun) {
       imported++;
+      logImportProgress(imported, true);
       continue;
     }
 
@@ -344,6 +355,7 @@ async function main(): Promise<void> {
       }
     });
     imported++;
+    logImportProgress(imported, false);
   }
 
   console.log(

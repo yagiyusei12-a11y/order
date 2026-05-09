@@ -746,10 +746,11 @@
       padding: 0.7rem 0.75rem;
       margin-bottom: 0.35rem;
       border-radius: 12px;
-      border: 1px solid rgba(226, 232, 240, 0.18);
-      background: rgba(255, 255, 255, 0.07);
+      /* 環境によって白飛びしないよう、濃い面に固定 */
+      border: 1px solid rgba(148, 163, 184, 0.32);
+      background: rgba(15, 23, 42, 0.92);
       cursor: pointer;
-      font-size: 1rem;
+      font-size: 1.05rem;
     }
     .opt-row input {
       accent-color: var(--accent);
@@ -757,6 +758,9 @@
       height: 1.25rem;
       flex-shrink: 0;
       margin-top: 0.1rem;
+      outline: 2px solid rgba(226, 232, 240, 0.35);
+      outline-offset: 2px;
+      border-radius: 999px;
     }
     .opt-row .opt-name {
       flex: 1;
@@ -764,7 +768,9 @@
       white-space: normal;
       word-break: break-word;
       line-height: 1.5;
-      color: rgba(241, 245, 249, 0.95);
+      color: #f8fafc;
+      font-weight: 800;
+      text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
     }
     .opt-row .opt-price {
       font-size: 0.92rem;
@@ -775,18 +781,25 @@
       align-self: flex-start;
       padding-top: 0.08rem;
     }
-    .opt-row:hover { border-color: rgba(226, 232, 240, 0.28); background: rgba(255, 255, 255, 0.085); }
+    .opt-row:hover {
+      border-color: rgba(226, 232, 240, 0.45);
+      background: rgba(30, 41, 59, 0.95);
+    }
     .opt-row input:focus-visible { outline: 2px solid rgba(251, 146, 60, 0.55); outline-offset: 3px; border-radius: 999px; }
     .opt-row:has(input:checked) {
       border-color: rgba(251, 146, 60, 0.65);
-      background: rgba(251, 146, 60, 0.10);
+      background: rgba(251, 146, 60, 0.16);
     }
     .opt-row:has(input:checked) .opt-name { color: #fff; font-weight: 800; }
     .opt-row:focus-within {
       outline: 2px solid rgba(251, 146, 60, 0.55);
       outline-offset: 1px;
     }
-    .opt-row.is-disabled { opacity: 0.6; pointer-events: none; background: rgba(255, 255, 255, 0.045); }
+    .opt-row.is-disabled {
+      opacity: 0.55;
+      pointer-events: none;
+      background: rgba(15, 23, 42, 0.6);
+    }
     .opt-row-fixed {
       padding-left: 0.15rem;
       background: rgba(255, 255, 255, 0.06);

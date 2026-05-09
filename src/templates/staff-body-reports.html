@@ -33,47 +33,67 @@
     <div id="repSummary" style="margin-top:0.65rem;min-height:2.5rem"></div>
   </div>
 
-  <div class="card" style="margin-top:1rem">
-    <strong style="font-size:0.9rem">日別</strong>
-    <div id="repDaily" style="margin-top:0.65rem;min-height:2.5rem"></div>
+  <style>
+    .rep-tab-panel { display: none; margin-top: 1rem; }
+    .rep-tab-panel.is-on { display: block; }
+    .rep-tabs-row.top-tabs button { cursor: pointer; }
+  </style>
+  <div class="top-tabs rep-tabs-row" role="tablist" aria-label="レポート表示">
+    <button type="button" role="tab" data-rep-tab="daily" class="is-on" aria-selected="true">日別</button>
+    <button type="button" role="tab" data-rep-tab="method" aria-selected="false">決済方法別</button>
+    <button type="button" role="tab" data-rep-tab="discount" aria-selected="false">割引（確定売上）</button>
+    <button type="button" role="tab" data-rep-tab="bills" aria-selected="false">伝票一覧</button>
   </div>
 
-  <div class="card" style="margin-top:1rem">
-    <strong style="font-size:0.9rem">決済方法別</strong>
-    <div id="repByMethod" style="margin-top:0.65rem;min-height:2.5rem"></div>
-  </div>
-
-  <div class="card" style="margin-top:1rem">
-    <div class="row" style="align-items:center;justify-content:space-between;gap:0.5rem;flex-wrap:wrap">
-      <strong style="font-size:0.9rem">割引（確定売上）</strong>
-      <div class="row" style="gap:0.45rem;flex-wrap:wrap">
-        <span class="muted" style="font-size:0.78rem">種別</span>
-        <select id="repDiscountKind" style="min-width:10rem">
-          <option value="">すべて</option>
-          <option value="percent">%（割合）</option>
-          <option value="yen">円（固定）</option>
-        </select>
-      </div>
+  <section id="repPanelDaily" class="rep-tab-panel is-on" role="tabpanel" data-rep-panel="daily">
+    <div class="card">
+      <strong style="font-size:0.9rem">日別</strong>
+      <div id="repDaily" style="margin-top:0.65rem;min-height:2.5rem"></div>
     </div>
-    <div id="repDiscounts" style="margin-top:0.65rem;min-height:2.5rem"></div>
-  </div>
+  </section>
 
-  <div class="card" style="margin-top:1rem">
-    <div class="row" style="align-items:center;justify-content:space-between;gap:0.5rem;flex-wrap:wrap">
-      <strong style="font-size:0.9rem">伝票一覧</strong>
-      <div class="row" style="gap:0.45rem;flex-wrap:wrap">
-        <span class="muted" style="font-size:0.78rem">状態</span>
-        <select id="repBillStatus" style="min-width:10rem">
-          <option value="settled">精算済み</option>
-          <option value="open">未精算</option>
-          <option value="void">取消</option>
-        </select>
-        <span class="muted" style="font-size:0.78rem">決済</span>
-        <input id="repMethodCode" type="text" placeholder="methodCode（任意）" style="min-width:12rem" />
-      </div>
+  <section id="repPanelMethod" class="rep-tab-panel" role="tabpanel" data-rep-panel="method">
+    <div class="card">
+      <strong style="font-size:0.9rem">決済方法別</strong>
+      <div id="repByMethod" style="margin-top:0.65rem;min-height:2.5rem"></div>
     </div>
-    <div id="repBills" style="margin-top:0.65rem;min-height:2.5rem"></div>
-  </div>
+  </section>
+
+  <section id="repPanelDiscount" class="rep-tab-panel" role="tabpanel" data-rep-panel="discount">
+    <div class="card">
+      <div class="row" style="align-items:center;justify-content:space-between;gap:0.5rem;flex-wrap:wrap">
+        <strong style="font-size:0.9rem">割引（確定売上）</strong>
+        <div class="row" style="gap:0.45rem;flex-wrap:wrap">
+          <span class="muted" style="font-size:0.78rem">種別</span>
+          <select id="repDiscountKind" style="min-width:10rem">
+            <option value="">すべて</option>
+            <option value="percent">%（割合）</option>
+            <option value="yen">円（固定）</option>
+          </select>
+        </div>
+      </div>
+      <div id="repDiscounts" style="margin-top:0.65rem;min-height:2.5rem"></div>
+    </div>
+  </section>
+
+  <section id="repPanelBills" class="rep-tab-panel" role="tabpanel" data-rep-panel="bills">
+    <div class="card">
+      <div class="row" style="align-items:center;justify-content:space-between;gap:0.5rem;flex-wrap:wrap">
+        <strong style="font-size:0.9rem">伝票一覧</strong>
+        <div class="row" style="gap:0.45rem;flex-wrap:wrap">
+          <span class="muted" style="font-size:0.78rem">状態</span>
+          <select id="repBillStatus" style="min-width:10rem">
+            <option value="settled">精算済み</option>
+            <option value="open">未精算</option>
+            <option value="void">取消</option>
+          </select>
+          <span class="muted" style="font-size:0.78rem">決済</span>
+          <input id="repMethodCode" type="text" placeholder="methodCode（任意）" style="min-width:12rem" />
+        </div>
+      </div>
+      <div id="repBills" style="margin-top:0.65rem;min-height:2.5rem"></div>
+    </div>
+  </section>
 
   <div id="repBillModal" style="display:none"></div>
   <div id="log"></div>

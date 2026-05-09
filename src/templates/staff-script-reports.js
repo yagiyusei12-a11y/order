@@ -80,6 +80,34 @@ function reportsCorrectionAllowed(key) {
   return reportsBillCorrection[key] !== false;
 }
 
+/** @type {"daily"|"method"|"discount"|"bills"} */
+let reportsActiveTab = "daily";
+
+function setReportsTab(key) {
+  reportsActiveTab = key;
+  document.querySelectorAll("[data-rep-tab]").forEach((b) => {
+    const on = b.getAttribute("data-rep-tab") === key;
+    b.classList.toggle("is-on", on);
+    b.setAttribute("aria-selected", on ? "true" : "false");
+  });
+  document.querySelectorAll("[data-rep-panel]").forEach((p) => {
+    const on = p.getAttribute("data-rep-panel") === key;
+    p.classList.toggle("is-on", on);
+  });
+}
+
+async function loadReportsTabContent(tab, q) {
+  if (tab === "daily") await loadDaily(q);
+  else if (tab === "method") await loadByMethod(q);
+  else if (tab === "discount") await loadDiscounts(q);
+  else if (tab === "bills") await loadBills(q);
+}
+
+async function reloadActiveDetailPanel() {
+  const q = qsFromInputs();
+  await loadReportsTabContent(reportsActiveTab, q);
+}
+
 async function refreshReportsCorrectionPolicy() {
   try {
     const d = await api("/stores/" + encodeURIComponent(STORE) + "/settings");
@@ -834,10 +862,7 @@ async function runAll() {
     await refreshReportsCorrectionPolicy();
     const q = qsFromInputs();
     await loadSummary(q);
-    await loadDaily(q);
-    await loadByMethod(q);
-    await loadDiscounts(q);
-    await loadBills(q);
+    await loadReportsTabContent(reportsActiveTab, q);
   } catch (e) {
     const msg = String(e.message || e);
     log(msg);
@@ -852,6 +877,15 @@ if (btnLoadRep) {
     runAll().catch((e) => log(String(e.message || e)));
   };
 }
+
+document.querySelectorAll("[data-rep-tab]").forEach((b) => {
+  b.onclick = () => {
+    const k = b.getAttribute("data-rep-tab");
+    if (!k || k === reportsActiveTab) return;
+    setReportsTab(k);
+    reloadActiveDetailPanel().catch((e) => log(String(e.message || e)));
+  };
+});
 
 document.querySelectorAll("button[data-rep-preset]").forEach((b) => {
   b.onclick = () => {
@@ -883,11 +917,20 @@ document.querySelectorAll("button[data-rep-preset]").forEach((b) => {
 });
 
 const discSel = document.getElementById("repDiscountKind");
-if (discSel) discSel.onchange = () => runAll().catch((e) => log(String(e.message || e)));
+if (discSel)
+  discSel.onchange = () => {
+    if (reportsActiveTab === "discount") reloadActiveDetailPanel().catch((e) => log(String(e.message || e)));
+  };
 const billStatusSel = document.getElementById("repBillStatus");
-if (billStatusSel) billStatusSel.onchange = () => runAll().catch((e) => log(String(e.message || e)));
+if (billStatusSel)
+  billStatusSel.onchange = () => {
+    if (reportsActiveTab === "bills") reloadActiveDetailPanel().catch((e) => log(String(e.message || e)));
+  };
 const methodInp = document.getElementById("repMethodCode");
-if (methodInp) methodInp.onchange = () => runAll().catch((e) => log(String(e.message || e)));
+if (methodInp)
+  methodInp.onchange = () => {
+    if (reportsActiveTab === "bills") reloadActiveDetailPanel().catch((e) => log(String(e.message || e)));
+  };
 
 // 初期値: 期間なし（全期間集計・伝票は精算日の新しい順）
 runAll().catch((e) => log(String(e.message || e)));

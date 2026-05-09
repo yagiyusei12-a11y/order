@@ -751,6 +751,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       store: {
         showMenuPrices: st.guestShowMenuPrices,
         menuPriceTaxMode: st.menuPriceTaxMode,
+        coursePriceTaxMode: st.coursePriceTaxMode,
         taxRatePercent: st.taxRatePercent,
         guestCourseIncludedChargeOptionExtras: st.guestCourseIncludedChargeOptionExtras,
       },

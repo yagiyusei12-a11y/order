@@ -16,6 +16,8 @@ export type StoreSettingsShape = {
   guestShowMenuPrices: boolean;
   /** 価格入力モード: 税込 / 税抜 */
   menuPriceTaxMode: "inclusive" | "exclusive";
+  /** コース料金の表示/入力モード: 税込 / 税抜（未設定時は menuPriceTaxMode に追従） */
+  coursePriceTaxMode: "inclusive" | "exclusive";
   /** 消費税率（%） */
   taxRatePercent: number;
   /** メニューカテゴリのゲスト表示時間帯の基準タイムゾーン（IANA） */
@@ -50,6 +52,7 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     kitchenAutoRefreshSec: 10,
     guestShowMenuPrices: true,
     menuPriceTaxMode: "inclusive",
+    coursePriceTaxMode: "inclusive",
     taxRatePercent: 10,
     timezone: "Asia/Tokyo",
     guestCourseLastOrderMinutesBeforeEnd: 30,
@@ -69,6 +72,11 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
   }
   if (o.menuPriceTaxMode === "inclusive" || o.menuPriceTaxMode === "exclusive") {
     d.menuPriceTaxMode = o.menuPriceTaxMode;
+  }
+  // 既定はメニュー設定に追従（コース側が未設定でも破綻しないように）
+  d.coursePriceTaxMode = d.menuPriceTaxMode;
+  if (o.coursePriceTaxMode === "inclusive" || o.coursePriceTaxMode === "exclusive") {
+    d.coursePriceTaxMode = o.coursePriceTaxMode;
   }
   if (typeof o.taxRatePercent === "number" && Number.isFinite(o.taxRatePercent)) {
     d.taxRatePercent = Math.min(30, Math.max(0, Math.round(o.taxRatePercent * 100) / 100));

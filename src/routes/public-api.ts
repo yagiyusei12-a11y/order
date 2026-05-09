@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { openOrReuseSessionForTable } from "../lib/open-table-session.js";
 import { displayTableCode, tableDisplayLabel } from "../lib/table-display-code.js";
+import { mergeStoreSettings } from "../lib/store-settings.js";
 
 /**
  * 認証不要の公開API（卓の固定QRから参照する想定）
@@ -12,6 +13,11 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
       where: { publicCode: req.params.publicCode },
     });
     if (!table || !table.active) return reply.code(404).send({ error: "table not found" });
+    const store = await prisma.store.findUnique({
+      where: { id: table.storeId },
+      select: { settings: true },
+    });
+    const st = mergeStoreSettings(store?.settings);
     const session = await prisma.diningSession.findFirst({
       where: { tableId: table.id, status: "open" },
       include: { course: true, coursePriceTier: true },
@@ -37,6 +43,11 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
     }));
     return {
       storeId: table.storeId,
+      store: {
+        menuPriceTaxMode: st.menuPriceTaxMode,
+        coursePriceTaxMode: st.coursePriceTaxMode,
+        taxRatePercent: st.taxRatePercent,
+      },
       table: {
         id: table.id,
         name: table.name,

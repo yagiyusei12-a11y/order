@@ -1345,6 +1345,7 @@
     const cart = {};
     let guestShowMenuPrices = true;
     let menuPriceTaxMode = "inclusive";
+    let coursePriceTaxMode = "inclusive";
     let taxRatePercent = 10;
     let alcoholRestricted = false;
     /** @type {Map<string, object>} */
@@ -3145,6 +3146,7 @@
       const data = await api("/guest/" + encodeURIComponent(TOKEN) + "/menu");
       guestShowMenuPrices = !(data.store && data.store.showMenuPrices === false);
       menuPriceTaxMode = (data.store && data.store.menuPriceTaxMode) || "inclusive";
+      coursePriceTaxMode = (data.store && data.store.coursePriceTaxMode) || menuPriceTaxMode || "inclusive";
       taxRatePercent = Number((data.store && data.store.taxRatePercent) || 10);
       guestCourseIncludedChargeOptionExtras =
         !data.store || data.store.guestCourseIncludedChargeOptionExtras !== false;
@@ -3154,13 +3156,16 @@
       if (cc > 0) hdr += "（大人" + (Number(s.guestCount) - cc) + "・子" + cc + "）";
       if (s.course) {
         hdr += " · " + s.course.name + "（制限時間 " + s.course.durationMinutes + "分）";
-        if (guestShowMenuPrices && s.course.childPricePerPerson != null) {
-          hdr +=
-            " · 大人 " +
-            Number(s.course.pricePerPerson).toLocaleString("ja-JP") +
-            "円 / 子 " +
-            Number(s.course.childPricePerPerson).toLocaleString("ja-JP") +
-            "円";
+        if (guestShowMenuPrices) {
+          const showNet = coursePriceTaxMode === "exclusive";
+          const f = 1 + taxRatePercent / 100;
+          const adultGross = Number(s.course.pricePerPerson || 0);
+          const adult = showNet ? Math.round(adultGross / f) : adultGross;
+          const childGross = s.course.childPricePerPerson != null ? Number(s.course.childPricePerPerson || 0) : null;
+          const child = childGross == null ? null : showNet ? Math.round(childGross / f) : childGross;
+          const suf = showNet ? "（税抜）" : "（税込）";
+          hdr += " · 大人 " + Number(adult).toLocaleString("ja-JP") + "円" + suf;
+          if (child != null) hdr += " / 子 " + Number(child).toLocaleString("ja-JP") + "円" + suf;
         }
       }
       if (alcoholRestricted) hdr += " · アルコール商品は制限中";

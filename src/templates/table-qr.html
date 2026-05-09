@@ -69,9 +69,22 @@
       location.replace("/guest-app/" + encodeURIComponent(token));
     }
 
-    function renderCourseRadios(courses) {
+    function taxRateFactor(ratePercent) {
+      const r = Number(ratePercent || 0);
+      if (!Number.isFinite(r) || r <= 0) return 1;
+      return 1 + r / 100;
+    }
+    function netYenFromGross(grossYen, taxRatePercent) {
+      const g = Number(grossYen) || 0;
+      return Math.round(g / taxRateFactor(taxRatePercent));
+    }
+
+    function renderCourseRadios(courses, store) {
       const box = document.getElementById("courseRadios");
       box.innerHTML = "";
+      const courseMode = store && store.coursePriceTaxMode === "exclusive" ? "exclusive" : "inclusive";
+      const taxRatePercent = store && store.taxRatePercent != null ? Number(store.taxRatePercent) : 10;
+      const suffix = courseMode === "exclusive" ? "（税抜）" : "（税込）";
       const noneId = "course-none";
       const none = document.createElement("label");
       none.className = "row";
@@ -86,10 +99,16 @@
           const t = tiers[i];
           const id = "course-" + c.id + "-" + t.id;
           const val = c.id + "|" + t.id;
-          const childBit =
+          const adultUnit =
+            courseMode === "exclusive" ? netYenFromGross(t.pricePerPerson, taxRatePercent) : Number(t.pricePerPerson);
+          const childUnit =
             t.childPricePerPerson != null
-              ? " · 子 " + Number(t.childPricePerPerson).toLocaleString("ja-JP") + "円/人"
-              : "";
+              ? courseMode === "exclusive"
+                ? netYenFromGross(t.childPricePerPerson, taxRatePercent)
+                : Number(t.childPricePerPerson)
+              : null;
+          const childBit =
+            childUnit != null ? " · 子 " + Number(childUnit).toLocaleString("ja-JP") + "円/人" + suffix : "";
           const lab = document.createElement("label");
           lab.className = "row";
           lab.innerHTML =
@@ -102,8 +121,9 @@
             "</strong><div class=\"course-meta\">" +
             t.durationMinutes +
             "分 · 大人 " +
-            Number(t.pricePerPerson).toLocaleString("ja-JP") +
+            Number(adultUnit).toLocaleString("ja-JP") +
             "円/人" +
+            suffix +
             childBit +
             " · " +
             esc(c.kind || "") +
@@ -133,7 +153,7 @@
         document.getElementById("title").textContent = dispName;
         document.getElementById("deskLine").textContent =
           "卓コード " + dispCode + " · 人数とメニュー種類を選んでください。";
-        renderCourseRadios(j.courses || []);
+        renderCourseRadios(j.courses || [], j.store || {});
 
         document.getElementById("btnStart").onclick = async () => {
           err.style.display = "none";

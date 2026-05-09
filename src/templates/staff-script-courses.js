@@ -11,8 +11,7 @@ function log(t) {
   if (el) el.textContent = t || "";
 }
 
-const COURSES_PRICE_MODE_KEY = "coursesPriceMode";
-let storeSettingsCache = { menuPriceTaxMode: "inclusive", taxRatePercent: 10 };
+let storeSettingsCache = { menuPriceTaxMode: "inclusive", coursePriceTaxMode: "inclusive", taxRatePercent: 10 };
 
 function taxRateFactor() {
   const r = Number(storeSettingsCache && storeSettingsCache.taxRatePercent);
@@ -30,19 +29,9 @@ function grossYenFromNet(netYen) {
   return Math.round(n * taxRateFactor());
 }
 
-function defaultCoursesPriceMode() {
-  return storeSettingsCache && storeSettingsCache.menuPriceTaxMode === "exclusive" ? "net" : "gross";
-}
-
 function getCoursesPriceMode() {
-  const v = String(localStorage.getItem(COURSES_PRICE_MODE_KEY) || "");
-  if (v === "net" || v === "gross") return v;
-  return defaultCoursesPriceMode();
-}
-
-function setCoursesPriceMode(v) {
-  if (v !== "net" && v !== "gross") return;
-  localStorage.setItem(COURSES_PRICE_MODE_KEY, v);
+  const m = storeSettingsCache && storeSettingsCache.coursePriceTaxMode === "exclusive" ? "net" : "gross";
+  return m;
 }
 
 function formatTiersSummary(tiers) {
@@ -734,6 +723,7 @@ async function loadAll() {
   coursesCache = cRes.courses || [];
   menuCategoriesCache = mRes.categories || [];
   storeSettingsCache = sRes && sRes.settings ? sRes.settings : storeSettingsCache;
+  if (!storeSettingsCache.coursePriceTaxMode) storeSettingsCache.coursePriceTaxMode = storeSettingsCache.menuPriceTaxMode;
   syncCoursesPriceModeUi();
   render();
   initAddTierRows();
@@ -742,7 +732,7 @@ async function loadAll() {
 function syncCoursesPriceModeUi() {
   const sel = document.getElementById("coursesPriceMode");
   if (!sel) return;
-  const v = getCoursesPriceMode();
+  const v = storeSettingsCache && storeSettingsCache.coursePriceTaxMode === "exclusive" ? "net" : "gross";
   sel.value = v;
 }
 
@@ -1023,10 +1013,27 @@ document.getElementById("btnRefCourses").onclick = () => {
 const coursesPriceModeSel = document.getElementById("coursesPriceMode");
 if (coursesPriceModeSel) {
   coursesPriceModeSel.addEventListener("change", () => {
-    setCoursesPriceMode(coursesPriceModeSel.value);
-    syncCoursesPriceModeUi();
-    render();
-    initAddTierRows();
+    (async () => {
+      log("");
+      const v = coursesPriceModeSel.value === "net" ? "exclusive" : "inclusive";
+      coursesPriceModeSel.disabled = true;
+      try {
+        await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ coursePriceTaxMode: v }),
+        });
+        storeSettingsCache.coursePriceTaxMode = v;
+        syncCoursesPriceModeUi();
+        render();
+        initAddTierRows();
+        log("コース料金の表示を " + (v === "exclusive" ? "税抜" : "税込") + " にしました");
+      } catch (e) {
+        log(String(e.message || e));
+      } finally {
+        coursesPriceModeSel.disabled = false;
+      }
+    })();
   });
 }
 

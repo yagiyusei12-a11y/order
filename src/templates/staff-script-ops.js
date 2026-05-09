@@ -4,7 +4,12 @@ let sessionsCache = [];
 let coursesCache = [];
 let billsBySessionId = new Map();
 let paymentMethodsCache = [];
-let storeSettingsCache = { menuPriceTaxMode: "inclusive", taxRatePercent: 10, opsDiscountPresets: [] };
+let storeSettingsCache = {
+  menuPriceTaxMode: "inclusive",
+  coursePriceTaxMode: "inclusive",
+  taxRatePercent: 10,
+  opsDiscountPresets: [],
+};
 const pendingGroupedQty = new Map();
 const pendingGroupedTimer = new Map();
 const groupedFlushInFlight = new Set();
@@ -514,11 +519,17 @@ function printHtml(html) {
 function buildReceiptDoc(detail) {
   const rows = [];
   if (detail.courseLine && Number(detail.courseLine.lineTotal) > 0) {
+    const showNetForCourse = storeSettingsCache.coursePriceTaxMode === "exclusive";
+    const courseDisp = showNetForCourse
+      ? netYenFromGross(detail.courseLine.lineTotal, storeSettingsCache.taxRatePercent)
+      : detail.courseLine.lineTotal;
+    const courseSuffix = showNetForCourse ? "（税抜）" : "";
     rows.push(
       "<tr><td>" +
         escapeHtml(detail.courseLine.name) +
+        (courseSuffix ? " <span style=\"color:#666;font-size:0.82em\">" + courseSuffix + "</span>" : "") +
         "</td><td style=\"text-align:right\">" +
-        yen(detail.courseLine.lineTotal) +
+        yen(courseDisp) +
         "</td></tr>"
     );
   }
@@ -1092,10 +1103,19 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
         "<span class=\"badge\" style=\"margin-right:.35rem;background:#7c3aed;color:#fff;font-weight:900\">コース</span>" +
         escapeHtml(detail.courseLine.name) +
         "</div>" +
-        "<div class=\"ops-line-sub\">コース料（税込・人数計算）</div>" +
+        "<div class=\"ops-line-sub\">コース料（" +
+        (storeSettingsCache.coursePriceTaxMode === "exclusive" ? "税抜" : "税込") +
+        "・人数計算）</div>" +
         "</td>" +
         "<td class=\"ops-line-total\">" +
-        yen(detail.courseLine.lineTotal) +
+        yen(
+          storeSettingsCache.coursePriceTaxMode === "exclusive"
+            ? netYenFromGross(detail.courseLine.lineTotal, storeSettingsCache.taxRatePercent)
+            : detail.courseLine.lineTotal,
+        ) +
+        (storeSettingsCache.coursePriceTaxMode === "exclusive"
+          ? " <span class=\"muted\" style=\"font-size:0.72rem\">（税抜）</span>"
+          : "") +
         "</td></tr>"
       : "";
   const orderTableBody = courseRowHtml + orderRows;

@@ -815,12 +815,15 @@
 
     /* セット構成単品の「オプション」(opt-comp) が白飛びして読めない環境があるため、濃い面に統一 */
     .opt-comp {
+      display: none;
       margin: 0.35rem 0 0.55rem 0.8rem !important;
       padding: 0.55rem 0.6rem !important;
       border-left: 3px solid rgba(251, 146, 60, 0.75) !important;
       background: rgba(2, 6, 23, 0.65) !important;
       border-radius: 12px !important;
     }
+    /* チェックした行の直後だけ展開（対応ブラウザ用）。JSでも同じ制御を行う */
+    label.opt-row:has(> input[type=checkbox]:checked) + .opt-comp { display: block; }
     .opt-comp .muted { color: rgba(241, 245, 249, 0.78) !important; }
     .opt-comp [data-comp-opt-group].opt-block {
       background: rgba(15, 23, 42, 0.92) !important;
@@ -2727,6 +2730,16 @@
             const stepId = inpX.name.slice(2);
             const stepEl = panel.querySelector("[data-step-id=\"" + selEsc(stepId) + "\"]");
             if (!stepEl) return;
+
+            // 構成単品のオプションはチェック後にだけ表示（長いスクロールを短くする）
+            try {
+              const lab = inpX.closest("label.opt-row");
+              const next = lab && lab.nextElementSibling;
+              if (next && next.classList && next.classList.contains("opt-comp")) {
+                next.style.display = inpX.checked ? "" : "none";
+              }
+            } catch (_) {}
+
             const boxes = [...stepEl.querySelectorAll("input[type=checkbox]")];
             const maxP = Number(boxes[0]?.getAttribute("data-max") || item.setSteps.find((s) => s.id === stepId)?.maxPick || 1);
             const checked = boxes.filter((b) => b.checked);
@@ -2752,6 +2765,19 @@
             }
           });
         });
+
+        // 初期表示では、チェックされていない構成単品のオプションは隠す
+        try {
+          panel
+            .querySelectorAll("label.opt-row > input[type=checkbox][name^=\"p-\"]")
+            .forEach((x) => {
+              const lab = x.closest("label.opt-row");
+              const next = lab && lab.nextElementSibling;
+              if (next && next.classList && next.classList.contains("opt-comp")) {
+                next.style.display = x.checked ? "" : "none";
+              }
+            });
+        } catch (_) {}
         const getQty = wireQty(panel, item, () => {
           const sel = collectSetSelections(panel, item);
           const up = computeSetUnitPrice(item, sel);

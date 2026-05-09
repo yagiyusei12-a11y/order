@@ -470,6 +470,8 @@ function buildSetDraftFromItem(item) {
       minPick: st.minPick,
       maxPick: st.maxPick,
       allowServeLaterSplit: st.allowServeLaterSplit === true,
+      serveLaterGroup:
+        st.serveLaterGroup === "drink" || st.serveLaterGroup === "dessert" ? st.serveLaterGroup : "none",
       filterCatId: defaultFilterCategoryId(ex),
       choiceMap: new Map(
         st.choices.map((c) => [
@@ -484,6 +486,8 @@ function buildSetDraftFromItem(item) {
       label: "",
       minPick: 1,
       maxPick: 1,
+      allowServeLaterSplit: false,
+      serveLaterGroup: "none",
       filterCatId: defaultFilterCategoryId(ex),
       choiceMap: new Map(),
     },
@@ -606,11 +610,32 @@ function renderSetModalStepsBody(body, item, draft) {
       "<input type=\"checkbox\" data-serve-later-split" +
       (row.allowServeLaterSplit ? " checked" : "") +
       " />ゲストに「後から提供」を選ばせる（別OrderLine・0円・在庫切れはセット丸ごと）</label>" +
+      "<div style=\"margin:.35rem 0 0;font-size:.72rem\"><span class=\"muted\">後からグループ（複合オプション用）</span><br />" +
+      "<select data-serve-later-group style=\"margin-top:.25rem;max-width:100%;padding:.25rem;border-radius:8px;border:1px solid var(--border)\">" +
+      "<option value=\"none\"" +
+      (row.serveLaterGroup === "none" || !row.serveLaterGroup ? " selected" : "") +
+      ">なし</option>" +
+      "<option value=\"drink\"" +
+      (row.serveLaterGroup === "drink" ? " selected" : "") +
+      ">ドリンク</option>" +
+      "<option value=\"dessert\"" +
+      (row.serveLaterGroup === "dessert" ? " selected" : "") +
+      ">デザート</option></select></div>" +
       "<div data-pick-list></div>";
     const serveLaterChk = stepEl.querySelector("[data-serve-later-split]");
+    const serveLaterGrp = stepEl.querySelector("[data-serve-later-group]");
     if (serveLaterChk) {
       serveLaterChk.addEventListener("change", () => {
         row.allowServeLaterSplit = serveLaterChk.checked;
+        if (!serveLaterChk.checked && serveLaterGrp) {
+          serveLaterGrp.value = "none";
+          row.serveLaterGroup = "none";
+        }
+      });
+    }
+    if (serveLaterGrp) {
+      serveLaterGrp.addEventListener("change", () => {
+        row.serveLaterGroup = serveLaterGrp.value === "drink" || serveLaterGrp.value === "dessert" ? serveLaterGrp.value : "none";
       });
     }
     stepEl.querySelector("[data-slab]").addEventListener("input", (ev) => {
@@ -702,6 +727,7 @@ function openSetConfiguratorModal(item, right, opts) {
       minPick: 1,
       maxPick: 1,
       allowServeLaterSplit: false,
+      serveLaterGroup: "none",
       filterCatId: defaultFilterCategoryId(item.id),
       choiceMap: new Map(),
     });
@@ -741,12 +767,17 @@ function openSetConfiguratorModal(item, right, opts) {
       if (pickable.length === 0 && (minPick !== 0 || maxPick !== 0)) {
         return log("標準付属のみの項目「" + label + "」は最小・最大を0にしてください");
       }
+      const sg =
+        row.allowServeLaterSplit && (row.serveLaterGroup === "drink" || row.serveLaterGroup === "dessert")
+          ? row.serveLaterGroup
+          : "none";
       stepsPayload.push({
         label,
         minPick,
         maxPick,
         sortOrder: si,
         allowServeLaterSplit: !!row.allowServeLaterSplit,
+        serveLaterGroup: sg,
         choices,
       });
     }

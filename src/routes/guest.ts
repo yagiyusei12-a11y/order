@@ -82,6 +82,27 @@ async function resolveGuestBillingContext(session: {
   return { ok: false, status: 404, body: { error: "session not found or closed" } };
 }
 
+/** POST lines の後から提供ステップ id。配列があれば単体フィールドより優先 */
+function parseGuestServeLaterDeferStepIds(line: Record<string, unknown>): string[] {
+  const rawArr = line.serveLaterDeferStepIds;
+  const out: string[] = [];
+  if (Array.isArray(rawArr)) {
+    for (const x of rawArr) {
+      if (typeof x === "string" && x.trim()) out.push(x.trim());
+    }
+  }
+  const uniq = [...new Set(out)];
+  if (uniq.length > 0) return uniq;
+  const single = line.serveLaterDeferStepId;
+  if (typeof single === "string" && single.trim()) return [single.trim()];
+  return [];
+}
+
+function normalizeServeLaterGroupStored(v: string | null | undefined): "none" | "drink" | "dessert" {
+  if (v === "drink" || v === "dessert") return v;
+  return "none";
+}
+
 function mapGuestMenuItem(
   it: {
     id: string;
@@ -253,6 +274,7 @@ function mapGuestSetMenuItem(
       maxPick: number;
       sortOrder: number;
       allowServeLaterSplit?: boolean;
+      serveLaterGroup?: string;
       choices: {
         componentMenuItemId: string;
         extraPrice: number;
@@ -339,6 +361,8 @@ function mapGuestSetMenuItem(
     if (st.minPick > 0 && selectable < st.minPick) {
       return null;
     }
+    const sg =
+      st.serveLaterGroup === "drink" || st.serveLaterGroup === "dessert" ? st.serveLaterGroup : "none";
     stepsOut.push({
       id: st.id,
       label: st.label,
@@ -346,6 +370,7 @@ function mapGuestSetMenuItem(
       maxPick: st.maxPick,
       sortOrder: st.sortOrder,
       allowServeLaterSplit: st.allowServeLaterSplit === true,
+      serveLaterGroup: sg,
       choices,
       fixedChoices,
     });
@@ -402,6 +427,8 @@ function mapGuestSetMenuItemForReorder(
       }
       choices.push(row);
     }
+    const sgR =
+      st.serveLaterGroup === "drink" || st.serveLaterGroup === "dessert" ? st.serveLaterGroup : "none";
     stepsOut.push({
       id: st.id,
       label: st.label,
@@ -409,6 +436,7 @@ function mapGuestSetMenuItemForReorder(
       maxPick: st.maxPick,
       sortOrder: st.sortOrder,
       allowServeLaterSplit: st.allowServeLaterSplit === true,
+      serveLaterGroup: sgR,
       choices,
       fixedChoices,
     });
@@ -984,6 +1012,10 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         }[];
         /** セットで「後から提供」にしたステップ id（メニューで allowServeLaterSplit な項目のみ） */
         serveLaterDeferStepId?: string;
+        /** 複数ステップを後からにする場合（配列があれば単体より優先） */
+        serveLaterDeferStepIds?: string[];
+        /** ドリンク＋デザート同時後出しオプション選択時は true（グループ検証用） */
+        serveLaterDeferPairDrinkDessert?: boolean;
       }[];
       note?: string;
     };
@@ -1279,23 +1311,33 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
               }
             }
 
-            const deferRaw = (l as { serveLaterDeferStepId?: unknown }).serveLaterDeferStepId;
-            const serveLaterDeferStepId =
-              typeof deferRaw === "string" && deferRaw.trim() ? deferRaw.trim() : "";
-            const deferStepRow = serveLaterDeferStepId
-              ? setItem.setSteps.find((s) => s.id === serveLaterDeferStepId)
-              : undefined;
-            if (serveLaterDeferStepId) {
-              if (!deferStepRow || deferStepRow.allowServeLaterSplit !== true) {
+            const lineObj = l as Record<string, unknown>;
+            const serveLaterDeferStepIds = parseGuestServeLaterDeferStepIds(lineObj);
+            const pairDd = lineObj.serveLaterDeferPairDrinkDessert === true;
+            for (const sid of serveLaterDeferStepIds) {
+              const row = setItem.setSteps.find((s) => s.id === sid);
+              if (!row || row.allowServeLaterSplit !== true) {
                 throw new Error("BAD_SERVE_LATER");
               }
             }
+            if (pairDd) {
+              if (serveLaterDeferStepIds.length !== 2) throw new Error("BAD_SERVE_LATER");
+              const r0 = setItem.setSteps.find((s) => s.id === serveLaterDeferStepIds[0]);
+              const r1 = setItem.setSteps.find((s) => s.id === serveLaterDeferStepIds[1]);
+              if (!r0 || !r1) throw new Error("BAD_SERVE_LATER");
+              const g0 = normalizeServeLaterGroupStored(r0.serveLaterGroup);
+              const g1 = normalizeServeLaterGroupStored(r1.serveLaterGroup);
+              const okPair =
+                (g0 === "drink" && g1 === "dessert") || (g0 === "dessert" && g1 === "drink");
+              if (!okPair) throw new Error("BAD_SERVE_LATER");
+            }
 
-            const bundleId = serveLaterDeferStepId ? randomUUID() : "";
+            const hasDefer = serveLaterDeferStepIds.length > 0;
+            const bundleId = hasDefer ? randomUUID() : "";
             let lineExtra: Record<string, unknown>;
             let nameSnapshot: string;
-            if (serveLaterDeferStepId) {
-              const omit = new Set([serveLaterDeferStepId]);
+            if (hasDefer) {
+              const omit = new Set(serveLaterDeferStepIds);
               lineExtra = buildSetLineExtraOmitStepIds(
                 setItem.setSteps.map((s) => ({ id: s.id, label: s.label })),
                 byStep,
@@ -1305,8 +1347,15 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                 omit,
               );
               lineExtra.bundleId = bundleId;
-              lineExtra.serveLaterDeferredStepId = serveLaterDeferStepId;
-              lineExtra.serveLaterDeferredStepLabel = deferStepRow!.label;
+              const sortedDeferIds = [...serveLaterDeferStepIds].sort();
+              lineExtra.serveLaterDeferredStepIds = sortedDeferIds;
+              lineExtra.serveLaterDeferredStepId = sortedDeferIds[0];
+              const labels = sortedDeferIds.map(
+                (id) => setItem.setSteps.find((s) => s.id === id)?.label ?? "",
+              );
+              lineExtra.serveLaterDeferredStepLabels = labels;
+              lineExtra.serveLaterDeferredStepLabel =
+                labels.filter(Boolean).join("・") || sortedDeferIds[0];
               nameSnapshot = buildSetNameSnapshot(setItem.name, lineExtra);
             } else {
               lineExtra = buildSetLineExtra(
@@ -1365,29 +1414,32 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
               taxRatePercent,
             });
 
-            if (serveLaterDeferStepId) {
-              const deferPicked = byStep.get(serveLaterDeferStepId) ?? [];
-              const deferStepLabel = deferStepRow!.label;
-              for (const compId of deferPicked) {
-                const compName = nameById.get(compId) ?? "（名称未設定）";
-                const childNameSnapshot = `${setItem.name}（後出し）› ${deferStepLabel}: ${compName}`;
-                resolved.push({
-                  kind: "single",
-                  menuItemId: compId,
-                  qty: l.qty,
-                  note: l.note?.trim() || null,
-                  unitPrice: 0,
-                  nameSnapshot: childNameSnapshot,
-                  lineExtra: {
-                    kind: SET_SERVE_LATER_LINE_KIND,
-                    bundleId,
-                    setMenuItemId: setItem.id,
-                    deferredStepId: serveLaterDeferStepId,
-                    stepLabel: deferStepLabel,
-                  },
-                  eatMode,
-                  taxRatePercent,
-                });
+            if (hasDefer) {
+              for (const deferId of serveLaterDeferStepIds) {
+                const deferRow = setItem.setSteps.find((s) => s.id === deferId)!;
+                const deferStepLabel = deferRow.label;
+                const deferPicked = byStep.get(deferId) ?? [];
+                for (const compId of deferPicked) {
+                  const compName = nameById.get(compId) ?? "（名称未設定）";
+                  const childNameSnapshot = `${setItem.name}（後出し）› ${deferStepLabel}: ${compName}`;
+                  resolved.push({
+                    kind: "single",
+                    menuItemId: compId,
+                    qty: l.qty,
+                    note: l.note?.trim() || null,
+                    unitPrice: 0,
+                    nameSnapshot: childNameSnapshot,
+                    lineExtra: {
+                      kind: SET_SERVE_LATER_LINE_KIND,
+                      bundleId,
+                      setMenuItemId: setItem.id,
+                      deferredStepId: deferId,
+                      stepLabel: deferStepLabel,
+                    },
+                    eatMode,
+                    taxRatePercent,
+                  });
+                }
               }
             }
           } else {

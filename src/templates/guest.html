@@ -1775,15 +1775,41 @@
       return out;
     }
 
-    function getServeLaterDeferStepId(panel, item) {
+    function guestDeferDrinkDessertStepIds(item) {
+      const def = (item.setSteps || []).filter((st) => st.allowServeLaterSplit);
+      const drink = def.find((st) => st.serveLaterGroup === "drink");
+      const dessert = def.find((st) => st.serveLaterGroup === "dessert");
+      if (!drink || !dessert) return null;
+      return { drinkId: drink.id, dessertId: dessert.id };
+    }
+
+    /** @returns {{ ok: boolean, ids: string[], pairDrinkDessert: boolean }} */
+    function getServeLaterDeferPayload(panel, item) {
       const deferrable = (item.setSteps || []).filter((st) => st.allowServeLaterSplit);
-      if (deferrable.length === 0) return "";
+      if (deferrable.length === 0) return { ok: true, ids: [], pairDrinkDessert: false };
       if (deferrable.length === 1) {
-        const chk = panel.querySelector("[data-serve-later-check]");
-        return chk && chk.checked ? String(deferrable[0].id) : "";
+        const withMeal = panel.querySelector("[data-serve-later-radio][value=\"with_meal\"]:checked");
+        const deferR = panel.querySelector("[data-serve-later-radio][value=\"defer\"]:checked");
+        if (!withMeal && !deferR) return { ok: false, ids: [], pairDrinkDessert: false };
+        if (withMeal) return { ok: true, ids: [], pairDrinkDessert: false };
+        return { ok: true, ids: [String(deferrable[0].id)], pairDrinkDessert: false };
       }
       const sel = panel.querySelector("[data-serve-later-select]");
-      return sel && sel.value ? String(sel.value) : "";
+      const v = sel && sel.value ? String(sel.value) : "";
+      if (!v) return { ok: false, ids: [], pairDrinkDessert: false };
+      if (v === "__with_meal__") return { ok: true, ids: [], pairDrinkDessert: false };
+      const dd = guestDeferDrinkDessertStepIds(item);
+      if (v === "__pair_dd__") {
+        if (!dd) return { ok: false, ids: [], pairDrinkDessert: false };
+        return { ok: true, ids: [dd.drinkId, dd.dessertId], pairDrinkDessert: true };
+      }
+      return { ok: true, ids: [v], pairDrinkDessert: false };
+    }
+
+    function stableServeLaterCartSuffix(ids, pairFlag) {
+      if (!ids || ids.length === 0) return "";
+      const s = [...ids].sort().join(",");
+      return "|sl:" + s + (pairFlag ? "|slp:dd" : "");
     }
 
     function getEatMode(panel, item) {
@@ -1881,10 +1907,18 @@
           if (nm.length) parts.push(g.name + ": " + nm.join("・"));
         }
       }
-      if (line.serveLaterDeferStepId && item.setSteps) {
+      let slLabels = [];
+      if (line.serveLaterDeferStepIds && line.serveLaterDeferStepIds.length && item.setSteps) {
+        for (const sid of line.serveLaterDeferStepIds) {
+          const st = item.setSteps.find((s) => s.id === sid);
+          if (st) slLabels.push("「" + String(st.label || "").trim() + "」");
+        }
+      } else if (line.serveLaterDeferStepId && item.setSteps) {
         const st = item.setSteps.find((s) => s.id === line.serveLaterDeferStepId);
-        if (st) parts.push("「" + String(st.label || "").trim() + "」は後から提供（別明細）");
+        if (st) slLabels.push("「" + String(st.label || "").trim() + "」");
       }
+      if (slLabels.length)
+        parts.push(slLabels.join("・") + "は後から提供（別明細）");
       return parts.join("\n");
     }
 
@@ -2085,20 +2119,41 @@
     function enrichHistorySetSelectionsFromOrder(order, ln, setSelections, lineExtra) {
       if (!order || !lineExtra || !Array.isArray(lineExtra.steps) || lineExtra.steps.length === 0) return setSelections;
       const bid = typeof lineExtra.bundleId === "string" ? lineExtra.bundleId.trim() : "";
-      const defStep =
-        typeof lineExtra.serveLaterDeferredStepId === "string" ? lineExtra.serveLaterDeferredStepId.trim() : "";
-      if (!bid || !defStep) return setSelections;
-      if (setSelections.some((x) => x.stepId === defStep)) return setSelections;
+      let defSteps = [];
+      if (Array.isArray(lineExtra.serveLaterDeferredStepIds)) {
+        for (const id of lineExtra.serveLaterDeferredStepIds) {
+          if (typeof id === "string" && id.trim()) defSteps.push(id.trim());
+        }
+      }
+      if (
+        defSteps.length === 0 &&
+        typeof lineExtra.serveLaterDeferredStepId === "string" &&
+        lineExtra.serveLaterDeferredStepId.trim()
+      ) {
+        defSteps = [lineExtra.serveLaterDeferredStepId.trim()];
+      }
+      if (!bid || defSteps.length === 0) return setSelections;
+
+      const serveLaterChildren = [];
       for (const ol of order.lines || []) {
         if (ol.id === ln.id) continue;
         const ox = ol.lineExtra && typeof ol.lineExtra === "object" ? ol.lineExtra : null;
         if (!ox || ox.kind !== SERVE_LATER_LINE_KIND) continue;
         if (ox.bundleId !== bid) continue;
-        if (ol.menuItemId) {
-          return setSelections.concat([{ stepId: defStep, menuItemIds: [ol.menuItemId] }]);
-        }
+        const did = typeof ox.deferredStepId === "string" ? ox.deferredStepId.trim() : "";
+        if (did && ol.menuItemId) serveLaterChildren.push({ deferredStepId: did, menuItemId: ol.menuItemId });
       }
-      return setSelections;
+
+      let out = setSelections.slice();
+      for (const defStep of defSteps) {
+        if (out.some((x) => String(x.stepId) === defStep)) continue;
+        const picks = serveLaterChildren
+          .filter((c) => c.deferredStepId === defStep)
+          .map((c) => c.menuItemId)
+          .filter(Boolean);
+        if (picks.length) out = out.concat([{ stepId: defStep, menuItemIds: picks }]);
+      }
+      return out;
     }
 
     /**
@@ -2153,9 +2208,18 @@
               });
           }
         }
-        let serveLaterDeferStepId = "";
-        if (typeof ex.serveLaterDeferredStepId === "string" && ex.serveLaterDeferredStepId.trim()) {
-          serveLaterDeferStepId = ex.serveLaterDeferredStepId.trim();
+        let serveLaterDeferStepIds = [];
+        if (Array.isArray(ex.serveLaterDeferredStepIds)) {
+          for (const id of ex.serveLaterDeferredStepIds) {
+            if (typeof id === "string" && id.trim()) serveLaterDeferStepIds.push(id.trim());
+          }
+        }
+        if (
+          serveLaterDeferStepIds.length === 0 &&
+          typeof ex.serveLaterDeferredStepId === "string" &&
+          ex.serveLaterDeferredStepId.trim()
+        ) {
+          serveLaterDeferStepIds = [ex.serveLaterDeferredStepId.trim()];
         }
 
         return {
@@ -2164,7 +2228,8 @@
           setSelections,
           setComponentOptionSelections:
             setComponentOptionSelections.length > 0 ? setComponentOptionSelections : undefined,
-          serveLaterDeferStepId: serveLaterDeferStepId || undefined,
+          serveLaterDeferStepIds: serveLaterDeferStepIds.length ? serveLaterDeferStepIds : undefined,
+          serveLaterDeferStepId: serveLaterDeferStepIds[0],
           eatMode,
         };
       }
@@ -2246,12 +2311,25 @@
           toast("酒類はご注文いただけません");
           return;
         }
-        const serveLaterDeferStepId = parsed.serveLaterDeferStepId || "";
-        if (serveLaterDeferStepId) {
-          const st0 = (item.setSteps || []).find((s) => s.id === serveLaterDeferStepId);
-          if (!st0 || !st0.allowServeLaterSplit) {
-            toast("「後から提供」はメニューから選び直してください");
-            return;
+        const slIds = parsed.serveLaterDeferStepIds && parsed.serveLaterDeferStepIds.length
+          ? parsed.serveLaterDeferStepIds
+          : parsed.serveLaterDeferStepId
+            ? [parsed.serveLaterDeferStepId]
+            : [];
+        const ddPair = guestDeferDrinkDessertStepIds(item);
+        const pairGuess =
+          Boolean(
+            slIds.length === 2 &&
+              ddPair &&
+              [...slIds].sort().join(",") === [ddPair.drinkId, ddPair.dessertId].sort().join(","),
+          );
+        if (slIds.length) {
+          for (const sid of slIds) {
+            const st0 = (item.setSteps || []).find((s) => s.id === sid);
+            if (!st0 || !st0.allowServeLaterSplit) {
+              toast("「後から提供」はメニューから選び直してください");
+              return;
+            }
           }
         }
         const cartKey =
@@ -2259,7 +2337,7 @@
           item.id +
           ":" +
           stableSetKey(setSelections) +
-          (serveLaterDeferStepId ? "|sl:" + serveLaterDeferStepId : "");
+          stableServeLaterCartSuffix(slIds, pairGuess);
         const cur = cart[cartKey] || {
           cartKey,
           menuItemId: item.id,
@@ -2276,8 +2354,16 @@
         if (parsed.setComponentOptionSelections && parsed.setComponentOptionSelections.length) {
           cur.setComponentOptionSelections = parsed.setComponentOptionSelections;
         } else delete cur.setComponentOptionSelections;
-        if (serveLaterDeferStepId) cur.serveLaterDeferStepId = serveLaterDeferStepId;
-        else delete cur.serveLaterDeferStepId;
+        if (slIds.length) {
+          cur.serveLaterDeferStepIds = slIds;
+          if (pairGuess) cur.serveLaterDeferPairDrinkDessert = true;
+          else delete cur.serveLaterDeferPairDrinkDessert;
+          delete cur.serveLaterDeferStepId;
+        } else {
+          delete cur.serveLaterDeferStepIds;
+          delete cur.serveLaterDeferPairDrinkDessert;
+          delete cur.serveLaterDeferStepId;
+        }
         cur.qty = (cur.qty || 0) + q;
         cart[cartKey] = cur;
         renderCart();
@@ -2476,6 +2562,212 @@
       }
     }
 
+    function buildSetDetailSummaryHtml(panel, item) {
+      const setSelections = collectSetSelections(panel, item);
+      const setComponentOptionSelections = collectSetComponentOptionSelections(panel, item);
+      const sl = getServeLaterDeferPayload(panel, item);
+      const fakeLine = {
+        sellKind: "set",
+        menuItemId: item.id,
+        setSelections,
+        eatMode: getEatMode(panel, item),
+      };
+      if (setComponentOptionSelections && setComponentOptionSelections.length)
+        fakeLine.setComponentOptionSelections = setComponentOptionSelections;
+      if (sl.ok && sl.ids && sl.ids.length) {
+        fakeLine.serveLaterDeferStepIds = sl.ids;
+        if (sl.pairDrinkDessert) fakeLine.serveLaterDeferPairDrinkDessert = true;
+      }
+      const sub = guestCartLineSubtext(fakeLine);
+      const eat = getEatMode(panel, item);
+      let h =
+        "<strong style=\"font-size:.92rem\">ご注文内容</strong><div style=\"margin-top:.4rem;white-space:pre-wrap\">" +
+        escapeHtml(sub || "（詳細なし）") +
+        "</div>";
+      h +=
+        "<div style=\"margin-top:.55rem;font-size:.8rem;opacity:.85\">受け取り: " +
+        (eat === "takeout" ? "テイクアウト" : "店内") +
+        "</div>";
+      return h;
+    }
+
+    function buildOptionDetailSummaryHtml(panel, item) {
+      const optionSelections = collectOptionSelections(panel, item);
+      const fakeLine = {
+        sellKind: "single",
+        menuItemId: item.id,
+        optionSelections,
+        eatMode: getEatMode(panel, item),
+      };
+      const sub = guestCartLineSubtext(fakeLine);
+      const eat = getEatMode(panel, item);
+      let h =
+        "<strong style=\"font-size:.92rem\">ご注文内容</strong><div style=\"margin-top:.4rem;white-space:pre-wrap\">" +
+        escapeHtml(sub || "（詳細なし）") +
+        "</div>";
+      h +=
+        "<div style=\"margin-top:.55rem;font-size:.8rem;opacity:.85\">受け取り: " +
+        (eat === "takeout" ? "テイクアウト" : "店内") +
+        "</div>";
+      return h;
+    }
+
+    function buildPlainDetailSummaryHtml(panel, item) {
+      const eat = getEatMode(panel, item);
+      return (
+        "<strong style=\"font-size:.92rem\">ご注文内容</strong>" +
+        "<div style=\"margin-top:.55rem;font-size:.8rem;opacity:.85\">受け取り: " +
+        (eat === "takeout" ? "テイクアウト" : "店内") +
+        "</div>"
+      );
+    }
+
+    /**
+     * @returns {{ isComplete: () => boolean }}
+     */
+    function initGuestDetailWizard(panel, item, opts) {
+      const stack = panel.querySelector("[data-guest-wiz-stack]");
+      const panes = stack ? [...stack.querySelectorAll("[data-wiz-pane]")] : [];
+      const summaryEl = panel.querySelector("[data-guest-wiz-summary]");
+      const bar = panel.querySelector("[data-guest-wiz-bar]");
+      const btnBack = panel.querySelector("[data-wiz-back]");
+      const btnNext = panel.querySelector("[data-wiz-next]");
+      const btnEdit = panel.querySelector("[data-wiz-edit]");
+      const addBtn = panel.querySelector("[data-add]");
+      const doneRow = panel.querySelector("[data-guest-wiz-done]");
+      const ctr = panel.querySelector("[data-guest-wiz-controls]");
+      if (!panes.length) {
+        if (addBtn) addBtn.disabled = false;
+        if (bar) bar.style.display = "none";
+        if (doneRow) doneRow.style.display = "none";
+        if (ctr) ctr.style.display = "none";
+        return { isComplete: () => true };
+      }
+      let idx = 0;
+      let completed = false;
+      function validateCurrentPane() {
+        const pane = panes[idx];
+        if (!pane) return true;
+        const stepInner = pane.querySelector("[data-step-id]");
+        const stepId = stepInner ? stepInner.getAttribute("data-step-id") : "";
+        if (stepId && item.setSteps) {
+          const st = item.setSteps.find((s) => s.id === stepId);
+          if (st) {
+            const sel = collectSetSelections(panel, item).find((x) => x.stepId === st.id);
+            const n = sel && sel.menuItemIds ? sel.menuItemIds.length : 0;
+            if (n < st.minPick || n > st.maxPick) {
+              toast(st.label + " は " + st.minPick + "〜" + st.maxPick + " 品選んでください");
+              return false;
+            }
+            const picks = sel && sel.menuItemIds ? sel.menuItemIds : [];
+            for (const mid of picks) {
+              const ch = (st.choices || []).find((c) => c.menuItemId === mid);
+              if (!ch || !ch.optionGroups) continue;
+              for (const g of ch.optionGroups) {
+                if (g.minSelect <= 0) continue;
+                const nm = "copt-" + st.id + "-" + mid + "-" + g.id;
+                const useRadio = Number(g.maxSelect || 1) <= 1;
+                let picked = 0;
+                if (useRadio) {
+                  const r = pane.querySelector("input[type=radio][name=\"" + selEsc(nm) + "\"]:checked");
+                  picked = r && r.value ? 1 : 0;
+                } else {
+                  picked = pane.querySelectorAll("input[type=checkbox][name=\"" + selEsc(nm) + "\"]:checked")
+                    .length;
+                }
+                if (picked < g.minSelect) {
+                  toast((ch.name || "構成単品") + " の「" + g.name + "」を選んでください");
+                  return false;
+                }
+              }
+            }
+          }
+        }
+        const ogEl = pane.querySelector("[data-opt-group-id]");
+        if (ogEl && item.optionGroups) {
+          const gid = ogEl.getAttribute("data-opt-group-id");
+          const g = item.optionGroups.find((x) => x.id === gid);
+          if (g) {
+            const sel = collectOptionSelections(panel, item).find((x) => x.optionGroupId === g.id);
+            const n = sel && sel.optionItemIds ? sel.optionItemIds.length : 0;
+            if (n < g.minSelect || n > g.maxSelect) {
+              toast(g.name + " は " + g.minSelect + "〜" + g.maxSelect + " 個選んでください");
+              return false;
+            }
+          }
+        }
+        if (pane.querySelector("[data-serve-later-wrap]")) {
+          const sl = getServeLaterDeferPayload(panel, item);
+          if (!sl.ok) {
+            toast("「後から提供」を選んでください");
+            return false;
+          }
+        }
+        return true;
+      }
+      function showPane(i) {
+        idx = Math.max(0, Math.min(i, panes.length - 1));
+        panes.forEach((p, j) => {
+          p.style.display = j === idx ? "" : "none";
+        });
+        if (btnBack) btnBack.style.visibility = idx > 0 ? "visible" : "hidden";
+        if (btnNext) btnNext.textContent = idx >= panes.length - 1 ? "内容を確認" : "次へ";
+        try {
+          const sheet = document.getElementById("detailSheet");
+          const scroll = sheet && sheet.querySelector(".detail-scroll");
+          if (scroll) scroll.scrollTop = 0;
+        } catch (_) {}
+      }
+      function enterSummary() {
+        completed = true;
+        if (stack) stack.style.display = "none";
+        if (bar) bar.style.display = "none";
+        if (summaryEl) {
+          summaryEl.hidden = false;
+          summaryEl.innerHTML =
+            opts && typeof opts.buildSummaryHtml === "function" ? opts.buildSummaryHtml() : "";
+        }
+        if (doneRow) doneRow.style.display = "flex";
+        if (addBtn) addBtn.disabled = false;
+      }
+      function exitSummary() {
+        completed = false;
+        if (stack) stack.style.display = "";
+        if (bar) bar.style.display = "flex";
+        if (summaryEl) {
+          summaryEl.hidden = true;
+          summaryEl.innerHTML = "";
+        }
+        if (doneRow) doneRow.style.display = "none";
+        if (addBtn) addBtn.disabled = true;
+        showPane(0);
+      }
+      showPane(0);
+      if (bar) {
+        bar.style.display = "flex";
+        bar.style.flexDirection = "row";
+        bar.style.flexWrap = "wrap";
+        bar.style.alignItems = "stretch";
+      }
+      if (ctr) ctr.style.display = "flex";
+      if (addBtn) addBtn.disabled = true;
+      if (btnNext)
+        btnNext.onclick = () => {
+          if (!validateCurrentPane()) return;
+          if (idx >= panes.length - 1) enterSummary();
+          else showPane(idx + 1);
+        };
+      if (btnBack)
+        btnBack.onclick = () => {
+          if (completed) return;
+          if (idx > 0) showPane(idx - 1);
+        };
+      if (btnEdit) btnEdit.onclick = () => exitSummary();
+      return {
+        isComplete: () => completed,
+      };
+    }
+
     function wireQty(panel, item, getUnitPrice) {
       const minus = panel.querySelector("[data-qty-min]");
       const plus = panel.querySelector("[data-qty-plus]");
@@ -2564,10 +2856,25 @@
         : "<div style=\"display:flex;align-items:center;justify-content:center;height:100%;font-size:3rem;opacity:.25\">◆</div>";
 
       let bodyInner = "";
+      const eatModeHtml =
+        item.allowTakeout
+          ? "<div class=\"guest-wiz-pane\" data-wiz-pane=\"1\"><div class=\"opt-block\" data-eatmode-wrap>" +
+            "<div class=\"opt-block-head\"><strong>受け取り</strong><span class=\"tag-opt\" style=\"margin-left:auto\">任意</span></div>" +
+            "<label class=\"opt-row\" style=\"cursor:pointer;margin:0\"><input type=\"radio\" name=\"eatmode\" value=\"dine_in\" checked />" +
+            "<span class=\"opt-name\">店内</span></label>" +
+            "<label class=\"opt-row\" style=\"cursor:pointer;margin:0\"><input type=\"radio\" name=\"eatmode\" value=\"takeout\" />" +
+            "<span class=\"opt-name\">テイクアウト（税率8%）</span></label>" +
+            (guestShowEatModeTaxNote
+              ? "<p class=\"muted\" style=\"font-size:.72rem;margin:.35rem 0 0;line-height:1.4\">店内とテイクアウトでは軽減税率・標準税率などにより、税込表示・請求額が異なる場合があります。</p>"
+              : "") +
+            "</div></div>"
+          : "";
       if (item.sellKind === "set" && item.setSteps && item.setSteps.length) {
+        bodyInner += "<div class=\"guest-wiz-stack\" data-guest-wiz-stack>";
         for (const st of item.setSteps) {
           const req = st.minPick > 0;
           bodyInner +=
+            "<div class=\"guest-wiz-pane\" data-wiz-pane=\"1\">" +
             "<div class=\"opt-block\" data-step-id=\"" +
             escapeHtml(st.id) +
             "\">" +
@@ -2669,24 +2976,29 @@
               bodyInner += "</div>";
             }
           }
-          bodyInner += "</div></div>";
+          bodyInner += "</div></div></div>";
         }
         const deferrableSteps = (item.setSteps || []).filter((st) => st.allowServeLaterSplit);
+        const ddCombo = guestDeferDrinkDessertStepIds(item);
         if (deferrableSteps.length === 1) {
           bodyInner +=
+            "<div class=\"guest-wiz-pane\" data-wiz-pane=\"1\">" +
             "<div class=\"opt-block\" data-serve-later-wrap>" +
+            "<div class=\"opt-block-head\"><strong>後から提供</strong><span class=\"tag-req\">必須</span></div>" +
             "<label class=\"opt-row\" style=\"cursor:pointer;margin:0\">" +
-            "<input type=\"checkbox\" data-serve-later-check value=\"" +
-            escapeHtml(deferrableSteps[0].id) +
-            "\" />" +
+            "<input type=\"radio\" name=\"serve-later-mode\" value=\"with_meal\" data-serve-later-radio />" +
+            "<span class=\"opt-name\">料理と一緒に出す</span></label>" +
+            "<label class=\"opt-row\" style=\"cursor:pointer;margin:0\">" +
+            "<input type=\"radio\" name=\"serve-later-mode\" value=\"defer\" data-serve-later-radio />" +
             "<span class=\"opt-name\">「" +
             escapeHtml(deferrableSteps[0].label) +
             "」は後から提供（別の明細・キッチン行・0円）</span></label>" +
             "<p class=\"muted\" style=\"font-size:.68rem;margin:.35rem 0 0;line-height:1.35\">セット価格はそのままです。在庫切れキャンセルはセット全体まとめて行われます。</p>" +
-            "</div>";
+            "</div></div>";
         } else if (deferrableSteps.length > 1) {
           let opts =
-            "<option value=\"\">いつもと一緒に出す</option>" +
+            "<option value=\"\" disabled selected>選択してください</option>" +
+            "<option value=\"__with_meal__\">料理と一緒に出す</option>" +
             deferrableSteps
               .map(function (st) {
                 return (
@@ -2697,21 +3009,28 @@
                   " だけ後から</option>"
                 );
               })
-              .join("");
+              .join("") +
+            (ddCombo
+              ? "<option value=\"__pair_dd__\">後からメニューが2つ以上ある場合はドリンクとデザートは後から出す</option>"
+              : "");
           bodyInner +=
+            "<div class=\"guest-wiz-pane\" data-wiz-pane=\"1\">" +
             "<div class=\"opt-block\" data-serve-later-wrap>" +
-            "<div class=\"opt-block-head\"><strong>後から提供</strong><span class=\"tag-opt\" style=\"margin-left:auto\">任意</span></div>" +
+            "<div class=\"opt-block-head\"><strong>後から提供</strong><span class=\"tag-req\">必須</span></div>" +
             "<select data-serve-later-select class=\"guest-select-serve-later\" style=\"width:100%;margin:.25rem 0;padding:.45rem;border-radius:8px;border:1px solid var(--border);font-size:.85rem\">" +
             opts +
             "</select>" +
             "<p class=\"muted\" style=\"font-size:.68rem;margin:.35rem 0 0;line-height:1.35\">選んだ項目だけ別明細（0円）になります。キャンセルはセット全体です。</p>" +
-            "</div>";
+            "</div></div>";
         }
+        bodyInner += eatModeHtml;
+        bodyInner += "</div>";
       } else if (item.optionGroups && item.optionGroups.length) {
+        bodyInner += "<div class=\"guest-wiz-stack\" data-guest-wiz-stack>";
         for (const g of item.optionGroups) {
           const req = g.minSelect > 0;
           bodyInner +=
-            "<div class=\"opt-block\" data-opt-group-id=\"" +
+            "<div class=\"guest-wiz-pane\" data-wiz-pane=\"1\"><div class=\"opt-block\" data-opt-group-id=\"" +
             escapeHtml(g.id) +
             "\">" +
             "<div class=\"opt-block-head\"><strong>" +
@@ -2755,22 +3074,12 @@
                 "</span></label>";
             }
           }
-          bodyInner += "</div>";
+          bodyInner += "</div></div>";
         }
-      }
-
-      if (item.allowTakeout) {
-        bodyInner +=
-          "<div class=\"opt-block\" data-eatmode-wrap>" +
-          "<div class=\"opt-block-head\"><strong>受け取り</strong><span class=\"tag-opt\" style=\"margin-left:auto\">任意</span></div>" +
-          "<label class=\"opt-row\" style=\"cursor:pointer;margin:0\"><input type=\"radio\" name=\"eatmode\" value=\"dine_in\" checked />" +
-          "<span class=\"opt-name\">店内</span></label>" +
-          "<label class=\"opt-row\" style=\"cursor:pointer;margin:0\"><input type=\"radio\" name=\"eatmode\" value=\"takeout\" />" +
-          "<span class=\"opt-name\">テイクアウト（税率8%）</span></label>" +
-          (guestShowEatModeTaxNote
-            ? "<p class=\"muted\" style=\"font-size:.72rem;margin:.35rem 0 0;line-height:1.4\">店内とテイクアウトでは軽減税率・標準税率などにより、税込表示・請求額が異なる場合があります。</p>"
-            : "") +
-          "</div>";
+        bodyInner += eatModeHtml;
+        bodyInner += "</div>";
+      } else {
+        bodyInner += "<div class=\"guest-wiz-stack\" data-guest-wiz-stack>" + eatModeHtml + "</div>";
       }
 
       host.innerHTML =
@@ -2787,14 +3096,22 @@
           ? "<p class=\"detail-desc\">" + escapeHtml(item.description) + "</p>"
           : "") +
         bodyInner +
+        "<div class=\"guest-wiz-summary\" data-guest-wiz-summary hidden style=\"margin-top:.75rem;padding:.85rem;border-radius:12px;background:rgba(15,23,42,.06);font-size:.84rem;line-height:1.5\"></div>" +
         "</div>" +
-        "<div class=\"detail-footer\">" +
+        "<div class=\"detail-footer\" style=\"display:flex;flex-wrap:wrap;align-items:flex-end;gap:.5rem;\">" +
         "<div class=\"qty-bar\">" +
         "<button type=\"button\" data-qty-min>−</button>" +
         "<span class=\"qty-num\" data-qty>1</span>" +
         "<button type=\"button\" data-qty-plus>+</button>" +
         "</div>" +
-        "<button type=\"button\" class=\"detail-add\" data-add data-add-price>追加</button>" +
+        "<div data-guest-wiz-controls style=\"flex:1;min-width:140px;display:flex;flex-direction:column;gap:.35rem\">" +
+        "<div data-guest-wiz-bar style=\"display:none;gap:.45rem;width:100%\">" +
+        "<button type=\"button\" data-wiz-back style=\"flex:1;padding:.55rem;border-radius:10px;border:1px solid var(--border);background:#fff;font-size:.85rem\">戻る</button>" +
+        "<button type=\"button\" data-wiz-next style=\"flex:1;padding:.55rem;border-radius:10px;border:none;background:var(--accent,#2563eb);color:#fff;font-weight:700;font-size:.85rem\">次へ</button>" +
+        "</div>" +
+        "<div data-guest-wiz-done style=\"display:none;width:100%\"><button type=\"button\" data-wiz-edit style=\"width:100%;padding:.5rem;border-radius:10px;border:1px dashed var(--border);background:transparent;font-size:.82rem\">選択を変更</button></div>" +
+        "</div>" +
+        "<button type=\"button\" class=\"detail-add\" data-add data-add-price disabled style=\"flex:1;min-width:8.5rem;font-weight:700\">追加</button>" +
         "</div></div>";
 
       host.classList.add("is-open");
@@ -2867,7 +3184,14 @@
           const up = computeSetUnitPrice(item, sel);
           return up != null ? up : Number(item.price || 0);
         });
+        const detailWizard = initGuestDetailWizard(panel, item, {
+          buildSummaryHtml: () => buildSetDetailSummaryHtml(panel, item),
+        });
         panel.querySelector("[data-add]").onclick = () => {
+          if (!detailWizard.isComplete()) {
+            toast("「次へ」で内容確認まで進んでください");
+            return;
+          }
           const setSelections = collectSetSelections(panel, item);
           for (const st of item.setSteps || []) {
             const sel = setSelections.find((x) => x.stepId === st.id);
@@ -2877,9 +3201,13 @@
               return;
             }
           }
-          const serveLaterDeferStepId = getServeLaterDeferStepId(panel, item);
-          if (serveLaterDeferStepId) {
-            const st0 = (item.setSteps || []).find((s) => s.id === serveLaterDeferStepId);
+          const slPayload = getServeLaterDeferPayload(panel, item);
+          if (!slPayload.ok) {
+            toast("「後から提供」を選んでください");
+            return;
+          }
+          for (const sid of slPayload.ids) {
+            const st0 = (item.setSteps || []).find((s) => s.id === sid);
             if (!st0 || !st0.allowServeLaterSplit) {
               toast("「後から提供」の指定が無効です");
               return;
@@ -2906,7 +3234,7 @@
             item.id +
             ":" +
             stableSetKey(setSelections) +
-            (serveLaterDeferStepId ? "|sl:" + serveLaterDeferStepId : "");
+            stableServeLaterCartSuffix(slPayload.ids, slPayload.pairDrinkDessert);
           const cur = cart[cartKey] || {
             cartKey,
             menuItemId: item.id,
@@ -2922,8 +3250,16 @@
           cur.eatMode = eatMode;
           if (setComponentOptionSelections && setComponentOptionSelections.length) cur.setComponentOptionSelections = setComponentOptionSelections;
           else delete cur.setComponentOptionSelections;
-          if (serveLaterDeferStepId) cur.serveLaterDeferStepId = serveLaterDeferStepId;
-          else delete cur.serveLaterDeferStepId;
+          if (slPayload.ids && slPayload.ids.length) {
+            cur.serveLaterDeferStepIds = slPayload.ids;
+            if (slPayload.pairDrinkDessert) cur.serveLaterDeferPairDrinkDessert = true;
+            else delete cur.serveLaterDeferPairDrinkDessert;
+            delete cur.serveLaterDeferStepId;
+          } else {
+            delete cur.serveLaterDeferStepIds;
+            delete cur.serveLaterDeferPairDrinkDessert;
+            delete cur.serveLaterDeferStepId;
+          }
           cur.qty = (cur.qty || 0) + q;
           cart[cartKey] = cur;
           closeDetail();
@@ -2957,7 +3293,14 @@
           const optionSelections = collectOptionSelections(panel, item);
           return computeOptionUnitPrice(item, optionSelections);
         });
+        const optWizard = initGuestDetailWizard(panel, item, {
+          buildSummaryHtml: () => buildOptionDetailSummaryHtml(panel, item),
+        });
         panel.querySelector("[data-add]").onclick = () => {
+          if (!optWizard.isComplete()) {
+            toast("「次へ」で内容確認まで進んでください");
+            return;
+          }
           const optionSelections = collectOptionSelections(panel, item);
           for (const g of item.optionGroups || []) {
             const sel = optionSelections.find((x) => x.optionGroupId === g.id);
@@ -2996,7 +3339,14 @@
         };
       } else {
         const getQty = wireQty(panel, item, () => singleGuestChargeBase(item));
+        const plainWizard = initGuestDetailWizard(panel, item, {
+          buildSummaryHtml: () => buildPlainDetailSummaryHtml(panel, item),
+        });
         panel.querySelector("[data-add]").onclick = () => {
+          if (!plainWizard.isComplete()) {
+            toast("「次へ」で内容確認まで進んでください");
+            return;
+          }
           const q = getQty();
           if (item.stockQty != null && q > item.stockQty) {
             toast("在庫が不足しています");
@@ -3503,7 +3853,10 @@
           const o = { menuItemId: x.menuItemId, qty: x.qty };
           if (x.sellKind === "set" && x.setSelections) o.setSelections = x.setSelections;
           if (x.optionSelections && x.optionSelections.length) o.optionSelections = x.optionSelections;
-          if (x.serveLaterDeferStepId) o.serveLaterDeferStepId = x.serveLaterDeferStepId;
+          if (x.serveLaterDeferStepIds && x.serveLaterDeferStepIds.length) {
+            o.serveLaterDeferStepIds = x.serveLaterDeferStepIds;
+            if (x.serveLaterDeferPairDrinkDessert) o.serveLaterDeferPairDrinkDessert = true;
+          } else if (x.serveLaterDeferStepId) o.serveLaterDeferStepId = x.serveLaterDeferStepId;
           if (x.setComponentOptionSelections && x.setComponentOptionSelections.length) o.setComponentOptionSelections = x.setComponentOptionSelections;
           if (x.eatMode) o.eatMode = x.eatMode;
           return o;

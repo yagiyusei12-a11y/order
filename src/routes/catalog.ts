@@ -375,8 +375,15 @@ type SetDefStepIn = {
   maxPick: number;
   sortOrder: number;
   allowServeLaterSplit?: boolean;
+  serveLaterGroup?: string;
   choices: SetDefChoiceIn[];
 };
+
+function normalizeServeLaterGroup(raw: unknown): "none" | "drink" | "dessert" {
+  const s = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (s === "drink" || s === "dessert") return s;
+  return "none";
+}
 
 function parseSetDefinitionBody(raw: unknown): { ok: false; error: string } | { ok: true; steps: SetDefStepIn[] } {
   if (!raw || typeof raw !== "object" || !("steps" in raw)) return { ok: false, error: "steps[] required" };
@@ -439,7 +446,8 @@ function parseSetDefinitionBody(raw: unknown): { ok: false; error: string } | { 
         };
       }
       const allowServeLaterSplit = (row as { allowServeLaterSplit?: unknown }).allowServeLaterSplit === true;
-      steps.push({ label, minPick, maxPick, sortOrder, allowServeLaterSplit, choices });
+      const serveLaterGroup = normalizeServeLaterGroup((row as { serveLaterGroup?: unknown }).serveLaterGroup);
+      steps.push({ label, minPick, maxPick, sortOrder, allowServeLaterSplit, serveLaterGroup, choices });
   }
   steps.sort((a, b) => a.sortOrder - b.sortOrder);
   return { ok: true, steps };
@@ -1031,6 +1039,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
                 maxPick: st.maxPick,
                 sortOrder: st.sortOrder,
                 allowServeLaterSplit: st.allowServeLaterSplit === true,
+                serveLaterGroup: normalizeServeLaterGroup(st.serveLaterGroup),
               },
             });
             if (st.choices.length > 0) {
@@ -1416,6 +1425,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
             maxPick: st.maxPick,
             sortOrder: st.sortOrder,
             allowServeLaterSplit: st.allowServeLaterSplit === true,
+            serveLaterGroup: normalizeServeLaterGroup(st.serveLaterGroup),
           },
         });
         await tx.menuSetChoice.createMany({
@@ -1694,6 +1704,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
               maxPick: st.maxPick,
               sortOrder: st.sortOrder,
               allowServeLaterSplit: st.allowServeLaterSplit === true,
+              serveLaterGroup: normalizeServeLaterGroup(st.serveLaterGroup),
             },
           });
           if (st.choices.length > 0) {

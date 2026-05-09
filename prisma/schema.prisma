@@ -359,6 +359,8 @@ model MenuSetStep {
   sortOrder     Int             @default(0)
   /// true のときゲストが「後から提供」を選ぶと、この項目が別 OrderLine（0円）になる
   allowServeLaterSplit Boolean  @default(false)
+  /// 複合「ドリンク＋デザート後から」判定用: none / drink / dessert
+  serveLaterGroup String @default("none")
   setMenuItem   MenuItem        @relation("MenuSetOfItem", fields: [setMenuItemId], references: [id], onDelete: Cascade)
   choices       MenuSetChoice[]
 

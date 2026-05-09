@@ -209,6 +209,26 @@ async function loadAll() {
   if (loEnf) loEnf.checked = s.guestEnforceLastOrder !== false;
   const incOpt = document.getElementById("stIncOptCharge");
   if (incOpt) incOpt.checked = s.guestCourseIncludedChargeOptionExtras !== false;
+  const ksb = document.getElementById("stKitShowCourseBadge");
+  if (ksb) ksb.checked = s.kitchenShowCourseBadge !== false;
+  const kbt = document.getElementById("stKitCourseBadgeText");
+  if (kbt) kbt.value = String(s.kitchenCourseBadgeText != null ? s.kitchenCourseBadgeText : "□放題□");
+  const keq = document.getElementById("stKitEmphasizeQty");
+  if (keq) keq.checked = s.kitchenEmphasizeCourseTableQty !== false;
+  const bc = s.billCorrectionPolicy || {};
+  const bcEn = document.getElementById("stBcEnabled");
+  if (bcEn) bcEn.checked = bc.enabled !== false;
+  const bcPay = document.getElementById("stBcPayments");
+  if (bcPay) bcPay.checked = bc.payments !== false;
+  const bcBv = document.getElementById("stBcBillVoid");
+  if (bcBv) bcBv.checked = bc.billVoid !== false;
+  const bcDisc = document.getElementById("stBcDiscounts");
+  if (bcDisc) bcDisc.checked = bc.discounts !== false;
+  const bcOl = document.getElementById("stBcOrderLines");
+  if (bcOl) bcOl.checked = bc.orderLines !== false;
+  const bcRo = document.getElementById("stBcReopen");
+  if (bcRo) bcRo.checked = bc.reopenSettledForRegister !== false;
+  syncBillCorrectionSubUi();
   renderTakeoutPickupWindows(twRes.timeWindows || [], s.takeoutPickupTimeWindowIds || []);
   renderOpsDiscountPresets(s.opsDiscountPresets || []);
   const registerCodes = new Set(Array.isArray(s.opsRegisterMethodCodes) ? s.opsRegisterMethodCodes : []);
@@ -561,6 +581,15 @@ if (btnSaveOpsDiscountPresets) {
   };
 }
 
+function syncBillCorrectionSubUi() {
+  const master = document.getElementById("stBcEnabled");
+  const subs = document.querySelectorAll(".st-bc-sub");
+  const on = master && master.checked;
+  subs.forEach((el) => {
+    el.disabled = !on;
+  });
+}
+
 function initSettingsTabs() {
   const tabs = document.getElementById("settingsTabs");
   if (!tabs) return;
@@ -703,6 +732,56 @@ document.getElementById("btnSaveUi").onclick = async () => {
   }
 };
 
+const btnSaveKitchenDisplay = document.getElementById("btnSaveKitchenDisplay");
+if (btnSaveKitchenDisplay) {
+  btnSaveKitchenDisplay.onclick = async () => {
+    log("");
+    const kitchenShowCourseBadge = document.getElementById("stKitShowCourseBadge").checked;
+    let kitchenCourseBadgeText = String(document.getElementById("stKitCourseBadgeText").value || "").trim().slice(0, 24);
+    if (!kitchenCourseBadgeText) kitchenCourseBadgeText = "□放題□";
+    const kitchenEmphasizeCourseTableQty = document.getElementById("stKitEmphasizeQty").checked;
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          settings: { kitchenShowCourseBadge, kitchenCourseBadgeText, kitchenEmphasizeCourseTableQty },
+        }),
+      });
+      log("キッチン表示を保存しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+}
+
+const btnSaveBillCorrectionPolicy = document.getElementById("btnSaveBillCorrectionPolicy");
+if (btnSaveBillCorrectionPolicy) {
+  btnSaveBillCorrectionPolicy.onclick = async () => {
+    log("");
+    const billCorrectionPolicy = {
+      enabled: document.getElementById("stBcEnabled").checked,
+      payments: document.getElementById("stBcPayments").checked,
+      billVoid: document.getElementById("stBcBillVoid").checked,
+      discounts: document.getElementById("stBcDiscounts").checked,
+      orderLines: document.getElementById("stBcOrderLines").checked,
+      reopenSettledForRegister: document.getElementById("stBcReopen").checked,
+    };
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings: { billCorrectionPolicy } }),
+      });
+      log("訂正ポリシーを保存しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+}
+
 const btnSaveTakeoutPickup = document.getElementById("btnSaveTakeoutPickup");
 if (btnSaveTakeoutPickup) {
   btnSaveTakeoutPickup.onclick = async () => {
@@ -725,4 +804,6 @@ if (btnSaveTakeoutPickup) {
 }
 
 initSettingsTabs();
+const stBcEnabledEl = document.getElementById("stBcEnabled");
+if (stBcEnabledEl) stBcEnabledEl.addEventListener("change", syncBillCorrectionSubUi);
 loadAll().catch((e) => log(String(e.message || e)));

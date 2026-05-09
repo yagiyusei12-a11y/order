@@ -51,6 +51,37 @@ function qsFromInputs() {
   return q.join("&");
 }
 
+let reportsBillCorrection = {
+  enabled: true,
+  payments: true,
+  billVoid: true,
+  discounts: true,
+  orderLines: true,
+  reopenSettledForRegister: true,
+};
+
+function reportsCorrectionAllowed(key) {
+  if (!reportsBillCorrection.enabled) return false;
+  return reportsBillCorrection[key] !== false;
+}
+
+async function refreshReportsCorrectionPolicy() {
+  try {
+    const d = await api("/stores/" + encodeURIComponent(STORE) + "/settings");
+    const p = d.store && d.store.settings && d.store.settings.billCorrectionPolicy;
+    if (p && typeof p === "object") {
+      reportsBillCorrection = {
+        enabled: p.enabled !== false,
+        payments: p.payments !== false,
+        billVoid: p.billVoid !== false,
+        discounts: p.discounts !== false,
+        orderLines: p.orderLines !== false,
+        reopenSettledForRegister: p.reopenSettledForRegister !== false,
+      };
+    }
+  } catch (_) {}
+}
+
 function renderLoading(id) {
   const el = document.getElementById(id);
   if (el) el.innerHTML = "<span class=\"muted\">読み込み中…</span>";
@@ -258,6 +289,7 @@ async function openBillModal(billId) {
   const panel = document.createElement("div");
   panel.style.cssText =
     "background:#fafafa;color:var(--text);width:100%;max-width:42rem;max-height:90vh;overflow:auto;border-radius:12px;border:1px solid var(--border);box-shadow:0 8px 32px rgba(0,0,0,.2);padding:1rem;";
+  const showEditTab = reportsBillCorrection.enabled;
   panel.innerHTML =
     "<div class=\"row\" style=\"justify-content:space-between;align-items:center;gap:0.5rem\">" +
     "<strong>伝票 " +
@@ -269,9 +301,11 @@ async function openBillModal(billId) {
     " / 合計: " +
     Number(detail.totalAmount || 0).toLocaleString(\"ja-JP\") +
     " 円</div>" +
-    "<div class=\"row\" style=\"gap:0.35rem;flex-wrap:wrap;margin-top:0.6rem\">" +
+    "<div class=\"row\" style=\"gap:0.35rem;flex-wrap:wrap;margin-top:0.6rem;align-items:center\">" +
     "<button type=\"button\" class=\"btn-ghost\" id=\"tabView\" style=\"width:auto\">閲覧</button>" +
-    "<button type=\"button\" class=\"btn-ghost\" id=\"tabEdit\" style=\"width:auto;border-color:#93c5fd;font-weight:700\">修正</button>" +
+    (showEditTab
+      ? "<button type=\"button\" class=\"btn-ghost\" id=\"tabEdit\" style=\"width:auto;border-color:#93c5fd;font-weight:700\">修正</button>"
+      : "<span class=\"muted\" style=\"font-size:0.78rem\">修正は店舗設定で無効です（設定 → レポート）</span>") +
     "</div>" +
     "<div id=\"billTabView\" style=\"margin-top:0.75rem\"></div>" +
     "<div id=\"billTabEdit\" style=\"margin-top:0.75rem;display:none\"></div>";
@@ -328,6 +362,11 @@ async function openBillModal(billId) {
     const box = panel.querySelector("#billTabEdit");
     if (!box) return;
     const isOpen = detail && detail.status === "open";
+    const allowDisc = isOpen && reportsCorrectionAllowed("discounts");
+    const allowPay = isOpen && reportsCorrectionAllowed("payments");
+    const allowVoidBill = isOpen && reportsCorrectionAllowed("billVoid");
+    const allowOl = isOpen && reportsCorrectionAllowed("orderLines");
+    const disInp = allowPay ? "" : " disabled";
     box.innerHTML =
       "<div class=\"muted\" style=\"font-size:0.72rem;margin:0 0 0.5rem\">" +
       (isOpen ? "" : "※ 修正は open の伝票のみ可能です") +
@@ -335,27 +374,41 @@ async function openBillModal(billId) {
       "<div class=\"card\" style=\"padding:0.75rem;border-color:#86efac\">" +
       "<div class=\"muted\" style=\"font-size:0.78rem;margin-bottom:0.35rem\">伝票割引</div>" +
       "<div class=\"row\" style=\"gap:0.5rem;flex-wrap:wrap;align-items:flex-end\">" +
-      "<select id=\"repBillDiscKind\" style=\"min-width:10rem\">" +
+      "<select id=\"repBillDiscKind\" style=\"min-width:10rem\"" +
+      (allowDisc ? "" : " disabled") +
+      ">" +
       "<option value=\"percent\">%（割合）</option>" +
       "<option value=\"yen\">円（固定）</option>" +
       "</select>" +
-      "<input id=\"repBillDiscValue\" type=\"number\" min=\"0\" step=\"1\" placeholder=\"値\" style=\"min-width:10rem\" />" +
-      "<input id=\"repBillDiscLabel\" type=\"text\" placeholder=\"名称（任意）\" style=\"min-width:12rem\" />" +
+      "<input id=\"repBillDiscValue\" type=\"number\" min=\"0\" step=\"1\" placeholder=\"値\" style=\"min-width:10rem\"" +
+      (allowDisc ? "" : " disabled") +
+      " />" +
+      "<input id=\"repBillDiscLabel\" type=\"text\" placeholder=\"名称（任意）\" style=\"min-width:12rem\"" +
+      (allowDisc ? "" : " disabled") +
+      " />" +
       "<button type=\"button\" class=\"btn-primary\" id=\"btnRepSetBillDisc\" style=\"width:auto\" " +
-      (isOpen ? "" : "disabled") +
+      (allowDisc ? "" : "disabled") +
       ">適用</button>" +
       "<button type=\"button\" class=\"btn-ghost\" id=\"btnRepClearBillDisc\" style=\"width:auto\" " +
-      (isOpen ? "" : "disabled") +
+      (allowDisc ? "" : "disabled") +
       ">解除</button>" +
       "</div>" +
       "</div>" +
       "<div class=\"card\" style=\"padding:0.75rem;border-color:#93c5fd\">" +
       "<div class=\"muted\" style=\"font-size:0.78rem;margin-bottom:0.35rem\">支払いの追加</div>" +
       "<div class=\"row\" style=\"gap:0.5rem;flex-wrap:wrap;align-items:flex-end\">" +
-      "<input id=\"repEditMethod\" type=\"text\" placeholder=\"methodCode\" style=\"min-width:11rem\" />" +
-      "<input id=\"repEditAmount\" type=\"number\" min=\"1\" step=\"1\" placeholder=\"金額（円）\" style=\"min-width:10rem\" />" +
-      "<input id=\"repEditNote\" type=\"text\" placeholder=\"note（任意）\" style=\"min-width:12rem\" />" +
-      "<button type=\"button\" class=\"btn-primary\" id=\"btnRepAddPay\" style=\"width:auto\">追加</button>" +
+      "<input id=\"repEditMethod\" type=\"text\" placeholder=\"methodCode\" style=\"min-width:11rem\"" +
+      disInp +
+      " />" +
+      "<input id=\"repEditAmount\" type=\"number\" min=\"1\" step=\"1\" placeholder=\"金額（円）\" style=\"min-width:10rem\"" +
+      disInp +
+      " />" +
+      "<input id=\"repEditNote\" type=\"text\" placeholder=\"note（任意）\" style=\"min-width:12rem\"" +
+      disInp +
+      " />" +
+      "<button type=\"button\" class=\"btn-primary\" id=\"btnRepAddPay\" style=\"width:auto\"" +
+      (allowPay ? "" : " disabled") +
+      ">追加</button>" +
       "</div>" +
       "<div class=\"muted\" style=\"font-size:0.72rem;margin-top:0.35rem\">※ methodCode は支払い方法設定の code と一致させてください</div>" +
       "</div>" +
@@ -365,7 +418,9 @@ async function openBillModal(billId) {
       "</div>" +
       "<div class=\"card\" style=\"padding:0.75rem;margin-top:0.75rem;border-color:#cbd5e1\">" +
       "<div class=\"muted\" style=\"font-size:0.78rem;margin-bottom:0.35rem\">伝票の取消</div>" +
-      "<button type=\"button\" class=\"btn-ghost\" id=\"btnRepVoidBill\" style=\"width:auto;color:#b91c1c;border-color:#fecaca\">伝票を取消（void）</button>" +
+      "<button type=\"button\" class=\"btn-ghost\" id=\"btnRepVoidBill\" style=\"width:auto;color:#b91c1c;border-color:#fecaca\"" +
+      (allowVoidBill ? "" : " disabled") +
+      ">伝票を取消（void）</button>" +
       "</div>" +
       "<div class=\"card\" style=\"padding:0.75rem;margin-top:0.75rem;border-color:#cbd5e1\">" +
       "<div class=\"muted\" style=\"font-size:0.78rem;margin-bottom:0.35rem\">明細（数量/キャンセル/行割引）</div>" +
@@ -394,7 +449,9 @@ async function openBillModal(billId) {
             ? ""
             : "<button type=\"button\" class=\"btn-ghost\" data-void-pay=\"" +
               escapeHtml(p.id) +
-              "\" style=\"width:auto;color:#b91c1c;border-color:#fecaca\">取消</button>") +
+              "\" style=\"width:auto;color:#b91c1c;border-color:#fecaca\"" +
+              (allowPay ? "" : " disabled") +
+              ">取消</button>") +
           "</div>";
       }
       paysBox.innerHTML = h;
@@ -431,6 +488,7 @@ async function openBillModal(billId) {
     const btnAdd = box.querySelector("#btnRepAddPay");
     if (btnAdd) {
       btnAdd.onclick = async () => {
+        if (!allowPay) return;
         const methodCode = String(box.querySelector("#repEditMethod").value || "").trim();
         const amount = Number(box.querySelector("#repEditAmount").value || 0);
         const note = String(box.querySelector("#repEditNote").value || "").trim();
@@ -453,6 +511,7 @@ async function openBillModal(billId) {
     const btnVoid = box.querySelector("#btnRepVoidBill");
     if (btnVoid) {
       btnVoid.onclick = async () => {
+        if (!allowVoidBill) return;
         if (!confirm("この伝票を取消（void）しますか？（戻せません）")) return;
         try {
           await api("/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(detail.id) + "/void", {
@@ -480,7 +539,7 @@ async function openBillModal(billId) {
     const btnSetDisc = box.querySelector("#btnRepSetBillDisc");
     if (btnSetDisc) {
       btnSetDisc.onclick = async () => {
-        if (!isOpen) return;
+        if (!allowDisc) return;
         const kind = String(box.querySelector("#repBillDiscKind").value || "percent");
         const value = Number(box.querySelector("#repBillDiscValue").value || 0);
         const label = String(box.querySelector("#repBillDiscLabel").value || "").trim();
@@ -501,7 +560,7 @@ async function openBillModal(billId) {
     const btnClearDisc = box.querySelector("#btnRepClearBillDisc");
     if (btnClearDisc) {
       btnClearDisc.onclick = async () => {
-        if (!isOpen) return;
+        if (!allowDisc) return;
         if (!confirm("伝票割引を解除しますか？")) return;
         try {
           await api("/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(detail.id) + "/discount", {
@@ -546,7 +605,7 @@ async function openBillModal(billId) {
           "\" value=\"" +
           escapeHtml(String(l.qty || 1)) +
           "\" style=\"width:70px\" " +
-          (isOpen && !isCancelled ? "" : "disabled") +
+          (allowOl && !isCancelled ? "" : "disabled") +
           " />" +
           "</td>" +
           "<td style=\"text-align:right;padding:0.35rem 0;border-bottom:1px solid var(--border)\">" +
@@ -560,19 +619,19 @@ async function openBillModal(billId) {
           "<button type=\"button\" class=\"btn-ghost\" data-line-qty-save=\"" +
           escapeHtml(l.id) +
           "\" style=\"width:auto\" " +
-          (isOpen && !isCancelled ? "" : "disabled") +
+          (allowOl && !isCancelled ? "" : "disabled") +
           ">数量保存</button>" +
           "<button type=\"button\" class=\"btn-ghost\" data-line-cancel=\"" +
           escapeHtml(l.id) +
           "\" style=\"width:auto;color:#b91c1c;border-color:#fecaca\" " +
-          (isOpen && !isCancelled ? "" : "disabled") +
+          (allowOl && !isCancelled ? "" : "disabled") +
           ">キャンセル</button>" +
           "</div>" +
           "<div class=\"row\" style=\"gap:0.35rem;flex-wrap:wrap;margin-top:0.25rem\">" +
           "<select data-line-disc-kind=\"" +
           escapeHtml(l.id) +
           "\" style=\"min-width:8.5rem\" " +
-          (isOpen && !isCancelled ? "" : "disabled") +
+          (allowDisc && !isCancelled ? "" : "disabled") +
           ">" +
           "<option value=\"percent\">%割引</option>" +
           "<option value=\"yen\">円引き</option>" +
@@ -580,12 +639,12 @@ async function openBillModal(billId) {
           "<input type=\"number\" min=\"0\" step=\"1\" data-line-disc-value=\"" +
           escapeHtml(l.id) +
           "\" placeholder=\"値\" style=\"width:85px\" " +
-          (isOpen && !isCancelled ? "" : "disabled") +
+          (allowDisc && !isCancelled ? "" : "disabled") +
           " />" +
           "<select data-line-disc-scope=\"" +
           escapeHtml(l.id) +
           "\" style=\"min-width:7.5rem\" " +
-          (isOpen && !isCancelled ? "" : "disabled") +
+          (allowDisc && !isCancelled ? "" : "disabled") +
           ">" +
           "<option value=\"line\">行全体</option>" +
           "<option value=\"unit\">1個だけ</option>" +
@@ -593,12 +652,12 @@ async function openBillModal(billId) {
           "<button type=\"button\" class=\"btn-ghost\" data-line-disc-apply=\"" +
           escapeHtml(l.id) +
           "\" style=\"width:auto;border-color:#86efac;font-weight:700\" " +
-          (isOpen && !isCancelled ? "" : "disabled") +
+          (allowDisc && !isCancelled ? "" : "disabled") +
           ">割引適用</button>" +
           "<button type=\"button\" class=\"btn-ghost\" data-line-disc-clear=\"" +
           escapeHtml(l.id) +
           "\" style=\"width:auto\" " +
-          (isOpen && !isCancelled ? "" : "disabled") +
+          (allowDisc && !isCancelled ? "" : "disabled") +
           ">割引解除</button>" +
           (disc
             ? "<span class=\"muted\" style=\"font-size:0.72rem\">現在: " +
@@ -739,6 +798,7 @@ async function openBillModal(billId) {
 async function runAll() {
   log("");
   try {
+    await refreshReportsCorrectionPolicy();
     const q = qsFromInputs();
     await loadSummary(q);
     await loadDaily(q);

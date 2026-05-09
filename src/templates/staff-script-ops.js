@@ -9,7 +9,23 @@ let storeSettingsCache = {
   coursePriceTaxMode: "inclusive",
   taxRatePercent: 10,
   opsDiscountPresets: [],
+  billCorrectionPolicy: {
+    enabled: true,
+    payments: true,
+    billVoid: true,
+    discounts: true,
+    orderLines: true,
+    reopenSettledForRegister: true,
+  },
 };
+
+/** @param {"payments"|"billVoid"|"discounts"|"orderLines"|"reopenSettledForRegister"} key */
+function billCorrectionAllowed(key) {
+  const p = storeSettingsCache.billCorrectionPolicy;
+  if (!p || typeof p !== "object") return false;
+  if (p.enabled !== true) return false;
+  return p[key] === true;
+}
 const pendingGroupedQty = new Map();
 const pendingGroupedTimer = new Map();
 const groupedFlushInFlight = new Set();
@@ -189,6 +205,10 @@ function opsDiscountPresetRows(kindFilter) {
 }
 
 function openBillDiscountModal(detail, session, table) {
+  if (!billCorrectionAllowed("discounts")) {
+    log("店舗設定により割引の変更は無効です");
+    return;
+  }
   const presets = opsDiscountPresetRows(null);
   const cur = detail.billDiscountJson || null;
   const box = document.createElement("div");
@@ -316,6 +336,10 @@ function openBillDiscountModal(detail, session, table) {
 }
 
 function openLineDiscountModal(detail, group, session, table) {
+  if (!billCorrectionAllowed("discounts")) {
+    log("店舗設定により割引の変更は無効です");
+    return;
+  }
   const lines = group.lines || [];
   const lineIds = lines.map((x) => x.id).filter(Boolean);
   if (!lineIds.length) return;
@@ -627,6 +651,7 @@ function formatBillWhen(iso) {
 async function renderReceiptBox() {
   const listEl = document.getElementById("receiptBoxList");
   if (!listEl) return;
+  const bcReopen = billCorrectionAllowed("reopenSettledForRegister");
   try {
     const res = await api(
       "/stores/" + encodeURIComponent(STORE) + "/bills?status=settled&limit=40&sort=settledAt"
@@ -669,7 +694,9 @@ async function renderReceiptBox() {
           "\">領収書</button>" +
           "<button type=\"button\" class=\"btn-ghost rx-reopen\" style=\"padding:0.28rem 0.45rem;font-size:0.78rem;color:#9a3412;border-color:#fdba74;background:#fffbeb;font-weight:700\" data-bill-id=\"" +
           idAttr +
-          "\">レジに戻す</button>" +
+          "\"" +
+          (!bcReopen ? " disabled title=\"店舗設定により精算取り消しは無効です\"" : "") +
+          ">レジに戻す</button>" +
           "</span></td>" +
           "</tr>"
         );
@@ -1026,6 +1053,11 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
     .map((m) => "<option value=\"" + escapeHtml(m.code) + "\">" + escapeHtml(m.labelJa || m.code) + "</option>")
     .join("");
   const groupedLines = groupedOrderLines(detail);
+  const bcDisc = billCorrectionAllowed("discounts");
+  const bcOl = billCorrectionAllowed("orderLines");
+  const bcPay = billCorrectionAllowed("payments");
+  const olDis = !bcOl ? " disabled title=\"店舗設定により明細の変更は無効です\"" : "";
+  const discDis = !bcDisc ? " disabled title=\"店舗設定により割引の変更は無効です\"" : "";
   const pv = detail.preview || {};
   const ordersDiscAmt = Number(pv.ordersDiscount || 0);
   const billDiscAmt = Number(pv.billDiscountAmount || 0);
@@ -1072,19 +1104,27 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
           "<div class=\"ops-line-actions\">" +
           "<button type=\"button\" class=\"btn-ghost ops-act-btn\" data-line-dec=\"" +
           escapeHtml(g.key) +
-          "\">-</button>" +
+          "\"" +
+          olDis +
+          ">-</button>" +
           "<span class=\"ops-qty-pill\" data-group-qty>×" +
           g.qty +
           "</span>" +
           "<button type=\"button\" class=\"btn-ghost ops-act-btn\" data-line-inc=\"" +
           escapeHtml(g.key) +
-          "\">+</button>" +
+          "\"" +
+          olDis +
+          ">+</button>" +
           "<button type=\"button\" class=\"btn-ghost ops-act-del\" data-line-del=\"" +
           escapeHtml(g.key) +
-          "\">削除</button>" +
+          "\"" +
+          olDis +
+          ">削除</button>" +
           "<button type=\"button\" class=\"btn-ghost ops-line-disc\" data-disc-key=\"" +
           escapeHtml(g.key) +
-          "\" style=\"border-color:#86efac;font-weight:700\">割引</button>" +
+          "\" style=\"border-color:#86efac;font-weight:700\"" +
+          discDis +
+          ">割引</button>" +
           "</div>" +
           "</td>" +
           "<td class=\"ops-line-total\" data-group-total>" +
@@ -1143,7 +1183,9 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
     "<span style=\"font-size:0.82rem\"><strong>卓割引</strong> · <span class=\"muted\">" +
     escapeHtml(billDiscLabel) +
     "</span></span>" +
-    "<button type=\"button\" class=\"btn-ghost\" id=\"btnBillDiscount\" style=\"font-weight:700;border-color:#86efac\">設定</button></div>" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"btnBillDiscount\" style=\"font-weight:700;border-color:#86efac\"" +
+    (!bcDisc ? " disabled title=\"店舗設定により割引の変更は無効です\"" : "") +
+    ">設定</button></div>" +
     "<h3 class=\"ops-sec-title\">コース・注文</h3>" +
     "<div class=\"card ops-order-card\"><table class=\"ops-order-table\">" +
     orderTableFallback +
@@ -1176,7 +1218,9 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
     renderCashKeypad() +
     "<p class=\"muted\" style=\"margin-top:0.45rem\">お釣り: <strong id=\"cashChange\">0円</strong></p>" +
     "</div>" +
-    "<button type=\"button\" class=\"btn-primary\" id=\"btnConfirmPayment\" style=\"margin-top:0.65rem\">確定</button>" +
+    "<button type=\"button\" class=\"btn-primary\" id=\"btnConfirmPayment\" style=\"margin-top:0.65rem\"" +
+    (!bcPay ? " disabled title=\"店舗設定により入金の追加は無効です\"" : "") +
+    ">確定</button>" +
     "<div id=\"afterPayment\" style=\"margin-top:0.7rem\"></div>";
 
   const methodEl = document.getElementById("payMethod");
@@ -1338,6 +1382,10 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
   }
 
   document.getElementById("btnConfirmPayment").onclick = async () => {
+    if (!billCorrectionAllowed("payments")) {
+      log("店舗設定により入金の追加は無効です");
+      return;
+    }
     const isCash = registerCodes.has(methodEl.value);
     let note = null;
     let change = 0;
@@ -1604,7 +1652,19 @@ async function loadAll() {
   tablesCache = tablesRes.tables || [];
   sessionsCache = sessionsRes.sessions || [];
   coursesCache = coursesRes.courses || [];
-  storeSettingsCache = (settingsRes.store && settingsRes.store.settings) || storeSettingsCache;
+  const incoming = (settingsRes.store && settingsRes.store.settings) || {};
+  const merged = { ...storeSettingsCache, ...incoming };
+  const incP = incoming.billCorrectionPolicy;
+  merged.billCorrectionPolicy = {
+    enabled: true,
+    payments: true,
+    billVoid: true,
+    discounts: true,
+    orderLines: true,
+    reopenSettledForRegister: true,
+    ...(incP && typeof incP === "object" && !Array.isArray(incP) ? incP : {}),
+  };
+  storeSettingsCache = merged;
   billsBySessionId = new Map();
   for (const b of billsRes.bills || []) if (b.sessionId) billsBySessionId.set(b.sessionId, b);
   renderGrid();

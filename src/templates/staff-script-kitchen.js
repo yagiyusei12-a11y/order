@@ -1,6 +1,12 @@
 const FILTER_KEY = "orderKitchenFilters:v1:" + STORE;
 
 let kitRefreshMs = 10000;
+/** @type {{ showCourseBadge: boolean; courseBadgeText: string; emphasizeCourseTableQty: boolean }} */
+let kitDisplayCache = {
+  showCourseBadge: true,
+  courseBadgeText: "□放題□",
+  emphasizeCourseTableQty: true,
+};
 let lastLines = [];
 let metaLoaded = false;
 let allCategories = [];
@@ -944,12 +950,17 @@ function renderKitList() {
         b.style.fontSize = "0.68rem";
         const sampleLn = info.lineIds.map((id) => lineByPatchId.get(String(id))).find((x) => x);
         const isHodaiTable = Boolean(sampleLn && (sampleLn.courseId || sampleLn.courseKind || sampleLn.courseName));
+        const badgePart =
+          kitDisplayCache.showCourseBadge && isHodaiTable
+            ? "<span class=\"kit-hodai-badge\">" + escapeHtml(kitDisplayCache.courseBadgeText) + "</span>"
+            : "";
+        const qtyClass =
+          kitDisplayCache.emphasizeCourseTableQty && isHodaiTable ? "kit-done-table-red" : "";
         const tableQtyHtml =
-          "<span class=\"kit-done-table-red\">" + escapeHtml(t + " ×" + info.qty) + "</span>";
-        b.innerHTML =
-          (isHodaiTable ? "<span class=\"kit-hodai-badge\">□放題□</span>" : "") +
-          tableQtyHtml +
-          " を調理済みにする";
+          (qtyClass ? "<span class=\"" + qtyClass + "\">" : "<span>") +
+          escapeHtml(t + " ×" + info.qty) +
+          "</span>";
+        b.innerHTML = badgePart + tableQtyHtml + " を調理済みにする";
         b.onclick = async () => {
           const prevText = b.textContent;
           b.disabled = true;
@@ -960,10 +971,7 @@ function renderKitList() {
             if (b.isConnected) {
               b.disabled = false;
               // 復元は innerHTML を保つ
-              b.innerHTML =
-                (isHodaiTable ? "<span class=\"kit-hodai-badge\">□放題□</span>" : "") +
-                tableQtyHtml +
-                " を調理済みにする";
+              b.innerHTML = badgePart + tableQtyHtml + " を調理済みにする";
             }
           }
         };
@@ -1260,8 +1268,17 @@ async function refreshChips() {
 async function refreshKitIntervalFromServer() {
   try {
     const d = await api("/stores/" + encodeURIComponent(STORE) + "/settings");
-    const sec = d.store && d.store.settings && d.store.settings.kitchenAutoRefreshSec;
-    if (typeof sec === "number" && sec >= 5) kitRefreshMs = sec * 1000;
+    const s = d.store && d.store.settings;
+    if (s) {
+      const sec = s.kitchenAutoRefreshSec;
+      if (typeof sec === "number" && sec >= 5) kitRefreshMs = sec * 1000;
+      kitDisplayCache.showCourseBadge = s.kitchenShowCourseBadge !== false;
+      const bt = String(s.kitchenCourseBadgeText != null ? s.kitchenCourseBadgeText : "□放題□")
+        .trim()
+        .slice(0, 24);
+      kitDisplayCache.courseBadgeText = bt || "□放題□";
+      kitDisplayCache.emphasizeCourseTableQty = s.kitchenEmphasizeCourseTableQty !== false;
+    }
   } catch (_) {}
 }
 

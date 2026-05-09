@@ -167,27 +167,60 @@
   </div>
 
   <div id="settingsTab-kitchen" data-stab-panel="kitchen" style="display:none">
-    <div class="card">
-      <strong style="font-size:0.9rem">キッチン運用</strong>
+    <div class="card" style="border-color:#86efac">
+      <strong style="font-size:0.9rem">コース卓の見た目（キッチン）</strong>
       <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
-        キッチン画面の表示や自動更新など、運用向けの設定です。
+        「調理済にする」ボタン付近で、コースに紐づく卓かどうかを分かりやすく表示します。自動更新の秒数は「基本」タブの表示設定です。
       </p>
-      <div class="row" style="gap:0.35rem;flex-wrap:wrap">
+      <label class="row" style="margin-top:0.5rem;align-items:center;gap:0.4rem;font-size:0.82rem">
+        <input type="checkbox" id="stKitShowCourseBadge" /> <span>コース卓にバッジを付ける</span>
+      </label>
+      <label for="stKitCourseBadgeText">バッジ文言（最大24文字）</label>
+      <input id="stKitCourseBadgeText" type="text" maxlength="24" placeholder="□放題□" autocomplete="off" />
+      <label class="row" style="margin-top:0.5rem;align-items:center;gap:0.4rem;font-size:0.82rem">
+        <input type="checkbox" id="stKitEmphasizeQty" /> <span>卓×数量を赤で強調する</span>
+      </label>
+      <button type="button" class="btn-primary" id="btnSaveKitchenDisplay" style="margin-top:0.65rem">キッチン表示を保存</button>
+    </div>
+    <div class="card" style="margin-top:1rem">
+      <strong style="font-size:0.9rem">画面へのリンク</strong>
+      <div class="row" style="margin-top:0.5rem;gap:0.35rem;flex-wrap:wrap">
         <a class="btn-ghost" href="/staff-app/__STORE_PATH__/kitchen" style="text-decoration:none;display:inline-block">キッチン画面へ</a>
         <a class="btn-ghost" href="/staff-app/__STORE_PATH__/hall-ready" style="text-decoration:none;display:inline-block">調理済・提供へ</a>
-      </div>
-      <div class="muted" style="font-size:0.72rem;margin-top:0.55rem">
-        ※ 放題バッジ等の表示ルールは現在固定です（必要なら設定化します）。
       </div>
     </div>
   </div>
 
   <div id="settingsTab-reports" data-stab-panel="reports" style="display:none">
-    <div class="card">
-      <strong style="font-size:0.9rem">レポート運用</strong>
+    <div class="card" style="border-color:#93c5fd">
+      <strong style="font-size:0.9rem">伝票訂正ポリシー（店舗全体）</strong>
       <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
-        レポートの閲覧/修正の運用ルールをここに集約します（準備中）。
+        無効にした操作は <strong>API で拒否</strong>されます。<strong>レポートの「修正」タブ</strong>だけでなく、<strong>卓・会計（オペ）</strong>からの入金・割引・明細変更・精算取り消しなど<strong>同じ訂正系API</strong>にも同じルールが適用されます。
       </p>
+      <label class="row" style="margin-top:0.5rem;align-items:center;gap:0.4rem;font-size:0.82rem">
+        <input type="checkbox" id="stBcEnabled" /> <span>伝票訂正を許可する（オフ＝下記はすべて不可）</span>
+      </label>
+      <div id="stBcSubWrap" style="margin-top:0.65rem;padding-top:0.65rem;border-top:1px solid var(--border)">
+        <p class="muted" style="font-size:0.72rem;margin:0 0 0.45rem">個別にオフにできます（上のマスタがオンのときのみ有効）。</p>
+        <label class="row" style="align-items:center;gap:0.4rem;font-size:0.82rem;margin:0.25rem 0">
+          <input type="checkbox" id="stBcPayments" class="st-bc-sub" /> <span>入金の追加・入金取消</span>
+        </label>
+        <label class="row" style="align-items:center;gap:0.4rem;font-size:0.82rem;margin:0.25rem 0">
+          <input type="checkbox" id="stBcBillVoid" class="st-bc-sub" /> <span>未入金伝票の取消（void）</span>
+        </label>
+        <label class="row" style="align-items:center;gap:0.4rem;font-size:0.82rem;margin:0.25rem 0">
+          <input type="checkbox" id="stBcDiscounts" class="st-bc-sub" /> <span>伝票割引・明細割引の設定・解除</span>
+        </label>
+        <label class="row" style="align-items:center;gap:0.4rem;font-size:0.82rem;margin:0.25rem 0">
+          <input type="checkbox" id="stBcOrderLines" class="st-bc-sub" /> <span>明細の数量変更・明細キャンセル</span>
+        </label>
+        <label class="row" style="align-items:center;gap:0.4rem;font-size:0.82rem;margin:0.25rem 0">
+          <input type="checkbox" id="stBcReopen" class="st-bc-sub" /> <span>精算取り消し（レジに戻す）</span>
+        </label>
+      </div>
+      <button type="button" class="btn-primary" id="btnSaveBillCorrectionPolicy" style="margin-top:0.75rem">訂正ポリシーを保存</button>
+    </div>
+    <div class="card" style="margin-top:1rem">
       <div class="row" style="gap:0.35rem;flex-wrap:wrap">
         <a class="btn-ghost" href="/staff-app/__STORE_PATH__/reports" style="text-decoration:none;display:inline-block">レポートへ</a>
       </div>

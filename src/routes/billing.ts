@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { Prisma } from "@prisma/client";
 import { computeCourseSessionTotal, formatCourseLineLabel } from "../lib/course-pricing.js";
 import {
@@ -10,7 +10,7 @@ import {
   type OpsLineDiscountJson,
 } from "../lib/ops-discount.js";
 import { tableDisplayLabel } from "../lib/table-display-code.js";
-import { mergeStoreSettings } from "../lib/store-settings.js";
+import { isBillCorrectionAllowed, mergeStoreSettings, type BillCorrectionPolicyKey } from "../lib/store-settings.js";
 import { startOfWallCalendarDayUtc, wallDateYmdInZone } from "../lib/store-wall-time.js";
 import { prisma } from "../db.js";
 
@@ -271,6 +271,23 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     } catch {
       // イベント記録失敗は会計処理を止めない（監査は best-effort）
     }
+  }
+
+  async function mergedSettingsForStore(storeId: string) {
+    const row = await prisma.store.findUnique({ where: { id: storeId }, select: { settings: true } });
+    if (!row) return null;
+    return mergeStoreSettings(row.settings);
+  }
+
+  function forbidBillCorrection(
+    reply: FastifyReply,
+    settings: ReturnType<typeof mergeStoreSettings>,
+    key: BillCorrectionPolicyKey,
+    message: string,
+  ): boolean {
+    if (isBillCorrectionAllowed(settings, key)) return false;
+    reply.code(403).send({ error: message });
+    return true;
   }
   app.get<{
     Params: { storeId: string };
@@ -689,6 +706,9 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     if (!("discount" in body)) {
       return reply.code(400).send({ error: "discount required (null で解除)" });
     }
+    const st0 = await mergedSettingsForStore(req.params.storeId);
+    if (!st0) return reply.code(404).send({ error: "store not found" });
+    if (forbidBillCorrection(reply, st0, "discounts", "店舗設定により伝票の割引変更は無効です")) return;
     const bill = await prisma.bill.findFirst({
       where: { id: req.params.billId, storeId: req.params.storeId },
       include: {
@@ -750,6 +770,10 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     }
     const lineIds = idsRaw.filter((x): x is string => typeof x === "string" && x.length > 0);
     if (lineIds.length === 0) return reply.code(400).send({ error: "lineIds[] required" });
+
+    const st1 = await mergedSettingsForStore(req.params.storeId);
+    if (!st1) return reply.code(404).send({ error: "store not found" });
+    if (forbidBillCorrection(reply, st1, "discounts", "店舗設定により明細割引の変更は無効です")) return;
 
     const bill = await prisma.bill.findFirst({
       where: { id: req.params.billId, storeId: req.params.storeId },
@@ -837,6 +861,9 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     Params: { storeId: string; billId: string; lineId: string };
     Body: { setStockZero?: boolean };
   }>("/stores/:storeId/bills/:billId/order-lines/:lineId/cancel", async (req, reply) => {
+    const st2 = await mergedSettingsForStore(req.params.storeId);
+    if (!st2) return reply.code(404).send({ error: "store not found" });
+    if (forbidBillCorrection(reply, st2, "orderLines", "店舗設定により明細キャンセルは無効です")) return;
     const bill = await prisma.bill.findFirst({
       where: { id: req.params.billId, storeId: req.params.storeId },
       include: { session: true },
@@ -905,6 +932,9 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     Params: { storeId: string; billId: string; lineId: string };
     Body: { qty: number };
   }>("/stores/:storeId/bills/:billId/order-lines/:lineId", async (req, reply) => {
+    const st3 = await mergedSettingsForStore(req.params.storeId);
+    if (!st3) return reply.code(404).send({ error: "store not found" });
+    if (forbidBillCorrection(reply, st3, "orderLines", "店舗設定により明細数量の変更は無効です")) return;
     const bill = await prisma.bill.findFirst({
       where: { id: req.params.billId, storeId: req.params.storeId },
       include: { session: true },
@@ -1007,6 +1037,9 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
   app.post<{
     Params: { storeId: string; billId: string };
   }>("/stores/:storeId/bills/:billId/void", async (req, reply) => {
+    const st4 = await mergedSettingsForStore(req.params.storeId);
+    if (!st4) return reply.code(404).send({ error: "store not found" });
+    if (forbidBillCorrection(reply, st4, "billVoid", "店舗設定により伝票の取消は無効です")) return;
     const bill = await prisma.bill.findFirst({
       where: { id: req.params.billId, storeId: req.params.storeId },
       include: { payments: true, session: { include: { table: true } } },
@@ -1042,6 +1075,17 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
   app.post<{
     Params: { storeId: string; billId: string };
   }>("/stores/:storeId/bills/:billId/reopen-for-register", async (req, reply) => {
+    const st5 = await mergedSettingsForStore(req.params.storeId);
+    if (!st5) return reply.code(404).send({ error: "store not found" });
+    if (
+      forbidBillCorrection(
+        reply,
+        st5,
+        "reopenSettledForRegister",
+        "店舗設定により精算取り消し（レジに戻す）は無効です",
+      )
+    )
+      return;
     const bill = await prisma.bill.findFirst({
       where: { id: req.params.billId, storeId: req.params.storeId },
       include: { payments: true },
@@ -1100,6 +1144,9 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     Params: { storeId: string; billId: string };
     Body: { lines: { methodCode: string; amount: number; note?: string }[] };
   }>("/stores/:storeId/bills/:billId/payments", async (req, reply) => {
+    const st6 = await mergedSettingsForStore(req.params.storeId);
+    if (!st6) return reply.code(404).send({ error: "store not found" });
+    if (forbidBillCorrection(reply, st6, "payments", "店舗設定により入金の追加は無効です")) return;
     const bill = await prisma.bill.findFirst({
       where: { id: req.params.billId, storeId: req.params.storeId },
       include: { payments: true },
@@ -1201,6 +1248,9 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     Params: { storeId: string; billId: string; paymentId: string };
     Body: { reason?: string };
   }>("/stores/:storeId/bills/:billId/payments/:paymentId/void", async (req, reply) => {
+    const st7 = await mergedSettingsForStore(req.params.storeId);
+    if (!st7) return reply.code(404).send({ error: "store not found" });
+    if (forbidBillCorrection(reply, st7, "payments", "店舗設定により入金の取消は無効です")) return;
     const bill = await prisma.bill.findFirst({
       where: { id: req.params.billId, storeId: req.params.storeId },
     });

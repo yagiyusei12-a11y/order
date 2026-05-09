@@ -8,10 +8,29 @@ export function isValidIanaTimeZone(z: string): boolean {
   }
 }
 
+/** 伝票訂正（支払い・割引・明細・取消など）の店舗ポリシー。API で強制（レポート／会計オペ共通） */
+export type BillCorrectionPolicy = {
+  /** false なら下位フラグに関わらず訂正系APIを拒否 */
+  enabled: boolean;
+  payments: boolean;
+  billVoid: boolean;
+  discounts: boolean;
+  orderLines: boolean;
+  reopenSettledForRegister: boolean;
+};
+
+export type BillCorrectionPolicyKey = keyof Omit<BillCorrectionPolicy, "enabled">;
+
 /** 店舗 JSON settings の正規化・既定値 */
 export type StoreSettingsShape = {
   /** キッチン画面の自動更新間隔（秒） */
   kitchenAutoRefreshSec: number;
+  /** キッチン：コース卓と判定された行の「放題」バッジを出す */
+  kitchenShowCourseBadge: boolean;
+  /** キッチン：コース卓バッジ文言（HTMLはエスケープされる前提） */
+  kitchenCourseBadgeText: string;
+  /** キッチン：コース卓の卓×数量を強調（赤）する */
+  kitchenEmphasizeCourseTableQty: boolean;
   /** ゲストメニュー・カートに金額を表示する */
   guestShowMenuPrices: boolean;
   /** 価格入力モード: 税込 / 税抜 */
@@ -45,11 +64,21 @@ export type StoreSettingsShape = {
   }[];
   /** 会計画面で「レジ機能（現金の受取額/お釣り）」を有効にする支払い方法コード */
   opsRegisterMethodCodes: string[];
+  billCorrectionPolicy: BillCorrectionPolicy;
 };
+
+export function isBillCorrectionAllowed(settings: StoreSettingsShape, key: BillCorrectionPolicyKey): boolean {
+  const p = settings.billCorrectionPolicy;
+  if (!p.enabled) return false;
+  return p[key] === true;
+}
 
 export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
   const d: StoreSettingsShape = {
     kitchenAutoRefreshSec: 10,
+    kitchenShowCourseBadge: true,
+    kitchenCourseBadgeText: "□放題□",
+    kitchenEmphasizeCourseTableQty: true,
     guestShowMenuPrices: true,
     menuPriceTaxMode: "inclusive",
     coursePriceTaxMode: "inclusive",
@@ -61,11 +90,29 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     takeoutPickupTimeWindowIds: [],
     opsDiscountPresets: [],
     opsRegisterMethodCodes: [],
+    billCorrectionPolicy: {
+      enabled: true,
+      payments: true,
+      billVoid: true,
+      discounts: true,
+      orderLines: true,
+      reopenSettledForRegister: true,
+    },
   };
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return d;
   const o = raw as Record<string, unknown>;
   if (typeof o.kitchenAutoRefreshSec === "number" && Number.isFinite(o.kitchenAutoRefreshSec)) {
     d.kitchenAutoRefreshSec = Math.min(300, Math.max(5, Math.round(o.kitchenAutoRefreshSec)));
+  }
+  if (typeof o.kitchenShowCourseBadge === "boolean") {
+    d.kitchenShowCourseBadge = o.kitchenShowCourseBadge;
+  }
+  if (typeof o.kitchenCourseBadgeText === "string") {
+    const t = o.kitchenCourseBadgeText.trim().slice(0, 24);
+    if (t.length) d.kitchenCourseBadgeText = t;
+  }
+  if (typeof o.kitchenEmphasizeCourseTableQty === "boolean") {
+    d.kitchenEmphasizeCourseTableQty = o.kitchenEmphasizeCourseTableQty;
   }
   if (typeof o.guestShowMenuPrices === "boolean") {
     d.guestShowMenuPrices = o.guestShowMenuPrices;
@@ -127,6 +174,17 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
       .map((x) => x.trim())
       .filter(Boolean);
     d.opsRegisterMethodCodes = [...new Set(codes)].slice(0, 30);
+  }
+  if (o.billCorrectionPolicy && typeof o.billCorrectionPolicy === "object" && !Array.isArray(o.billCorrectionPolicy)) {
+    const p = o.billCorrectionPolicy as Record<string, unknown>;
+    if (typeof p.enabled === "boolean") d.billCorrectionPolicy.enabled = p.enabled;
+    if (typeof p.payments === "boolean") d.billCorrectionPolicy.payments = p.payments;
+    if (typeof p.billVoid === "boolean") d.billCorrectionPolicy.billVoid = p.billVoid;
+    if (typeof p.discounts === "boolean") d.billCorrectionPolicy.discounts = p.discounts;
+    if (typeof p.orderLines === "boolean") d.billCorrectionPolicy.orderLines = p.orderLines;
+    if (typeof p.reopenSettledForRegister === "boolean") {
+      d.billCorrectionPolicy.reopenSettledForRegister = p.reopenSettledForRegister;
+    }
   }
   return d;
 }

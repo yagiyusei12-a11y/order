@@ -373,7 +373,7 @@
       opacity: 0;
       pointer-events: none;
       transition: opacity 0.2s;
-      z-index: 60;
+      z-index: 220;
       max-width: 90vw;
       text-align: center;
     }
@@ -1317,10 +1317,10 @@
         for (const ch of st.fixedChoices || []) {
           if (ch.containsAlcohol) return true;
         }
-        const row = sel.find((x) => x.stepId === st.id);
+        const row = sel.find((x) => String(x.stepId) === String(st.id));
         if (!row || !row.menuItemIds) continue;
         for (const mid of row.menuItemIds) {
-          const ch = (st.choices || []).find((c) => c.menuItemId === mid);
+          const ch = (st.choices || []).find((c) => String(c.menuItemId) === String(mid));
           if (ch && ch.containsAlcohol) return true;
         }
       }
@@ -1329,7 +1329,10 @@
 
     function cartLineBlocksAlcohol(line) {
       if (!alcoholRestricted) return false;
-      const it = menuItemById.get(line.menuItemId);
+      const it =
+        line.menuItemId != null && line.menuItemId !== ""
+          ? menuItemById.get(String(line.menuItemId))
+          : null;
       if (!it) return false;
       if (it.sellKind === "set") return setSelectionHasAlcohol(it, line.setSelections);
       return it.containsAlcohol === true;
@@ -1376,26 +1379,28 @@
     function computeSetUnitPrice(item, setSelections) {
       let extras = 0;
       for (const st of item.setSteps || []) {
-        const sel = setSelections.find((x) => x.stepId === st.id);
+        const sel = setSelections.find((x) => String(x.stepId) === String(st.id));
         const ids = sel && sel.menuItemIds ? sel.menuItemIds : [];
-        const fixedSet = new Set((st.fixedChoices || []).map((c) => c.menuItemId));
+        const fixedSet = new Set((st.fixedChoices || []).map((c) => String(c.menuItemId)));
         const seen = new Set();
         for (const mid of ids) {
-          const ch = (st.choices || []).find((c) => c.menuItemId === mid);
-          const fc = (st.fixedChoices || []).find((c) => c.menuItemId === mid);
+          const midK = String(mid);
+          const ch = (st.choices || []).find((c) => String(c.menuItemId) === midK);
+          const fc = (st.fixedChoices || []).find((c) => String(c.menuItemId) === midK);
           const row = ch || fc;
           if (!row) return null;
-          if (seen.has(mid)) continue;
-          seen.add(mid);
+          if (seen.has(midK)) continue;
+          seen.add(midK);
           extras += choiceExtraInclusive(row);
         }
         for (const fc of st.fixedChoices || []) {
-          if (!seen.has(fc.menuItemId)) {
-            seen.add(fc.menuItemId);
+          const fk = String(fc.menuItemId);
+          if (!seen.has(fk)) {
+            seen.add(fk);
             extras += choiceExtraInclusive(fc);
           }
         }
-        const userPickCount = ids.filter((id) => !fixedSet.has(id)).length;
+        const userPickCount = ids.filter((id) => !fixedSet.has(String(id))).length;
         if (userPickCount < st.minPick || userPickCount > st.maxPick) return null;
       }
       return Number(item.price || 0) + extras;
@@ -1412,10 +1417,10 @@
     function computeOptionUnitPrice(item, optionSelections) {
       let add = 0;
       for (const g of item.optionGroups || []) {
-        const row = optionSelections.find((o) => o.optionGroupId === g.id);
+        const row = optionSelections.find((o) => String(o.optionGroupId) === String(g.id));
         const ids = (row && row.optionItemIds) || [];
         for (const oid of ids) {
-          const oi = (g.items || []).find((x) => x.id === oid);
+          const oi = (g.items || []).find((x) => String(x.id) === String(oid));
           if (oi) add += Number(oi.priceDelta || 0);
         }
       }
@@ -1443,28 +1448,30 @@
 
     function setStockAllows(item, setSelections, addQty) {
       const need = new Map();
-      need.set(item.id, addQty);
+      need.set(String(item.id), addQty);
       for (const st of item.setSteps || []) {
-        const sel = setSelections.find((x) => x.stepId === st.id);
+        const sel = setSelections.find((x) => String(x.stepId) === String(st.id));
         if (!sel) return false;
         for (const mid of sel.menuItemIds || []) {
-          need.set(mid, (need.get(mid) || 0) + addQty);
+          const k = String(mid);
+          need.set(k, (need.get(k) || 0) + addQty);
         }
         for (const fc of st.fixedChoices || []) {
-          need.set(fc.menuItemId, (need.get(fc.menuItemId) || 0) + addQty);
+          const fk = String(fc.menuItemId);
+          need.set(fk, (need.get(fk) || 0) + addQty);
         }
       }
       for (const [id, q] of need) {
         let max = null;
-        if (id === item.id) {
+        if (id === String(item.id)) {
           max = item.stockQty;
         } else {
           for (const st of item.setSteps) {
             for (const ch of st.choices || []) {
-              if (ch.menuItemId === id && ch.stockQty != null) max = ch.stockQty;
+              if (String(ch.menuItemId) === id && ch.stockQty != null) max = ch.stockQty;
             }
             for (const ch of st.fixedChoices || []) {
-              if (ch.menuItemId === id && ch.stockQty != null) max = ch.stockQty;
+              if (String(ch.menuItemId) === id && ch.stockQty != null) max = ch.stockQty;
             }
           }
         }
@@ -1472,17 +1479,20 @@
       }
       for (const [id, q] of need) {
         const existing = Object.values(cart).reduce((s, line) => {
-          if (line.menuItemId === id) return s + (line.qty || 0);
+          if (String(line.menuItemId) === id) return s + (line.qty || 0);
           if (line.sellKind === "set" && line.setSelections) {
             let u = 0;
             for (const st of line.setSelections) {
-              for (const mid of st.menuItemIds || []) if (mid === id) u += line.qty || 0;
+              for (const mid of st.menuItemIds || []) if (String(mid) === id) u += line.qty || 0;
             }
-            const lit = menuItemById.get(line.menuItemId);
+            const lit =
+              line.menuItemId != null && line.menuItemId !== ""
+                ? menuItemById.get(String(line.menuItemId))
+                : null;
             if (lit && lit.setSteps) {
               for (const st0 of lit.setSteps) {
                 for (const fc of st0.fixedChoices || []) {
-                  if (fc.menuItemId === id) u += line.qty || 0;
+                  if (String(fc.menuItemId) === id) u += line.qty || 0;
                 }
               }
             }
@@ -1491,14 +1501,14 @@
           return s;
         }, 0);
         let max = null;
-        if (id === item.id) max = item.stockQty;
+        if (id === String(item.id)) max = item.stockQty;
         else {
           for (const st of item.setSteps) {
             for (const ch of st.choices || []) {
-              if (ch.menuItemId === id && ch.stockQty != null) max = ch.stockQty;
+              if (String(ch.menuItemId) === id && ch.stockQty != null) max = ch.stockQty;
             }
             for (const ch of st.fixedChoices || []) {
-              if (ch.menuItemId === id && ch.stockQty != null) max = ch.stockQty;
+              if (String(ch.menuItemId) === id && ch.stockQty != null) max = ch.stockQty;
             }
           }
         }
@@ -1615,17 +1625,22 @@
 
     /** 同一商品IDのカート内合計（在庫残数の計算用） */
     function totalCartQtyForMenuItem(menuItemId) {
+      const k = menuItemId != null && menuItemId !== "" ? String(menuItemId) : "";
+      if (!k) return 0;
       let sum = 0;
       for (const key of Object.keys(cart)) {
         const line = cart[key];
-        if (line && line.menuItemId === menuItemId) sum += Number(line.qty || 0);
+        if (line && String(line.menuItemId) === k) sum += Number(line.qty || 0);
       }
       return sum;
     }
 
     function guestCartLineSubtext(line) {
       const parts = [];
-      const item = menuItemById.get(line.menuItemId);
+      const item =
+        line.menuItemId != null && line.menuItemId !== ""
+          ? menuItemById.get(String(line.menuItemId))
+          : null;
       if (!item) return "";
       if (line.sellKind === "set" && item.setSteps && line.setSelections) {
         for (const st of item.setSteps) {
@@ -1732,7 +1747,10 @@
         head.className = "guest-cart-line-head";
         const nm = document.createElement("div");
         nm.className = "nm";
-        const defIt = menuItemById.get(line.menuItemId);
+        const defIt =
+          line.menuItemId != null && line.menuItemId !== ""
+            ? menuItemById.get(String(line.menuItemId))
+            : null;
         nm.textContent = String(line.name || (defIt && defIt.name) || "商品");
         const pr = document.createElement("div");
         pr.className = "pr";
@@ -1798,7 +1816,10 @@
         renderCart();
         return;
       }
-      const item = menuItemById.get(line.menuItemId);
+      const item =
+        line.menuItemId != null && line.menuItemId !== ""
+          ? menuItemById.get(String(line.menuItemId))
+          : null;
       if (!item) {
         toast("メニューを再読込してください");
         return;
@@ -1870,7 +1891,7 @@
         for (const ln of o.lines || []) {
           const ex = ln.lineExtra && typeof ln.lineExtra === "object" ? ln.lineExtra : null;
           if (ex && ex.kind === SERVE_LATER_LINE_KIND) continue;
-          if (ln.menuItemId) ids.add(ln.menuItemId);
+          if (ln.menuItemId != null && ln.menuItemId !== "") ids.add(String(ln.menuItemId));
         }
       }
       const missing = [...ids].filter((id) => !menuItemById.has(id));
@@ -1880,13 +1901,13 @@
           "/guest/" + encodeURIComponent(TOKEN) + "/reorder-menu-items?ids=" + missing.map(encodeURIComponent).join(",")
         );
         for (const it of res.items || []) {
-          if (it && it.id) menuItemById.set(it.id, it);
+          if (it && it.id != null && it.id !== "") menuItemById.set(String(it.id), it);
         }
       } catch (_) {}
     }
 
     function enrichHistorySetSelectionsFromOrder(order, ln, setSelections, lineExtra) {
-      if (!order || !lineExtra || lineExtra.kind !== "set") return setSelections;
+      if (!order || !lineExtra || !Array.isArray(lineExtra.steps) || lineExtra.steps.length === 0) return setSelections;
       const bid = typeof lineExtra.bundleId === "string" ? lineExtra.bundleId.trim() : "";
       const defStep =
         typeof lineExtra.serveLaterDeferredStepId === "string" ? lineExtra.serveLaterDeferredStepId.trim() : "";
@@ -1909,32 +1930,47 @@
      */
     function parseHistoryLineForReorder(ln) {
       const mid = ln.menuItemId;
-      if (!mid || typeof mid !== "string") return { ok: false, reason: "no_menu" };
+      if (mid == null || mid === "") return { ok: false, reason: "no_menu" };
       const ex = ln.lineExtra && typeof ln.lineExtra === "object" ? ln.lineExtra : null;
       if (ex && ex.kind === SERVE_LATER_LINE_KIND) return { ok: false, reason: "serve_later_child" };
 
       const eatMode = ln.eatMode === "takeout" ? "takeout" : "dine_in";
 
-      if (ex && ex.kind === "set" && Array.isArray(ex.steps)) {
+      const hasSetSteps = ex && Array.isArray(ex.steps) && ex.steps.length > 0;
+      const hasSingleOptions =
+        ex &&
+        Array.isArray(ex.options) &&
+        ex.options.length > 0 &&
+        ex.kind !== "set" &&
+        !hasSetSteps;
+
+      if (hasSetSteps) {
         const setSelections = ex.steps.map((st) => ({
           stepId: st.stepId,
           menuItemIds: (st.picks || [])
-            .map((p) => (p && p.menuItemId ? String(p.menuItemId) : ""))
+            .map((p) => {
+              if (!p || typeof p !== "object") return "";
+              const v = p.menuItemId != null && p.menuItemId !== "" ? p.menuItemId : p.id;
+              return v != null && v !== "" ? String(v) : "";
+            })
             .filter(Boolean),
         }));
         const setComponentOptionSelections = [];
-        for (const st of ex.steps) {
+        for (const st of ex.steps || []) {
           const sid = typeof st.stepId === "string" ? st.stepId : "";
           if (!sid) continue;
           for (const p of st.picks || []) {
             if (!p || typeof p !== "object") continue;
             const oe = p.optionExtra;
             if (!oe || oe.kind !== "single" || !Array.isArray(oe.options)) continue;
-            const midPick = typeof p.menuItemId === "string" ? p.menuItemId : "";
+            const rawPick = p.menuItemId != null && p.menuItemId !== "" ? p.menuItemId : p.id;
+            const midPick = rawPick != null && rawPick !== "" ? String(rawPick) : "";
             if (!midPick) continue;
             const optionSelections = oe.options.map((gr) => ({
-              optionGroupId: gr.groupId || gr.optionGroupId,
-              optionItemIds: (gr.picks || []).map((x) => x.optionItemId).filter(Boolean),
+              optionGroupId: String(gr.groupId ?? gr.optionGroupId ?? ""),
+              optionItemIds: (gr.picks || [])
+                .map((x) => (x && (x.optionItemId != null ? x.optionItemId : x.id) ? String(x.optionItemId != null ? x.optionItemId : x.id) : ""))
+                .filter(Boolean),
             }));
             if (optionSelections.length)
               setComponentOptionSelections.push({
@@ -1960,10 +1996,12 @@
         };
       }
 
-      if (ex && ex.kind === "single" && Array.isArray(ex.options)) {
+      if (hasSingleOptions) {
         const optionSelections = ex.options.map((gr) => ({
-          optionGroupId: gr.groupId || gr.optionGroupId,
-          optionItemIds: (gr.picks || []).map((x) => x.optionItemId).filter(Boolean),
+          optionGroupId: String(gr.groupId ?? gr.optionGroupId ?? ""),
+          optionItemIds: (gr.picks || [])
+            .map((x) => (x && (x.optionItemId != null ? x.optionItemId : x.id) ? String(x.optionItemId != null ? x.optionItemId : x.id) : ""))
+            .filter(Boolean),
         }));
         return { ok: true, sellKind: "options", optionSelections, eatMode };
       }
@@ -1971,7 +2009,7 @@
       return { ok: true, sellKind: "plain", eatMode };
     }
 
-    function mergeHistoryIntoCart(order, ln, qty) {
+    async function mergeHistoryIntoCart(order, ln, qty) {
       const q = Math.max(1, Math.min(99, Math.floor(Number(qty) || 1)));
       const parsed = parseHistoryLineForReorder(ln);
       if (!parsed.ok) {
@@ -1979,7 +2017,16 @@
         else toast("この注文は再注文できません");
         return;
       }
-      const item = menuItemById.get(ln.menuItemId);
+      const lineMenuKey = ln.menuItemId != null && ln.menuItemId !== "" ? String(ln.menuItemId) : "";
+      if (!lineMenuKey) {
+        toast("この注文は再注文できません");
+        return;
+      }
+      let item = menuItemById.get(lineMenuKey);
+      if (!item) {
+        await ensureReorderMenuItemsInCache();
+        item = menuItemById.get(lineMenuKey);
+      }
       if (!item) {
         toast("メニューに載っていない商品です。スタッフへお問い合わせください。");
         return;
@@ -2000,14 +2047,14 @@
         }
         const ex0 = ln.lineExtra && typeof ln.lineExtra === "object" ? ln.lineExtra : null;
         let setSelections =
-          ex0 && ex0.kind === "set" && order
+          ex0 && Array.isArray(ex0.steps) && ex0.steps.length > 0 && order
             ? enrichHistorySetSelectionsFromOrder(order, ln, parsed.setSelections, ex0)
             : parsed.setSelections;
         for (const st of item.setSteps || []) {
-          const sel = setSelections.find((x) => x.stepId === st.id);
+          const sel = setSelections.find((x) => String(x.stepId) === String(st.id));
           const ids = sel && sel.menuItemIds ? sel.menuItemIds : [];
-          const fixedSet = new Set((st.fixedChoices || []).map((c) => c.menuItemId));
-          const userPickCount = ids.filter((id) => !fixedSet.has(id)).length;
+          const fixedSet = new Set((st.fixedChoices || []).map((c) => String(c.menuItemId)));
+          const userPickCount = ids.filter((id) => !fixedSet.has(String(id))).length;
           if (userPickCount < st.minPick || userPickCount > st.maxPick) {
             toast("セットの内容が変わった可能性があります。メニューから選び直してください");
             return;
@@ -2073,7 +2120,7 @@
         }
         const optionSelections = parsed.optionSelections;
         for (const g of item.optionGroups || []) {
-          const sel = optionSelections.find((x) => x.optionGroupId === g.id);
+          const sel = optionSelections.find((x) => String(x.optionGroupId) === String(g.id));
           const n = sel && sel.optionItemIds ? sel.optionItemIds.length : 0;
           if (n < g.minSelect || n > g.maxSelect) {
             toast("オプションの組み合わせが変わりました。メニューから選び直してください");
@@ -2217,7 +2264,14 @@
             rq += 1;
             num.textContent = String(rq);
           };
-          addBtn.onclick = () => mergeHistoryIntoCart(o, ln, rq);
+          addBtn.onclick = async () => {
+            try {
+              await mergeHistoryIntoCart(o, ln, rq);
+            } catch (err) {
+              console.error(err);
+              toast("カートに追加できませんでした: " + String(err && err.message ? err.message : err));
+            }
+          };
 
           const preview = parseHistoryLineForReorder(ln);
           if (!preview.ok) {
@@ -3164,7 +3218,9 @@
       guestMenuCategories = cats;
       menuItemById = new Map();
       for (const c of cats) {
-        for (const it of c.items || []) menuItemById.set(it.id, it);
+        for (const it of c.items || []) {
+          if (it && it.id != null && it.id !== "") menuItemById.set(String(it.id), it);
+        }
       }
       const gs = data.session;
       if (gs && gs.guestAlcoholAllowed === true) alcoholRestricted = false;

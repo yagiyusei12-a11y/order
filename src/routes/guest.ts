@@ -373,6 +373,69 @@ function mapGuestSetMenuItem(
   return opt.length ? { ...base, sellKind: "set", setSteps: stepsOut, optionGroups: opt } : { ...base, sellKind: "set", setSteps: stepsOut };
 }
 
+/** 注文履歴からの再注文用。売切・非表示でも構成 ID を復元できるよう緩いルール（通常メニュー API とは別） */
+function mapGuestSetMenuItemForReorder(
+  it: Parameters<typeof mapGuestSetMenuItem>[0],
+  defaultPriceTaxMode: "inclusive" | "exclusive",
+  taxRatePercent: number,
+  nowMin: number,
+): Record<string, unknown> | null {
+  const stepsOut: Record<string, unknown>[] = [];
+  type ChoiceRow = {
+    menuItemId: string;
+    name: string;
+    extraPrice: number;
+    extraTaxIncluded: number;
+    stockQty: number | null;
+    soldOut: boolean;
+    containsAlcohol: boolean;
+    optionGroups?: Record<string, unknown>[];
+  };
+  for (const st of it.setSteps) {
+    const choices: ChoiceRow[] = [];
+    const fixedChoices: ChoiceRow[] = [];
+    for (const ch of st.choices) {
+      const comp = ch.componentMenuItem;
+      if (!comp) continue;
+      const ex = ch.extraPrice;
+      const soldOut = comp.stockQty != null && comp.stockQty <= 0;
+      const compName = (typeof comp.name === "string" ? comp.name : "").trim();
+      const row: ChoiceRow = {
+        menuItemId: comp.id,
+        name: compName || "（名称未設定）",
+        extraPrice: ex,
+        extraTaxIncluded: Math.round(ex * (1 + taxRatePercent / 100)),
+        stockQty: comp.stockQty,
+        soldOut,
+        containsAlcohol: comp.containsAlcohol === true,
+      };
+      try {
+        const opt = mapGuestOptionGroups(comp.optionLinks ?? []);
+        if (opt.length) row.optionGroups = opt;
+      } catch (_) {}
+      if (ch.isFixed === true) {
+        fixedChoices.push(row);
+        continue;
+      }
+      choices.push(row);
+    }
+    stepsOut.push({
+      id: st.id,
+      label: st.label,
+      minPick: st.minPick,
+      maxPick: st.maxPick,
+      sortOrder: st.sortOrder,
+      allowServeLaterSplit: st.allowServeLaterSplit === true,
+      choices,
+      fixedChoices,
+    });
+  }
+  if (stepsOut.length === 0) return null;
+  const base = mapGuestMenuItem(it, defaultPriceTaxMode, taxRatePercent, nowMin);
+  const opt = mapGuestOptionGroups(it.optionLinks ?? []);
+  return opt.length ? { ...base, sellKind: "set", setSteps: stepsOut, optionGroups: opt } : { ...base, sellKind: "set", setSteps: stepsOut };
+}
+
 const DEVICE_ID_RE = /^[a-zA-Z0-9_-]{8,128}$/;
 
 function parsePurchasedCourseOptionPackIds(raw: unknown): string[] {
@@ -1876,7 +1939,6 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       const rows = await prisma.menuItem.findMany({
         where: {
           id: { in: idList },
-          isAvailable: true,
           category: { storeId: session.storeId },
         },
         include: itemInclude,
@@ -1885,7 +1947,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       const itemsOut: Record<string, unknown>[] = [];
       for (const it of rows) {
         if (it.sellKind === "set") {
-          const row = mapGuestSetMenuItem(it as never, st.menuPriceTaxMode, st.taxRatePercent, nowMin);
+          const row = mapGuestSetMenuItemForReorder(it as never, st.menuPriceTaxMode, st.taxRatePercent, nowMin);
           if (!row) continue;
           itemsOut.push({ ...row, courseTier: "addon" as const });
         } else {

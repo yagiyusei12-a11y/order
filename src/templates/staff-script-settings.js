@@ -185,9 +185,7 @@ const STAFF_SIDEBAR_LABELS = {
   home: "ホーム",
   ops: "卓・会計",
   reception: "受付",
-  netReserve: "予約設定",
   handy: "口頭注文",
-  tables: "席マスタ",
   kitchen: "キッチン",
   hallReady: "調理済・提供",
   takeout: "テイクアウト",
@@ -210,9 +208,7 @@ function staffSidebarDefaultKeys() {
     "home",
     "ops",
     "reception",
-    "netReserve",
     "handy",
-    "tables",
     "kitchen",
     "hallReady",
     "takeout",
@@ -226,9 +222,10 @@ function staffSidebarDefaultKeys() {
 
 function normalizeStaffSidebarPrefs(parsed) {
   const defaults = staffSidebarDefaultKeys();
+  const defaultSet = new Set(defaults);
   const hiddenRaw = parsed && Array.isArray(parsed.hidden) ? parsed.hidden : [];
-  const hidden = [...new Set(hiddenRaw.map((x) => String(x)))];
-  let order = parsed && Array.isArray(parsed.order) ? parsed.order.map((x) => String(x)) : [...defaults];
+  let hidden = [...new Set(hiddenRaw.map((x) => String(x)))].filter((k) => defaultSet.has(k));
+  let order = parsed && Array.isArray(parsed.order) ? parsed.order.map((x) => String(x)).filter((k) => defaultSet.has(k)) : [...defaults];
   const seen = new Set(order);
   for (const k of defaults) {
     if (!seen.has(k)) {

@@ -764,6 +764,7 @@
       white-space: normal;
       word-break: break-word;
       line-height: 1.5;
+      color: rgba(241, 245, 249, 0.95);
     }
     .opt-row .opt-price {
       font-size: 0.92rem;
@@ -774,15 +775,18 @@
       align-self: flex-start;
       padding-top: 0.08rem;
     }
+    .opt-row:hover { border-color: rgba(226, 232, 240, 0.28); background: rgba(255, 255, 255, 0.085); }
+    .opt-row input:focus-visible { outline: 2px solid rgba(251, 146, 60, 0.55); outline-offset: 3px; border-radius: 999px; }
     .opt-row:has(input:checked) {
       border-color: rgba(251, 146, 60, 0.65);
       background: rgba(251, 146, 60, 0.10);
     }
+    .opt-row:has(input:checked) .opt-name { color: #fff; font-weight: 800; }
     .opt-row:focus-within {
       outline: 2px solid rgba(251, 146, 60, 0.55);
       outline-offset: 1px;
     }
-    .opt-row.is-disabled { opacity: 0.45; pointer-events: none; }
+    .opt-row.is-disabled { opacity: 0.6; pointer-events: none; background: rgba(255, 255, 255, 0.045); }
     .opt-row-fixed {
       padding-left: 0.15rem;
       background: rgba(255, 255, 255, 0.06);

@@ -845,6 +845,9 @@ function renderItemDetail(right) {
     "<label>販売価格（円）</label><input id=\"dPrice\" type=\"number\" min=\"0\" step=\"1\" value=\"" + escapeHtml(String(item.price)) + "\" />" +
     "<label>価格表示</label><select id=\"dTaxMode\"><option value=\"inclusive\"" + (itemTaxMode(item) === "inclusive" ? " selected" : "") + ">税込</option><option value=\"exclusive\"" + (itemTaxMode(item) === "exclusive" ? " selected" : "") + ">税抜（税込併記）</option></select>" +
     "<label>画像URL（任意・手入力または下でアップロード）</label><input id=\"dImageUrl\" type=\"text\" value=\"" + escapeHtml(item.imageUrl || "") + "\" placeholder=\"/uploads/... または外部URL\" />" +
+    "<label>レシピ・調理メモ（キッチン）</label><p class=\"muted\" style=\"font-size:.68rem;margin:.15rem 0 .35rem;line-height:1.45\">ゲスト画面には表示されません。キッチン画面で商品名をタップしたときに表示されます。</p><textarea id=\"dRecipe\" rows=\"5\" style=\"width:100%;box-sizing:border-box;resize:vertical;min-height:4.5rem\">" +
+    escapeHtml(item.recipe || "") +
+    "</textarea>" +
     "<label>在庫数（空欄＝在庫管理しない）</label><input id=\"dStock\" type=\"number\" min=\"0\" step=\"1\" value=\"" + escapeHtml(item.stockQty == null ? "" : String(item.stockQty)) + "\" />" +
     "<label>残りわずかアラートのしきい値（在庫管理時のみ）</label><input id=\"dStockTh\" type=\"number\" min=\"0\" step=\"1\" value=\"" + escapeHtml(item.stockLowThreshold == null ? "" : String(item.stockLowThreshold)) + "\" />" +
     "<label>所属カテゴリ</label><select id=\"dCat\">" + categoriesCache.map((c) => "<option value=\"" + escapeHtml(c.id) + "\"" + (c.id === item.categoryId ? " selected" : "") + ">" + escapeHtml(categoryLabel(c)) + "</option>").join("") + "</select>" +
@@ -956,6 +959,7 @@ function renderItemDetail(right) {
           price,
           priceTaxMode: elTaxMode.value === "exclusive" ? "exclusive" : "inclusive",
           imageUrl: elImg.value.trim() || null,
+          recipe: ($("dRecipe") && $("dRecipe").value.trim()) || null,
           categoryId: elCat.value,
           kitchenStationId: elSt.value || null,
           stockQty: rs === "" ? null : stockQty,

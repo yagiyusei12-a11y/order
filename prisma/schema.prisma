@@ -330,6 +330,8 @@ model MenuItem {
   name              String
   description       String?
   imageUrl          String?
+  /// キッチン向け調理メモ（ゲスト画面・ゲストAPIには出さない）
+  recipe            String?
   price             Int
   /// 価格入力モード: inclusive=税込入力, exclusive=税抜入力（表示は税抜（税込））
   priceTaxMode      String          @default("inclusive")

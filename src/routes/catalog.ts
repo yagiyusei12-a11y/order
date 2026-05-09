@@ -204,6 +204,7 @@ type MenuItemPatchData = {
   priceTaxMode?: string;
   description?: string | null;
   imageUrl?: string | null;
+  recipe?: string | null;
   sortOrder?: number;
   isAvailable?: boolean;
   allowTakeout?: boolean;
@@ -305,6 +306,9 @@ async function buildMenuItemPatchData(
   }
   if (body.imageUrl !== undefined) {
     data.imageUrl = typeof body.imageUrl === "string" ? body.imageUrl.trim() || null : null;
+  }
+  if (body.recipe !== undefined) {
+    data.recipe = typeof body.recipe === "string" ? body.recipe.trim() || null : null;
   }
   if (typeof body.sortOrder === "number" && Number.isInteger(body.sortOrder)) {
     data.sortOrder = body.sortOrder;
@@ -614,7 +618,11 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
         items: { where: { isAvailable: true }, orderBy: { sortOrder: "asc" } },
       },
     });
-    return { storeId: store.id, categories };
+    const categoriesOut = categories.map((c) => ({
+      ...c,
+      items: c.items.map(({ recipe: _r, ...it }) => it),
+    }));
+    return { storeId: store.id, categories: categoriesOut };
   });
 
   /** スタッフ用：販売停止含む全カテゴリ・全商品 */
@@ -743,6 +751,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       priceTaxMode?: string;
       description?: string;
       imageUrl?: string | null;
+      recipe?: string | null;
       sortOrder?: number;
       kitchenStationId?: string | null;
       stockQty?: number | null;
@@ -830,6 +839,12 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       if (typeof at !== "boolean") return reply.code(400).send({ error: "allowTakeout must be boolean" });
       allowTakeoutFlag = at;
     }
+    let recipe: string | null | undefined = undefined;
+    if (req.body && "recipe" in req.body) {
+      if (req.body.recipe === null) recipe = null;
+      else if (typeof req.body.recipe === "string") recipe = req.body.recipe.trim() || null;
+      else return reply.code(400).send({ error: "recipe must be string or null" });
+    }
     const item = await prisma.menuItem.create({
       data: {
         categoryId: cat.id,
@@ -838,6 +853,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
         priceTaxMode,
         description: req.body?.description?.trim() || null,
         ...(imageUrl !== undefined ? { imageUrl } : {}),
+        ...(recipe !== undefined ? { recipe } : {}),
         sortOrder: req.body?.sortOrder ?? 0,
         kitchenStationId,
         ...(stockQty !== undefined ? { stockQty } : {}),
@@ -1008,6 +1024,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
             name: copiedItemName(item.name),
             description: item.description,
             imageUrl: item.imageUrl,
+            recipe: item.recipe,
             price: item.price,
             priceTaxMode: item.priceTaxMode,
             sellKind: item.sellKind === "set" ? "set" : "single",
@@ -1319,6 +1336,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       priceTaxMode?: string;
       description?: string | null;
       imageUrl?: string | null;
+      recipe?: string | null;
       sortOrder?: number;
       isAvailable?: boolean;
       categoryId?: string;
@@ -1681,6 +1699,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
           name: copiedItemName(src.name),
           description: src.description,
           imageUrl: src.imageUrl,
+          recipe: src.recipe,
           price: src.price,
           priceTaxMode: src.priceTaxMode,
           sellKind: src.sellKind === "set" ? "set" : "single",

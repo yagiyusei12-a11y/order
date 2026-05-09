@@ -23,6 +23,8 @@ let kitForceApplyLatest = false;
 const kitCookDeadlines = new Map();
 let kitCookTick = null;
 let kitAudioCtx = null;
+/** @type {((ev: KeyboardEvent) => void) | null} */
+let kitRecipeModalEscHandler = null;
 
 /** 絞り込み対象の新規注文行検知（自動更新用） */
 let kitKitchenDataInitialized = false;
@@ -454,6 +456,94 @@ function escapeHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
+function closeKitRecipeModal() {
+  const host = document.getElementById("kitRecipeModal");
+  if (kitRecipeModalEscHandler) {
+    document.removeEventListener("keydown", kitRecipeModalEscHandler);
+    kitRecipeModalEscHandler = null;
+  }
+  if (host) host.innerHTML = "";
+}
+
+/**
+ * @param {object} ln — order-line（またはまとめ表示用の手動オブジェクト。nameSnapshot で見出しを上書き可）
+ */
+function openKitMenuDetailModal(ln) {
+  if (!ln || !ln.menuItemId) return;
+  const host = document.getElementById("kitRecipeModal");
+  if (!host) return;
+
+  closeKitRecipeModal();
+
+  const imgUrl = ln.imageUrl && String(ln.imageUrl).trim() ? String(ln.imageUrl).trim() : null;
+  const recipeRaw = ln.recipe;
+  const recipe = typeof recipeRaw === "string" && recipeRaw.trim() !== "" ? recipeRaw : null;
+
+  let title = "";
+  if (ln.nameSnapshot != null && String(ln.nameSnapshot).trim() !== "") title = String(ln.nameSnapshot);
+  else title = orderLineDisplayName(ln) || "商品";
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "kit-recipe-modal-backdrop";
+  backdrop.setAttribute("role", "dialog");
+  backdrop.setAttribute("aria-modal", "true");
+  backdrop.setAttribute("aria-labelledby", "kitRecipeModalTitle");
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) closeKitRecipeModal();
+  };
+
+  const card = document.createElement("div");
+  card.className = "kit-recipe-modal-card";
+  card.onclick = (e) => e.stopPropagation();
+
+  const hdr = document.createElement("div");
+  hdr.className = "kit-recipe-modal-header";
+  const hTitle = document.createElement("div");
+  hTitle.id = "kitRecipeModalTitle";
+  hTitle.className = "kit-recipe-modal-title";
+  hTitle.textContent = title;
+  const btnClose = document.createElement("button");
+  btnClose.type = "button";
+  btnClose.className = "btn-ghost kit-recipe-modal-close";
+  btnClose.textContent = "閉じる";
+  btnClose.onclick = () => closeKitRecipeModal();
+  hdr.appendChild(hTitle);
+  hdr.appendChild(btnClose);
+
+  const body = document.createElement("div");
+  body.className = "kit-recipe-modal-body";
+
+  if (imgUrl) {
+    const img = document.createElement("img");
+    img.className = "kit-recipe-modal-img";
+    img.alt = "";
+    img.src = imgUrl;
+    body.appendChild(img);
+  }
+  if (recipe) {
+    const pre = document.createElement("div");
+    pre.className = "kit-recipe-modal-recipe";
+    pre.textContent = recipe;
+    body.appendChild(pre);
+  }
+  if (!imgUrl && !recipe) {
+    const empty = document.createElement("div");
+    empty.className = "kit-recipe-modal-empty muted";
+    empty.textContent = "画像・レシピは未登録です";
+    body.appendChild(empty);
+  }
+
+  card.appendChild(hdr);
+  card.appendChild(body);
+  backdrop.appendChild(card);
+  host.appendChild(backdrop);
+
+  kitRecipeModalEscHandler = (ev) => {
+    if (ev.key === "Escape") closeKitRecipeModal();
+  };
+  document.addEventListener("keydown", kitRecipeModalEscHandler);
+}
+
 function passesFilters(ln, state) {
   const catActive = state.cats.length > 0;
   const staActive = state.stas.length > 0;
@@ -748,9 +838,14 @@ function renderKitHistoryList(box, lines) {
       const row = document.createElement("div");
       row.className = ln.isSetComponent ? "kit-line-box kit-line-set-part" : "kit-line-box";
       const tag = ln.kitchenStationName ? "〈" + ln.kitchenStationName + "〉 " : "";
-      const name = document.createElement("div");
-      name.className = "kit-line-name";
+      const name = document.createElement(ln.menuItemId ? "button" : "div");
+      if (ln.menuItemId) name.type = "button";
+      name.className = "kit-line-name" + (ln.menuItemId ? " kit-line-name-btn" : "");
       name.textContent = tag + orderLineDisplayName(ln) + " ×" + ln.qty;
+      if (ln.menuItemId) {
+        name.title = "画像・レシピを表示";
+        name.onclick = () => openKitMenuDetailModal(ln);
+      }
       const meta = document.createElement("div");
       meta.className = "kit-history-done-meta";
       meta.textContent = "調理完了 " + formatKitLineReadyAt(ln);
@@ -836,6 +931,8 @@ function renderKitList() {
           cookTimerSec: normCookTimerSec(ln.cookTimerSec),
           cookTimerSec2: normCookTimerSec(ln.cookTimerSec2),
           summaryComponentMenuItemId: ln.menuItemId ? String(ln.menuItemId) : "",
+          menuImageUrl: ln.imageUrl ?? null,
+          menuRecipe: ln.recipe ?? null,
         });
       } else {
         prev.qty += Number(ln.qty || 0);
@@ -890,9 +987,21 @@ function renderKitList() {
       }
       const nameRow = document.createElement("div");
       nameRow.className = "kit-summary-head-name-row";
-      const nameEl = document.createElement("div");
-      nameEl.className = "kit-summary-head-name";
+      const nameEl = document.createElement(g.summaryComponentMenuItemId ? "button" : "div");
+      if (g.summaryComponentMenuItemId) nameEl.type = "button";
+      nameEl.className =
+        "kit-summary-head-name" + (g.summaryComponentMenuItemId ? " kit-line-name-btn" : "");
       nameEl.textContent = g.nameSnapshot;
+      if (g.summaryComponentMenuItemId) {
+        nameEl.title = "画像・レシピを表示";
+        nameEl.onclick = () =>
+          openKitMenuDetailModal({
+            menuItemId: g.summaryComponentMenuItemId,
+            imageUrl: g.menuImageUrl,
+            recipe: g.menuRecipe,
+            nameSnapshot: g.nameSnapshot,
+          });
+      }
       nameRow.appendChild(nameEl);
       main.appendChild(nameRow);
       if (g.extraTxt) {
@@ -1135,9 +1244,14 @@ function renderKitList() {
       const tag = ln.kitchenStationName ? "〈" + ln.kitchenStationName + "〉 " : "";
       const nameRow = document.createElement("div");
       nameRow.className = "kit-line-name-row";
-      const name = document.createElement("div");
-      name.className = "kit-line-name";
+      const name = document.createElement(ln.menuItemId ? "button" : "div");
+      if (ln.menuItemId) name.type = "button";
+      name.className = "kit-line-name" + (ln.menuItemId ? " kit-line-name-btn" : "");
       name.textContent = tag + orderLineDisplayName(ln) + " ×" + ln.qty;
+      if (ln.menuItemId) {
+        name.title = "画像・レシピを表示";
+        name.onclick = () => openKitMenuDetailModal(ln);
+      }
       nameRow.appendChild(name);
       if (ln.status === "queued" || ln.status === "cooking" || ln.status === "done") {
         const cancelTxt = document.createElement("button");

@@ -140,6 +140,8 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
             l.menuItem?.cookTimerSec != null && l.menuItem.cookTimerSec > 0 ? l.menuItem.cookTimerSec : null,
           cookTimerSec2:
             l.menuItem?.cookTimerSec2 != null && l.menuItem.cookTimerSec2 > 0 ? l.menuItem.cookTimerSec2 : null,
+          imageUrl: l.menuItem?.imageUrl ?? null,
+          recipe: l.menuItem?.recipe ?? null,
           setFixedSteps:
             l.menuItem?.sellKind === "set"
               ? l.menuItem.setSteps.map((st) => ({
@@ -187,6 +189,8 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
           kitchenStationName: mi.kitchenStation?.name ?? null,
           cookTimerSec: mi.cookTimerSec != null && mi.cookTimerSec > 0 ? mi.cookTimerSec : null,
           cookTimerSec2: mi.cookTimerSec2 != null && mi.cookTimerSec2 > 0 ? mi.cookTimerSec2 : null,
+          imageUrl: mi.imageUrl ?? null,
+          recipe: mi.recipe ?? null,
           setFixedSteps: null,
           orderId: l.orderId,
           orderCreatedAt: l.order.createdAt,

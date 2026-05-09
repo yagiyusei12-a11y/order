@@ -590,6 +590,268 @@ function syncBillCorrectionSubUi() {
   });
 }
 
+/** ネット予約設定（旧 net-settings ページを設定タブに統合） */
+let nrConfigCache = null;
+let nrTablesCache = [];
+let nrReserveWired = false;
+
+function nrEl(id) {
+  return document.getElementById(id);
+}
+
+function nrDefaultBizWindows() {
+  return [
+    { startMin: 11 * 60, endMin: 15 * 60 },
+    { startMin: 17 * 60, endMin: 23 * 60 },
+  ];
+}
+
+function nrRenderBizWindows(windows) {
+  const host = nrEl("nrBizWindows");
+  if (!host) return;
+  host.innerHTML = "";
+  const arr = Array.isArray(windows) && windows.length ? windows : nrDefaultBizWindows();
+  arr.forEach((w) => nrAddBizWindowRow(w.startMin, w.endMin));
+  if (!host.children.length) nrAddBizWindowRow(11 * 60, 15 * 60);
+}
+
+function nrAddBizWindowRow(startMin, endMin) {
+  const host = nrEl("nrBizWindows");
+  if (!host) return;
+  const row = document.createElement("div");
+  row.className = "nr-row";
+  row.style.alignItems = "flex-end";
+  row.innerHTML =
+    "<label style=\"margin:0\">開始 <input type=\"time\" class=\"nr-biz-start\" value=\"" +
+    guestMinToTimeInputValue(startMin) +
+    "\" /></label>" +
+    "<label style=\"margin:0\">終了 <input type=\"time\" class=\"nr-biz-end\" value=\"" +
+    guestMinToTimeInputValue(endMin) +
+    "\" /></label>" +
+    "<button type=\"button\" class=\"btn-ghost nr-biz-del\" style=\"width:auto\">削除</button>";
+  row.querySelector(".nr-biz-del").onclick = () => {
+    row.remove();
+    if (!host.children.length) nrAddBizWindowRow(11 * 60, 15 * 60);
+  };
+  host.appendChild(row);
+}
+
+function nrReadBizWindowsFromDom() {
+  const host = nrEl("nrBizWindows");
+  if (!host) return [];
+  const out = [];
+  for (const row of host.querySelectorAll(".nr-row")) {
+    const sm = timeInputValueToGuestMin(row.querySelector(".nr-biz-start")?.value || "");
+    const em = timeInputValueToGuestMin(row.querySelector(".nr-biz-end")?.value || "");
+    if (sm === null || em === null) continue;
+    if (sm >= em) continue;
+    out.push({ startMin: sm, endMin: em });
+  }
+  return out;
+}
+
+function nrNormalizeCodes(text) {
+  return String(text || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s);
+}
+
+async function loadNetReserveAll() {
+  const st = await fetch(`/reception/${encodeURIComponent(STORE)}/state?t=${Date.now()}`, { cache: "no-store" }).then((r) =>
+    r.json(),
+  );
+  nrConfigCache = st.config || {};
+
+  const t = await api(`/stores/${encodeURIComponent(STORE)}/tables`, { method: "GET" });
+  nrTablesCache = (t.tables || []).slice().sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+
+  const daysAhead = Number(nrConfigCache.netReserveDaysAhead ?? 30);
+  const enableNote = Boolean(nrConfigCache.netReserveEnableNote ?? true);
+
+  const da = nrEl("nrDaysAhead");
+  if (da) da.value = String(Number.isFinite(daysAhead) ? daysAhead : 30);
+  const en = nrEl("nrEnableNote");
+  if (en) en.checked = enableNote;
+
+  const slotM = Number(nrConfigCache.netReserveSlotMinutes);
+  const slotEl = nrEl("nrSlotMinutes");
+  if (slotEl) {
+    slotEl.value = String(Number.isFinite(slotM) ? Math.max(5, Math.min(60, Math.floor(slotM))) : 15);
+  }
+  const lunchEnd = Number(nrConfigCache.receptionShiftLunchEndHour);
+  const lunchEl = nrEl("nrShiftLunchEnd");
+  if (lunchEl) {
+    lunchEl.value = String(Number.isFinite(lunchEnd) ? Math.max(0, Math.min(23, Math.floor(lunchEnd))) : 15);
+  }
+  const fbEl = nrEl("nrFallbackTemplate");
+  if (fbEl) {
+    fbEl.checked = nrConfigCache.netReserveFallbackToTemplateWindows !== false;
+  }
+  const modeEl = nrEl("nrSeatTypeMode");
+  if (modeEl) {
+    modeEl.value = nrConfigCache.netReserveSeatTypeMode === "require_select" ? "require_select" : "any";
+  }
+  const priEl = nrEl("nrGuestSeatPriority");
+  if (priEl) {
+    const pri = nrConfigCache.receptionGuestSeatTypePriority;
+    priEl.value = Array.isArray(pri)
+      ? pri.map((x) => String(x == null ? "" : x).trim()).filter(Boolean).join("\n")
+      : "";
+  }
+  const rawW = nrConfigCache.netReserveBusinessWindows;
+  const wins = Array.isArray(rawW) && rawW.length ? rawW : nrDefaultBizWindows();
+  nrRenderBizWindows(wins);
+
+  nrRenderNetReserveTables();
+}
+
+function nrRenderNetReserveTables() {
+  const body = nrEl("nrTableBody");
+  if (!body) return;
+  body.innerHTML = "";
+  const codes = new Set(nrTablesCache.map((t) => String(t.publicCode)));
+  for (const t of nrTablesCache) {
+    const code = String(t.publicCode || "");
+    const cap = Number(t.capacity || 2);
+    const mergeArr = Array.isArray(t.mergeWith) ? t.mergeWith : [];
+    const mergeText = mergeArr.filter((x) => typeof x === "string").join(",");
+    const stype = String(t.seatType || "").trim();
+    const row = document.createElement("tr");
+    row.setAttribute("data-id", t.id);
+    row.innerHTML =
+      "<td class=\"nr-code\" title=\"" +
+      escapeHtml(code) +
+      "\">" +
+      escapeHtml(displayTableCode(code)) +
+      "</td>" +
+      "<td>" +
+      String(t.name || "") +
+      "</td>" +
+      "<td><input type=\"text\" value=\"" +
+      escapeHtml(stype) +
+      "\" class=\"nr-seat-type\" maxlength=\"40\" placeholder=\"例: テーブル\" title=\"ネット予約の種別。空欄は種別なし\"></td>" +
+      "<td><input type=\"number\" min=\"1\" max=\"99\" value=\"" +
+      (Number.isFinite(cap) ? cap : 2) +
+      "\" class=\"nr-cap\"></td>" +
+      "<td><input type=\"text\" value=\"" +
+      escapeHtml(mergeText) +
+      "\" class=\"nr-merge\" placeholder=\"例: T21,T22\"></td>";
+    body.appendChild(row);
+  }
+
+  body.querySelectorAll(".nr-merge").forEach((el) => {
+    el.addEventListener("blur", () => {
+      const vals = nrNormalizeCodes(el.value);
+      const bad = vals.filter((c) => !codes.has(c));
+      el.style.borderColor = bad.length ? "#ef4444" : "";
+    });
+  });
+}
+
+async function nrSaveNetReserveAll() {
+  const daysAhead = Number(nrEl("nrDaysAhead")?.value);
+  if (!Number.isFinite(daysAhead) || daysAhead < 0 || daysAhead > 365) {
+    alert("「何日先まで」は 0〜365 で入力してください。");
+    return;
+  }
+  const enableNote = Boolean(nrEl("nrEnableNote")?.checked);
+
+  const nextConfig = { ...(nrConfigCache || {}) };
+  nextConfig.netReserveDaysAhead = Math.floor(daysAhead);
+  nextConfig.netReserveEnableNote = enableNote;
+  const slotStep = Number(nrEl("nrSlotMinutes")?.value);
+  if (!Number.isFinite(slotStep) || slotStep < 5 || slotStep > 60) {
+    alert("予約枠の刻みは 5〜60 分で入力してください。");
+    return;
+  }
+  if (slotStep % 5 !== 0) {
+    alert("予約枠の刻みは 5 の倍数にしてください。");
+    return;
+  }
+  nextConfig.netReserveSlotMinutes = Math.floor(slotStep);
+  const lunchBoundary = Number(nrEl("nrShiftLunchEnd")?.value);
+  if (!Number.isFinite(lunchBoundary) || lunchBoundary < 0 || lunchBoundary > 23) {
+    alert("ランチ／ディナー境界は 0〜23 の整数で入力してください。");
+    return;
+  }
+  nextConfig.receptionShiftLunchEndHour = Math.floor(lunchBoundary);
+  nextConfig.netReserveFallbackToTemplateWindows = Boolean(nrEl("nrFallbackTemplate")?.checked);
+  const stm = nrEl("nrSeatTypeMode")?.value;
+  nextConfig.netReserveSeatTypeMode = stm === "require_select" ? "require_select" : "any";
+  const priLines = String(nrEl("nrGuestSeatPriority")?.value || "")
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  nextConfig.receptionGuestSeatTypePriority = priLines;
+  const biz = nrReadBizWindowsFromDom();
+  if (!biz.length) {
+    alert("営業時間帯を1つ以上、正しい開始・終了で入力してください。");
+    return;
+  }
+  nextConfig.netReserveBusinessWindows = biz;
+  await fetch(`/reception/${encodeURIComponent(STORE)}/event`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "updateConfig", payload: nextConfig }),
+  });
+
+  const codes = new Set(nrTablesCache.map((t) => String(t.publicCode)));
+  const tb = nrEl("nrTableBody");
+  const rows = tb ? Array.from(tb.querySelectorAll("tr")) : [];
+  for (const row of rows) {
+    const id = row.getAttribute("data-id");
+    if (!id) continue;
+    const cap = Number(row.querySelector(".nr-cap")?.value);
+    if (!Number.isFinite(cap) || cap < 1 || cap > 99) {
+      alert("収容人数は 1〜99 で入力してください。");
+      return;
+    }
+    const mergeVals = nrNormalizeCodes(row.querySelector(".nr-merge")?.value || "");
+    const bad = mergeVals.filter((c) => !codes.has(c));
+    if (bad.length) {
+      alert("合体可能の席コードが不正です: " + bad.join(", "));
+      return;
+    }
+    const seatType = String(row.querySelector(".nr-seat-type")?.value || "").trim();
+    await api(`/stores/${encodeURIComponent(STORE)}/tables/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ capacity: Math.floor(cap), mergeWith: mergeVals, seatType }),
+    });
+  }
+
+  alert("保存しました。");
+  await loadNetReserveAll();
+}
+
+function ensureNetReservePanel() {
+  if (!nrEl("nrDaysAhead")) return;
+  if (!nrReserveWired) {
+    nrReserveWired = true;
+    const btnReload = nrEl("btnNrReload");
+    if (btnReload) btnReload.onclick = () => loadNetReserveAll().catch((e) => alert(String(e.message || e)));
+    const btnSave = nrEl("btnNrSave");
+    if (btnSave) btnSave.onclick = () => nrSaveNetReserveAll().catch((e) => alert(String(e.message || e)));
+    const copyBtn = nrEl("btnNrCopyUrl");
+    if (copyBtn) {
+      copyBtn.onclick = async () => {
+        const v = nrEl("nrPublicUrl")?.value || "";
+        const full = location.origin + v;
+        try {
+          await navigator.clipboard.writeText(full);
+          alert("コピーしました:\n" + full);
+        } catch (_) {
+          prompt("このURLをコピーしてください:", full);
+        }
+      };
+    }
+    const btnBizAdd = nrEl("btnNrBizAdd");
+    if (btnBizAdd) btnBizAdd.onclick = () => nrAddBizWindowRow(11 * 60, 14 * 60);
+  }
+  loadNetReserveAll().catch((e) => alert(String(e.message || e)));
+}
+
 function initSettingsTabs() {
   const tabs = document.getElementById("settingsTabs");
   if (!tabs) return;
@@ -602,6 +864,7 @@ function initSettingsTabs() {
       const pk = p.getAttribute("data-stab-panel");
       p.style.display = pk === k ? "" : "none";
     }
+    if (k === "netReserve") ensureNetReservePanel();
   };
 
   btns.forEach((b) => {

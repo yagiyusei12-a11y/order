@@ -154,12 +154,9 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
 
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/reception/net-settings", async (req, reply) => {
     if (!(await assertStaffStore(req, reply))) return;
-    return staffHtml(
-      reply,
-      req.params.storeId,
-      "ネット予約設定",
-      "staff-body-reception-net-settings.html",
-      "staff-script-reception-net-settings.js"
+    return reply.redirect(
+      `/staff-app/${encodeURIComponent(req.params.storeId)}/settings#tab=netReserve`,
+      302,
     );
   });
 

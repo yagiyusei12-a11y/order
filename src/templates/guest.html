@@ -1361,6 +1361,32 @@
     let activeGuestCatId = "";
     let courseIncludedOnly = false;
     let guestShowEatModeTaxNote = false;
+    const guestServeLaterDefaults = {
+      guestServeLaterBlockTitle: "後から提供",
+      guestServeLaterSelectPlaceholder: "選択してください",
+      guestServeLaterWithMealLabel: "料理と一緒に出す",
+      guestServeLaterPairDrinkDessertLabel:
+        "後からメニューが2つ以上ある場合はドリンクとデザートは後から出す",
+      guestServeLaterPerStepOptionFormat: "{label} だけ後から",
+      guestServeLaterSingleRadioDeferFormat: "「{label}」は後から提供（別の明細・キッチン行・0円）",
+      guestServeLaterHelpSingle: "セット価格はそのままです。在庫切れキャンセルはセット全体まとめて行われます。",
+      guestServeLaterHelpMulti: "選んだ項目だけ別明細（0円）になります。キャンセルはセット全体です。",
+    };
+    let guestServeLaterCopy = Object.assign({}, guestServeLaterDefaults);
+    function syncGuestServeLaterCopyFromStore(store) {
+      const st = store || {};
+      for (const k of Object.keys(guestServeLaterDefaults)) {
+        const v = st[k];
+        guestServeLaterCopy[k] =
+          typeof v === "string" && String(v).trim() ? String(v).trim() : guestServeLaterDefaults[k];
+      }
+    }
+    /** 店舗設定の `{label}` をステップ名に置換し、表示用にエスケープ */
+    function guestServeLaterFillTemplate(template, rawLabel) {
+      const lab = String(rawLabel || "").trim() || "（項目）";
+      const filled = String(template || "").replace(/\{label\}/g, lab);
+      return escapeHtml(filled);
+    }
     function courseFilterStorageKey() {
       return "guestCourseIncludedOnly_" + String(TOKEN || "x");
     }
@@ -2984,43 +3010,65 @@
           bodyInner +=
             "<div class=\"guest-wiz-pane\" data-wiz-pane=\"1\">" +
             "<div class=\"opt-block\" data-serve-later-wrap>" +
-            "<div class=\"opt-block-head\"><strong>後から提供</strong><span class=\"tag-req\">必須</span></div>" +
+            "<div class=\"opt-block-head\"><strong>" +
+            escapeHtml(guestServeLaterCopy.guestServeLaterBlockTitle) +
+            "</strong><span class=\"tag-req\">必須</span></div>" +
             "<label class=\"opt-row\" style=\"cursor:pointer;margin:0\">" +
             "<input type=\"radio\" name=\"serve-later-mode\" value=\"with_meal\" data-serve-later-radio />" +
-            "<span class=\"opt-name\">料理と一緒に出す</span></label>" +
+            "<span class=\"opt-name\">" +
+            escapeHtml(guestServeLaterCopy.guestServeLaterWithMealLabel) +
+            "</span></label>" +
             "<label class=\"opt-row\" style=\"cursor:pointer;margin:0\">" +
             "<input type=\"radio\" name=\"serve-later-mode\" value=\"defer\" data-serve-later-radio />" +
-            "<span class=\"opt-name\">「" +
-            escapeHtml(deferrableSteps[0].label) +
-            "」は後から提供（別の明細・キッチン行・0円）</span></label>" +
-            "<p class=\"muted\" style=\"font-size:.68rem;margin:.35rem 0 0;line-height:1.35\">セット価格はそのままです。在庫切れキャンセルはセット全体まとめて行われます。</p>" +
+            "<span class=\"opt-name\">" +
+            guestServeLaterFillTemplate(
+              guestServeLaterCopy.guestServeLaterSingleRadioDeferFormat,
+              deferrableSteps[0].label,
+            ) +
+            "</span></label>" +
+            "<p class=\"muted\" style=\"font-size:.68rem;margin:.35rem 0 0;line-height:1.35\">" +
+            escapeHtml(guestServeLaterCopy.guestServeLaterHelpSingle) +
+            "</p>" +
             "</div></div>";
         } else if (deferrableSteps.length > 1) {
           let opts =
-            "<option value=\"\" disabled selected>選択してください</option>" +
-            "<option value=\"__with_meal__\">料理と一緒に出す</option>" +
+            "<option value=\"\" disabled selected>" +
+            escapeHtml(guestServeLaterCopy.guestServeLaterSelectPlaceholder) +
+            "</option>" +
+            "<option value=\"__with_meal__\">" +
+            escapeHtml(guestServeLaterCopy.guestServeLaterWithMealLabel) +
+            "</option>" +
             deferrableSteps
               .map(function (st) {
                 return (
                   "<option value=\"" +
                   escapeHtml(st.id) +
                   "\">" +
-                  escapeHtml(st.label) +
-                  " だけ後から</option>"
+                  guestServeLaterFillTemplate(
+                    guestServeLaterCopy.guestServeLaterPerStepOptionFormat,
+                    st.label,
+                  ) +
+                  "</option>"
                 );
               })
               .join("") +
             (ddCombo
-              ? "<option value=\"__pair_dd__\">後からメニューが2つ以上ある場合はドリンクとデザートは後から出す</option>"
+              ? "<option value=\"__pair_dd__\">" +
+                escapeHtml(guestServeLaterCopy.guestServeLaterPairDrinkDessertLabel) +
+                "</option>"
               : "");
           bodyInner +=
             "<div class=\"guest-wiz-pane\" data-wiz-pane=\"1\">" +
             "<div class=\"opt-block\" data-serve-later-wrap>" +
-            "<div class=\"opt-block-head\"><strong>後から提供</strong><span class=\"tag-req\">必須</span></div>" +
+            "<div class=\"opt-block-head\"><strong>" +
+            escapeHtml(guestServeLaterCopy.guestServeLaterBlockTitle) +
+            "</strong><span class=\"tag-req\">必須</span></div>" +
             "<select data-serve-later-select class=\"guest-select-serve-later\" style=\"width:100%;margin:.25rem 0;padding:.45rem;border-radius:8px;border:1px solid var(--border);font-size:.85rem\">" +
             opts +
             "</select>" +
-            "<p class=\"muted\" style=\"font-size:.68rem;margin:.35rem 0 0;line-height:1.35\">選んだ項目だけ別明細（0円）になります。キャンセルはセット全体です。</p>" +
+            "<p class=\"muted\" style=\"font-size:.68rem;margin:.35rem 0 0;line-height:1.35\">" +
+            escapeHtml(guestServeLaterCopy.guestServeLaterHelpMulti) +
+            "</p>" +
             "</div></div>";
         }
         bodyInner += eatModeHtml;
@@ -3532,6 +3580,7 @@
 
     async function loadMenu() {
       const data = await api("/guest/" + encodeURIComponent(TOKEN) + "/menu");
+      syncGuestServeLaterCopyFromStore(data.store);
       guestShowMenuPrices = !(data.store && data.store.showMenuPrices === false);
       menuPriceTaxMode = (data.store && data.store.menuPriceTaxMode) || "inclusive";
       coursePriceTaxMode = (data.store && data.store.coursePriceTaxMode) || menuPriceTaxMode || "inclusive";

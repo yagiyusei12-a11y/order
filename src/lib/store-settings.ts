@@ -61,6 +61,22 @@ export type StoreSettingsShape = {
   guestShowEatModeTaxNote: boolean;
   /** コース利用時、メニュー上の案内文（空ならアプリ既定文） */
   guestCourseMenuNotice: string;
+  /** ゲスト商品詳細の「後から提供」ブロック見出し */
+  guestServeLaterBlockTitle: string;
+  /** 複数 defer 時セレクトの未選択プレースホルダー */
+  guestServeLaterSelectPlaceholder: string;
+  /** 「料理と一緒に出す」（セレクト・単一 defer ラジオ共通） */
+  guestServeLaterWithMealLabel: string;
+  /** ドリンク+デザート同時後出しのセレクト 1 行（該当ステップがあるときのみ表示） */
+  guestServeLaterPairDrinkDessertLabel: string;
+  /** 各ステップ「〇〇だけ後から」行。`{label}` = ステップ名（HTML エスケープされる） */
+  guestServeLaterPerStepOptionFormat: string;
+  /** 単一 defer 時の「後から」ラジオ説明。`{label}` = ステップ名 */
+  guestServeLaterSingleRadioDeferFormat: string;
+  /** 単一 defer ブロック下の補足（小さめ文字） */
+  guestServeLaterHelpSingle: string;
+  /** 複数 defer セレクト下の補足 */
+  guestServeLaterHelpMulti: string;
   /**
    * true のとき、卓QR・スタッフのセッション新規開始でコース（時間パターン）が必須。
    * false のときコースなし開始が可能で、レジから後からコースを付与できる。
@@ -86,6 +102,28 @@ export function isBillCorrectionAllowed(settings: StoreSettingsShape, key: BillC
   return p[key] === true;
 }
 
+const GUEST_SERVE_LATER_DEFAULTS = {
+  guestServeLaterBlockTitle: "後から提供",
+  guestServeLaterSelectPlaceholder: "選択してください",
+  guestServeLaterWithMealLabel: "料理と一緒に出す",
+  guestServeLaterPairDrinkDessertLabel:
+    "後からメニューが2つ以上ある場合はドリンクとデザートは後から出す",
+  guestServeLaterPerStepOptionFormat: "{label} だけ後から",
+  guestServeLaterSingleRadioDeferFormat: "「{label}」は後から提供（別の明細・キッチン行・0円）",
+  guestServeLaterHelpSingle: "セット価格はそのままです。在庫切れキャンセルはセット全体まとめて行われます。",
+  guestServeLaterHelpMulti: "選んだ項目だけ別明細（0円）になります。キャンセルはセット全体です。",
+} as const;
+
+function mergeGuestServeLaterString(
+  raw: unknown,
+  maxLen: number,
+  fallback: string,
+): string {
+  if (typeof raw !== "string") return fallback;
+  const t = raw.trim().slice(0, maxLen);
+  return t.length ? t : fallback;
+}
+
 export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
   const d: StoreSettingsShape = {
     kitchenAutoRefreshSec: 10,
@@ -104,6 +142,16 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     guestCourseAddonAllowTakeout: true,
     guestShowEatModeTaxNote: false,
     guestCourseMenuNotice: "",
+    guestServeLaterBlockTitle: GUEST_SERVE_LATER_DEFAULTS.guestServeLaterBlockTitle,
+    guestServeLaterSelectPlaceholder: GUEST_SERVE_LATER_DEFAULTS.guestServeLaterSelectPlaceholder,
+    guestServeLaterWithMealLabel: GUEST_SERVE_LATER_DEFAULTS.guestServeLaterWithMealLabel,
+    guestServeLaterPairDrinkDessertLabel:
+      GUEST_SERVE_LATER_DEFAULTS.guestServeLaterPairDrinkDessertLabel,
+    guestServeLaterPerStepOptionFormat: GUEST_SERVE_LATER_DEFAULTS.guestServeLaterPerStepOptionFormat,
+    guestServeLaterSingleRadioDeferFormat:
+      GUEST_SERVE_LATER_DEFAULTS.guestServeLaterSingleRadioDeferFormat,
+    guestServeLaterHelpSingle: GUEST_SERVE_LATER_DEFAULTS.guestServeLaterHelpSingle,
+    guestServeLaterHelpMulti: GUEST_SERVE_LATER_DEFAULTS.guestServeLaterHelpMulti,
     requireCourseWhenStartingSession: false,
     takeoutPickupTimeWindowIds: [],
     opsDiscountPresets: [],
@@ -174,6 +222,46 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
   if (typeof o.guestCourseMenuNotice === "string") {
     d.guestCourseMenuNotice = o.guestCourseMenuNotice.trim().slice(0, 800);
   }
+  d.guestServeLaterBlockTitle = mergeGuestServeLaterString(
+    o.guestServeLaterBlockTitle,
+    120,
+    GUEST_SERVE_LATER_DEFAULTS.guestServeLaterBlockTitle,
+  );
+  d.guestServeLaterSelectPlaceholder = mergeGuestServeLaterString(
+    o.guestServeLaterSelectPlaceholder,
+    120,
+    GUEST_SERVE_LATER_DEFAULTS.guestServeLaterSelectPlaceholder,
+  );
+  d.guestServeLaterWithMealLabel = mergeGuestServeLaterString(
+    o.guestServeLaterWithMealLabel,
+    120,
+    GUEST_SERVE_LATER_DEFAULTS.guestServeLaterWithMealLabel,
+  );
+  d.guestServeLaterPairDrinkDessertLabel = mergeGuestServeLaterString(
+    o.guestServeLaterPairDrinkDessertLabel,
+    200,
+    GUEST_SERVE_LATER_DEFAULTS.guestServeLaterPairDrinkDessertLabel,
+  );
+  d.guestServeLaterPerStepOptionFormat = mergeGuestServeLaterString(
+    o.guestServeLaterPerStepOptionFormat,
+    300,
+    GUEST_SERVE_LATER_DEFAULTS.guestServeLaterPerStepOptionFormat,
+  );
+  d.guestServeLaterSingleRadioDeferFormat = mergeGuestServeLaterString(
+    o.guestServeLaterSingleRadioDeferFormat,
+    300,
+    GUEST_SERVE_LATER_DEFAULTS.guestServeLaterSingleRadioDeferFormat,
+  );
+  d.guestServeLaterHelpSingle = mergeGuestServeLaterString(
+    o.guestServeLaterHelpSingle,
+    500,
+    GUEST_SERVE_LATER_DEFAULTS.guestServeLaterHelpSingle,
+  );
+  d.guestServeLaterHelpMulti = mergeGuestServeLaterString(
+    o.guestServeLaterHelpMulti,
+    500,
+    GUEST_SERVE_LATER_DEFAULTS.guestServeLaterHelpMulti,
+  );
   if (typeof o.requireCourseWhenStartingSession === "boolean") {
     d.requireCourseWhenStartingSession = o.requireCourseWhenStartingSession;
   }

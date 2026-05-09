@@ -184,6 +184,27 @@
         ゲスト画面のメニュー上部に表示されます（コース卓のみ）。
       </p>
       <textarea id="stGuestCourseMenuNotice" rows="3" maxlength="800" placeholder="空欄のときは既定の説明文を表示" style="width:100%;max-width:40rem;box-sizing:border-box;font-family:inherit;font-size:0.85rem"></textarea>
+      <hr style="border:none;border-top:1px solid var(--border);margin:1rem 0 0.65rem" />
+      <strong style="font-size:0.85rem">ゲスト商品詳細・後から提供の文言</strong>
+      <p class="muted" style="font-size:0.72rem;margin:0.25rem 0 0.5rem">
+        セットで「後から提供」があるときの見出し・選択肢です。<code>{label}</code> はセット項目名に置き換わります。
+      </p>
+      <label for="stGuestServeLaterBlockTitle">ブロック見出し</label>
+      <input id="stGuestServeLaterBlockTitle" type="text" maxlength="120" style="width:100%;max-width:40rem;box-sizing:border-box;margin-bottom:0.45rem" />
+      <label for="stGuestServeLaterSelectPlaceholder">セレクト未選択時（複数 defer）</label>
+      <input id="stGuestServeLaterSelectPlaceholder" type="text" maxlength="120" style="width:100%;max-width:40rem;box-sizing:border-box;margin-bottom:0.45rem" />
+      <label for="stGuestServeLaterWithMealLabel">「料理と一緒に出す」ラベル</label>
+      <input id="stGuestServeLaterWithMealLabel" type="text" maxlength="120" style="width:100%;max-width:40rem;box-sizing:border-box;margin-bottom:0.45rem" />
+      <label for="stGuestServeLaterPairDrinkDessertLabel">ドリンク＋デザート同時後出し（該当セットのみ表示）</label>
+      <input id="stGuestServeLaterPairDrinkDessertLabel" type="text" maxlength="200" style="width:100%;max-width:40rem;box-sizing:border-box;margin-bottom:0.45rem" />
+      <label for="stGuestServeLaterPerStepOptionFormat">各項目「だけ後から」行（テンプレート）</label>
+      <input id="stGuestServeLaterPerStepOptionFormat" type="text" maxlength="300" placeholder="{label} だけ後から" style="width:100%;max-width:40rem;box-sizing:border-box;margin-bottom:0.45rem" />
+      <label for="stGuestServeLaterSingleRadioDeferFormat">単一 defer 時「後から」ラジオ（テンプレート）</label>
+      <input id="stGuestServeLaterSingleRadioDeferFormat" type="text" maxlength="300" placeholder="「{label}」は後から…" style="width:100%;max-width:40rem;box-sizing:border-box;margin-bottom:0.45rem" />
+      <label for="stGuestServeLaterHelpSingle">補足文・単一 defer（小さめ）</label>
+      <textarea id="stGuestServeLaterHelpSingle" rows="2" maxlength="500" style="width:100%;max-width:40rem;box-sizing:border-box;font-family:inherit;font-size:0.85rem;margin-bottom:0.45rem"></textarea>
+      <label for="stGuestServeLaterHelpMulti">補足文・複数 defer セレクト下（小さめ）</label>
+      <textarea id="stGuestServeLaterHelpMulti" rows="2" maxlength="500" style="width:100%;max-width:40rem;box-sizing:border-box;font-family:inherit;font-size:0.85rem"></textarea>
       <button type="button" class="btn-primary" id="btnSaveGuestCourseTakeout" style="margin-top:0.65rem">ゲスト（コース・テイクアウト）を保存</button>
     </div>
 

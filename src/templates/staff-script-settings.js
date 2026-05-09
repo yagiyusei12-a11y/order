@@ -648,6 +648,22 @@ async function loadAll() {
   if (getn) getn.checked = s.guestShowEatModeTaxNote === true;
   const gcm = document.getElementById("stGuestCourseMenuNotice");
   if (gcm) gcm.value = typeof s.guestCourseMenuNotice === "string" ? s.guestCourseMenuNotice : "";
+  const slBt = document.getElementById("stGuestServeLaterBlockTitle");
+  if (slBt) slBt.value = typeof s.guestServeLaterBlockTitle === "string" ? s.guestServeLaterBlockTitle : "";
+  const slPh = document.getElementById("stGuestServeLaterSelectPlaceholder");
+  if (slPh) slPh.value = typeof s.guestServeLaterSelectPlaceholder === "string" ? s.guestServeLaterSelectPlaceholder : "";
+  const slWm = document.getElementById("stGuestServeLaterWithMealLabel");
+  if (slWm) slWm.value = typeof s.guestServeLaterWithMealLabel === "string" ? s.guestServeLaterWithMealLabel : "";
+  const slPd = document.getElementById("stGuestServeLaterPairDrinkDessertLabel");
+  if (slPd) slPd.value = typeof s.guestServeLaterPairDrinkDessertLabel === "string" ? s.guestServeLaterPairDrinkDessertLabel : "";
+  const slPs = document.getElementById("stGuestServeLaterPerStepOptionFormat");
+  if (slPs) slPs.value = typeof s.guestServeLaterPerStepOptionFormat === "string" ? s.guestServeLaterPerStepOptionFormat : "";
+  const slSr = document.getElementById("stGuestServeLaterSingleRadioDeferFormat");
+  if (slSr) slSr.value = typeof s.guestServeLaterSingleRadioDeferFormat === "string" ? s.guestServeLaterSingleRadioDeferFormat : "";
+  const slH1 = document.getElementById("stGuestServeLaterHelpSingle");
+  if (slH1) slH1.value = typeof s.guestServeLaterHelpSingle === "string" ? s.guestServeLaterHelpSingle : "";
+  const slH2 = document.getElementById("stGuestServeLaterHelpMulti");
+  if (slH2) slH2.value = typeof s.guestServeLaterHelpMulti === "string" ? s.guestServeLaterHelpMulti : "";
   const crs = document.getElementById("stRequireCourseStart");
   if (crs) crs.checked = s.requireCourseWhenStartingSession === true;
   const incOpt = document.getElementById("stIncOptCharge");
@@ -1536,6 +1552,22 @@ if (btnSaveGuestCourseTakeout) {
     const guestCourseAddonAllowTakeout = document.getElementById("stGuestCourseAddonTakeout").checked;
     const guestShowEatModeTaxNote = document.getElementById("stGuestEatModeTaxNote").checked;
     let guestCourseMenuNotice = String(document.getElementById("stGuestCourseMenuNotice").value || "").trim().slice(0, 800);
+    const guestServeLaterBlockTitle = String(document.getElementById("stGuestServeLaterBlockTitle").value || "").trim().slice(0, 120);
+    const guestServeLaterSelectPlaceholder = String(document.getElementById("stGuestServeLaterSelectPlaceholder").value || "").trim().slice(0, 120);
+    const guestServeLaterWithMealLabel = String(document.getElementById("stGuestServeLaterWithMealLabel").value || "").trim().slice(0, 120);
+    const guestServeLaterPairDrinkDessertLabel = String(
+      document.getElementById("stGuestServeLaterPairDrinkDessertLabel").value || "",
+    )
+      .trim()
+      .slice(0, 200);
+    const guestServeLaterPerStepOptionFormat = String(document.getElementById("stGuestServeLaterPerStepOptionFormat").value || "")
+      .trim()
+      .slice(0, 300);
+    const guestServeLaterSingleRadioDeferFormat = String(document.getElementById("stGuestServeLaterSingleRadioDeferFormat").value || "")
+      .trim()
+      .slice(0, 300);
+    const guestServeLaterHelpSingle = String(document.getElementById("stGuestServeLaterHelpSingle").value || "").trim().slice(0, 500);
+    const guestServeLaterHelpMulti = String(document.getElementById("stGuestServeLaterHelpMulti").value || "").trim().slice(0, 500);
     try {
       await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
         method: "PATCH",
@@ -1546,6 +1578,14 @@ if (btnSaveGuestCourseTakeout) {
             guestCourseAddonAllowTakeout,
             guestShowEatModeTaxNote,
             guestCourseMenuNotice: guestCourseMenuNotice || "",
+            guestServeLaterBlockTitle,
+            guestServeLaterSelectPlaceholder,
+            guestServeLaterWithMealLabel,
+            guestServeLaterPairDrinkDessertLabel,
+            guestServeLaterPerStepOptionFormat,
+            guestServeLaterSingleRadioDeferFormat,
+            guestServeLaterHelpSingle,
+            guestServeLaterHelpMulti,
           },
         }),
       });

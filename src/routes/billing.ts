@@ -697,6 +697,44 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     return updated;
   });
 
+  /**
+   * 精算ミス時: 入金をすべて削除し伝票をオープンに戻す。バッシング待ち／終了済みセッションはレジ再操作のため open に戻す。
+   */
+  app.post<{
+    Params: { storeId: string; billId: string };
+  }>("/stores/:storeId/bills/:billId/reopen-for-register", async (req, reply) => {
+    const bill = await prisma.bill.findFirst({
+      where: { id: req.params.billId, storeId: req.params.storeId },
+      include: { payments: true },
+    });
+    if (!bill) return reply.code(404).send({ error: "bill not found" });
+    if (bill.status !== "settled") {
+      return reply.code(400).send({ error: "精算済みの伝票だけ取り消せます" });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.payment.deleteMany({ where: { billId: bill.id } });
+      await tx.bill.update({
+        where: { id: bill.id },
+        data: { status: "open", settledAt: null },
+      });
+      if (bill.sessionId) {
+        const sess = await tx.diningSession.findFirst({
+          where: { id: bill.sessionId, storeId: bill.storeId },
+        });
+        if (sess && (sess.status === "bashing_waiting" || sess.status === "closed")) {
+          await tx.diningSession.update({
+            where: { id: sess.id },
+            data: { status: "open", closedAt: null },
+          });
+        }
+      }
+    });
+
+    const payload = await buildBillDetailPayload(req.params.storeId, bill.id);
+    return { ok: true, bill: payload };
+  });
+
   app.post<{
     Params: { storeId: string; billId: string };
     Body: { lines: { methodCode: string; amount: number; note?: string }[] };

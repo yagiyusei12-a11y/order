@@ -589,6 +589,9 @@ async function renderReceiptBox() {
           "<button type=\"button\" class=\"btn-ghost rx-print\" style=\"padding:0.28rem 0.45rem;font-size:0.78rem\" data-rx-kind=\"invoice\" data-bill-id=\"" +
           idAttr +
           "\">領収書</button>" +
+          "<button type=\"button\" class=\"btn-ghost rx-reopen\" style=\"padding:0.28rem 0.45rem;font-size:0.78rem;color:#9a3412;border-color:#fdba74;background:#fffbeb;font-weight:700\" data-bill-id=\"" +
+          idAttr +
+          "\">レジに戻す</button>" +
           "</span></td>" +
           "</tr>"
         );
@@ -596,7 +599,7 @@ async function renderReceiptBox() {
       .join("");
     listEl.innerHTML =
       "<table class=\"ops-receipt-table\"><thead><tr>" +
-      "<th>伝票</th><th>卓</th><th>精算</th><th style=\"text-align:right\">合計</th><th></th>" +
+      "<th>伝票</th><th>卓</th><th>精算</th><th style=\"text-align:right\">合計</th><th style=\"min-width:14rem\">操作</th>" +
       "</tr></thead><tbody>" +
       rows +
       "</tbody></table>";
@@ -609,6 +612,26 @@ async function renderReceiptBox() {
           const detail = await api(billPath(id));
           if (kind === "invoice") printHtml(buildInvoiceDoc(detail, changeAmountFromBillDetail(detail)));
           else printHtml(buildReceiptDoc(detail));
+        } catch (e) {
+          log(String(e.message || e));
+        }
+      };
+    });
+    listEl.querySelectorAll("button.rx-reopen").forEach((btn) => {
+      btn.onclick = async () => {
+        const id = btn.getAttribute("data-bill-id");
+        if (!id) return;
+        if (
+          !confirm(
+            "この伝票の入金記録をすべて削除し、未精算の状態に戻します。\nバッシング待ち／終了済みの場合は卓を「利用中」に戻します。\nよろしいですか？"
+          )
+        ) {
+          return;
+        }
+        try {
+          await api(billPath(id) + "/reopen-for-register", { method: "POST" });
+          log("レジ前の状態に戻しました（入金は削除済み）");
+          await loadAll();
         } catch (e) {
           log(String(e.message || e));
         }

@@ -70,6 +70,8 @@ async function buildBillDetailPayload(
     labelJa: string;
     amount: number;
     note: string | null;
+    voidedAt: Date | null;
+    voidReason: string | null;
     createdAt: Date;
   }[];
   preview: BillPreviewPayload | null;
@@ -133,7 +135,7 @@ async function buildBillDetailPayload(
   const defs = await prisma.paymentMethodDefinition.findMany();
   const labelByCode = Object.fromEntries(defs.map((d) => [d.code, d.labelJa]));
 
-  const paid = bill.payments.reduce((s, p) => s + p.amount, 0);
+  const paid = bill.payments.reduce((s, p) => s + (p.voidedAt ? 0 : p.amount), 0);
   const remainder = bill.totalAmount - paid;
 
   const paymentsOut = bill.payments.map((p) => ({
@@ -142,6 +144,8 @@ async function buildBillDetailPayload(
     labelJa: labelByCode[p.methodCode] ?? p.methodCode,
     amount: p.amount,
     note: p.note,
+    voidedAt: p.voidedAt ?? null,
+    voidReason: p.voidReason ?? null,
     createdAt: p.createdAt,
   }));
 
@@ -241,6 +245,33 @@ async function buildBillDetailPayload(
 }
 
 export async function registerBilling(app: FastifyInstance): Promise<void> {
+  function staffUserIdFromReq(req: { user?: unknown }): string | null {
+    const u = req.user as { sub?: unknown } | undefined;
+    const sub = u && typeof u.sub === "string" ? u.sub : "";
+    return sub || null;
+  }
+
+  async function logBillEvent(
+    storeId: string,
+    billId: string,
+    kind: string,
+    payload: unknown,
+    staffUserId: string | null,
+  ): Promise<void> {
+    try {
+      await prisma.billCorrectionEvent.create({
+        data: {
+          storeId,
+          billId,
+          kind,
+          payload: payload as Prisma.InputJsonValue,
+          ...(staffUserId ? { staffUserId } : {}),
+        },
+      });
+    } catch {
+      // イベント記録失敗は会計処理を止めない（監査は best-effort）
+    }
+  }
   app.get<{
     Params: { storeId: string };
     Querystring: {
@@ -279,7 +310,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
         storeId: store.id,
         ...(status === "open" || status === "settled" || status === "void" ? { status } : {}),
         ...(settledAtRange.gte || settledAtRange.lt ? { settledAt: settledAtRange } : {}),
-        ...(methodCode ? { payments: { some: { methodCode } } } : {}),
+        ...(methodCode ? { payments: { some: { methodCode, voidedAt: null } } } : {}),
       },
       orderBy:
         sortSettled && status === "settled"
@@ -295,7 +326,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     return {
       storeId: store.id,
       bills: bills.map((b) => {
-        const paid = b.payments.reduce((s, p) => s + p.amount, 0);
+        const paid = b.payments.reduce((s, p) => s + (p.voidedAt ? 0 : p.amount), 0);
         return {
           id: b.id,
           totalAmount: b.totalAmount,
@@ -309,7 +340,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
           settledAt: b.settledAt,
           paidTotal: paid,
           remainder: b.totalAmount - paid,
-          paymentMethodCodes: [...new Set(b.payments.map((p) => p.methodCode))],
+          paymentMethodCodes: [...new Set(b.payments.filter((p) => !p.voidedAt).map((p) => p.methodCode))],
         };
       }),
     };
@@ -532,6 +563,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
           status: "settled",
           ...(settledAtRange.gte || settledAtRange.lt ? { settledAt: settledAtRange } : {}),
         },
+        voidedAt: null,
       },
     });
 
@@ -688,6 +720,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
           )
         : 0;
     const suggested = computeSessionSuggestedTotal(courseTotal, bill.session.orders, parsed).suggestedTotal;
+    const staffUserId = staffUserIdFromReq(req);
     await prisma.bill.update({
       where: { id: bill.id },
       data: {
@@ -697,6 +730,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
         totalAmount: suggested,
       },
     });
+    await logBillEvent(bill.storeId, bill.id, "bill_discount_set", { discount: raw }, staffUserId);
     const payload = await buildBillDetailPayload(req.params.storeId, bill.id);
     return { ok: true, bill: payload };
   });
@@ -744,6 +778,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "一部の明細がこの伝票に含まれません" });
     }
 
+    const staffUserId = staffUserIdFromReq(req);
     await prisma.$transaction(async (tx) => {
       for (const id of lineIds) {
         await tx.orderLine.update({
@@ -753,6 +788,19 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
               parsed === null ? Prisma.DbNull : (parsed as unknown as Prisma.InputJsonValue),
           },
         });
+      }
+      try {
+        await tx.billCorrectionEvent.create({
+          data: {
+            storeId: bill.storeId,
+            billId: bill.id,
+            kind: "line_discount_set",
+            payload: { lineIds, discount: raw } as Prisma.InputJsonValue,
+            ...(staffUserId ? { staffUserId } : {}),
+          },
+        });
+      } catch {
+        // ignore
       }
       const session = await tx.diningSession.findFirst({
         where: { id: bill.sessionId!, storeId: bill.storeId },
@@ -808,6 +856,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     if (line.status === "cancelled") return reply.code(400).send({ error: "order line already cancelled" });
 
     const setStockZero = req.body?.setStockZero === true;
+    const staffUserId = staffUserIdFromReq(req);
     const updated = await prisma.$transaction(async (tx) => {
       const next = await tx.orderLine.update({
         where: { id: line.id },
@@ -816,6 +865,19 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
           note: line.note ? `${line.note} / 在庫切れキャンセル` : "在庫切れキャンセル",
         },
       });
+      try {
+        await tx.billCorrectionEvent.create({
+          data: {
+            storeId: bill.storeId,
+            billId: bill.id,
+            kind: "line_cancel",
+            payload: { lineId: line.id, setStockZero } as Prisma.InputJsonValue,
+            ...(staffUserId ? { staffUserId } : {}),
+          },
+        });
+      } catch {
+        // ignore
+      }
 
       if (line.menuItemId) {
         const item = await tx.menuItem.findUnique({ where: { id: line.menuItemId } });
@@ -861,6 +923,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     if (!line) return reply.code(404).send({ error: "order line not found for this bill" });
     if (line.status === "cancelled") return reply.code(400).send({ error: "order line already cancelled" });
     const diff = nextQty - line.qty;
+    const staffUserId = staffUserIdFromReq(req);
     const updated = await prisma.$transaction(async (tx) => {
       if (diff > 0 && line.menuItemId) {
         const it = await tx.menuItem.findUnique({ where: { id: line.menuItemId } });
@@ -883,7 +946,21 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
           });
         }
       }
-      return tx.orderLine.update({ where: { id: line.id }, data: { qty: nextQty } });
+      const next = await tx.orderLine.update({ where: { id: line.id }, data: { qty: nextQty } });
+      try {
+        await tx.billCorrectionEvent.create({
+          data: {
+            storeId: bill.storeId,
+            billId: bill.id,
+            kind: "line_qty_set",
+            payload: { lineId: line.id, fromQty: line.qty, toQty: nextQty } as Prisma.InputJsonValue,
+            ...(staffUserId ? { staffUserId } : {}),
+          },
+        });
+      } catch {
+        // ignore
+      }
+      return next;
     }).catch((e: Error) => {
       if (e.message === "BAD_STOCK") return null;
       throw e;
@@ -904,7 +981,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     if (!bill) return reply.code(404).send({ error: "bill not found" });
     if (bill.status === "void") return reply.code(400).send({ error: "cannot edit void bill" });
 
-    const paid = bill.payments.reduce((s, p) => s + p.amount, 0);
+    const paid = bill.payments.reduce((s, p) => s + (p.voidedAt ? 0 : p.amount), 0);
     const wantsTotal = typeof req.body?.totalAmount === "number";
     if ((bill.status === "settled" || paid > 0) && wantsTotal) {
       return reply.code(400).send({ error: "cannot change totalAmount after payments recorded" });
@@ -937,7 +1014,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     if (!bill) return reply.code(404).send({ error: "bill not found" });
     if (bill.status === "void") return reply.code(400).send({ error: "already void" });
     if (bill.status === "settled") return reply.code(400).send({ error: "cannot void settled bill" });
-    const paid = bill.payments.reduce((s, p) => s + p.amount, 0);
+    const paid = bill.payments.reduce((s, p) => s + (p.voidedAt ? 0 : p.amount), 0);
     if (paid > 0) return reply.code(400).send({ error: "cannot void bill with payments" });
 
     const tbl = bill.session?.table;
@@ -955,6 +1032,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
         label,
       },
     });
+    await logBillEvent(bill.storeId, bill.id, "bill_void", { billId: bill.id }, staffUserIdFromReq(req));
     return updated;
   });
 
@@ -973,8 +1051,30 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "精算済みの伝票だけ取り消せます" });
     }
 
+    const staffUserId = staffUserIdFromReq(req);
     await prisma.$transaction(async (tx) => {
-      await tx.payment.deleteMany({ where: { billId: bill.id } });
+      // 既存支払いは削除せず void 扱い（履歴維持）
+      await tx.payment.updateMany({
+        where: { billId: bill.id, voidedAt: null },
+        data: {
+          voidedAt: new Date(),
+          voidReason: "reopen-for-register",
+          ...(staffUserId ? { voidedByStaffUserId: staffUserId } : {}),
+        },
+      });
+      try {
+        await tx.billCorrectionEvent.create({
+          data: {
+            storeId: bill.storeId,
+            billId: bill.id,
+            kind: "bill_reopen_for_register",
+            payload: { billId: bill.id } as Prisma.InputJsonValue,
+            ...(staffUserId ? { staffUserId } : {}),
+          },
+        });
+      } catch {
+        // ignore
+      }
       await tx.bill.update({
         where: { id: bill.id },
         data: { status: "open", settledAt: null },
@@ -1028,8 +1128,9 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       }
     }
 
+    const staffUserId = staffUserIdFromReq(req);
     const created = await prisma.$transaction(async (tx) => {
-      const existing = await tx.payment.findMany({ where: { billId: bill.id } });
+      const existing = await tx.payment.findMany({ where: { billId: bill.id, voidedAt: null } });
       const existingPaid = existing.reduce((s, p) => s + p.amount, 0);
       const newSum = lines.reduce((s, l) => s + l.amount, 0);
       if (existingPaid + newSum > bill.totalAmount) {
@@ -1038,16 +1139,28 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
 
       const payments = [];
       for (const l of lines) {
-        payments.push(
-          await tx.payment.create({
+        const p = await tx.payment.create({
+          data: {
+            billId: bill.id,
+            methodCode: l.methodCode,
+            amount: l.amount,
+            note: l.note ?? null,
+          },
+        });
+        payments.push(p);
+        try {
+          await tx.billCorrectionEvent.create({
             data: {
+              storeId: bill.storeId,
               billId: bill.id,
-              methodCode: l.methodCode,
-              amount: l.amount,
-              note: l.note ?? null,
+              kind: "payment_add",
+              payload: { paymentId: p.id, methodCode: p.methodCode, amount: p.amount, note: p.note } as Prisma.InputJsonValue,
+              ...(staffUserId ? { staffUserId } : {}),
             },
-          })
-        );
+          });
+        } catch {
+          // ignore
+        }
       }
 
       const paidAfter = existingPaid + newSum;
@@ -1077,9 +1190,88 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       where: { id: bill.id },
       include: { payments: true },
     });
-    const paidTotal = updated!.payments.reduce((s, p) => s + p.amount, 0);
+    const paidTotal = updated!.payments.reduce((s, p) => s + (p.voidedAt ? 0 : p.amount), 0);
     return { payments: created, bill: { ...updated, paidTotal, remainder: updated!.totalAmount - paidTotal } };
   });
+
+  /**
+   * 支払いの取消（履歴を残す）
+   */
+  app.post<{
+    Params: { storeId: string; billId: string; paymentId: string };
+    Body: { reason?: string };
+  }>("/stores/:storeId/bills/:billId/payments/:paymentId/void", async (req, reply) => {
+    const bill = await prisma.bill.findFirst({
+      where: { id: req.params.billId, storeId: req.params.storeId },
+    });
+    if (!bill) return reply.code(404).send({ error: "bill not found" });
+    if (bill.status === "void") return reply.code(400).send({ error: "bill is void" });
+    const staffUserId = staffUserIdFromReq(req);
+    const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 200) : null;
+
+    const out = await prisma.$transaction(async (tx) => {
+      const p = await tx.payment.findFirst({
+        where: { id: req.params.paymentId, billId: bill.id },
+      });
+      if (!p) return { ok: false as const, error: "payment not found" };
+      if (p.voidedAt) return { ok: false as const, error: "payment already voided" };
+      const updated = await tx.payment.update({
+        where: { id: p.id },
+        data: { voidedAt: new Date(), voidReason: reason, ...(staffUserId ? { voidedByStaffUserId: staffUserId } : {}) },
+      });
+      await tx.billCorrectionEvent.create({
+        data: {
+          storeId: bill.storeId,
+          billId: bill.id,
+          kind: "payment_void",
+          payload: { paymentId: updated.id, methodCode: updated.methodCode, amount: updated.amount, reason } as Prisma.InputJsonValue,
+          ...(staffUserId ? { staffUserId } : {}),
+        },
+      });
+
+      const remainPaid = await tx.payment.aggregate({
+        where: { billId: bill.id, voidedAt: null },
+        _sum: { amount: true },
+      });
+      const paidTotal = remainPaid._sum.amount ?? 0;
+      const shouldSettle = paidTotal === bill.totalAmount;
+      await tx.bill.update({
+        where: { id: bill.id },
+        data: { status: shouldSettle ? "settled" : "open", settledAt: shouldSettle ? bill.settledAt ?? new Date() : null },
+      });
+      return { ok: true as const };
+    });
+    if (!out.ok) return reply.code(400).send({ error: out.error });
+    const payload = await buildBillDetailPayload(req.params.storeId, bill.id);
+    return { ok: true, bill: payload };
+  });
+
+  /**
+   * 伝票の修正履歴
+   */
+  app.get<{ Params: { storeId: string; billId: string } }>(
+    "/stores/:storeId/bills/:billId/events",
+    async (req, reply) => {
+      const bill = await prisma.bill.findFirst({ where: { id: req.params.billId, storeId: req.params.storeId } });
+      if (!bill) return reply.code(404).send({ error: "bill not found" });
+      const events = await prisma.billCorrectionEvent.findMany({
+        where: { billId: bill.id, storeId: bill.storeId },
+        orderBy: { createdAt: "desc" },
+        take: 200,
+        include: { staffUser: { select: { email: true, name: true } } },
+      });
+      return {
+        billId: bill.id,
+        events: events.map((e) => ({
+          id: e.id,
+          kind: e.kind,
+          payload: e.payload,
+          createdAt: e.createdAt,
+          staff: e.staffUser ? { email: e.staffUser.email, name: e.staffUser.name } : null,
+        })),
+      };
+    },
+  );
 
   // reports/payments-by-method は settledAt 基準の from/to 版に統一（上で定義）
 }

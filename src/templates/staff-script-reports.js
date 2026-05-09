@@ -249,6 +249,9 @@ async function openBillModal(billId) {
   const host = document.getElementById("repBillModal");
   if (!host) return;
   const detail = await api("/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(billId));
+  const events = await api(
+    "/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(billId) + "/events"
+  ).catch(() => ({ events: [] }));
   const backdrop = document.createElement("div");
   backdrop.style.cssText =
     "position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:1rem;";
@@ -265,7 +268,180 @@ async function openBillModal(billId) {
     escapeHtml(detail.status) +
     " / 合計: " +
     Number(detail.totalAmount || 0).toLocaleString(\"ja-JP\") +
-    " 円</div>";
+    " 円</div>" +
+    "<div class=\"row\" style=\"gap:0.35rem;flex-wrap:wrap;margin-top:0.6rem\">" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"tabView\" style=\"width:auto\">閲覧</button>" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"tabEdit\" style=\"width:auto;border-color:#93c5fd;font-weight:700\">修正</button>" +
+    "</div>" +
+    "<div id=\"billTabView\" style=\"margin-top:0.75rem\"></div>" +
+    "<div id=\"billTabEdit\" style=\"margin-top:0.75rem;display:none\"></div>";
+
+  function renderView() {
+    const box = panel.querySelector("#billTabView");
+    if (!box) return;
+    const pays = (detail.payments || []).slice();
+    let payHtml = "<div class=\"muted\" style=\"font-size:0.78rem;margin:0.35rem 0\">支払い</div>";
+    if (!pays.length) payHtml += "<div class=\"muted\">支払いなし</div>";
+    else {
+      payHtml += "<table style=\"width:100%;border-collapse:collapse;font-size:0.86rem\">";
+      for (const p of pays) {
+        payHtml +=
+          "<tr><td style=\"padding:0.25rem 0\">" +
+          escapeHtml(p.labelJa || p.methodCode) +
+          (p.voidedAt ? " <span class=\"muted\" style=\"font-size:0.78rem\">（取消）</span>" : "") +
+          "</td><td style=\"text-align:right;padding:0.25rem 0\">" +
+          Number(p.amount || 0).toLocaleString(\"ja-JP\") +
+          " 円</td></tr>";
+      }
+      payHtml += "</table>";
+    }
+    box.innerHTML =
+      "<div class=\"card\" style=\"padding:0.75rem\">" +
+      payHtml +
+      "<div class=\"muted\" style=\"font-size:0.78rem;margin-top:0.65rem\">残額: " +
+      Number(detail.remainder || 0).toLocaleString(\"ja-JP\") +
+      " 円</div></div>";
+  }
+
+  function renderEvents() {
+    const ev = (events && events.events) || [];
+    let h = "<div class=\"muted\" style=\"font-size:0.78rem;margin:0.65rem 0 0.35rem\">修正履歴</div>";
+    if (!ev.length) h += "<div class=\"muted\">履歴なし</div>";
+    else {
+      h += "<table style=\"width:100%;border-collapse:collapse;font-size:0.82rem\">";
+      for (const e of ev) {
+        const who = e.staff && (e.staff.name || e.staff.email) ? (e.staff.name || e.staff.email) : "";
+        h +=
+          "<tr><td style=\"padding:0.25rem 0;border-bottom:1px solid var(--border)\">" +
+          escapeHtml(String(e.createdAt || \"\")) +
+          (who ? " · " + escapeHtml(who) : "") +
+          "<br><strong>" +
+          escapeHtml(e.kind) +
+          "</strong></td></tr>";
+      }
+      h += "</table>";
+    }
+    return h;
+  }
+
+  function renderEdit() {
+    const box = panel.querySelector("#billTabEdit");
+    if (!box) return;
+    box.innerHTML =
+      "<div class=\"card\" style=\"padding:0.75rem;border-color:#93c5fd\">" +
+      "<div class=\"muted\" style=\"font-size:0.78rem;margin-bottom:0.35rem\">支払いの追加</div>" +
+      "<div class=\"row\" style=\"gap:0.5rem;flex-wrap:wrap;align-items:flex-end\">" +
+      "<input id=\"repEditMethod\" type=\"text\" placeholder=\"methodCode\" style=\"min-width:11rem\" />" +
+      "<input id=\"repEditAmount\" type=\"number\" min=\"1\" step=\"1\" placeholder=\"金額（円）\" style=\"min-width:10rem\" />" +
+      "<input id=\"repEditNote\" type=\"text\" placeholder=\"note（任意）\" style=\"min-width:12rem\" />" +
+      "<button type=\"button\" class=\"btn-primary\" id=\"btnRepAddPay\" style=\"width:auto\">追加</button>" +
+      "</div>" +
+      "<div class=\"muted\" style=\"font-size:0.72rem;margin-top:0.35rem\">※ methodCode は支払い方法設定の code と一致させてください</div>" +
+      "</div>" +
+      "<div class=\"card\" style=\"padding:0.75rem;margin-top:0.75rem;border-color:#fecaca\">" +
+      "<div class=\"muted\" style=\"font-size:0.78rem;margin-bottom:0.35rem\">支払いの取消</div>" +
+      "<div id=\"repEditPays\"></div>" +
+      "</div>" +
+      "<div class=\"card\" style=\"padding:0.75rem;margin-top:0.75rem;border-color:#cbd5e1\">" +
+      "<div class=\"muted\" style=\"font-size:0.78rem;margin-bottom:0.35rem\">伝票の取消</div>" +
+      "<button type=\"button\" class=\"btn-ghost\" id=\"btnRepVoidBill\" style=\"width:auto;color:#b91c1c;border-color:#fecaca\">伝票を取消（void）</button>" +
+      "</div>" +
+      "<div style=\"margin-top:0.75rem\">" +
+      renderEvents() +
+      "</div>";
+
+    const paysBox = box.querySelector("#repEditPays");
+    const pays = (detail.payments || []).slice();
+    if (!pays.length) paysBox.innerHTML = "<div class=\"muted\">支払いなし</div>";
+    else {
+      let h = "";
+      for (const p of pays) {
+        h +=
+          "<div class=\"row\" style=\"gap:0.5rem;flex-wrap:wrap;align-items:center;margin:0.25rem 0\">" +
+          "<span style=\"flex:1;min-width:12rem\">" +
+          escapeHtml(p.labelJa || p.methodCode) +
+          " · " +
+          Number(p.amount || 0).toLocaleString(\"ja-JP\") +
+          " 円" +
+          (p.voidedAt ? "（取消済）" : "") +
+          "</span>" +
+          (p.voidedAt
+            ? ""
+            : "<button type=\"button\" class=\"btn-ghost\" data-void-pay=\"" +
+              escapeHtml(p.id) +
+              "\" style=\"width:auto;color:#b91c1c;border-color:#fecaca\">取消</button>") +
+          "</div>";
+      }
+      paysBox.innerHTML = h;
+      paysBox.querySelectorAll("button[data-void-pay]").forEach((b) => {
+        b.onclick = async () => {
+          const pid = b.getAttribute("data-void-pay");
+          if (!pid) return;
+          if (!confirm("この支払いを取り消しますか？")) return;
+          const reason = prompt("取消理由（任意）", "") || "";
+          try {
+            await api(
+              "/stores/" +
+                encodeURIComponent(STORE) +
+                "/bills/" +
+                encodeURIComponent(detail.id) +
+                "/payments/" +
+                encodeURIComponent(pid) +
+                "/void",
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ reason }),
+              }
+            );
+            await openBillModal(detail.id);
+            close();
+          } catch (e) {
+            log(String(e.message || e));
+          }
+        };
+      });
+    }
+
+    const btnAdd = box.querySelector("#btnRepAddPay");
+    if (btnAdd) {
+      btnAdd.onclick = async () => {
+        const methodCode = String(box.querySelector("#repEditMethod").value || "").trim();
+        const amount = Number(box.querySelector("#repEditAmount").value || 0);
+        const note = String(box.querySelector("#repEditNote").value || "").trim();
+        if (!methodCode) return log("methodCode を入力してください");
+        if (!Number.isInteger(amount) || amount <= 0) return log("金額は正の整数で");
+        try {
+          await api("/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(detail.id) + "/payments", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lines: [{ methodCode, amount, note: note || undefined }] }),
+          });
+          await openBillModal(detail.id);
+          close();
+        } catch (e) {
+          log(String(e.message || e));
+        }
+      };
+    }
+
+    const btnVoid = box.querySelector("#btnRepVoidBill");
+    if (btnVoid) {
+      btnVoid.onclick = async () => {
+        if (!confirm("この伝票を取消（void）しますか？（戻せません）")) return;
+        try {
+          await api("/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(detail.id) + "/void", {
+            method: "POST",
+          });
+          close();
+          await loadBills(qsFromInputs());
+        } catch (e) {
+          log(String(e.message || e));
+        }
+      };
+    }
+  }
+
   const close = () => {
     if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
   };
@@ -275,6 +451,25 @@ async function openBillModal(billId) {
   });
   backdrop.appendChild(panel);
   document.body.appendChild(backdrop);
+
+  const tabV = panel.querySelector("#tabView");
+  const tabE = panel.querySelector("#tabEdit");
+  const boxV = panel.querySelector("#billTabView");
+  const boxE = panel.querySelector("#billTabEdit");
+  const showTab = (k) => {
+    if (k === "edit") {
+      boxV.style.display = "none";
+      boxE.style.display = "";
+      renderEdit();
+    } else {
+      boxV.style.display = "";
+      boxE.style.display = "none";
+      renderView();
+    }
+  };
+  if (tabV) tabV.onclick = () => showTab("view");
+  if (tabE) tabE.onclick = () => showTab("edit");
+  showTab("view");
 }
 
 async function runAll() {

@@ -16,6 +16,7 @@ model Store {
   staffUsers       StaffUser[]
   methods          StorePaymentMethod[]
   bills            Bill[]
+  billEvents       BillCorrectionEvent[]
   tables           Table[]
   courses          Course[]
   menuCategories   MenuCategory[]
@@ -105,6 +106,8 @@ model StaffUser {
   name         String?
   createdAt    DateTime @default(now())
   store        Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  billEvents   BillCorrectionEvent[]
+  voidedPayments Payment[] @relation("PaymentVoidedBy")
 
   @@unique([storeId, email])
   @@index([storeId])
@@ -142,6 +145,7 @@ model Bill {
   totalAmount Int
   status      String    @default("open")
   payments    Payment[]
+  events      BillCorrectionEvent[]
   createdAt   DateTime  @default(now())
   settledAt   DateTime?
   store       Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
@@ -154,8 +158,34 @@ model Payment {
   methodCode String
   amount     Int
   note       String?
+  voidedAt   DateTime?
+  voidReason String?
+  voidedByStaffUserId String?
   createdAt  DateTime @default(now())
   bill       Bill     @relation(fields: [billId], references: [id], onDelete: Cascade)
+  voidedByStaffUser StaffUser? @relation("PaymentVoidedBy", fields: [voidedByStaffUserId], references: [id], onDelete: SetNull)
+
+  @@index([billId])
+  @@index([voidedAt])
+}
+
+model BillCorrectionEvent {
+  id          String   @id @default(cuid())
+  storeId     String
+  billId      String
+  kind        String
+  payload     Json     @default("{}")
+  staffUserId String?
+  createdAt   DateTime @default(now())
+
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  bill        Bill     @relation(fields: [billId], references: [id], onDelete: Cascade)
+  staffUser   StaffUser? @relation(fields: [staffUserId], references: [id], onDelete: SetNull)
+
+  @@index([storeId])
+  @@index([billId])
+  @@index([createdAt])
+  @@index([kind])
 }
 
 /// 卓（固定QRは publicCode で表現可能）

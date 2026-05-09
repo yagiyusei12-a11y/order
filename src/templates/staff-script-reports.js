@@ -248,8 +248,8 @@ async function loadBills(q) {
 async function openBillModal(billId) {
   const host = document.getElementById("repBillModal");
   if (!host) return;
-  const detail = await api("/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(billId));
-  const events = await api(
+  let detail = await api("/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(billId));
+  let events = await api(
     "/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(billId) + "/events"
   ).catch(() => ({ events: [] }));
   const backdrop = document.createElement("div");
@@ -327,7 +327,28 @@ async function openBillModal(billId) {
   function renderEdit() {
     const box = panel.querySelector("#billTabEdit");
     if (!box) return;
+    const isOpen = detail && detail.status === "open";
     box.innerHTML =
+      "<div class=\"muted\" style=\"font-size:0.72rem;margin:0 0 0.5rem\">" +
+      (isOpen ? "" : "※ 修正は open の伝票のみ可能です") +
+      "</div>" +
+      "<div class=\"card\" style=\"padding:0.75rem;border-color:#86efac\">" +
+      "<div class=\"muted\" style=\"font-size:0.78rem;margin-bottom:0.35rem\">伝票割引</div>" +
+      "<div class=\"row\" style=\"gap:0.5rem;flex-wrap:wrap;align-items:flex-end\">" +
+      "<select id=\"repBillDiscKind\" style=\"min-width:10rem\">" +
+      "<option value=\"percent\">%（割合）</option>" +
+      "<option value=\"yen\">円（固定）</option>" +
+      "</select>" +
+      "<input id=\"repBillDiscValue\" type=\"number\" min=\"0\" step=\"1\" placeholder=\"値\" style=\"min-width:10rem\" />" +
+      "<input id=\"repBillDiscLabel\" type=\"text\" placeholder=\"名称（任意）\" style=\"min-width:12rem\" />" +
+      "<button type=\"button\" class=\"btn-primary\" id=\"btnRepSetBillDisc\" style=\"width:auto\" " +
+      (isOpen ? "" : "disabled") +
+      ">適用</button>" +
+      "<button type=\"button\" class=\"btn-ghost\" id=\"btnRepClearBillDisc\" style=\"width:auto\" " +
+      (isOpen ? "" : "disabled") +
+      ">解除</button>" +
+      "</div>" +
+      "</div>" +
       "<div class=\"card\" style=\"padding:0.75rem;border-color:#93c5fd\">" +
       "<div class=\"muted\" style=\"font-size:0.78rem;margin-bottom:0.35rem\">支払いの追加</div>" +
       "<div class=\"row\" style=\"gap:0.5rem;flex-wrap:wrap;align-items:flex-end\">" +
@@ -345,6 +366,10 @@ async function openBillModal(billId) {
       "<div class=\"card\" style=\"padding:0.75rem;margin-top:0.75rem;border-color:#cbd5e1\">" +
       "<div class=\"muted\" style=\"font-size:0.78rem;margin-bottom:0.35rem\">伝票の取消</div>" +
       "<button type=\"button\" class=\"btn-ghost\" id=\"btnRepVoidBill\" style=\"width:auto;color:#b91c1c;border-color:#fecaca\">伝票を取消（void）</button>" +
+      "</div>" +
+      "<div class=\"card\" style=\"padding:0.75rem;margin-top:0.75rem;border-color:#cbd5e1\">" +
+      "<div class=\"muted\" style=\"font-size:0.78rem;margin-bottom:0.35rem\">明細（数量/キャンセル/行割引）</div>" +
+      "<div id=\"repEditLines\"></div>" +
       "</div>" +
       "<div style=\"margin-top:0.75rem\">" +
       renderEvents() +
@@ -440,6 +465,231 @@ async function openBillModal(billId) {
         }
       };
     }
+
+    // 伝票割引の初期値
+    try {
+      const d = detail && detail.billDiscountJson ? detail.billDiscountJson : null;
+      const kindEl = box.querySelector("#repBillDiscKind");
+      const valEl = box.querySelector("#repBillDiscValue");
+      const labEl = box.querySelector("#repBillDiscLabel");
+      if (d && kindEl) kindEl.value = d.kind || "percent";
+      if (d && valEl) valEl.value = String(d.value ?? "");
+      if (d && labEl) labEl.value = String(d.label ?? "");
+    } catch (_) {}
+
+    const btnSetDisc = box.querySelector("#btnRepSetBillDisc");
+    if (btnSetDisc) {
+      btnSetDisc.onclick = async () => {
+        if (!isOpen) return;
+        const kind = String(box.querySelector("#repBillDiscKind").value || "percent");
+        const value = Number(box.querySelector("#repBillDiscValue").value || 0);
+        const label = String(box.querySelector("#repBillDiscLabel").value || "").trim();
+        if (!Number.isInteger(value) || value < 0) return log("割引値は0以上の整数で");
+        if (kind === "percent" && value > 100) return log("割引率は100以下で");
+        try {
+          await api("/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(detail.id) + "/discount", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ discount: { kind, value, ...(label ? { label } : {}) } }),
+          });
+          await refreshBillInPlace();
+        } catch (e) {
+          log(String(e.message || e));
+        }
+      };
+    }
+    const btnClearDisc = box.querySelector("#btnRepClearBillDisc");
+    if (btnClearDisc) {
+      btnClearDisc.onclick = async () => {
+        if (!isOpen) return;
+        if (!confirm("伝票割引を解除しますか？")) return;
+        try {
+          await api("/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(detail.id) + "/discount", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ discount: null }),
+          });
+          await refreshBillInPlace();
+        } catch (e) {
+          log(String(e.message || e));
+        }
+      };
+    }
+
+    // 明細操作
+    const linesBox = box.querySelector("#repEditLines");
+    const lines = (detail.orderLines || []).slice();
+    if (!lines.length) {
+      linesBox.innerHTML = "<div class=\"muted\">明細なし</div>";
+    } else {
+      let h = "<table style=\"width:100%;border-collapse:collapse;font-size:0.82rem\">";
+      h +=
+        "<thead><tr>" +
+        "<th style=\"text-align:left;padding:0.25rem 0;border-bottom:1px solid var(--border)\">商品</th>" +
+        "<th style=\"text-align:right;padding:0.25rem 0;border-bottom:1px solid var(--border)\">数量</th>" +
+        "<th style=\"text-align:right;padding:0.25rem 0;border-bottom:1px solid var(--border)\">単価</th>" +
+        "<th style=\"text-align:right;padding:0.25rem 0;border-bottom:1px solid var(--border)\">小計</th>" +
+        "<th style=\"text-align:left;padding:0.25rem 0;border-bottom:1px solid var(--border)\">操作</th>" +
+        "</tr></thead><tbody>";
+      for (const l of lines) {
+        const isCancelled = l.status === "cancelled";
+        const disc = l.discountJson || null;
+        h +=
+          "<tr>" +
+          "<td style=\"padding:0.35rem 0;border-bottom:1px solid var(--border)\">" +
+          escapeHtml(l.nameSnapshot) +
+          (isCancelled ? " <span class=\"muted\" style=\"font-size:0.78rem\">（cancelled）</span>" : "") +
+          "</td>" +
+          "<td style=\"text-align:right;padding:0.35rem 0;border-bottom:1px solid var(--border)\">" +
+          "<input type=\"number\" min=\"1\" step=\"1\" data-line-qty=\"" +
+          escapeHtml(l.id) +
+          "\" value=\"" +
+          escapeHtml(String(l.qty || 1)) +
+          "\" style=\"width:70px\" " +
+          (isOpen && !isCancelled ? "" : "disabled") +
+          " />" +
+          "</td>" +
+          "<td style=\"text-align:right;padding:0.35rem 0;border-bottom:1px solid var(--border)\">" +
+          Number(l.unitPrice || 0).toLocaleString(\"ja-JP\") +
+          "</td>" +
+          "<td style=\"text-align:right;padding:0.35rem 0;border-bottom:1px solid var(--border)\">" +
+          Number(l.lineTotal || 0).toLocaleString(\"ja-JP\") +
+          "</td>" +
+          "<td style=\"padding:0.35rem 0;border-bottom:1px solid var(--border)\">" +
+          "<div class=\"row\" style=\"gap:0.35rem;flex-wrap:wrap\">" +
+          "<button type=\"button\" class=\"btn-ghost\" data-line-qty-save=\"" +
+          escapeHtml(l.id) +
+          "\" style=\"width:auto\" " +
+          (isOpen && !isCancelled ? "" : "disabled") +
+          ">数量保存</button>" +
+          "<button type=\"button\" class=\"btn-ghost\" data-line-cancel=\"" +
+          escapeHtml(l.id) +
+          "\" style=\"width:auto;color:#b91c1c;border-color:#fecaca\" " +
+          (isOpen && !isCancelled ? "" : "disabled") +
+          ">キャンセル</button>" +
+          "</div>" +
+          "<div class=\"row\" style=\"gap:0.35rem;flex-wrap:wrap;margin-top:0.25rem\">" +
+          "<select data-line-disc-kind=\"" +
+          escapeHtml(l.id) +
+          "\" style=\"min-width:8.5rem\" " +
+          (isOpen && !isCancelled ? "" : "disabled") +
+          ">" +
+          "<option value=\"percent\">%割引</option>" +
+          "<option value=\"yen\">円引き</option>" +
+          "</select>" +
+          "<input type=\"number\" min=\"0\" step=\"1\" data-line-disc-value=\"" +
+          escapeHtml(l.id) +
+          "\" placeholder=\"値\" style=\"width:85px\" " +
+          (isOpen && !isCancelled ? "" : "disabled") +
+          " />" +
+          "<select data-line-disc-scope=\"" +
+          escapeHtml(l.id) +
+          "\" style=\"min-width:7.5rem\" " +
+          (isOpen && !isCancelled ? "" : "disabled") +
+          ">" +
+          "<option value=\"line\">行全体</option>" +
+          "<option value=\"unit\">1個だけ</option>" +
+          "</select>" +
+          "<button type=\"button\" class=\"btn-ghost\" data-line-disc-apply=\"" +
+          escapeHtml(l.id) +
+          "\" style=\"width:auto;border-color:#86efac;font-weight:700\" " +
+          (isOpen && !isCancelled ? "" : "disabled") +
+          ">割引適用</button>" +
+          "<button type=\"button\" class=\"btn-ghost\" data-line-disc-clear=\"" +
+          escapeHtml(l.id) +
+          "\" style=\"width:auto\" " +
+          (isOpen && !isCancelled ? "" : "disabled") +
+          ">割引解除</button>" +
+          (disc
+            ? "<span class=\"muted\" style=\"font-size:0.72rem\">現在: " +
+              escapeHtml(disc.kind) +
+              " " +
+              escapeHtml(String(disc.value)) +
+              " (" +
+              escapeHtml(disc.scope) +
+              ")</span>"
+            : "<span class=\"muted\" style=\"font-size:0.72rem\">現在: なし</span>") +
+          "</div>" +
+          "</td></tr>";
+      }
+      h += "</tbody></table>";
+      linesBox.innerHTML = h;
+
+      // 初期値（scope は line）
+      linesBox.querySelectorAll("select[data-line-disc-scope]").forEach((s) => {
+        s.value = "line";
+      });
+
+      linesBox.querySelectorAll("button[data-line-qty-save]").forEach((b) => {
+        b.onclick = async () => {
+          const id = b.getAttribute("data-line-qty-save");
+          const inp = linesBox.querySelector("input[data-line-qty=\"" + id + "\"]");
+          const qty = Number(inp && inp.value ? inp.value : 0);
+          if (!Number.isInteger(qty) || qty < 1) return log("数量は1以上の整数で");
+          try {
+            await api(
+              "/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(detail.id) + "/order-lines/" + encodeURIComponent(id),
+              { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ qty }) }
+            );
+            await refreshBillInPlace();
+          } catch (e) {
+            log(String(e.message || e));
+          }
+        };
+      });
+      linesBox.querySelectorAll("button[data-line-cancel]").forEach((b) => {
+        b.onclick = async () => {
+          const id = b.getAttribute("data-line-cancel");
+          if (!id) return;
+          if (!confirm("この明細をキャンセルしますか？")) return;
+          try {
+            await api(
+              "/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(detail.id) + "/order-lines/" + encodeURIComponent(id) + "/cancel",
+              { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) }
+            );
+            await refreshBillInPlace();
+          } catch (e) {
+            log(String(e.message || e));
+          }
+        };
+      });
+      linesBox.querySelectorAll("button[data-line-disc-apply]").forEach((b) => {
+        b.onclick = async () => {
+          const id = b.getAttribute("data-line-disc-apply");
+          const kind = String(linesBox.querySelector("select[data-line-disc-kind=\"" + id + "\"]").value || "percent");
+          const value = Number(linesBox.querySelector("input[data-line-disc-value=\"" + id + "\"]").value || 0);
+          const scope = String(linesBox.querySelector("select[data-line-disc-scope=\"" + id + "\"]").value || "line");
+          if (!Number.isInteger(value) || value < 0) return log("割引値は0以上の整数で");
+          if (kind === "percent" && value > 100) return log("割引率は100以下で");
+          try {
+            await api("/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(detail.id) + "/order-lines/discount", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ lineIds: [id], discount: { kind, value, scope } }),
+            });
+            await refreshBillInPlace();
+          } catch (e) {
+            log(String(e.message || e));
+          }
+        };
+      });
+      linesBox.querySelectorAll("button[data-line-disc-clear]").forEach((b) => {
+        b.onclick = async () => {
+          const id = b.getAttribute("data-line-disc-clear");
+          if (!confirm("この明細の割引を解除しますか？")) return;
+          try {
+            await api("/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(detail.id) + "/order-lines/discount", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ lineIds: [id], discount: null }),
+            });
+            await refreshBillInPlace();
+          } catch (e) {
+            log(String(e.message || e));
+          }
+        };
+      });
+    }
   }
 
   const close = () => {
@@ -470,6 +720,20 @@ async function openBillModal(billId) {
   if (tabV) tabV.onclick = () => showTab("view");
   if (tabE) tabE.onclick = () => showTab("edit");
   showTab("view");
+
+  async function refreshBillInPlace() {
+    try {
+      detail = await api("/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(detail.id));
+      events = await api(
+        "/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(detail.id) + "/events"
+      ).catch(() => ({ events: [] }));
+      // タブ表示を維持して再描画
+      renderView();
+      renderEdit();
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  }
 }
 
 async function runAll() {

@@ -1383,10 +1383,49 @@
       });
     }
 
+    function syncGuestMenuCardsDimForLastOrder() {
+      document.querySelectorAll("#menu .go-card").forEach((card) => {
+        const base = card.dataset.guestBlockedBase === "1";
+        card.classList.toggle("is-dim", base || lastOrderClosedFlag);
+      });
+    }
+
     function fmtMoney(n) {
       if (!guestShowMenuPrices) return "—";
       return "¥" + n.toLocaleString("ja-JP");
     }
+    /** 単品・セット内オプションの差額表示（金額非表示設定時は数値を出さない） */
+    function fmtGuestOptionDeltaHtml(yenTaxInclusive) {
+      const y = Math.max(0, Number(yenTaxInclusive || 0));
+      if (!guestShowMenuPrices) {
+        return y > 0
+          ? "<span class=\"muted\" style=\"font-size:.68rem\">（お会計時にご案内）</span>"
+          : "+¥0";
+      }
+      if (y > 0) {
+        return (
+          "+" +
+          y.toLocaleString("ja-JP") +
+          "円 <span style=\"color:var(--muted);font-size:.68rem\">(税込目安)</span>"
+        );
+      }
+      return "+¥0";
+    }
+    /** セット構成選択の付加価格（税込） */
+    function fmtGuestSetStepChoiceExtraHtml(ch) {
+      const ex = Number(ch.extraPrice || 0);
+      if (ex <= 0) return "+¥0";
+      if (!guestShowMenuPrices) {
+        return "<span class=\"muted\" style=\"font-size:.68rem\">（お会計時にご案内）</span>";
+      }
+      const incl = choiceExtraInclusive(ch);
+      return (
+        "+" +
+        fmtMoney(incl).replace("¥", "") +
+        " <span style=\"color:var(--muted);font-size:.68rem;font-weight:500\">(税込)</span>"
+      );
+    }
+
     function fmtItemPrice(item) {
       if (item.courseTier === "included") {
         if (!guestShowMenuPrices) return "<span class=\"course-included-price\">コース内</span>";
@@ -2492,6 +2531,10 @@
     }
 
     function openProductDetail(item) {
+      if (lastOrderClosedFlag) {
+        toast("ラストオーダーの時間を過ぎています");
+        return;
+      }
       if (alcoholRestricted && item.containsAlcohol) {
         toast("酒類はご注文いただけません");
         return;
@@ -2536,14 +2579,7 @@
             st.maxPick +
             "品</span></div><div class=\"opt-step-choices\">";
           for (const ch of st.fixedChoices || []) {
-            const ex = Number(ch.extraPrice || 0);
-            const incl = choiceExtraInclusive(ch);
-            const priceTxt =
-              ex > 0
-                ? "+" +
-                  fmtMoney(incl).replace("¥", "") +
-                  " <span style=\"color:var(--muted);font-size:.68rem;font-weight:500\">(税込)</span>"
-                : "+¥0";
+            const priceTxt = fmtGuestSetStepChoiceExtraHtml(ch);
             bodyInner +=
               "<div class=\"opt-row opt-row-fixed\" style=\"cursor:default\">" +
               "<span class=\"opt-fixed-tag\">付属</span>" +
@@ -2557,14 +2593,7 @@
             const blockedAlcohol = alcoholRestricted && ch.containsAlcohol;
             const soldX =
               ch.soldOut === true || (ch.stockQty != null && ch.stockQty <= 0) || blockedAlcohol;
-            const ex = Number(ch.extraPrice || 0);
-            const incl = choiceExtraInclusive(ch);
-            const priceTxt =
-              ex > 0
-                ? "+" +
-                  fmtMoney(incl).replace("¥", "") +
-                  " <span style=\"color:var(--muted);font-size:.68rem;font-weight:500\">(税込)</span>"
-                : "+¥0";
+            const priceTxt = fmtGuestSetStepChoiceExtraHtml(ch);
             bodyInner +=
               "<label class=\"opt-row" +
               (soldX ? " is-disabled" : "") +
@@ -2700,12 +2729,7 @@
           const useRadio = Number(g.maxSelect || 1) <= 1;
           for (const oi of g.items || []) {
             const yen = Number(oi.priceDelta || 0);
-            const priceTxt =
-              yen > 0
-                ? "+" +
-                  yen.toLocaleString("ja-JP") +
-                  "円 <span style=\"color:var(--muted);font-size:.68rem\">(税込目安)</span>"
-                : "+¥0";
+            const priceTxt = fmtGuestOptionDeltaHtml(yen);
             if (useRadio) {
               bodyInner +=
                 "<label class=\"opt-row\"><input type=\"radio\" name=\"og-" +
@@ -3025,18 +3049,32 @@
       if (!lo || !lo.deadlineIso) {
         el.style.display = "none";
         lastOrderClosedFlag = false;
+        syncGuestMenuCardsDimForLastOrder();
         return;
       }
+      /** API と同じ（未送信時は従来どおり締切後ローカルでブロック） */
+      const blocks = lo.blocksOrderingAfterDeadline !== false;
       lastOrderDeadlineTs = Date.parse(lo.deadlineIso);
       el.style.display = "block";
       function tick() {
         const left = Math.floor((lastOrderDeadlineTs - Date.now()) / 1000);
-        lastOrderClosedFlag = Boolean(lo.orderingClosed) || left <= 0;
+        const serverClosed = Boolean(lo.orderingClosed);
+        const pastLocal = left <= 0;
+        lastOrderClosedFlag = blocks && (serverClosed || pastLocal);
         renderCart();
-        if (lastOrderClosedFlag) {
+        syncGuestMenuCardsDimForLastOrder();
+        if (blocks && (serverClosed || pastLocal)) {
           el.innerHTML =
             "<span class=\"lo-inner\">ラストオーダーは終了しました（追加のご注文はスタッフへお声がけください）</span>";
           el.classList.add("lo-ended");
+          stopLastOrderTicker();
+          return;
+        }
+        if (!blocks && pastLocal) {
+          el.innerHTML =
+            "<span class=\"lo-inner\">ラストオーダーの予定時刻を過ぎました（このままご注文いただけます）</span>";
+          el.classList.remove("lo-ended");
+          syncGuestMenuCardsDimForLastOrder();
           stopLastOrderTicker();
           return;
         }
@@ -3318,12 +3356,13 @@
         for (const it of c.items || []) {
           const sold = it.stockQty != null && it.stockQty <= 0;
           const showAlcoholBadge = itemShowsAlcoholBadge(it);
-          const blocked = sold || (it.containsAlcohol === true && alcoholRestricted);
+          const baseBlocked = sold || (it.containsAlcohol === true && alcoholRestricted);
           const card = document.createElement("article");
           card.className = "go-card";
           card.dataset.cat = c.id;
           card.dataset.courseIncluded = it.courseTier === "included" ? "1" : "0";
-          if (blocked) card.classList.add("is-dim");
+          card.dataset.guestBlockedBase = baseBlocked ? "1" : "0";
+          if (baseBlocked || lastOrderClosedFlag) card.classList.add("is-dim");
 
           const media = document.createElement("div");
           media.className = "go-card-media";
@@ -3409,9 +3448,19 @@
           card.appendChild(media);
           card.appendChild(body);
           card.onclick = () => {
-            if (!blocked) addLine(it);
-            else if (sold) toast("売り切れです");
-            else if (it.containsAlcohol && alcoholRestricted) toast("酒類はご注文いただけません");
+            if (sold) {
+              toast("売り切れです");
+              return;
+            }
+            if (it.containsAlcohol && alcoholRestricted) {
+              toast("酒類はご注文いただけません");
+              return;
+            }
+            if (lastOrderClosedFlag) {
+              toast("ラストオーダーの時間を過ぎています");
+              return;
+            }
+            addLine(it);
           };
           root.appendChild(card);
         }

@@ -637,7 +637,11 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
               st.guestEnforceLastOrder,
             );
             if (!p) return null;
-            return { ...p, minutesBeforeEnd: st.guestCourseLastOrderMinutesBeforeEnd };
+            return {
+              ...p,
+              minutesBeforeEnd: st.guestCourseLastOrderMinutesBeforeEnd,
+              blocksOrderingAfterDeadline: st.guestEnforceLastOrder,
+            };
           })()
         : null;
 

@@ -14,6 +14,7 @@
     "seed:harunoyukoto-tables": "tsx prisma/seed-harunoyukoto-tables.ts",
     "import:harunoyukoto-menu": "tsx prisma/import-menu-csv.ts prisma/data/harunoyukoto-nagahama-menu.csv harunoyukoto",
     "import:harunoyukoto-sales": "tsx prisma/import-harunoyukoto-transactions-csv.ts",
+    "debug:harunoyukoto-report": "tsx prisma/report-debug-harunoyukoto.ts",
     "db:setup": "prisma generate && prisma db push",
     "db:local:up": "docker compose up -d",
     "db:local:down": "docker compose down",

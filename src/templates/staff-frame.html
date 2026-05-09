@@ -646,6 +646,15 @@
         return {};
       });
 
+    window.STAFF_ROLE = "staff";
+    window.__staffMeLoaded = api("/auth/me")
+      .then((m) => {
+        const r = m && m.user && m.user.role;
+        window.STAFF_ROLE = r === "manager" ? "manager" : "staff";
+        return m;
+      })
+      .catch(() => ({}));
+
     document.getElementById("logout").onclick = async (e) => {
       e.preventDefault();
       await fetch("/auth/logout", { method: "POST", credentials: "include" });

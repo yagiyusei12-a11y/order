@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { prisma } from "../db.js";
 import { registerBilling } from "./billing.js";
 import { registerCatalog } from "./catalog.js";
 import { registerStoreSettings } from "./store-settings.js";
@@ -10,6 +11,7 @@ import { registerStaffVerbalOrders } from "./staff-verbal-orders.js";
 import { registerCustomers } from "./customers.js";
 import { registerTables } from "./tables.js";
 import { registerTakeoutStaff } from "./takeout-staff.js";
+import { registerStaffAuditLogRoutes } from "./staff-audit-log.js";
 
 async function verifyStaff(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   try {
@@ -17,12 +19,25 @@ async function verifyStaff(req: FastifyRequest, reply: FastifyReply): Promise<vo
   } catch {
     return reply.code(401).send({ error: "unauthorized" });
   }
+  const sub = (req.user as { sub?: string }).sub;
+  if (!sub) {
+    return reply.code(401).send({ error: "unauthorized" });
+  }
+  const row = await prisma.staffUser.findUnique({
+    where: { id: sub },
+    select: { storeId: true, role: true },
+  });
+  if (!row) {
+    return reply.code(401).send({ error: "unauthorized" });
+  }
+  const role = row.role === "manager" ? "manager" : "staff";
+  const u = req.user as { storeId?: string; role?: string };
+  u.storeId = row.storeId;
+  u.role = role;
+
   const storeId = (req.params as { storeId?: string }).storeId;
-  if (storeId) {
-    const u = req.user as { storeId: string };
-    if (u.storeId !== storeId) {
-      return reply.code(403).send({ error: "forbidden" });
-    }
+  if (storeId && row.storeId !== storeId) {
+    return reply.code(403).send({ error: "forbidden" });
   }
 }
 
@@ -40,4 +55,5 @@ export async function registerProtectedStaffRoutes(app: FastifyInstance): Promis
   await registerKitchenStations(app);
   await registerKitchen(app);
   await registerTakeoutStaff(app);
+  await registerStaffAuditLogRoutes(app);
 }

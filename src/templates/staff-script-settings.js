@@ -3,6 +3,13 @@ function log(t) {
   if (el) el.textContent = t || "";
 }
 
+/** 店舗設定・時間帯・決済マスタ・スタッフ管理など manager API の直前チェック */
+function requireManagerForSettings() {
+  if (typeof window !== "undefined" && window.STAFF_ROLE === "manager") return true;
+  log("店長（マネージャー）のみ変更できます");
+  return false;
+}
+
 function escapeHtml(s) {
   return String(s)
     .replace(/&/g, "&amp;")
@@ -52,6 +59,7 @@ function renderTimeWindows(list) {
   if (btnTwAdd) {
     btnTwAdd.onclick = async () => {
       log("");
+      if (!requireManagerForSettings()) return;
       const name = document.getElementById("twNewName").value.trim();
       const sm = timeInputValueToGuestMin(document.getElementById("twNewStart").value);
       const em = timeInputValueToGuestMin(document.getElementById("twNewEnd").value);
@@ -107,6 +115,7 @@ function renderTimeWindows(list) {
   box.querySelectorAll("button[data-tw-save]").forEach((b) => {
     b.onclick = async () => {
       log("");
+      if (!requireManagerForSettings()) return;
       const id = b.getAttribute("data-tw-save");
       const row = b.closest(".pm-row");
       const name = row.querySelector("[data-tw-name]").value.trim();
@@ -136,6 +145,7 @@ function renderTimeWindows(list) {
       const name = row?.querySelector("[data-tw-name]")?.value?.trim() || "この時間帯";
       if (!window.confirm("「" + name + "」を削除しますか？\nカテゴリ・商品の参照は外れます。")) return;
       log("");
+      if (!requireManagerForSettings()) return;
       try {
         await api("/stores/" + encodeURIComponent(STORE) + "/time-windows/" + encodeURIComponent(id), {
           method: "DELETE",
@@ -615,6 +625,9 @@ function ensureTablesPanel() {
 
 async function loadAll() {
   log("");
+  try {
+    if (typeof window !== "undefined" && window.__staffMeLoaded) await window.__staffMeLoaded;
+  } catch (_) {}
   const [st, staff, pay, twRes] = await Promise.all([
     api("/stores/" + encodeURIComponent(STORE) + "/settings"),
     api("/stores/" + encodeURIComponent(STORE) + "/staff-users"),
@@ -694,33 +707,98 @@ async function loadAll() {
 
   const sl = document.getElementById("staffList");
   const users = staff.staffUsers || [];
+  const settingsMgr = typeof window !== "undefined" && window.STAFF_ROLE === "manager";
   if (!users.length) {
     sl.textContent = "（スタッフがありません）";
   } else {
     sl.innerHTML = users
-      .map(
-        (u) =>
+      .map((u) => {
+        const roleLabel = u.role === "manager" ? "店長" : "スタッフ";
+        let ctl = "";
+        if (settingsMgr) {
+          ctl =
+            " <select data-staff-role=\"" +
+            escapeHtml(u.id) +
+            "\" style=\"margin-left:0.35rem;font-size:0.78rem;padding:0.15rem 0.35rem\">" +
+            "<option value=\"staff\"" +
+            (u.role !== "manager" ? " selected" : "") +
+            ">スタッフ</option>" +
+            "<option value=\"manager\"" +
+            (u.role === "manager" ? " selected" : "") +
+            ">店長</option>" +
+            "</select>" +
+            "<button type=\"button\" class=\"btn-ghost\" data-staff-del=\"" +
+            escapeHtml(u.id) +
+            "\" style=\"margin-left:0.35rem;padding:0.25rem 0.45rem;font-size:0.72rem\">削除</button>";
+        }
+        return (
           "<div style=\"padding:0.35rem 0;border-bottom:1px solid var(--border)\"><strong>" +
           escapeHtml(u.email) +
-          "</strong>" +
-          (u.name ? " · " + escapeHtml(u.name) : "") +
+          "</strong> · <span class=\"muted\">" +
+          roleLabel +
+          "</span>" +
+          ctl +
+          (u.name ? "<div class=\"muted\" style=\"font-size:0.72rem;margin-top:0.15rem\">" + escapeHtml(u.name) + "</div>" : "") +
           "</div>"
-      )
+        );
+      })
       .join("");
+    if (settingsMgr) {
+      sl.querySelectorAll("select[data-staff-role]").forEach((sel) => {
+        sel.onchange = async () => {
+          const id = sel.getAttribute("data-staff-role");
+          const role = sel.value === "manager" ? "manager" : "staff";
+          log("");
+          try {
+            await api("/stores/" + encodeURIComponent(STORE) + "/staff-users/" + encodeURIComponent(id), {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ role }),
+            });
+            log("権限を更新しました");
+            await loadAll();
+          } catch (e) {
+            log(String(e.message || e));
+            await loadAll();
+          }
+        };
+      });
+      sl.querySelectorAll("button[data-staff-del]").forEach((btn) => {
+        btn.onclick = async () => {
+          const id = btn.getAttribute("data-staff-del");
+          if (!id || !window.confirm("このスタッフアカウントを削除しますか？")) return;
+          log("");
+          try {
+            await api("/stores/" + encodeURIComponent(STORE) + "/staff-users/" + encodeURIComponent(id), {
+              method: "DELETE",
+            });
+            log("削除しました");
+            await loadAll();
+          } catch (e) {
+            log(String(e.message || e));
+          }
+        };
+      });
+    }
   }
 
   const addBox = document.getElementById("staffAddBox");
   if (addBox) {
-    addBox.innerHTML =
-      "<div class=\"muted\" style=\"font-size:0.72rem;margin-bottom:0.45rem\">スタッフを追加</div>" +
-      "<div style=\"display:flex;flex-direction:column;gap:0.5rem;max-width:24rem\">" +
-      "<div><label for=\"staffNewEmail\" style=\"font-size:0.7rem;color:var(--muted)\">メール（ログインID）</label>" +
-      "<input id=\"staffNewEmail\" type=\"email\" autocomplete=\"off\" placeholder=\"staff@example.com\" style=\"margin:0.15rem 0 0\" /></div>" +
-      "<div><label for=\"staffNewName\" style=\"font-size:0.7rem;color:var(--muted)\">表示名（任意）</label>" +
-      "<input id=\"staffNewName\" type=\"text\" autocomplete=\"off\" placeholder=\"省略可\" style=\"margin:0.15rem 0 0\" /></div>" +
-      "<div><label for=\"staffNewPw\" style=\"font-size:0.7rem;color:var(--muted)\">パスワード（8文字以上）</label>" +
-      "<input id=\"staffNewPw\" type=\"password\" autocomplete=\"new-password\" style=\"margin:0.15rem 0 0\" /></div>" +
-      "<button type=\"button\" class=\"btn-primary\" id=\"btnStaffAdd\" style=\"align-self:flex-start;margin-top:0.15rem\">追加</button></div>";
+    if (!settingsMgr) {
+      addBox.innerHTML =
+        "<p class=\"muted\" style=\"font-size:0.75rem;margin:0\">スタッフの追加・削除・権限変更は店長のみ行えます。</p>";
+    } else {
+      addBox.innerHTML =
+        "<div class=\"muted\" style=\"font-size:0.72rem;margin-bottom:0.45rem\">スタッフを追加（追加ユーザーは通常スタッフ権限）</div>" +
+        "<div style=\"display:flex;flex-direction:column;gap:0.5rem;max-width:24rem\">" +
+        "<div><label for=\"staffNewEmail\" style=\"font-size:0.7rem;color:var(--muted)\">メール（ログインID）</label>" +
+        "<input id=\"staffNewEmail\" type=\"email\" autocomplete=\"off\" placeholder=\"staff@example.com\" style=\"margin:0.15rem 0 0\" /></div>" +
+        "<div><label for=\"staffNewName\" style=\"font-size:0.7rem;color:var(--muted)\">表示名（任意）</label>" +
+        "<input id=\"staffNewName\" type=\"text\" autocomplete=\"off\" placeholder=\"省略可\" style=\"margin:0.15rem 0 0\" /></div>" +
+        "<div><label for=\"staffNewPw\" style=\"font-size:0.7rem;color:var(--muted)\">パスワード（8文字以上）</label>" +
+        "<input id=\"staffNewPw\" type=\"password\" autocomplete=\"new-password\" style=\"margin:0.15rem 0 0\" /></div>" +
+        "<button type=\"button\" class=\"btn-primary\" id=\"btnStaffAdd\" style=\"align-self:flex-start;margin-top:0.15rem\">追加</button></div>";
+    }
     const btn = document.getElementById("btnStaffAdd");
     if (btn) {
       btn.onclick = async () => {
@@ -748,6 +826,22 @@ async function loadAll() {
     }
   }
 
+  const auditCard = document.getElementById("staffAuditCard");
+  const btnAudit = document.getElementById("btnLoadStaffAudit");
+  const auditOut = document.getElementById("staffAuditOut");
+  if (auditCard) auditCard.style.display = settingsMgr ? "" : "none";
+  if (btnAudit && auditOut) {
+    btnAudit.onclick = async () => {
+      auditOut.textContent = "読み込み中…";
+      try {
+        const res = await api("/stores/" + encodeURIComponent(STORE) + "/staff-audit-log?take=80");
+        auditOut.textContent = JSON.stringify(res.items || [], null, 2);
+      } catch (e) {
+        auditOut.textContent = String(e.message || e);
+      }
+    };
+  }
+
   const newBox = document.getElementById("payMethodsNew");
   const box = document.getElementById("payMethods");
   newBox.innerHTML =
@@ -766,6 +860,7 @@ async function loadAll() {
   if (btnPayAdd) {
     btnPayAdd.onclick = async () => {
       log("");
+      if (!requireManagerForSettings()) return;
       const code = document.getElementById("payNewCode").value;
       const labelJa = document.getElementById("payNewLabel").value.trim();
       if (!labelJa) return log("表示名を入力してください");
@@ -836,6 +931,7 @@ async function loadAll() {
     save.textContent = "保存";
     save.onclick = async () => {
       log("");
+      if (!requireManagerForSettings()) return;
       const labelJa = labInp.value.trim();
       if (!labelJa) return log("表示名を入力してください");
       const so = Number(ord.value);
@@ -882,6 +978,7 @@ async function loadAll() {
       );
       if (!ok) return;
       log("");
+      if (!requireManagerForSettings()) return;
       try {
         await api("/stores/" + encodeURIComponent(STORE) + "/payment-methods/" + encodeURIComponent(m.id), {
           method: "DELETE",
@@ -1007,6 +1104,7 @@ const btnSaveOpsDiscountPresets = document.getElementById("btnSaveOpsDiscountPre
 if (btnSaveOpsDiscountPresets) {
   btnSaveOpsDiscountPresets.onclick = async () => {
     log("");
+    if (!requireManagerForSettings()) return;
     const tbody = document.getElementById("opsDiscountPresetsBody");
     if (!tbody) return;
     const rows = tbody.querySelectorAll("tr[data-preset-id]");
@@ -1210,6 +1308,7 @@ function nrRenderNetReserveTables() {
 }
 
 async function nrSaveNetReserveAll() {
+  if (!requireManagerForSettings()) return;
   const daysAhead = Number(nrEl("nrDaysAhead")?.value);
   if (!Number.isFinite(daysAhead) || daysAhead < 0 || daysAhead > 365) {
     alert("「何日先まで」は 0〜365 で入力してください。");
@@ -1373,6 +1472,7 @@ const btnSaveTaxModes = document.getElementById("btnSaveTaxModes");
 if (btnSaveTaxModes) {
   btnSaveTaxModes.onclick = async () => {
     log("");
+    if (!requireManagerForSettings()) return;
     const taxRatePercent = Number(document.getElementById("stTaxRate").value);
     if (!Number.isInteger(taxRatePercent) || taxRatePercent < 0 || taxRatePercent > 30) {
       return log("税率は0〜30の整数で");
@@ -1396,6 +1496,7 @@ if (btnSaveTaxModes) {
 
 document.getElementById("btnSaveStore").onclick = async () => {
   log("");
+  if (!requireManagerForSettings()) return;
   const name = document.getElementById("stName").value.trim();
   if (!name) return log("店舗名を入力してください");
   try {
@@ -1413,6 +1514,7 @@ document.getElementById("btnSaveStore").onclick = async () => {
 
 document.getElementById("btnSaveLastOrder").onclick = async () => {
   log("");
+  if (!requireManagerForSettings()) return;
   const n = Number(document.getElementById("stLoMin").value);
   if (!Number.isInteger(n) || n < 0 || n > 1440) return log("ラストオーダー前倒しは0〜1440の整数で");
   const guestEnforceLastOrder = document.getElementById("stLoEnforce").checked;
@@ -1436,6 +1538,7 @@ document.getElementById("btnSaveLastOrder").onclick = async () => {
 
 document.getElementById("btnSaveCourseGuest").onclick = async () => {
   log("");
+  if (!requireManagerForSettings()) return;
   const guestCourseIncludedChargeOptionExtras = document.getElementById("stIncOptCharge").checked;
   try {
     await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
@@ -1456,6 +1559,7 @@ document.getElementById("btnSaveCourseGuest").onclick = async () => {
 
 document.getElementById("btnSaveUi").onclick = async () => {
   log("");
+  if (!requireManagerForSettings()) return;
   const sec = Number(document.getElementById("stKitSec").value);
   if (!Number.isInteger(sec) || sec < 5 || sec > 300) return log("キッチン更新は5〜300の整数で");
   const guestShowMenuPrices = document.getElementById("stGuestPrice").checked;
@@ -1479,6 +1583,7 @@ const btnSaveKitchenDisplay = document.getElementById("btnSaveKitchenDisplay");
 if (btnSaveKitchenDisplay) {
   btnSaveKitchenDisplay.onclick = async () => {
     log("");
+    if (!requireManagerForSettings()) return;
     const kitchenShowCourseBadge = document.getElementById("stKitShowCourseBadge").checked;
     let kitchenCourseBadgeText = String(document.getElementById("stKitCourseBadgeText").value || "").trim().slice(0, 24);
     if (!kitchenCourseBadgeText) kitchenCourseBadgeText = "□放題□";
@@ -1503,6 +1608,7 @@ const btnSaveBillCorrectionPolicy = document.getElementById("btnSaveBillCorrecti
 if (btnSaveBillCorrectionPolicy) {
   btnSaveBillCorrectionPolicy.onclick = async () => {
     log("");
+    if (!requireManagerForSettings()) return;
     const billCorrectionPolicy = {
       enabled: document.getElementById("stBcEnabled").checked,
       payments: document.getElementById("stBcPayments").checked,
@@ -1529,6 +1635,7 @@ const btnSaveCourseStartPolicy = document.getElementById("btnSaveCourseStartPoli
 if (btnSaveCourseStartPolicy) {
   btnSaveCourseStartPolicy.onclick = async () => {
     log("");
+    if (!requireManagerForSettings()) return;
     const requireCourseWhenStartingSession = document.getElementById("stRequireCourseStart").checked;
     try {
       await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
@@ -1548,6 +1655,7 @@ const btnSaveGuestCourseTakeout = document.getElementById("btnSaveGuestCourseTak
 if (btnSaveGuestCourseTakeout) {
   btnSaveGuestCourseTakeout.onclick = async () => {
     log("");
+    if (!requireManagerForSettings()) return;
     const guestCourseIncludedAllowTakeout = document.getElementById("stGuestCourseIncTakeout").checked;
     const guestCourseAddonAllowTakeout = document.getElementById("stGuestCourseAddonTakeout").checked;
     const guestShowEatModeTaxNote = document.getElementById("stGuestEatModeTaxNote").checked;
@@ -1602,6 +1710,7 @@ if (btnSaveTakeoutPickup) {
   btnSaveTakeoutPickup.onclick = async () => {
     try {
       log("");
+      if (!requireManagerForSettings()) return;
       const ids = [...document.querySelectorAll(".tw-pickup-chk:checked")].map((x) => x.value);
       await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
         method: "PATCH",

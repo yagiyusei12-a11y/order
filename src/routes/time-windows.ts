@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
+import { assertManagerRole } from "../lib/staff-role.js";
 
 function validateMinPair(startMin: unknown, endMin: unknown): { ok: true; startMin: number; endMin: number } | { ok: false; error: string } {
   if (typeof startMin !== "number" || !Number.isInteger(startMin) || startMin < 0 || startMin > 1439) {
@@ -28,6 +29,7 @@ export async function registerTimeWindows(app: FastifyInstance): Promise<void> {
   }>("/stores/:storeId/time-windows", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
     if (!store) return reply.code(404).send({ error: "store not found" });
+    if (!assertManagerRole(reply, req.user)) return;
     const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
     if (!name) return reply.code(400).send({ error: "name required" });
     const vp = validateMinPair(req.body?.startMin, req.body?.endMin);
@@ -52,6 +54,7 @@ export async function registerTimeWindows(app: FastifyInstance): Promise<void> {
     Params: { storeId: string; timeWindowId: string };
     Body: { name?: string; startMin?: number; endMin?: number; sortOrder?: number };
   }>("/stores/:storeId/time-windows/:timeWindowId", async (req, reply) => {
+    if (!assertManagerRole(reply, req.user)) return;
     const row = await prisma.storeTimeWindow.findFirst({
       where: { id: req.params.timeWindowId, storeId: req.params.storeId },
     });
@@ -80,6 +83,7 @@ export async function registerTimeWindows(app: FastifyInstance): Promise<void> {
   app.delete<{ Params: { storeId: string; timeWindowId: string } }>(
     "/stores/:storeId/time-windows/:timeWindowId",
     async (req, reply) => {
+      if (!assertManagerRole(reply, req.user)) return;
       const row = await prisma.storeTimeWindow.findFirst({
         where: { id: req.params.timeWindowId, storeId: req.params.storeId },
       });

@@ -30,6 +30,7 @@ model Store {
   receptionState   ReceptionState?
   receptionShifts  ReceptionShift[]
   receptionReservations ReceptionReservation[]
+  staffAuditLogs   StaffAuditLog[]
   createdAt        DateTime             @default(now())
 }
 
@@ -104,13 +105,31 @@ model StaffUser {
   email        String
   passwordHash String
   name         String?
+  /// staff | manager（会計・設定の敏感操作は manager のみ）
+  role         String   @default("staff")
   createdAt    DateTime @default(now())
   store        Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
   billEvents   BillCorrectionEvent[]
   voidedPayments Payment[] @relation("PaymentVoidedBy")
+  auditLogs    StaffAuditLog[]
 
   @@unique([storeId, email])
   @@index([storeId])
+}
+
+/// スタッフ操作・ログイン失敗など横断の監査ログ（店舗スコープ）
+model StaffAuditLog {
+  id               String    @id @default(cuid())
+  storeId          String
+  actorStaffUserId String?
+  kind             String
+  payload          Json      @default("{}")
+  ipAddress        String?
+  createdAt        DateTime  @default(now())
+  store            Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  actor            StaffUser? @relation(fields: [actorStaffUserId], references: [id], onDelete: SetNull)
+
+  @@index([storeId, createdAt])
 }
 
 /// 決済手段の定義（全店共通マスタ。店ごとに有効/無効・並びを上書き）

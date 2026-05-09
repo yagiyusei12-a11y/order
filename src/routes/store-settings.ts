@@ -1,8 +1,15 @@
 import bcrypt from "bcryptjs";
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
+import { appendStaffAuditFromRequest } from "../lib/staff-audit.js";
 import { normalizeStaffEmail, validatePasswordPlain } from "../lib/staff-credentials.js";
+import { assertManagerRole } from "../lib/staff-role.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
+
+function staffSubFromReq(req: { user?: unknown }): string | null {
+  const u = req.user as { sub?: string } | undefined;
+  return u?.sub ?? null;
+}
 
 /** 英小文字・数字・アンダースコアのみ（決済記録の methodCode に保存されるため変更しにくい形式に正規化） */
 function normalizePaymentMethodCode(raw: string): string | null {
@@ -33,6 +40,7 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
   }>("/stores/:storeId/settings", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
     if (!store) return reply.code(404).send({ error: "store not found" });
+    if (!assertManagerRole(reply, req.user)) return;
 
     const data: { name?: string; settings?: object } = {};
     if (typeof req.body?.name === "string") {
@@ -55,6 +63,9 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
       where: { id: store.id },
       data,
     });
+    await appendStaffAuditFromRequest(req, store.id, staffSubFromReq(req), "store_settings_patch", {
+      updatedFields: Object.keys(data),
+    }).catch(() => {});
     return {
       store: {
         id: updated.id,
@@ -70,7 +81,7 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
     const staffUsers = await prisma.staffUser.findMany({
       where: { storeId: store.id },
       orderBy: { email: "asc" },
-      select: { id: true, email: true, name: true, createdAt: true },
+      select: { id: true, email: true, name: true, role: true, createdAt: true },
     });
     return { storeId: store.id, staffUsers };
   });
@@ -81,6 +92,7 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
   }>("/stores/:storeId/staff-users", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
     if (!store) return reply.code(404).send({ error: "store not found" });
+    if (!assertManagerRole(reply, req.user)) return;
 
     const email = normalizeStaffEmail(req.body?.email ?? "");
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -102,9 +114,14 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
           email,
           passwordHash: bcrypt.hashSync(password, 10),
           name,
+          role: "staff",
         },
-        select: { id: true, email: true, name: true, createdAt: true },
+        select: { id: true, email: true, name: true, role: true, createdAt: true },
       });
+      await appendStaffAuditFromRequest(req, store.id, staffSubFromReq(req), "staff_user_created", {
+        staffUserId: row.id,
+        email: row.email,
+      }).catch(() => {});
       return row;
     } catch (e: unknown) {
       if ((e as { code?: string }).code === "P2002") {
@@ -114,12 +131,97 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
     }
   });
 
+  app.patch<{
+    Params: { storeId: string; staffUserId: string };
+    Body: { role?: string; name?: string | null; password?: string };
+  }>("/stores/:storeId/staff-users/:staffUserId", async (req, reply) => {
+    const storeId = req.params.storeId;
+    const store = await prisma.store.findUnique({ where: { id: storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    if (!assertManagerRole(reply, req.user)) return;
+
+    const target = await prisma.staffUser.findFirst({
+      where: { id: req.params.staffUserId, storeId },
+    });
+    if (!target) return reply.code(404).send({ error: "staff user not found" });
+
+    const body = req.body ?? {};
+    const data: { role?: string; name?: string | null; passwordHash?: string } = {};
+
+    if (body.role !== undefined) {
+      const r = body.role === "manager" ? "manager" : body.role === "staff" ? "staff" : null;
+      if (!r) return reply.code(400).send({ error: "role must be staff or manager" });
+      if (r === "staff" && target.role === "manager") {
+        const mgrCount = await prisma.staffUser.count({ where: { storeId, role: "manager" } });
+        if (mgrCount <= 1) {
+          return reply.code(400).send({ error: "最後の店長権限は外せません" });
+        }
+      }
+      data.role = r;
+    }
+
+    if (body.name !== undefined) {
+      data.name = typeof body.name === "string" && body.name.trim() ? body.name.trim() : null;
+    }
+
+    if (body.password !== undefined) {
+      const pw = body.password ?? "";
+      const pwErr = validatePasswordPlain(pw);
+      if (pwErr) return reply.code(400).send({ error: pwErr });
+      data.passwordHash = bcrypt.hashSync(pw, 10);
+    }
+
+    if (Object.keys(data).length === 0) return reply.code(400).send({ error: "no fields to update" });
+
+    const updated = await prisma.staffUser.update({
+      where: { id: target.id },
+      data,
+      select: { id: true, email: true, name: true, role: true, createdAt: true },
+    });
+    await appendStaffAuditFromRequest(req, storeId, staffSubFromReq(req), "staff_user_updated", {
+      staffUserId: updated.id,
+      changed: Object.keys(data).filter((k) => k !== "passwordHash"),
+    }).catch(() => {});
+    return updated;
+  });
+
+  app.delete<{ Params: { storeId: string; staffUserId: string } }>(
+    "/stores/:storeId/staff-users/:staffUserId",
+    async (req, reply) => {
+      const storeId = req.params.storeId;
+      const actorId = staffSubFromReq(req);
+      const store = await prisma.store.findUnique({ where: { id: storeId } });
+      if (!store) return reply.code(404).send({ error: "store not found" });
+      if (!assertManagerRole(reply, req.user)) return;
+
+      const target = await prisma.staffUser.findFirst({
+        where: { id: req.params.staffUserId, storeId },
+      });
+      if (!target) return reply.code(404).send({ error: "staff user not found" });
+      if (actorId && target.id === actorId) {
+        return reply.code(400).send({ error: "自分自身は削除できません" });
+      }
+      if (target.role === "manager") {
+        const mgrCount = await prisma.staffUser.count({ where: { storeId, role: "manager" } });
+        if (mgrCount <= 1) return reply.code(400).send({ error: "最後の店長アカウントは削除できません" });
+      }
+
+      await prisma.staffUser.delete({ where: { id: target.id } });
+      await appendStaffAuditFromRequest(req, storeId, actorId, "staff_user_deleted", {
+        staffUserId: target.id,
+        email: target.email,
+      }).catch(() => {});
+      return { ok: true };
+    },
+  );
+
   app.post<{
     Params: { storeId: string };
     Body: { code: string; labelJa: string; sortOrder?: number; enabled?: boolean };
   }>("/stores/:storeId/payment-methods", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
     if (!store) return reply.code(404).send({ error: "store not found" });
+    if (!assertManagerRole(reply, req.user)) return;
     const code = normalizePaymentMethodCode(req.body?.code ?? "");
     if (!code) {
       return reply
@@ -158,6 +260,9 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
       include: { definition: true },
     });
 
+    await appendStaffAuditFromRequest(req, store.id, staffSubFromReq(req), "payment_method_created", {
+      code: row.definition.code,
+    }).catch(() => {});
     return {
       id: row.id,
       code: row.definition.code,
@@ -171,6 +276,7 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
     Params: { storeId: string; storePaymentMethodId: string };
     Body: { enabled?: boolean; sortOrder?: number; labelJa?: string };
   }>("/stores/:storeId/payment-methods/:storePaymentMethodId", async (req, reply) => {
+    if (!assertManagerRole(reply, req.user)) return;
     const row = await prisma.storePaymentMethod.findFirst({
       where: { id: req.params.storePaymentMethodId, storeId: req.params.storeId },
       include: { definition: true },
@@ -212,6 +318,10 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
           })
         : row;
 
+    await appendStaffAuditFromRequest(req, req.params.storeId, staffSubFromReq(req), "payment_method_updated", {
+      storePaymentMethodId: row.id,
+      code: row.definition.code,
+    }).catch(() => {});
     return {
       id: updated.id,
       code: row.definition.code,
@@ -224,6 +334,7 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
   app.delete<{ Params: { storeId: string; storePaymentMethodId: string } }>(
     "/stores/:storeId/payment-methods/:storePaymentMethodId",
     async (req, reply) => {
+      if (!assertManagerRole(reply, req.user)) return;
       const row = await prisma.storePaymentMethod.findFirst({
         where: { id: req.params.storePaymentMethodId, storeId: req.params.storeId },
         include: { definition: true },
@@ -231,6 +342,9 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
       if (!row) return reply.code(404).send({ error: "payment method row not found" });
 
       await prisma.storePaymentMethod.delete({ where: { id: row.id } });
+      await appendStaffAuditFromRequest(req, req.params.storeId, staffSubFromReq(req), "payment_method_deleted", {
+        code: row.definition.code,
+      }).catch(() => {});
 
       const stillLinked = await prisma.storePaymentMethod.count({
         where: { definitionId: row.definitionId },

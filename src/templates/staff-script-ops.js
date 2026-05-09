@@ -19,6 +19,10 @@ let storeSettingsCache = {
   },
 };
 
+function managerOpsAllowed() {
+  return typeof window !== "undefined" && window.STAFF_ROLE === "manager";
+}
+
 /** @param {"payments"|"billVoid"|"discounts"|"orderLines"|"reopenSettledForRegister"} key */
 function billCorrectionAllowed(key) {
   const p = storeSettingsCache.billCorrectionPolicy;
@@ -209,6 +213,10 @@ function openBillDiscountModal(detail, session, table) {
     log("店舗設定により割引の変更は無効です");
     return;
   }
+  if (!managerOpsAllowed()) {
+    log("店長のみ割引を変更できます");
+    return;
+  }
   const presets = opsDiscountPresetRows(null);
   const cur = detail.billDiscountJson || null;
   const box = document.createElement("div");
@@ -338,6 +346,10 @@ function openBillDiscountModal(detail, session, table) {
 function openLineDiscountModal(detail, group, session, table) {
   if (!billCorrectionAllowed("discounts")) {
     log("店舗設定により割引の変更は無効です");
+    return;
+  }
+  if (!managerOpsAllowed()) {
+    log("店長のみ割引を変更できます");
     return;
   }
   const lines = group.lines || [];
@@ -651,6 +663,9 @@ function formatBillWhen(iso) {
 async function renderReceiptBox() {
   const listEl = document.getElementById("receiptBoxList");
   if (!listEl) return;
+  try {
+    if (typeof window !== "undefined" && window.__staffMeLoaded) await window.__staffMeLoaded;
+  } catch (_) {}
   const bcReopen = billCorrectionAllowed("reopenSettledForRegister");
   try {
     const res = await api(
@@ -695,7 +710,11 @@ async function renderReceiptBox() {
           "<button type=\"button\" class=\"btn-ghost rx-reopen\" style=\"padding:0.28rem 0.45rem;font-size:0.78rem;color:#9a3412;border-color:#fdba74;background:#fffbeb;font-weight:700\" data-bill-id=\"" +
           idAttr +
           "\"" +
-          (!bcReopen ? " disabled title=\"店舗設定により精算取り消しは無効です\"" : "") +
+          (!bcReopen || !managerOpsAllowed()
+            ? " disabled title=\"" +
+              (!bcReopen ? "店舗設定により精算取り消しは無効です" : "店長のみ操作できます") +
+              "\""
+            : "") +
           ">レジに戻す</button>" +
           "</span></td>" +
           "</tr>"
@@ -1057,7 +1076,12 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
   const bcOl = billCorrectionAllowed("orderLines");
   const bcPay = billCorrectionAllowed("payments");
   const olDis = !bcOl ? " disabled title=\"店舗設定により明細の変更は無効です\"" : "";
-  const discDis = !bcDisc ? " disabled title=\"店舗設定により割引の変更は無効です\"" : "";
+  const discDis =
+    !bcDisc || !managerOpsAllowed()
+      ? " disabled title=\"" +
+        (!bcDisc ? "店舗設定により割引の変更は無効です" : "店長のみ変更できます") +
+        "\""
+      : "";
   const pv = detail.preview || {};
   const ordersDiscAmt = Number(pv.ordersDiscount || 0);
   const billDiscAmt = Number(pv.billDiscountAmount || 0);
@@ -1232,7 +1256,11 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
     escapeHtml(billDiscLabel) +
     "</span></span>" +
     "<button type=\"button\" class=\"btn-ghost\" id=\"btnBillDiscount\" style=\"font-weight:700;border-color:#86efac\"" +
-    (!bcDisc ? " disabled title=\"店舗設定により割引の変更は無効です\"" : "") +
+    (!bcDisc || !managerOpsAllowed()
+      ? " disabled title=\"" +
+        (!bcDisc ? "店舗設定により割引の変更は無効です" : "店長のみ変更できます") +
+        "\""
+      : "") +
     ">設定</button></div>" +
     "<h3 class=\"ops-sec-title\">コース・注文</h3>" +
     "<div class=\"card ops-order-card\"><table class=\"ops-order-table\">" +
@@ -1784,6 +1812,9 @@ async function renderDetail() {
 }
 
 async function loadAll() {
+  try {
+    if (typeof window !== "undefined" && window.__staffMeLoaded) await window.__staffMeLoaded;
+  } catch (_) {}
   const [tablesRes, sessionsRes, coursesRes, billsRes, settingsRes] = await Promise.all([
     api("/stores/" + encodeURIComponent(STORE) + "/tables"),
     api("/stores/" + encodeURIComponent(STORE) + "/sessions?status=open,bashing_waiting,merged&includeTotals=1"),

@@ -483,6 +483,15 @@
       <div id="staffAddBox" style="margin-top:0.65rem;padding-top:0.65rem;border-top:1px solid var(--border)"></div>
     </div>
 
+    <div class="card" style="margin-top:1rem;display:none" id="staffAuditCard">
+      <strong style="font-size:0.9rem">監査ログ</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        ログイン失敗・店舗設定の変更・敏感な会計操作などの記録です（店長のみ表示）。
+      </p>
+      <button type="button" class="btn-ghost" id="btnLoadStaffAudit">一覧を読み込む</button>
+      <pre id="staffAuditOut" style="font-size:0.72rem;white-space:pre-wrap;margin-top:0.5rem;max-height:20rem;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:0.5rem;background:var(--surface)"></pre>
+    </div>
+
     <div class="card" style="margin-top:1rem">
       <strong style="font-size:0.9rem">クイックリンク</strong>
       <div class="row" style="margin-top:0.5rem;flex-wrap:wrap;gap:0.35rem">

@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import type { FastifyInstance } from "fastify";
 import { STAFF_JWT_COOKIE_NAME, cookieSecureDefault } from "../config.js";
 import { prisma } from "../db.js";
+import { appendStaffAuditFromRequest, maskEmailForAudit } from "../lib/staff-audit.js";
 import { normalizeStaffEmail, parseStoreId, validatePasswordPlain } from "../lib/staff-credentials.js";
 
 export async function registerAuth(app: FastifyInstance): Promise<void> {
@@ -65,6 +66,7 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
             storeId,
             email,
             passwordHash: bcrypt.hashSync(password, 10),
+            role: "manager",
           },
         });
         return { ok: true, storeId, email, createdStore: false };
@@ -80,6 +82,7 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
               storeId,
               email,
               passwordHash: bcrypt.hashSync(password, 10),
+              role: "manager",
             },
           });
         });
@@ -108,11 +111,21 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
         where: { storeId_email: { storeId, email } },
       });
       if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
+        const storeExists = await prisma.store.findUnique({
+          where: { id: storeId },
+          select: { id: true },
+        });
+        if (storeExists) {
+          await appendStaffAuditFromRequest(req, storeId, null, "login_failed", {
+            emailHint: maskEmailForAudit(email),
+          }).catch(() => {});
+        }
         return reply.code(401).send({ error: "invalid credentials" });
       }
 
+      const roleJwt = user.role === "manager" ? "manager" : "staff";
       const token = await reply.jwtSign(
-        { sub: user.id, storeId: user.storeId, email: user.email },
+        { sub: user.id, storeId: user.storeId, email: user.email, role: roleJwt },
         { expiresIn: process.env.JWT_EXPIRES_IN ?? "12h" }
       );
 
@@ -144,7 +157,21 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
     } catch {
       return reply.code(401).send({ error: "unauthorized" });
     }
-    return { user: req.user };
+    const sub = (req.user as { sub?: string }).sub;
+    if (!sub) return reply.code(401).send({ error: "unauthorized" });
+    const row = await prisma.staffUser.findUnique({
+      where: { id: sub },
+      select: { id: true, storeId: true, email: true, role: true },
+    });
+    if (!row) return reply.code(401).send({ error: "unauthorized" });
+    return {
+      user: {
+        sub: row.id,
+        storeId: row.storeId,
+        email: row.email,
+        role: row.role === "manager" ? "manager" : "staff",
+      },
+    };
   });
 }
 

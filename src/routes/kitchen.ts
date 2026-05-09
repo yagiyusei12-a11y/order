@@ -67,7 +67,9 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
                 choices: {
                   where: { isFixed: true },
                   orderBy: { sortOrder: "asc" },
-                  include: { componentMenuItem: { select: { id: true, name: true } } },
+                  include: {
+                    componentMenuItem: { select: { id: true, name: true, imageUrl: true, recipe: true } },
+                  },
                 },
               },
             },
@@ -142,6 +144,11 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
             l.menuItem?.cookTimerSec2 != null && l.menuItem.cookTimerSec2 > 0 ? l.menuItem.cookTimerSec2 : null,
           imageUrl: l.menuItem?.imageUrl ?? null,
           recipe: l.menuItem?.recipe ?? null,
+          sellKind: l.menuItem?.sellKind ?? null,
+          setBundleRootName: null,
+          setBundleComponents: null,
+          setParentImageUrl: null,
+          setParentRecipe: null,
           setFixedSteps:
             l.menuItem?.sellKind === "set"
               ? l.menuItem.setSteps.map((st) => ({
@@ -150,6 +157,8 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
                   fixed: (st.choices || []).map((c) => ({
                     menuItemId: c.componentMenuItemId,
                     name: c.componentMenuItem?.name ?? "",
+                    imageUrl: c.componentMenuItem?.imageUrl ?? null,
+                    recipe: c.componentMenuItem?.recipe ?? null,
                   })),
                 }))
               : null,
@@ -167,6 +176,19 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
       }
 
       const setTitle = stripSetNameSnapshotBracket(l.nameSnapshot);
+      const parentRecipe = l.menuItem?.recipe ?? null;
+      const parentImg = l.menuItem?.imageUrl ?? null;
+      const bundleParts = resolved.map((p) => {
+        const m = compMenuById.get(p.menuItemId)!;
+        return {
+          menuItemId: p.menuItemId,
+          stepLabel: p.stepLabel ? p.stepLabel : null,
+          pickName: p.pickName,
+          name: m.name,
+          imageUrl: m.imageUrl ?? null,
+          recipe: m.recipe ?? null,
+        };
+      });
       for (const p of resolved) {
         const mi = compMenuById.get(p.menuItemId)!;
         outLines.push({
@@ -191,6 +213,11 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
           cookTimerSec2: mi.cookTimerSec2 != null && mi.cookTimerSec2 > 0 ? mi.cookTimerSec2 : null,
           imageUrl: mi.imageUrl ?? null,
           recipe: mi.recipe ?? null,
+          sellKind: mi.sellKind ?? null,
+          setBundleRootName: setTitle,
+          setBundleComponents: bundleParts,
+          setParentImageUrl: parentImg,
+          setParentRecipe: parentRecipe,
           setFixedSteps: null,
           orderId: l.orderId,
           orderCreatedAt: l.order.createdAt,

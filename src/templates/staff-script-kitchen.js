@@ -465,6 +465,57 @@ function closeKitRecipeModal() {
   if (host) host.innerHTML = "";
 }
 
+/** @param {{ stepLabel?: string | null; pickName?: string; name?: string }} part */
+function kitRecipeModalPartHeading(part) {
+  const pick = (part.pickName != null && String(part.pickName).trim() !== "" ? part.pickName : null) || part.name || "";
+  const sl = part.stepLabel != null && String(part.stepLabel).trim() !== "" ? String(part.stepLabel).trim() : "";
+  if (sl && pick) return sl + ": " + pick;
+  return pick || part.name || "商品";
+}
+
+/**
+ * @param {HTMLElement} container
+ * @param {{ menuItemId?: string; stepLabel?: string | null; pickName?: string; name?: string; imageUrl?: string | null; recipe?: string | null }} part
+ * @param {{ showMasterHint?: boolean }} [opts]
+ */
+function appendKitRecipeModalPartBlock(container, part, opts) {
+  const showMasterHint = !!(opts && opts.showMasterHint);
+  const wrap = document.createElement("div");
+  wrap.className = "kit-recipe-modal-set-part";
+  const head = document.createElement("div");
+  head.className = "kit-recipe-modal-set-part-head";
+  head.textContent = kitRecipeModalPartHeading(part);
+  wrap.appendChild(head);
+  if (showMasterHint && part.name && part.pickName && part.name !== part.pickName) {
+    const sub = document.createElement("div");
+    sub.className = "kit-recipe-modal-set-master muted";
+    sub.textContent = "マスタ名: " + part.name;
+    wrap.appendChild(sub);
+  }
+  const imgUrl = part.imageUrl && String(part.imageUrl).trim() ? String(part.imageUrl).trim() : null;
+  const recipe = typeof part.recipe === "string" && part.recipe.trim() !== "" ? part.recipe : null;
+  if (imgUrl) {
+    const img = document.createElement("img");
+    img.className = "kit-recipe-modal-img kit-recipe-modal-img-sm";
+    img.alt = "";
+    img.src = imgUrl;
+    wrap.appendChild(img);
+  }
+  if (recipe) {
+    const pre = document.createElement("div");
+    pre.className = "kit-recipe-modal-recipe";
+    pre.textContent = recipe;
+    wrap.appendChild(pre);
+  }
+  if (!imgUrl && !recipe) {
+    const empty = document.createElement("div");
+    empty.className = "kit-recipe-modal-set-empty muted";
+    empty.textContent = "画像・レシピは未登録です";
+    wrap.appendChild(empty);
+  }
+  container.appendChild(wrap);
+}
+
 /**
  * @param {object} ln — order-line（またはまとめ表示用の手動オブジェクト。nameSnapshot で見出しを上書き可）
  */
@@ -482,6 +533,9 @@ function openKitMenuDetailModal(ln) {
   let title = "";
   if (ln.nameSnapshot != null && String(ln.nameSnapshot).trim() !== "") title = String(ln.nameSnapshot);
   else title = orderLineDisplayName(ln) || "商品";
+
+  const bundle =
+    Array.isArray(ln.setBundleComponents) && ln.setBundleComponents.length > 0 ? ln.setBundleComponents : null;
 
   const backdrop = document.createElement("div");
   backdrop.className = "kit-recipe-modal-backdrop";
@@ -501,7 +555,7 @@ function openKitMenuDetailModal(ln) {
   const hTitle = document.createElement("div");
   hTitle.id = "kitRecipeModalTitle";
   hTitle.className = "kit-recipe-modal-title";
-  hTitle.textContent = title;
+  hTitle.textContent = bundle && ln.setBundleRootName ? String(ln.setBundleRootName) : title;
   const btnClose = document.createElement("button");
   btnClose.type = "button";
   btnClose.className = "btn-ghost kit-recipe-modal-close";
@@ -513,24 +567,87 @@ function openKitMenuDetailModal(ln) {
   const body = document.createElement("div");
   body.className = "kit-recipe-modal-body";
 
-  if (imgUrl) {
-    const img = document.createElement("img");
-    img.className = "kit-recipe-modal-img";
-    img.alt = "";
-    img.src = imgUrl;
-    body.appendChild(img);
-  }
-  if (recipe) {
-    const pre = document.createElement("div");
-    pre.className = "kit-recipe-modal-recipe";
-    pre.textContent = recipe;
-    body.appendChild(pre);
-  }
-  if (!imgUrl && !recipe) {
-    const empty = document.createElement("div");
-    empty.className = "kit-recipe-modal-empty muted";
-    empty.textContent = "画像・レシピは未登録です";
-    body.appendChild(empty);
+  if (bundle) {
+    const pImg =
+      ln.setParentImageUrl && String(ln.setParentImageUrl).trim()
+        ? String(ln.setParentImageUrl).trim()
+        : null;
+    const pRec =
+      typeof ln.setParentRecipe === "string" && ln.setParentRecipe.trim() !== "" ? ln.setParentRecipe : null;
+    if (pImg || pRec) {
+      const intro = document.createElement("div");
+      intro.className = "kit-recipe-modal-set-intro";
+      const introTit = document.createElement("div");
+      introTit.className = "kit-recipe-modal-set-intro-title";
+      introTit.textContent = "セット商品全体";
+      intro.appendChild(introTit);
+      if (pImg) {
+        const img = document.createElement("img");
+        img.className = "kit-recipe-modal-img";
+        img.alt = "";
+        img.src = pImg;
+        intro.appendChild(img);
+      }
+      if (pRec) {
+        const pre = document.createElement("div");
+        pre.className = "kit-recipe-modal-recipe";
+        pre.textContent = pRec;
+        intro.appendChild(pre);
+      }
+      body.appendChild(intro);
+    }
+    const sub = document.createElement("div");
+    sub.className = "kit-recipe-modal-set-subtitle";
+    sub.textContent = "構成単品";
+    body.appendChild(sub);
+    for (const part of bundle) {
+      appendKitRecipeModalPartBlock(body, part, { showMasterHint: true });
+    }
+  } else if (ln.sellKind === "set" && Array.isArray(ln.setFixedSteps) && ln.setFixedSteps.length > 0) {
+    hTitle.textContent = title;
+    for (const st of ln.setFixedSteps) {
+      const sec = document.createElement("div");
+      sec.className = "kit-recipe-modal-set-step";
+      const stepLab = document.createElement("div");
+      stepLab.className = "kit-recipe-modal-set-step-label";
+      stepLab.textContent = st.label || "構成";
+      sec.appendChild(stepLab);
+      const fixed = Array.isArray(st.fixed) ? st.fixed : [];
+      for (const fx of fixed) {
+        appendKitRecipeModalPartBlock(
+          sec,
+          {
+            menuItemId: fx.menuItemId,
+            pickName: fx.name,
+            name: fx.name,
+            imageUrl: fx.imageUrl,
+            recipe: fx.recipe,
+          },
+          { showMasterHint: false },
+        );
+      }
+      body.appendChild(sec);
+    }
+  } else {
+    if (imgUrl) {
+      const img = document.createElement("img");
+      img.className = "kit-recipe-modal-img";
+      img.alt = "";
+      img.src = imgUrl;
+      body.appendChild(img);
+    }
+    if (recipe) {
+      const pre = document.createElement("div");
+      pre.className = "kit-recipe-modal-recipe";
+      pre.textContent = recipe;
+      body.appendChild(pre);
+    }
+    if (!imgUrl && !recipe) {
+      const empty = document.createElement("div");
+      empty.className = "kit-recipe-modal-empty muted";
+      empty.textContent = "画像・レシピは未登録です";
+      body.appendChild(empty);
+    }
   }
 
   card.appendChild(hdr);
@@ -933,6 +1050,12 @@ function renderKitList() {
           summaryComponentMenuItemId: ln.menuItemId ? String(ln.menuItemId) : "",
           menuImageUrl: ln.imageUrl ?? null,
           menuRecipe: ln.recipe ?? null,
+          menuSellKind: ln.sellKind ?? null,
+          menuSetFixedSteps: ln.setFixedSteps ?? null,
+          menuSetBundleRootName: ln.setBundleRootName ?? null,
+          menuSetBundleComponents: ln.setBundleComponents ?? null,
+          menuSetParentImageUrl: ln.setParentImageUrl ?? null,
+          menuSetParentRecipe: ln.setParentRecipe ?? null,
         });
       } else {
         prev.qty += Number(ln.qty || 0);
@@ -1000,6 +1123,12 @@ function renderKitList() {
             imageUrl: g.menuImageUrl,
             recipe: g.menuRecipe,
             nameSnapshot: g.nameSnapshot,
+            sellKind: g.menuSellKind,
+            setFixedSteps: g.menuSetFixedSteps,
+            setBundleRootName: g.menuSetBundleRootName,
+            setBundleComponents: g.menuSetBundleComponents,
+            setParentImageUrl: g.menuSetParentImageUrl,
+            setParentRecipe: g.menuSetParentRecipe,
           });
       }
       nameRow.appendChild(nameEl);

@@ -94,6 +94,14 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    .go-brand .sub.sub-hint {
+      margin-top: 0.12rem;
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+      line-height: 1.25;
+      color: rgba(226, 232, 240, 0.86);
+    }
 
     /* ========== カテゴリタブ ========== */
     .go-tabs-wrap {
@@ -1106,6 +1114,7 @@
     <div class="go-brand">
       <h1>ご注文</h1>
       <div class="sub" id="hdr">読み込み中…</div>
+      <div class="sub sub-hint" id="checkoutHint" style="display:none"></div>
     </div>
     <div class="go-topicons">
       <button type="button" class="go-iconbtn" id="btnCartScroll" title="カートの内容を表示" aria-label="カートの内容を表示">
@@ -3106,6 +3115,18 @@
       }
       if (alcoholRestricted) hdr += " · アルコール商品は制限中";
       document.getElementById("hdr").textContent = hdr;
+
+      try {
+        const hintEl = document.getElementById("checkoutHint");
+        const tdc = s && s.tableDisplayCode ? String(s.tableDisplayCode) : "";
+        if (hintEl && tdc) {
+          hintEl.textContent = "お帰りの際はレジにて（" + tdc + "卓）をお見せください。";
+          hintEl.style.display = "";
+        } else if (hintEl) {
+          hintEl.textContent = "";
+          hintEl.style.display = "none";
+        }
+      } catch (_) {}
       startLastOrderTicker(data.lastOrder);
 
       const filterWrap = document.getElementById("courseMenuFilterWrap");

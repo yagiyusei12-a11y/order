@@ -482,6 +482,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       },
       coursePriceTier: true,
       customer: { select: { name: true, phone: true } },
+      table: { select: { publicCode: true } },
     } as const;
     const tokenSession = await prisma.diningSession.findUnique({
       where: { guestToken: req.params.token },
@@ -731,6 +732,9 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         }
       : null;
 
+    const seatCode = typeof session.table?.publicCode === "string" ? session.table.publicCode : "";
+    const tableDisplayCode = seatCode ? displayTableCode(seatCode) || seatCode : "";
+
     return {
       session: {
         id: session.id,
@@ -738,6 +742,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         childCount: session.childCount,
         guestAlcoholAllowed: session.guestAlcoholAllowed,
         course: courseOut,
+        tableDisplayCode: tableDisplayCode || null,
       },
       lastOrder,
       customerProfile: session.customer

@@ -191,6 +191,15 @@ async function loadAll() {
   document.getElementById("stName").value = st.store.name || "";
   document.getElementById("stId").value = st.store.id || "";
   const s = st.store.settings || {};
+  const taxRateEl = document.getElementById("stTaxRate");
+  if (taxRateEl) taxRateEl.value = String(s.taxRatePercent ?? 10);
+  const menuModeEl = document.getElementById("stMenuPriceTaxMode");
+  if (menuModeEl) menuModeEl.value = s.menuPriceTaxMode === "exclusive" ? "exclusive" : "inclusive";
+  const courseModeEl = document.getElementById("stCoursePriceTaxMode");
+  if (courseModeEl) {
+    const v = s.coursePriceTaxMode ? s.coursePriceTaxMode : s.menuPriceTaxMode;
+    courseModeEl.value = v === "exclusive" ? "exclusive" : "inclusive";
+  }
   document.getElementById("stKitSec").value = String(s.kitchenAutoRefreshSec ?? 10);
   document.getElementById("stGuestPrice").checked = s.guestShowMenuPrices !== false;
   document.getElementById("stTz").value = s.timezone || "Asia/Tokyo";
@@ -552,6 +561,67 @@ if (btnSaveOpsDiscountPresets) {
   };
 }
 
+function initSettingsTabs() {
+  const tabs = document.getElementById("settingsTabs");
+  if (!tabs) return;
+  const btns = [...tabs.querySelectorAll("button[data-stab]")];
+  const panels = [...document.querySelectorAll("[data-stab-panel]")];
+
+  const show = (k) => {
+    for (const b of btns) b.classList.toggle("is-on", b.getAttribute("data-stab") === k);
+    for (const p of panels) {
+      const pk = p.getAttribute("data-stab-panel");
+      p.style.display = pk === k ? "" : "none";
+    }
+  };
+
+  btns.forEach((b) => {
+    b.onclick = () => {
+      const k = b.getAttribute("data-stab");
+      if (!k) return;
+      try {
+        const h = new URL(location.href);
+        h.hash = "tab=" + encodeURIComponent(k);
+        history.replaceState(null, "", h.toString());
+      } catch (_) {}
+      show(k);
+    };
+  });
+
+  let initial = "basic";
+  try {
+    const m = /(?:^#|&)tab=([^&]+)/.exec(String(location.hash || ""));
+    if (m && m[1]) initial = decodeURIComponent(m[1]);
+  } catch (_) {}
+  if (!btns.some((b) => b.getAttribute("data-stab") === initial)) initial = "basic";
+  show(initial);
+}
+
+const btnSaveTaxModes = document.getElementById("btnSaveTaxModes");
+if (btnSaveTaxModes) {
+  btnSaveTaxModes.onclick = async () => {
+    log("");
+    const taxRatePercent = Number(document.getElementById("stTaxRate").value);
+    if (!Number.isInteger(taxRatePercent) || taxRatePercent < 0 || taxRatePercent > 30) {
+      return log("税率は0〜30の整数で");
+    }
+    const menuPriceTaxMode = document.getElementById("stMenuPriceTaxMode").value === "exclusive" ? "exclusive" : "inclusive";
+    const coursePriceTaxMode =
+      document.getElementById("stCoursePriceTaxMode").value === "exclusive" ? "exclusive" : "inclusive";
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings: { taxRatePercent, menuPriceTaxMode, coursePriceTaxMode } }),
+      });
+      log("税・表示モードを保存しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+}
+
 document.getElementById("btnSaveStore").onclick = async () => {
   log("");
   const name = document.getElementById("stName").value.trim();
@@ -654,4 +724,5 @@ if (btnSaveTakeoutPickup) {
   };
 }
 
+initSettingsTabs();
 loadAll().catch((e) => log(String(e.message || e)));

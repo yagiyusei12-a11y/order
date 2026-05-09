@@ -1,111 +1,217 @@
 <main>
   <h2 class="page-title">設定</h2>
-  <p class="muted" style="margin-top:-0.35rem;margin-bottom:1rem">店舗の基本情報・会計まわり・ゲスト画面の表示をまとめて変更できます。</p>
+  <p class="muted" style="margin-top:-0.35rem;margin-bottom:1rem">
+    店舗の設定はここに集約します。各ページの設定は基本「表示のみ」にし、変更はこのページで行います。
+  </p>
 
-  <div class="card" id="settings-last-order" style="border-color:#3b82f6">
-    <strong style="font-size:0.9rem">ラストオーダー時刻</strong>
-    <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">コースに入った卓は、<strong>選んだ時間パターン（例: 90分）の制限</strong>の終了を基準にします。「終了の何分前」に注文を締め切るかを下で指定してください。ゲスト画面のカウントダウンと、締め後の注文拒否に使います。</p>
-    <label for="stLoMin">締め切り（コース終了の何分前）</label>
-    <p class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.35rem">例: 制限90分・30分の場合、セッション開始から60分後がラストオーダー締め。0に近いほど終了ギリギリまで注文可能に近づきます。</p>
-    <input id="stLoMin" type="number" min="0" max="1440" step="1" />
-    <label class="row" style="margin-top:0.6rem;align-items:center;gap:0.4rem;font-size:0.82rem">
-      <input type="checkbox" id="stLoEnforce" /> <span>締め時刻以降の新規注文を拒否する（推奨）</span>
-    </label>
-    <button type="button" class="btn-primary" id="btnSaveLastOrder" style="margin-top:0.65rem">ラストオーダー設定を保存</button>
+  <div class="top-tabs" id="settingsTabs" style="margin:0 0 1rem">
+    <button type="button" data-stab="basic" class="is-on">基本</button>
+    <button type="button" data-stab="billing">会計</button>
+    <button type="button" data-stab="menuCourse">メニュー/コース</button>
+    <button type="button" data-stab="kitchen">キッチン</button>
+    <button type="button" data-stab="reports">レポート</button>
+    <button type="button" data-stab="accounts">アカウント</button>
   </div>
 
-  <div class="card">
-    <strong style="font-size:0.9rem">店舗</strong>
-    <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">画面上部の店舗IDとは別に、表示用の店舗名を更新できます。</p>
-    <label for="stName">店舗名（画面・レシート等の表示名）</label>
-    <input id="stName" type="text" placeholder="例: 本店" />
-    <label for="stId" class="muted" style="font-size:0.72rem">店舗ID（参照用・変更不可）</label>
-    <input id="stId" type="text" readonly style="opacity:0.85" title="APIやURLで使う固定の店舗識別子" />
-    <button type="button" class="btn-primary" id="btnSaveStore">店舗名を保存</button>
+  <div id="settingsTab-basic" data-stab-panel="basic">
+    <div class="card" style="border-color:#cbd5e1">
+      <strong style="font-size:0.9rem">税・表示モード</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        税率と、メニュー/コースの税込・税抜の表示モードです。ゲスト画面・会計・QR選択にも反映されます。
+      </p>
+      <div class="row" style="gap:0.65rem;align-items:flex-end;flex-wrap:wrap">
+        <div style="min-width:12rem;flex:1">
+          <label for="stTaxRate">税率（%）</label>
+          <input id="stTaxRate" type="number" min="0" max="30" step="1" />
+        </div>
+        <div style="min-width:12rem;flex:1">
+          <label for="stMenuPriceTaxMode">単品（メニュー）表示</label>
+          <select id="stMenuPriceTaxMode">
+            <option value="inclusive">税込</option>
+            <option value="exclusive">税抜</option>
+          </select>
+        </div>
+        <div style="min-width:12rem;flex:1">
+          <label for="stCoursePriceTaxMode">コース表示</label>
+          <select id="stCoursePriceTaxMode">
+            <option value="inclusive">税込</option>
+            <option value="exclusive">税抜</option>
+          </select>
+        </div>
+      </div>
+      <button type="button" class="btn-primary" id="btnSaveTaxModes">税・表示モードを保存</button>
+    </div>
+
+    <div class="card" id="settings-last-order" style="border-color:#3b82f6">
+      <strong style="font-size:0.9rem">ラストオーダー時刻</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        コースに入った卓は、<strong>選んだ時間パターン（例: 90分）の制限</strong>の終了を基準にします。「終了の何分前」に注文を締め切るかを下で指定してください。ゲスト画面のカウントダウンと、締め後の注文拒否に使います。
+      </p>
+      <label for="stLoMin">締め切り（コース終了の何分前）</label>
+      <p class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.35rem">
+        例: 制限90分・30分の場合、セッション開始から60分後がラストオーダー締め。0に近いほど終了ギリギリまで注文可能に近づきます。
+      </p>
+      <input id="stLoMin" type="number" min="0" max="1440" step="1" />
+      <label class="row" style="margin-top:0.6rem;align-items:center;gap:0.4rem;font-size:0.82rem">
+        <input type="checkbox" id="stLoEnforce" /> <span>締め時刻以降の新規注文を拒否する（推奨）</span>
+      </label>
+      <button type="button" class="btn-primary" id="btnSaveLastOrder" style="margin-top:0.65rem">ラストオーダー設定を保存</button>
+    </div>
+
+    <div class="card">
+      <strong style="font-size:0.9rem">店舗</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">画面上部の店舗IDとは別に、表示用の店舗名を更新できます。</p>
+      <label for="stName">店舗名（画面・レシート等の表示名）</label>
+      <input id="stName" type="text" placeholder="例: 本店" />
+      <label for="stId" class="muted" style="font-size:0.72rem">店舗ID（参照用・変更不可）</label>
+      <input id="stId" type="text" readonly style="opacity:0.85" title="APIやURLで使う固定の店舗識別子" />
+      <button type="button" class="btn-primary" id="btnSaveStore">店舗名を保存</button>
+    </div>
+
+    <div class="card" style="margin-top:1rem">
+      <strong style="font-size:0.9rem">画面・動作</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">キッチンの自動更新間隔（秒）と、ゲスト注文画面の価格表示です。</p>
+      <label for="stKitSec">キッチン画面の自動更新間隔（秒・5〜300）</label>
+      <p class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.35rem">進行中オーダー一覧を何秒ごとに再取得するか。</p>
+      <input id="stKitSec" type="number" min="5" max="300" step="1" />
+      <label class="row" style="margin-top:0.5rem;align-items:center;gap:0.4rem;font-size:0.82rem">
+        <input type="checkbox" id="stGuestPrice" aria-describedby="stGuestPrice-desc" /> <span>ゲスト注文画面にメニュー金額を表示する</span>
+      </label>
+      <p id="stGuestPrice-desc" class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.65rem">
+        オフにするとゲストには単価を隠し、会計時に案内する運用向けです。
+      </p>
+      <label for="stTz">メニュー時間帯の基準タイムゾーン（IANA）</label>
+      <p class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.35rem">
+        カテゴリの「ゲストに表示する時間」はこのタイムゾーンの時計で判定されます（例: <code>Asia/Tokyo</code>）。
+      </p>
+      <input id="stTz" type="text" placeholder="Asia/Tokyo" autocomplete="off" />
+      <button type="button" class="btn-primary" id="btnSaveUi">表示設定を保存</button>
+    </div>
+
+    <div class="card" style="margin-top:1rem">
+      <strong style="font-size:0.9rem">コース・ゲスト（オプション差額）</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        コース対象の単品について、トッピング等のオプション差額を請求するかだけを設定します。対象商品・時間別料金はコース管理へ。
+      </p>
+      <label class="row" style="margin-top:0.65rem;align-items:flex-start;gap:0.45rem;font-size:0.82rem">
+        <input type="checkbox" id="stIncOptCharge" style="margin-top:0.15rem;flex-shrink:0" />
+        <span>コース対象単品の<strong>オプション差額</strong>を追加請求する<br /><span class="muted" style="font-size:0.72rem;line-height:1.45">オン＝トッピング等の差額が税込で加算（既定）。オフ＝対象単品はオプション含め注文行0円（選択内容は伝票に残ります）。</span></span>
+      </label>
+      <button type="button" class="btn-primary" id="btnSaveCourseGuest" style="margin-top:0.65rem">オプション設定を保存</button>
+    </div>
   </div>
 
-  <div class="card" style="margin-top:1rem">
-    <strong style="font-size:0.9rem">画面・動作</strong>
-    <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">キッチンの自動更新間隔（秒）と、ゲスト注文画面の価格表示です。</p>
-    <label for="stKitSec">キッチン画面の自動更新間隔（秒・5〜300）</label>
-    <p class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.35rem">進行中オーダー一覧を何秒ごとに再取得するか。</p>
-    <input id="stKitSec" type="number" min="5" max="300" step="1" />
-    <label class="row" style="margin-top:0.5rem;align-items:center;gap:0.4rem;font-size:0.82rem">
-      <input type="checkbox" id="stGuestPrice" aria-describedby="stGuestPrice-desc" /> <span>ゲスト注文画面にメニュー金額を表示する</span>
-    </label>
-    <p id="stGuestPrice-desc" class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.65rem">オフにするとゲストには単価を隠し、会計時に案内する運用向けです。</p>
-    <label for="stTz">メニュー時間帯の基準タイムゾーン（IANA）</label>
-    <p class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.35rem">カテゴリの「ゲストに表示する時間」はこのタイムゾーンの時計で判定されます（例: <code>Asia/Tokyo</code>）。</p>
-    <input id="stTz" type="text" placeholder="Asia/Tokyo" autocomplete="off" />
-    <button type="button" class="btn-primary" id="btnSaveUi">表示設定を保存</button>
+  <div id="settingsTab-billing" data-stab-panel="billing" style="display:none">
+    <div class="card" style="border-color:#86efac">
+      <strong style="font-size:0.9rem">オペ割引プリセット</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        レジ（オペ）で「卓割引」「商品割引」を付けるときに選べる候補です。名称・円引きまたは％・値を登録します。
+      </p>
+      <table style="width:100%;font-size:0.82rem;border-collapse:collapse;margin-bottom:0.35rem">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border);text-align:left">
+            <th style="padding:0.35rem 0.25rem">名称</th>
+            <th style="padding:0.35rem 0.25rem;width:7rem">種類</th>
+            <th style="padding:0.35rem 0.25rem;width:5rem">値</th>
+            <th style="padding:0.35rem 0.25rem;width:4rem"></th>
+          </tr>
+        </thead>
+        <tbody id="opsDiscountPresetsBody"></tbody>
+      </table>
+      <button type="button" class="btn-ghost" id="btnOpsPresetAdd" style="margin-right:0.5rem">行を追加</button>
+      <button type="button" class="btn-primary" id="btnSaveOpsDiscountPresets">プリセットを保存</button>
+    </div>
+
+    <div class="card" style="margin-top:1rem">
+      <strong style="font-size:0.9rem">決済手段（会計画面）</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        有効にした手段だけが会計の入金記録に出ます。並びは数字が小さいほど上に表示されます。コードは英小文字・数字・アンダースコア（保存後は変更できません）。
+        表示名を変えると、同一コードを使う全店の表示が変わります。
+      </p>
+      <div id="payMethodsNew" style="margin-bottom:0.85rem;padding-bottom:0.85rem;border-bottom:1px solid var(--border)"></div>
+      <div id="payMethods" style="padding:0"></div>
+      <div class="muted" style="font-size:0.72rem;margin-top:0.55rem">
+        ※ 「レジ機能」は会計画面の“受取/お釣り”入力を出す支払い方法を指定します。
+      </div>
+    </div>
   </div>
 
-  <div class="card" style="margin-top:1rem">
-    <strong style="font-size:0.9rem">コース・ゲスト（オプション差額）</strong>
-    <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">コース対象の単品について、トッピング等のオプション差額を請求するかだけを設定します。対象商品・時間別料金はコース管理へ。</p>
-    <label class="row" style="margin-top:0.65rem;align-items:flex-start;gap:0.45rem;font-size:0.82rem">
-      <input type="checkbox" id="stIncOptCharge" style="margin-top:0.15rem;flex-shrink:0" />
-      <span>コース対象単品の<strong>オプション差額</strong>を追加請求する<br /><span class="muted" style="font-size:0.72rem;line-height:1.45">オン＝トッピング等の差額が税込で加算（既定）。オフ＝対象単品はオプション含め注文行0円（選択内容は伝票に残ります）。</span></span>
-    </label>
-    <button type="button" class="btn-primary" id="btnSaveCourseGuest" style="margin-top:0.65rem">オプション設定を保存</button>
+  <div id="settingsTab-menuCourse" data-stab-panel="menuCourse" style="display:none">
+    <div class="card">
+      <strong style="font-size:0.9rem">メニュー/コースの運用設定</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        ここで“表示モード”などの運用設定をまとめます。マスタ編集（商品/コースの追加・編集）は各ページで行います。
+      </p>
+      <div class="row" style="gap:0.35rem;flex-wrap:wrap">
+        <a class="btn-ghost" href="/staff-app/__STORE_PATH__/menu" style="text-decoration:none;display:inline-block">メニュー編集へ</a>
+        <a class="btn-ghost" href="/staff-app/__STORE_PATH__/courses" style="text-decoration:none;display:inline-block">コース編集へ</a>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:1rem">
+      <strong style="font-size:0.9rem">時間帯マスタ</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        「何時から何時まで」を名前付きで登録します。メニューのカテゴリ（ゲスト表示）や商品の時間帯割引で選びます。店舗のタイムゾーンは「基本」タブの設定が基準です。
+      </p>
+      <div id="timeWindowsMaster" style="padding:0"></div>
+    </div>
+
+    <div class="card" style="margin-top:1rem;border-color:#fb923c">
+      <strong style="font-size:0.9rem">テイクアウト（受取時間の候補）</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        テイクアウト注文ページの「受取時間候補ボタン」に使う時間帯マスタを選びます（複数可）。
+      </p>
+      <div id="takeoutPickupWindows" style="padding:0"></div>
+      <button type="button" class="btn-primary" id="btnSaveTakeoutPickup" style="margin-top:0.65rem">受取時間候補を保存</button>
+    </div>
   </div>
 
-  <div class="card" style="margin-top:1rem">
-    <strong style="font-size:0.9rem">時間帯マスタ</strong>
-    <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">「何時から何時まで」を名前付きで登録します。メニューのカテゴリ（ゲスト表示）や商品の時間帯割引で選びます。店舗のタイムゾーンは上の表示設定と同じ基準です。</p>
-    <div id="timeWindowsMaster" style="padding:0"></div>
+  <div id="settingsTab-kitchen" data-stab-panel="kitchen" style="display:none">
+    <div class="card">
+      <strong style="font-size:0.9rem">キッチン運用</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        キッチン画面の表示や自動更新など、運用向けの設定です。
+      </p>
+      <div class="row" style="gap:0.35rem;flex-wrap:wrap">
+        <a class="btn-ghost" href="/staff-app/__STORE_PATH__/kitchen" style="text-decoration:none;display:inline-block">キッチン画面へ</a>
+        <a class="btn-ghost" href="/staff-app/__STORE_PATH__/hall-ready" style="text-decoration:none;display:inline-block">調理済・提供へ</a>
+      </div>
+      <div class="muted" style="font-size:0.72rem;margin-top:0.55rem">
+        ※ 放題バッジ等の表示ルールは現在固定です（必要なら設定化します）。
+      </div>
+    </div>
   </div>
 
-  <div class="card" style="margin-top:1rem;border-color:#fb923c">
-    <strong style="font-size:0.9rem">テイクアウト（受取時間の候補）</strong>
-    <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
-      テイクアウト注文ページの「受取時間候補ボタン」に使う時間帯マスタを選びます（複数可）。
-    </p>
-    <div id="takeoutPickupWindows" style="padding:0"></div>
-    <button type="button" class="btn-primary" id="btnSaveTakeoutPickup" style="margin-top:0.65rem">受取時間候補を保存</button>
+  <div id="settingsTab-reports" data-stab-panel="reports" style="display:none">
+    <div class="card">
+      <strong style="font-size:0.9rem">レポート運用</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        レポートの閲覧/修正の運用ルールをここに集約します（準備中）。
+      </p>
+      <div class="row" style="gap:0.35rem;flex-wrap:wrap">
+        <a class="btn-ghost" href="/staff-app/__STORE_PATH__/reports" style="text-decoration:none;display:inline-block">レポートへ</a>
+      </div>
+    </div>
   </div>
 
-  <div class="card" style="margin-top:1rem;border-color:#86efac">
-    <strong style="font-size:0.9rem">オペ割引プリセット</strong>
-    <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
-      レジ（オペ）で「卓割引」「商品割引」を付けるときに選べる候補です。名称・円引きまたは％・値を登録します。
-    </p>
-    <table style="width:100%;font-size:0.82rem;border-collapse:collapse;margin-bottom:0.35rem">
-      <thead>
-        <tr style="border-bottom:1px solid var(--border);text-align:left">
-          <th style="padding:0.35rem 0.25rem">名称</th>
-          <th style="padding:0.35rem 0.25rem;width:7rem">種類</th>
-          <th style="padding:0.35rem 0.25rem;width:5rem">値</th>
-          <th style="padding:0.35rem 0.25rem;width:4rem"></th>
-        </tr>
-      </thead>
-      <tbody id="opsDiscountPresetsBody"></tbody>
-    </table>
-    <button type="button" class="btn-ghost" id="btnOpsPresetAdd" style="margin-right:0.5rem">行を追加</button>
-    <button type="button" class="btn-primary" id="btnSaveOpsDiscountPresets">プリセットを保存</button>
-  </div>
+  <div id="settingsTab-accounts" data-stab-panel="accounts" style="display:none">
+    <div class="card">
+      <strong style="font-size:0.9rem">スタッフアカウント</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        ログイン可能なアカウント一覧。追加すると、そのメールとパスワードで同じ店舗IDにログインできます。
+      </p>
+      <div id="staffList" style="font-size:0.82rem"></div>
+      <div id="staffAddBox" style="margin-top:0.65rem;padding-top:0.65rem;border-top:1px solid var(--border)"></div>
+    </div>
 
-  <div class="card" style="margin-top:1rem">
-    <strong style="font-size:0.9rem">決済手段（会計画面）</strong>
-    <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">有効にした手段だけが会計の入金記録に出ます。並びは数字が小さいほど上に表示されます。コードは英小文字・数字・アンダースコア（保存後は変更できません）。表示名を変えると、同一コードを使う全店の表示が変わります。</p>
-    <div id="payMethodsNew" style="margin-bottom:0.85rem;padding-bottom:0.85rem;border-bottom:1px solid var(--border)"></div>
-    <div id="payMethods" style="padding:0"></div>
-  </div>
-
-  <div class="card" style="margin-top:1rem">
-    <strong style="font-size:0.9rem">スタッフアカウント</strong>
-    <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">ログイン可能なアカウント一覧。追加すると、そのメールとパスワードで同じ店舗IDにログインできます。</p>
-    <div id="staffList" style="font-size:0.82rem"></div>
-    <div id="staffAddBox" style="margin-top:0.65rem;padding-top:0.65rem;border-top:1px solid var(--border)"></div>
-  </div>
-
-  <div class="card" style="margin-top:1rem">
-    <strong style="font-size:0.9rem">クイックリンク</strong>
-    <div class="row" style="margin-top:0.5rem;flex-wrap:wrap;gap:0.35rem">
-      <a class="btn-ghost" href="/staff-app/__STORE_PATH__/menu" style="text-decoration:none;display:inline-block">メニュー</a>
-      <a class="btn-ghost" href="/staff-app/__STORE_PATH__/tables" style="text-decoration:none;display:inline-block">席マスタ</a>
-      <a class="btn-ghost" href="/staff-app/__STORE_PATH__/courses" style="text-decoration:none;display:inline-block">コース</a>
-      <a class="btn-ghost" href="/staff-app/__STORE_PATH__/ops" style="text-decoration:none;display:inline-block">卓・会計</a>
+    <div class="card" style="margin-top:1rem">
+      <strong style="font-size:0.9rem">クイックリンク</strong>
+      <div class="row" style="margin-top:0.5rem;flex-wrap:wrap;gap:0.35rem">
+        <a class="btn-ghost" href="/staff-app/__STORE_PATH__/menu" style="text-decoration:none;display:inline-block">メニュー</a>
+        <a class="btn-ghost" href="/staff-app/__STORE_PATH__/tables" style="text-decoration:none;display:inline-block">席マスタ</a>
+        <a class="btn-ghost" href="/staff-app/__STORE_PATH__/courses" style="text-decoration:none;display:inline-block">コース</a>
+        <a class="btn-ghost" href="/staff-app/__STORE_PATH__/ops" style="text-decoration:none;display:inline-block">卓・会計</a>
+      </div>
     </div>
   </div>
 

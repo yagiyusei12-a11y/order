@@ -231,7 +231,11 @@ async function loadAll() {
   timeWindowsCache = twRes.timeWindows || [];
   storeSettingsCache = (stRes.store && stRes.store.settings) || storeSettingsCache;
   const modeSel = document.getElementById("menuTaxMode");
-  if (modeSel) modeSel.value = storeSettingsCache.menuPriceTaxMode || "inclusive";
+  if (modeSel) {
+    modeSel.value = storeSettingsCache.menuPriceTaxMode || "inclusive";
+    // 設定は settings ページに集約（ここは表示のみ）
+    modeSel.disabled = true;
+  }
   syncSelection();
   refreshNewCategoryParentOptions();
   render();
@@ -1487,20 +1491,7 @@ document.getElementById("btnRefMenu").onclick = () => loadAll().catch((e) => log
 const saveTaxModeBtn = document.getElementById("btnSaveMenuTaxMode");
 if (saveTaxModeBtn) {
   saveTaxModeBtn.onclick = async () => {
-    const modeSel = document.getElementById("menuTaxMode");
-    const mode = modeSel ? modeSel.value : "inclusive";
-    if (!(mode === "inclusive" || mode === "exclusive")) return;
-    try {
-      await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ settings: { menuPriceTaxMode: mode } }),
-      });
-      log("価格入力モードを保存しました");
-      await loadAll();
-    } catch (e) {
-      log(String(e.message || e));
-    }
+    log("価格入力モードの変更は「設定」ページで行ってください");
   };
 }
 

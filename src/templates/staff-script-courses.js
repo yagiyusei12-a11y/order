@@ -734,6 +734,8 @@ function syncCoursesPriceModeUi() {
   if (!sel) return;
   const v = storeSettingsCache && storeSettingsCache.coursePriceTaxMode === "exclusive" ? "net" : "gross";
   sel.value = v;
+  // 設定は settings ページに集約（ここは表示のみ）
+  sel.disabled = true;
 }
 
 function render() {
@@ -1013,27 +1015,9 @@ document.getElementById("btnRefCourses").onclick = () => {
 const coursesPriceModeSel = document.getElementById("coursesPriceMode");
 if (coursesPriceModeSel) {
   coursesPriceModeSel.addEventListener("change", () => {
-    (async () => {
-      log("");
-      const v = coursesPriceModeSel.value === "net" ? "exclusive" : "inclusive";
-      coursesPriceModeSel.disabled = true;
-      try {
-        await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ settings: { coursePriceTaxMode: v } }),
-        });
-        storeSettingsCache.coursePriceTaxMode = v;
-        syncCoursesPriceModeUi();
-        render();
-        initAddTierRows();
-        log("コース料金の表示を " + (v === "exclusive" ? "税抜" : "税込") + " にしました");
-      } catch (e) {
-        log(String(e.message || e));
-      } finally {
-        coursesPriceModeSel.disabled = false;
-      }
-    })();
+    // 変更操作は settings に集約
+    syncCoursesPriceModeUi();
+    log("金額表示の変更は「設定」ページで行ってください");
   });
 }
 

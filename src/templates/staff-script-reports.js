@@ -816,6 +816,18 @@ async function openBillModal(billId) {
   }
 }
 
+function renderReportsFatalError(msg) {
+  const safe = escapeHtml(msg);
+  const errHtml =
+    "<div style=\"color:#b91c1c;font-size:0.9rem;padding:0.5rem;line-height:1.45\">読み込みに失敗しました。<br />" +
+    safe +
+    "</div>";
+  for (const id of ["repSummary", "repDaily", "repByMethod", "repDiscounts", "repBills"]) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = errHtml;
+  }
+}
+
 async function runAll() {
   log("");
   try {
@@ -827,7 +839,9 @@ async function runAll() {
     await loadDiscounts(q);
     await loadBills(q);
   } catch (e) {
-    log(String(e.message || e));
+    const msg = String(e.message || e);
+    log(msg);
+    renderReportsFatalError(msg);
   }
 }
 
@@ -852,6 +866,11 @@ document.querySelectorAll("button[data-rep-preset]").forEach((b) => {
     } else if (k === "lastMonth") {
       from = new Date(startToday.getFullYear(), startToday.getMonth() - 1, 1, 0, 0, 0, 0);
       to = new Date(startToday.getFullYear(), startToday.getMonth(), 1, 0, 0, 0, 0);
+    } else if (k === "clear") {
+      if (fromEl) fromEl.value = "";
+      if (toEl) toEl.value = "";
+      runAll().catch((e) => log(String(e.message || e)));
+      return;
     }
     if (fromEl) fromEl.value = dtLocalValue(from);
     if (toEl) toEl.value = dtLocalValue(to);

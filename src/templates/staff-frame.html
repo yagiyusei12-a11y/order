@@ -634,6 +634,11 @@
           else if (body.message != null && String(body.message) !== "") errMsg = String(body.message);
         }
         if (!r.ok) {
+          if (r.status === 403) {
+            throw new Error(
+              "この店舗のデータを開けません（権限がありません）。ログインしたスタッフの店舗と、URL の /staff-app/〇〇 の店舗 ID が同じか確認してください。"
+            );
+          }
           throw new Error(errMsg || raw.trim().slice(0, 400) || r.statusText || String(r.status));
         }
         if (body === null || body === undefined) return {};

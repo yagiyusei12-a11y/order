@@ -12,6 +12,8 @@ import { join } from "node:path";
 import { PrismaClient } from "@prisma/client";
 
 const STORE_ID = "harunoyukoto";
+/** seed に店舗が無い環境でもインポートできるよう、存在しなければ作成する */
+const STORE_NAME_DEFAULT = "はるのゆこと 長浜店";
 
 const EXTRA_PAYMENT_METHODS: { code: string; labelJa: string; sortOrder: number }[] = [
   { code: "funfo", labelJa: "Funfo", sortOrder: 25 },
@@ -153,7 +155,25 @@ function buildPaymentsFromRow(
 loadDotEnv();
 const prisma = new PrismaClient();
 
+async function ensureStore(): Promise<void> {
+  const existing = await prisma.store.findUnique({
+    where: { id: STORE_ID },
+    select: { id: true },
+  });
+  if (existing) return;
+  await prisma.store.create({
+    data: {
+      id: STORE_ID,
+      name: STORE_NAME_DEFAULT,
+      settings: {},
+    },
+  });
+  console.log(`Created store ${STORE_ID} (${STORE_NAME_DEFAULT})`);
+}
+
 async function ensurePaymentMethods(): Promise<void> {
+  await ensureStore();
+
   const defs = [
     { code: "cash", labelJa: "現金", sortOrder: 10 },
     ...EXTRA_PAYMENT_METHODS,
@@ -164,11 +184,6 @@ async function ensurePaymentMethods(): Promise<void> {
       create: m,
       update: { labelJa: m.labelJa, sortOrder: m.sortOrder },
     });
-  }
-
-  const store = await prisma.store.findUnique({ where: { id: STORE_ID }, select: { id: true } });
-  if (!store) {
-    throw new Error(`store not found: ${STORE_ID}`);
   }
 
   const allCodes = [...new Set(defs.map((d) => d.code))];

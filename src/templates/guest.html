@@ -2039,7 +2039,7 @@
 
       if (parsed.sellKind === "set") {
         if (item.sellKind !== "set") {
-          toast("メニューが変更されているため再注文できません");
+          toast("メニューが変更されています（以前: セット / 現在: 単品）。メニューから選び直してください");
           return;
         }
         const ex0 = ln.lineExtra && typeof ln.lineExtra === "object" ? ln.lineExtra : null;

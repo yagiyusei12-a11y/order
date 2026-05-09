@@ -812,6 +812,24 @@
       pointer-events: none;
       background: rgba(15, 23, 42, 0.6);
     }
+
+    /* セット構成単品の「オプション」(opt-comp) が白飛びして読めない環境があるため、濃い面に統一 */
+    .opt-comp {
+      margin: 0.35rem 0 0.55rem 0.8rem !important;
+      padding: 0.55rem 0.6rem !important;
+      border-left: 3px solid rgba(251, 146, 60, 0.75) !important;
+      background: rgba(2, 6, 23, 0.65) !important;
+      border-radius: 12px !important;
+    }
+    .opt-comp .muted { color: rgba(241, 245, 249, 0.78) !important; }
+    .opt-comp [data-comp-opt-group].opt-block {
+      background: rgba(15, 23, 42, 0.92) !important;
+      border: 1px solid rgba(148, 163, 184, 0.22) !important;
+    }
+    .opt-comp [data-comp-opt-group] .opt-row {
+      background: rgba(2, 6, 23, 0.45) !important;
+      border-color: rgba(148, 163, 184, 0.28) !important;
+    }
     .opt-row-fixed {
       padding-left: 0.15rem;
       background: rgba(255, 255, 255, 0.06);
@@ -2504,12 +2522,12 @@
               priceTxt +
               "</span></label>";
             if (ch.optionGroups && ch.optionGroups.length) {
-              bodyInner += "<div class=\"opt-comp\" style=\"margin:.2rem 0 .35rem .8rem;padding:.35rem .4rem;border-left:2px solid #e2e8f0;background:#f8fafc;border-radius:8px\">";
+              bodyInner += "<div class=\"opt-comp\">";
               bodyInner += "<div class=\"muted\" style=\"font-size:.68rem;margin:0 0 .25rem\">オプション（" + escapeHtml(ch.name) + "）</div>";
               for (const g of ch.optionGroups) {
                 const useRadio = Number(g.maxSelect || 1) <= 1;
                 bodyInner +=
-                  "<div class=\"opt-block\" data-comp-opt-group style=\"padding:.35rem .35rem .15rem;margin:.25rem 0;background:#fff;border:1px solid var(--border);border-radius:8px\">" +
+                  "<div class=\"opt-block\" data-comp-opt-group>" +
                   "<div class=\"opt-block-head\"><strong>" +
                   escapeHtml(g.name) +
                   "</strong>" +

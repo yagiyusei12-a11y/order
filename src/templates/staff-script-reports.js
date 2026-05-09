@@ -111,14 +111,14 @@ async function loadSummary(q) {
     "<div class=\"card\" style=\"padding:0.6rem 0.75rem;min-width:14rem;flex:1\">" +
     "<div class=\"muted\" style=\"font-size:0.72rem\">確定（精算済み）</div>" +
     "<div style=\"font-weight:900;font-size:1.1rem\">" +
-    Number(res.confirmed.totalAmount || 0).toLocaleString(\"ja-JP\") +
+    Number(res.confirmed.totalAmount || 0).toLocaleString("ja-JP") +
     " 円</div><div class=\"muted\" style=\"font-size:0.72rem\">" +
     (res.confirmed.count || 0) +
     "件</div></div>" +
     "<div class=\"card\" style=\"padding:0.6rem 0.75rem;min-width:14rem;flex:1;background:#fff7ed;border-color:#fed7aa\">" +
     "<div class=\"muted\" style=\"font-size:0.72rem\">未精算（pending）</div>" +
     "<div style=\"font-weight:900;font-size:1.1rem\">" +
-    Number(res.pending.totalAmount || 0).toLocaleString(\"ja-JP\") +
+    Number(res.pending.totalAmount || 0).toLocaleString("ja-JP") +
     " 円</div><div class=\"muted\" style=\"font-size:0.72rem\">" +
     (res.pending.count || 0) +
     "件</div></div></div>";
@@ -150,9 +150,9 @@ async function loadDaily(q) {
       "<tr><td style=\"padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
       escapeHtml(r.date) +
       "</td><td style=\"text-align:right;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
-      Number(r.count || 0).toLocaleString(\"ja-JP\") +
+      Number(r.count || 0).toLocaleString("ja-JP") +
       "</td><td style=\"text-align:right;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
-      Number(r.totalAmount || 0).toLocaleString(\"ja-JP\") +
+      Number(r.totalAmount || 0).toLocaleString("ja-JP") +
       " 円</td></tr>";
   }
   h += "</tbody></table>";
@@ -174,7 +174,7 @@ async function loadByMethod(q) {
   for (const r of rows) total += Number(r.amount || 0);
   let h =
     "<p style=\"margin:0 0 0.65rem;font-weight:700\">合計 " +
-    total.toLocaleString(\"ja-JP\") +
+    total.toLocaleString("ja-JP") +
     " 円</p>" +
     "<table style=\"width:100%;border-collapse:collapse;font-size:0.88rem\"><thead><tr>" +
     "<th style=\"text-align:left;padding:0.35rem;border-bottom:1px solid var(--border)\">手段</th>" +
@@ -185,7 +185,7 @@ async function loadByMethod(q) {
       "<tr><td style=\"padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
       escapeHtml(r.labelJa || r.methodCode) +
       "</td><td style=\"text-align:right;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
-      Number(r.amount || 0).toLocaleString(\"ja-JP\") +
+      Number(r.amount || 0).toLocaleString("ja-JP") +
       " 円</td></tr>";
   }
   h += "</tbody></table>";
@@ -216,14 +216,14 @@ async function loadDiscounts(q) {
   for (const r of rows) {
     h +=
       "<tr><td style=\"padding:0.35rem;border-bottom:1px solid var(--border)\">" +
-      escapeHtml(String(r.settledAt || \"\")) +
+      escapeHtml(String(r.settledAt || "")) +
       "</td><td style=\"padding:0.35rem;border-bottom:1px solid var(--border)\">" +
-      escapeHtml(r.tableName || \"\") +
+      escapeHtml(r.tableName || "") +
       "</td><td style=\"padding:0.35rem;border-bottom:1px solid var(--border)\">" +
-      (r.hasBillDiscount ? \"伝票:\" + escapeHtml(r.billDiscountKind || \"\") : \"\") +
-      (r.hasLineDiscount ? (r.hasBillDiscount ? \" / \" : \"\") + \"明細\" : \"\") +
+      (r.hasBillDiscount ? "伝票:" + escapeHtml(r.billDiscountKind || "") : "") +
+      (r.hasLineDiscount ? (r.hasBillDiscount ? " / " : "") + "明細" : "") +
       "</td><td style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">" +
-      Number(r.totalAmount || 0).toLocaleString(\"ja-JP\") +
+      Number(r.totalAmount || 0).toLocaleString("ja-JP") +
       " 円</td></tr>";
   }
   h += "</tbody></table>";
@@ -277,13 +277,13 @@ async function loadBills(q) {
       escapeHtml(String(b.id).slice(0, 8)) +
       "</button></td>" +
       "<td style=\"padding:0.35rem;border-bottom:1px solid var(--border)\">" +
-      escapeHtml(b.tableName || b.label || \"\") +
+      escapeHtml(b.tableName || b.label || "") +
       "</td>" +
       "<td style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">" +
-      Number(b.totalAmount || 0).toLocaleString(\"ja-JP\") +
+      Number(b.totalAmount || 0).toLocaleString("ja-JP") +
       " 円</td>" +
       "<td style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">" +
-      escapeHtml(b.status || \"\") +
+      escapeHtml(b.status || "") +
       "</td></tr>";
   }
   h += "</tbody></table>";
@@ -320,7 +320,7 @@ async function openBillModal(billId) {
     "<div class=\"muted\" style=\"font-size:0.78rem;margin-top:0.35rem\">状態: " +
     escapeHtml(detail.status) +
     " / 合計: " +
-    Number(detail.totalAmount || 0).toLocaleString(\"ja-JP\") +
+    Number(detail.totalAmount || 0).toLocaleString("ja-JP") +
     " 円</div>" +
     "<div class=\"row\" style=\"gap:0.35rem;flex-wrap:wrap;margin-top:0.6rem;align-items:center\">" +
     "<button type=\"button\" class=\"btn-ghost\" id=\"tabView\" style=\"width:auto\">閲覧</button>" +
@@ -345,7 +345,7 @@ async function openBillModal(billId) {
           escapeHtml(p.labelJa || p.methodCode) +
           (p.voidedAt ? " <span class=\"muted\" style=\"font-size:0.78rem\">（取消）</span>" : "") +
           "</td><td style=\"text-align:right;padding:0.25rem 0\">" +
-          Number(p.amount || 0).toLocaleString(\"ja-JP\") +
+          Number(p.amount || 0).toLocaleString("ja-JP") +
           " 円</td></tr>";
       }
       payHtml += "</table>";
@@ -354,7 +354,7 @@ async function openBillModal(billId) {
       "<div class=\"card\" style=\"padding:0.75rem\">" +
       payHtml +
       "<div class=\"muted\" style=\"font-size:0.78rem;margin-top:0.65rem\">残額: " +
-      Number(detail.remainder || 0).toLocaleString(\"ja-JP\") +
+      Number(detail.remainder || 0).toLocaleString("ja-JP") +
       " 円</div></div>";
   }
 
@@ -368,7 +368,7 @@ async function openBillModal(billId) {
         const who = e.staff && (e.staff.name || e.staff.email) ? (e.staff.name || e.staff.email) : "";
         h +=
           "<tr><td style=\"padding:0.25rem 0;border-bottom:1px solid var(--border)\">" +
-          escapeHtml(String(e.createdAt || \"\")) +
+          escapeHtml(String(e.createdAt || "")) +
           (who ? " · " + escapeHtml(who) : "") +
           "<br><strong>" +
           escapeHtml(e.kind) +
@@ -462,7 +462,7 @@ async function openBillModal(billId) {
           "<span style=\"flex:1;min-width:12rem\">" +
           escapeHtml(p.labelJa || p.methodCode) +
           " · " +
-          Number(p.amount || 0).toLocaleString(\"ja-JP\") +
+          Number(p.amount || 0).toLocaleString("ja-JP") +
           " 円" +
           (p.voidedAt ? "（取消済）" : "") +
           "</span>" +
@@ -630,10 +630,10 @@ async function openBillModal(billId) {
           " />" +
           "</td>" +
           "<td style=\"text-align:right;padding:0.35rem 0;border-bottom:1px solid var(--border)\">" +
-          Number(l.unitPrice || 0).toLocaleString(\"ja-JP\") +
+          Number(l.unitPrice || 0).toLocaleString("ja-JP") +
           "</td>" +
           "<td style=\"text-align:right;padding:0.35rem 0;border-bottom:1px solid var(--border)\">" +
-          Number(l.lineTotal || 0).toLocaleString(\"ja-JP\") +
+          Number(l.lineTotal || 0).toLocaleString("ja-JP") +
           "</td>" +
           "<td style=\"padding:0.35rem 0;border-bottom:1px solid var(--border)\">" +
           "<div class=\"row\" style=\"gap:0.35rem;flex-wrap:wrap\">" +

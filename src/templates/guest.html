@@ -913,6 +913,20 @@
       background: var(--surface);
       border: 1px solid var(--line);
     }
+    .go-profile .go-profile-toggle {
+      width: 100%;
+      margin: 0.55rem 0 0;
+      padding: 0.6rem 0.65rem;
+      border-radius: 12px;
+      border: 1px solid rgba(251, 146, 60, 0.45);
+      background: rgba(249, 115, 22, 0.12);
+      color: #fdba74;
+      font-weight: 900;
+      font-size: 0.85rem;
+      cursor: pointer;
+      letter-spacing: 0.02em;
+    }
+    .go-profile .go-profile-toggle:active { opacity: 0.9; }
     .go-profile > p:first-child { margin: 0 0 0.55rem; font-size: 0.72rem; color: var(--muted); line-height: 1.45; }
     .go-profile label { display: block; font-size: 0.72rem; color: var(--muted); margin: 0.4rem 0 0.2rem; }
     .go-profile input {
@@ -938,6 +952,9 @@
       cursor: pointer;
     }
     #profileHint { margin-top: 0.4rem; }
+
+    .go-profile .go-profile-body { display: block; }
+    .go-profile.is-collapsed .go-profile-body { display: none; }
 
     .safety-note {
       margin: 0.5rem 0.75rem 0;
@@ -1136,14 +1153,19 @@
 
   <div class="go-profile" id="profileCard">
     <p>お客様情報（任意）<br /><span style="font-size:0.68rem;opacity:0.9">端末でお客様をお繋ぎします。お名前・電話は空でもご注文いただけます。</span></p>
-    <label for="custName">お名前（ニックネーム可）</label>
-    <input id="custName" type="text" autocomplete="name" maxlength="100" placeholder="未入力でも構いません" />
-    <label for="custPhone">電話番号</label>
-    <input id="custPhone" type="tel" autocomplete="tel" maxlength="20" placeholder="未入力でも構いません" />
-    <label for="custEmail">メールアドレス（端末に保存のみ）</label>
-    <input id="custEmail" type="email" autocomplete="email" maxlength="200" placeholder="未入力でも構いません" />
-    <button type="button" id="btnSaveProfile">お客様情報を保存</button>
-    <span id="profileHint" class="muted"></span>
+    <button type="button" class="go-profile-toggle" id="profileToggle" aria-expanded="false">
+      次回から便利なお客様情報を入力
+    </button>
+    <div class="go-profile-body" id="profileBody">
+      <label for="custName">お名前（ニックネーム可）</label>
+      <input id="custName" type="text" autocomplete="name" maxlength="100" placeholder="未入力でも構いません" />
+      <label for="custPhone">電話番号</label>
+      <input id="custPhone" type="tel" autocomplete="tel" maxlength="20" placeholder="未入力でも構いません" />
+      <label for="custEmail">メールアドレス（端末に保存のみ）</label>
+      <input id="custEmail" type="email" autocomplete="email" maxlength="200" placeholder="未入力でも構いません" />
+      <button type="button" id="btnSaveProfile">お客様情報を保存</button>
+      <span id="profileHint" class="muted"></span>
+    </div>
   </div>
 
   <div class="go-tabs-wrap">
@@ -1240,6 +1262,35 @@
     const TOKEN = __TOKEN_JS__;
     const DEVICE_KEY = "order-guest-device-v1";
     const PROFILE_KEY = "order-customer-profile-v1";
+    const PROFILE_OPEN_KEY = "order-guest-profile-open-v1";
+
+    function readProfileOpenPref() {
+      try {
+        return localStorage.getItem(PROFILE_OPEN_KEY + "_" + String(TOKEN || "x")) === "1";
+      } catch (_) {
+        return false;
+      }
+    }
+    function writeProfileOpenPref(open) {
+      try {
+        localStorage.setItem(PROFILE_OPEN_KEY + "_" + String(TOKEN || "x"), open ? "1" : "0");
+      } catch (_) {}
+    }
+
+    function setProfileCollapsed(collapsed) {
+      const card = document.getElementById("profileCard");
+      const btn = document.getElementById("profileToggle");
+      const body = document.getElementById("profileBody");
+      if (!card || !btn || !body) return;
+      card.classList.toggle("is-collapsed", collapsed);
+      btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      if (!collapsed) {
+        try {
+          const first = body.querySelector("input,button,select,textarea");
+          if (first) first.focus();
+        } catch (_) {}
+      }
+    }
 
     function getOrCreateDeviceId() {
       try {
@@ -3316,6 +3367,25 @@
         if (lp.phone) document.getElementById("custPhone").value = lp.phone || "";
         if (lp.email) document.getElementById("custEmail").value = lp.email || "";
       }
+
+      // お客様情報：初期は閉じる（保存済みのときは自動で開く）
+      try {
+        const hasAny = Boolean(
+          (document.getElementById("custName").value || "").trim() ||
+            (document.getElementById("custPhone").value || "").trim() ||
+            (document.getElementById("custEmail").value || "").trim()
+        );
+        const wantOpen = readProfileOpenPref() || hasAny;
+        setProfileCollapsed(!wantOpen);
+        const btn = document.getElementById("profileToggle");
+        if (btn) {
+          btn.onclick = function () {
+            const isCollapsed = document.getElementById("profileCard").classList.contains("is-collapsed");
+            setProfileCollapsed(!isCollapsed);
+            writeProfileOpenPref(isCollapsed); // 開いたなら true
+          };
+        }
+      } catch (_) {}
 
       try {
         const dev = getOrCreateDeviceId();

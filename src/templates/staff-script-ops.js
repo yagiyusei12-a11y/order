@@ -522,6 +522,103 @@ function buildInvoiceDoc(detail, changeAmount) {
   );
 }
 
+/** 現金支払いメモ received:X,change:Y からお釣りを復元 */
+function changeAmountFromBillDetail(detail) {
+  let change = 0;
+  for (const p of detail.payments || []) {
+    const note = p && typeof p.note === "string" ? p.note : "";
+    const m = note.match(/change:(\d+)/);
+    if (!m) continue;
+    const n = parseInt(m[1], 10);
+    if (Number.isFinite(n)) change = Math.max(change, n);
+  }
+  return change;
+}
+
+function formatBillWhen(iso) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  } catch (_) {
+    return "—";
+  }
+}
+
+async function renderReceiptBox() {
+  const listEl = document.getElementById("receiptBoxList");
+  if (!listEl) return;
+  try {
+    const res = await api(
+      "/stores/" + encodeURIComponent(STORE) + "/bills?status=settled&limit=40&sort=settledAt"
+    );
+    const bills = res.bills || [];
+    if (!bills.length) {
+      listEl.innerHTML = "<span class=\"muted\">精算済み伝票はまだありません</span>";
+      return;
+    }
+    const rows = bills
+      .map((b) => {
+        const rawId = typeof b.id === "string" ? b.id : "";
+        const idAttr = escapeHtml(rawId);
+        const idShort =
+          rawId.length > 12 ? escapeHtml(rawId.slice(0, 10)) + "…" : escapeHtml(rawId);
+        const tlab = escapeHtml(b.tableName || "—");
+        const when = formatBillWhen(b.settledAt);
+        return (
+          "<tr>" +
+          "<td title=\"" +
+          idAttr +
+          "\"><span style=\"font-family:ui-monospace,monospace;font-size:0.78rem\">" +
+          idShort +
+          "</span></td>" +
+          "<td>" +
+          tlab +
+          "</td>" +
+          "<td>" +
+          when +
+          "</td>" +
+          "<td style=\"text-align:right;font-weight:800\">" +
+          yen(b.totalAmount) +
+          "</td>" +
+          "<td><span class=\"rx-actions\">" +
+          "<button type=\"button\" class=\"btn-ghost rx-print\" style=\"padding:0.28rem 0.45rem;font-size:0.78rem\" data-rx-kind=\"receipt\" data-bill-id=\"" +
+          idAttr +
+          "\">レシート</button>" +
+          "<button type=\"button\" class=\"btn-ghost rx-print\" style=\"padding:0.28rem 0.45rem;font-size:0.78rem\" data-rx-kind=\"invoice\" data-bill-id=\"" +
+          idAttr +
+          "\">領収書</button>" +
+          "</span></td>" +
+          "</tr>"
+        );
+      })
+      .join("");
+    listEl.innerHTML =
+      "<table class=\"ops-receipt-table\"><thead><tr>" +
+      "<th>伝票</th><th>卓</th><th>精算</th><th style=\"text-align:right\">合計</th><th></th>" +
+      "</tr></thead><tbody>" +
+      rows +
+      "</tbody></table>";
+    listEl.querySelectorAll("button.rx-print").forEach((btn) => {
+      btn.onclick = async () => {
+        const id = btn.getAttribute("data-bill-id");
+        const kind = btn.getAttribute("data-rx-kind") || "receipt";
+        if (!id) return;
+        try {
+          const detail = await api(billPath(id));
+          if (kind === "invoice") printHtml(buildInvoiceDoc(detail, changeAmountFromBillDetail(detail)));
+          else printHtml(buildReceiptDoc(detail));
+        } catch (e) {
+          log(String(e.message || e));
+        }
+      };
+    });
+  } catch (e) {
+    listEl.innerHTML = "<span style=\"color:#b91c1c\">" + escapeHtml(String(e.message || e)) + "</span>";
+  }
+}
+
 function renderGrid() {
   const grid = document.getElementById("tableGrid");
   grid.innerHTML = "";
@@ -1325,6 +1422,12 @@ async function loadAll() {
   renderGrid();
   renderMiniSessions();
   await renderDetail();
+  await renderReceiptBox();
+}
+
+const btnRefReceiptBox = document.getElementById("btnRefReceiptBox");
+if (btnRefReceiptBox) {
+  btnRefReceiptBox.onclick = () => renderReceiptBox().catch((e) => log(String(e.message || e)));
 }
 
 document.getElementById("btnRefFloor").onclick = () => loadAll().catch((e) => log(String(e.message || e)));

@@ -243,7 +243,15 @@ async function buildBillDetailPayload(
 export async function registerBilling(app: FastifyInstance): Promise<void> {
   app.get<{
     Params: { storeId: string };
-    Querystring: { status?: string; limit?: string; from?: string; to?: string; methodCode?: string };
+    Querystring: {
+      status?: string;
+      limit?: string;
+      from?: string;
+      to?: string;
+      methodCode?: string;
+      /** settled 一覧で精算日時の新しい順に並べる（既定は createdAt desc） */
+      sort?: string;
+    };
   }>("/stores/:storeId/bills", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
     if (!store) return reply.code(404).send({ error: "store not found" });
@@ -265,6 +273,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       settledAtRange.lt = end;
     }
 
+    const sortSettled = req.query.sort === "settledAt";
     const bills = await prisma.bill.findMany({
       where: {
         storeId: store.id,
@@ -272,7 +281,10 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
         ...(settledAtRange.gte || settledAtRange.lt ? { settledAt: settledAtRange } : {}),
         ...(methodCode ? { payments: { some: { methodCode } } } : {}),
       },
-      orderBy: { createdAt: "desc" },
+      orderBy:
+        sortSettled && status === "settled"
+          ? [{ settledAt: "desc" }, { createdAt: "desc" }]
+          : { createdAt: "desc" },
       take: limit,
       include: {
         payments: true,

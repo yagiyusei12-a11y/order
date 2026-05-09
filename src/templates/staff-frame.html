@@ -374,6 +374,28 @@
       border: 1px solid #fed7aa;
     }
     .ops-total-main strong { color: #c2410c; font-size: 1rem; }
+    .ops-receipt-box { border-color: #e2e8f0; background: #fafbfc; }
+    .ops-receipt-box-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .ops-receipt-box-title {
+      margin: 0;
+      font-size: 0.95rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      color: #0f172a;
+    }
+    .ops-receipt-list-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .ops-receipt-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; min-width: 420px; }
+    .ops-receipt-table th,
+    .ops-receipt-table td { padding: 0.4rem 0.35rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .ops-receipt-table th { color: var(--muted); font-weight: 700; font-size: 0.76rem; text-align: left; white-space: nowrap; }
+    .ops-receipt-table td:last-child { white-space: nowrap; text-align: right; }
+    .ops-receipt-table .rx-actions { display: inline-flex; gap: 0.35rem; flex-wrap: wrap; justify-content: flex-end; }
 
     /* 席マスタ行 */
     .pm-row {

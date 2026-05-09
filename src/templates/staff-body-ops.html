@@ -18,5 +18,15 @@
       </div>
     </div>
   </div>
+  <section class="card ops-receipt-box" aria-labelledby="receiptBoxHeading" style="margin-top:1rem;padding:0.85rem 1rem">
+    <div class="ops-receipt-box-head">
+      <div>
+        <h2 id="receiptBoxHeading" class="ops-receipt-box-title">レシートボックス</h2>
+        <p class="muted" style="margin:0.15rem 0 0;font-size:0.78rem;line-height:1.4">精算済み伝票を一覧し、レシート・領収書を再印刷できます（直近40件・精算日時順）</p>
+      </div>
+      <button type="button" class="btn-ghost" id="btnRefReceiptBox">一覧を更新</button>
+    </div>
+    <div id="receiptBoxList" class="ops-receipt-list-wrap" style="margin-top:0.65rem;font-size:0.84rem">読み込み中…</div>
+  </section>
   <div id="log"></div>
 </main>

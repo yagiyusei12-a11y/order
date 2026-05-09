@@ -94,6 +94,23 @@ function linesForTaxBreakdown(detail) {
   return out;
 }
 
+function isCourseOptionPackLine(line) {
+  try {
+    const ex = line && line.lineExtra;
+    if (!ex || typeof ex !== "object" || Array.isArray(ex)) return false;
+    return ex.kind === "courseOptionPack";
+  } catch (_) {
+    return false;
+  }
+}
+
+function netYenFromGross(gross, taxRatePercent) {
+  const g = Math.max(0, Math.round(Number(gross || 0)));
+  const r = Number(taxRatePercent || 0);
+  if (!(r > 0)) return g;
+  return Math.round(g / (1 + r / 100));
+}
+
 function billPath(id) {
   return "/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(id);
 }
@@ -1010,6 +1027,12 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
       (g) => {
         let discSum = 0;
         for (const ln of g.lines || []) discSum += Number(ln.lineDiscountAmount || 0);
+        const isPack = Boolean(g.lines && g.lines[0] && isCourseOptionPackLine(g.lines[0]));
+        const taxRateForRow =
+          g.lines && g.lines[0] && g.lines[0].taxRatePercent != null ? Number(g.lines[0].taxRatePercent) : 0;
+        const showNetForPack = isPack && storeSettingsCache.menuPriceTaxMode === "exclusive";
+        const dispTotal = showNetForPack ? netYenFromGross(g.lineTotal, taxRateForRow) : g.lineTotal;
+        const dispSuffix = showNetForPack ? " <span class=\"muted\" style=\"font-size:0.72rem\">（税抜）</span>" : "";
         const discBlock =
           discSum > 0
             ? "<div class=\"ops-line-sub\" style=\"color:#059669;font-size:0.72rem;font-weight:700\">値引 −" +
@@ -1054,7 +1077,8 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
           "</div>" +
           "</td>" +
           "<td class=\"ops-line-total\" data-group-total>" +
-          yen(g.lineTotal) +
+          yen(dispTotal) +
+          dispSuffix +
           "</td></tr>"
         );
       }

@@ -845,9 +845,13 @@ async function runAll() {
   }
 }
 
-document.getElementById("btnLoadRep").onclick = () => {
-  runAll().catch((e) => log(String(e.message || e)));
-};
+/** id 不一致や欠落でここが例外になると fetch が一度も走らず Network に XHR が出ない */
+const btnLoadRep = document.getElementById("btnLoadRep");
+if (btnLoadRep) {
+  btnLoadRep.onclick = () => {
+    runAll().catch((e) => log(String(e.message || e)));
+  };
+}
 
 document.querySelectorAll("button[data-rep-preset]").forEach((b) => {
   b.onclick = () => {

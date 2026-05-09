@@ -433,7 +433,9 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     await prisma.bill.update({
       where: { id: bill.id },
       data: {
-        discountJson: parsed === null ? undefined : (parsed as unknown as Prisma.InputJsonValue),
+        // undefined は「更新しない」扱いになり DB が残るため、解除は DbNull で明示する
+        discountJson:
+          parsed === null ? Prisma.DbNull : (parsed as unknown as Prisma.InputJsonValue),
         totalAmount: suggested,
       },
     });
@@ -489,7 +491,8 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
         await tx.orderLine.update({
           where: { id },
           data: {
-            discountJson: parsed === null ? undefined : (parsed as unknown as Prisma.InputJsonValue),
+            discountJson:
+              parsed === null ? Prisma.DbNull : (parsed as unknown as Prisma.InputJsonValue),
           },
         });
       }

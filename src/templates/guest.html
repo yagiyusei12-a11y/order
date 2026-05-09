@@ -697,7 +697,13 @@
     .detail-title { margin: 0 0 0.35rem; font-size: 1.2rem; font-weight: 800; line-height: 1.35; }
     .detail-desc { margin: 0 0 1rem; font-size: 0.9rem; color: rgba(226, 232, 240, 0.82); line-height: 1.6; }
 
-    .opt-block { margin-bottom: 1.1rem; }
+    .opt-block {
+      margin-bottom: 1.1rem;
+      padding: 0.75rem 0.75rem 0.6rem;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      border-radius: 14px;
+      background: rgba(2, 6, 23, 0.45);
+    }
     .opt-step-choices {
       max-height: min(52vh, 320px);
       overflow-y: auto;
@@ -720,22 +726,26 @@
       display: flex;
       align-items: center;
       gap: 0.45rem;
-      margin-bottom: 0.5rem;
+      margin-bottom: 0.65rem;
     }
-    .opt-block-head strong { font-size: 0.98rem; }
+    .opt-block-head strong {
+      font-size: 1.05rem;
+      color: #f8fafc;
+      letter-spacing: 0.02em;
+    }
     .tag-req {
       font-size: 0.7rem;
       font-weight: 800;
-      color: #fecaca;
-      background: rgba(185, 28, 28, 0.45);
+      color: #fee2e2;
+      background: rgba(220, 38, 38, 0.55);
       padding: 0.12rem 0.4rem;
       border-radius: 4px;
     }
     .tag-opt {
       font-size: 0.7rem;
       font-weight: 700;
-      color: rgba(226, 232, 240, 0.78);
-      background: rgba(255, 255, 255, 0.08);
+      color: rgba(241, 245, 249, 0.86);
+      background: rgba(148, 163, 184, 0.20);
       padding: 0.12rem 0.4rem;
       border-radius: 4px;
     }
@@ -752,6 +762,7 @@
       cursor: pointer;
       font-size: 1.05rem;
     }
+    .opt-row:active { transform: translateY(0.5px); }
     .opt-row input {
       accent-color: var(--accent);
       width: 1.25rem;
@@ -781,6 +792,7 @@
       align-self: flex-start;
       padding-top: 0.08rem;
     }
+    .opt-row .opt-price { min-width: 3.2rem; text-align: right; }
     .opt-row:hover {
       border-color: rgba(226, 232, 240, 0.45);
       background: rgba(30, 41, 59, 0.95);

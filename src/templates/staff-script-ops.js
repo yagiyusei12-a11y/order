@@ -76,6 +76,24 @@ function taxBreakdownFromLines(orderLines) {
   const grossTotal = rows.reduce((s, r) => s + r.gross, 0);
   return { rows, netTotal, taxTotal, grossTotal };
 }
+
+/** 伝票詳細から税集計用の行（コース税込を商品行と合わせる） */
+function linesForTaxBreakdown(detail) {
+  const rate = Number(storeSettingsCache.taxRatePercent ?? 10);
+  const out = [];
+  const cl = detail && detail.courseLine;
+  if (cl && Number(cl.lineTotal) > 0) {
+    const gross = Number(cl.lineTotal);
+    out.push({
+      lineGross: gross,
+      lineTotal: gross,
+      taxRatePercent: rate,
+    });
+  }
+  for (const l of (detail && detail.orderLines) || []) out.push(l);
+  return out;
+}
+
 function billPath(id) {
   return "/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(id);
 }
@@ -478,6 +496,15 @@ function printHtml(html) {
 }
 function buildReceiptDoc(detail) {
   const rows = [];
+  if (detail.courseLine && Number(detail.courseLine.lineTotal) > 0) {
+    rows.push(
+      "<tr><td>" +
+        escapeHtml(detail.courseLine.name) +
+        "</td><td style=\"text-align:right\">" +
+        yen(detail.courseLine.lineTotal) +
+        "</td></tr>"
+    );
+  }
   for (const l of detail.orderLines || []) {
     if (l.status === "cancelled") continue;
     const srcLab = (function () {
@@ -1010,6 +1037,24 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
       }
     )
     .join("");
+  const courseRowHtml =
+    detail.courseLine && Number(detail.courseLine.lineTotal) > 0
+      ? "<tr class=\"ops-course-line-row\">" +
+        "<td>" +
+        "<div class=\"ops-line-name\">" +
+        "<span class=\"badge\" style=\"margin-right:.35rem;background:#7c3aed\">コース</span>" +
+        escapeHtml(detail.courseLine.name) +
+        "</div>" +
+        "<div class=\"ops-line-sub\">コース料（税込・人数計算）</div>" +
+        "</td>" +
+        "<td class=\"ops-line-total\">" +
+        yen(detail.courseLine.lineTotal) +
+        "</td></tr>"
+      : "";
+  const orderTableBody = courseRowHtml + orderRows;
+  const orderTableFallback =
+    orderTableBody ||
+    "<tr><td class=\"muted\" colspan=\"2\">コース・注文なし</td></tr>";
 
   panel.innerHTML =
     "<div class=\"ops-register-head\"><span class=\"badge\">" +
@@ -1032,9 +1077,9 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
     escapeHtml(billDiscLabel) +
     "</span></span>" +
     "<button type=\"button\" class=\"btn-ghost\" id=\"btnBillDiscount\" style=\"font-weight:700;border-color:#86efac\">設定</button></div>" +
-    "<h3 class=\"ops-sec-title\">注文内容</h3>" +
+    "<h3 class=\"ops-sec-title\">コース・注文</h3>" +
     "<div class=\"card ops-order-card\"><table class=\"ops-order-table\">" +
-    (orderRows || "<tr><td class=\"muted\">注文なし</td><td></td></tr>") +
+    orderTableFallback +
     "</table></div>" +
     (ordersDiscAmt > 0
       ? "<div class=\"row ops-total-row\"><span class=\"muted\">注文値引（商品行）</span><strong style=\"color:#059669\">−" +

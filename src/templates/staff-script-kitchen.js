@@ -942,7 +942,14 @@ function renderKitList() {
         b.style.width = "100%";
         b.style.boxSizing = "border-box";
         b.style.fontSize = "0.68rem";
-        b.textContent = t + " ×" + info.qty + " を調理済みにする";
+        const sampleLn = info.lineIds.map((id) => lineByPatchId.get(String(id))).find((x) => x);
+        const isHodaiTable = Boolean(sampleLn && (sampleLn.courseId || sampleLn.courseKind || sampleLn.courseName));
+        const tableQtyHtml =
+          "<span class=\"kit-done-table-red\">" + escapeHtml(t + " ×" + info.qty) + "</span>";
+        b.innerHTML =
+          (isHodaiTable ? "<span class=\"kit-hodai-badge\">□放題□</span>" : "") +
+          tableQtyHtml +
+          " を調理済みにする";
         b.onclick = async () => {
           const prevText = b.textContent;
           b.disabled = true;
@@ -952,12 +959,15 @@ function renderKitList() {
           } finally {
             if (b.isConnected) {
               b.disabled = false;
-              b.textContent = prevText;
+              // 復元は innerHTML を保つ
+              b.innerHTML =
+                (isHodaiTable ? "<span class=\"kit-hodai-badge\">□放題□</span>" : "") +
+                tableQtyHtml +
+                " を調理済みにする";
             }
           }
         };
         cell.appendChild(b);
-        const sampleLn = info.lineIds.map((id) => lineByPatchId.get(String(id))).find((x) => x);
         const hasMenuItem = Boolean(sampleLn && sampleLn.menuItemId);
         const stockoutTargetsSet = Boolean(sampleLn && sampleLn.isSetComponent);
         const rowCancel = document.createElement("div");

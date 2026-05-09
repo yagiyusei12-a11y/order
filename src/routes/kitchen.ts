@@ -75,7 +75,12 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
         },
         order: {
           include: {
-            session: { include: { table: true } },
+            session: {
+              include: {
+                table: true,
+                course: { select: { id: true, name: true, kind: true } },
+              },
+            },
             sourceTable: true,
           },
         },
@@ -109,6 +114,8 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
         picks.length > 0 ? picks.filter((p) => compMenuById.has(p.menuItemId)) : [];
       const srcTbl = l.order.sourceTable ?? null;
       const tableName = kitchenOrderLineTableLabel(l.order.session.table, srcTbl);
+      const course =
+        l.order.session.course && l.order.session.courseId ? l.order.session.course : null;
 
       if (picks.length === 0 || resolved.length === 0) {
         outLines.push({
@@ -148,6 +155,9 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
           orderCreatedAt: l.order.createdAt,
           tableName,
           sessionId: l.order.sessionId,
+          courseId: course ? course.id : null,
+          courseName: course ? course.name : null,
+          courseKind: course ? course.kind : null,
           readyAt: l.readyAt,
           servedAt: l.servedAt,
         });
@@ -182,6 +192,9 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
           orderCreatedAt: l.order.createdAt,
           tableName,
           sessionId: l.order.sessionId,
+          courseId: course ? course.id : null,
+          courseName: course ? course.name : null,
+          courseKind: course ? course.kind : null,
           readyAt: l.readyAt,
           servedAt: l.servedAt,
         });

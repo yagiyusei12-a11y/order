@@ -722,7 +722,7 @@ async function loadAll() {
   ]);
   coursesCache = cRes.courses || [];
   menuCategoriesCache = mRes.categories || [];
-  storeSettingsCache = sRes && sRes.settings ? sRes.settings : storeSettingsCache;
+  storeSettingsCache = (sRes && sRes.store && sRes.store.settings) || storeSettingsCache;
   if (!storeSettingsCache.coursePriceTaxMode) storeSettingsCache.coursePriceTaxMode = storeSettingsCache.menuPriceTaxMode;
   syncCoursesPriceModeUi();
   render();
@@ -1021,7 +1021,7 @@ if (coursesPriceModeSel) {
         await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ coursePriceTaxMode: v }),
+          body: JSON.stringify({ settings: { coursePriceTaxMode: v } }),
         });
         storeSettingsCache.coursePriceTaxMode = v;
         syncCoursesPriceModeUi();

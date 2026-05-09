@@ -109,6 +109,7 @@ function mapGuestMenuItem(
     imageUrl: string | null;
     price: number;
     priceTaxMode: string;
+    sellKind?: string;
     containsAlcohol?: boolean;
     allowTakeout?: boolean;
     stockQty: number | null;
@@ -143,6 +144,7 @@ function mapGuestMenuItem(
     name: it.name,
     description: it.description,
     imageUrl: it.imageUrl,
+    sellKind: it.sellKind === "set" ? "set" : "single",
     price: discounted,
     priceTaxMode,
     basePrice: it.price,

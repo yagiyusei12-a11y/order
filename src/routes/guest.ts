@@ -22,7 +22,11 @@ import {
   type GuestSetStepSelection,
   type SetStepForValidation,
 } from "../lib/menu-set-order.js";
-import { SET_SERVE_LATER_LINE_KIND } from "../lib/set-order-bundle.js";
+import {
+  isSetServeLaterLine,
+  ORDER_LINE_STATUS_GUEST_DEFERRED,
+  SET_SERVE_LATER_LINE_KIND,
+} from "../lib/set-order-bundle.js";
 import {
   baseNetFromStoredPrice,
   eatModeTaxRatePercent,
@@ -1612,6 +1616,9 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
             const unitPrice = r.unitPrice ?? item.price;
             const nameSnapshot = r.nameSnapshot ?? item.name;
             const lineExtraJson = r.lineExtra ? (r.lineExtra as Prisma.InputJsonValue) : undefined;
+            const initialStatus = isSetServeLaterLine(r.lineExtra)
+              ? ORDER_LINE_STATUS_GUEST_DEFERRED
+              : "queued";
             await tx.orderLine.create({
               data: {
                 orderId: so.id,
@@ -1623,7 +1630,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                 lineExtra: lineExtraJson,
                 eatMode: r.eatMode,
                 taxRatePercent: r.taxRatePercent,
-                status: "queued",
+                status: initialStatus,
               },
             });
           } else {
@@ -1884,6 +1891,45 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     });
     return { orders };
   });
+
+  app.post<{ Params: { token: string; lineId: string } }>(
+    "/guest/:token/deferred-lines/:lineId/send-kitchen",
+    async (req, reply) => {
+      const session = await prisma.diningSession.findUnique({
+        where: { guestToken: req.params.token },
+        select: { id: true, status: true, storeId: true, tableId: true, mergedIntoSessionId: true },
+      });
+      if (!session) {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+      const billing = await resolveGuestBillingContext(session);
+      if (!billing.ok) {
+        return reply.code(billing.status).send(billing.body);
+      }
+      const lineId = typeof req.params.lineId === "string" ? req.params.lineId.trim() : "";
+      if (!lineId) {
+        return reply.code(400).send({ error: "invalid line id" });
+      }
+      const line = await prisma.orderLine.findFirst({
+        where: {
+          id: lineId,
+          order: { sessionId: billing.ctx.billingSessionId },
+        },
+        select: { id: true, status: true, lineExtra: true },
+      });
+      if (!line) {
+        return reply.code(404).send({ error: "line not found" });
+      }
+      if (!isSetServeLaterLine(line.lineExtra) || line.status !== ORDER_LINE_STATUS_GUEST_DEFERRED) {
+        return reply.code(400).send({ error: "not a deferred serve-later line" });
+      }
+      await prisma.orderLine.update({
+        where: { id: line.id },
+        data: { status: "queued" },
+      });
+      return { ok: true };
+    },
+  );
 
   /**
    * ゲストメニューに出ていない ID（時間帯・カテゴリ非表示など）でも、注文履歴から再注文できるよう

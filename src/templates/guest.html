@@ -966,6 +966,47 @@
       font-size: 0.75rem;
     }
 
+    .guest-deferred-kitchen-panel {
+      margin: 0.45rem 0.75rem 0;
+      padding: 0.65rem 0.7rem;
+      border-radius: 12px;
+      border: 1px solid rgba(251, 146, 60, 0.45);
+      background: rgba(251, 146, 60, 0.12);
+    }
+    .guest-deferred-kitchen-inner { display: flex; flex-direction: column; gap: 0.5rem; }
+    .guest-deferred-kitchen-title {
+      font-size: 0.78rem;
+      font-weight: 800;
+      color: var(--text);
+      letter-spacing: 0.02em;
+    }
+    .guest-deferred-kitchen-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .guest-deferred-kitchen-name {
+      font-size: 0.82rem;
+      line-height: 1.35;
+      flex: 1;
+      min-width: 0;
+    }
+    .guest-deferred-kitchen-btn {
+      flex-shrink: 0;
+      padding: 0.45rem 0.75rem;
+      border-radius: 10px;
+      border: 1px solid rgba(251, 146, 60, 0.65);
+      background: linear-gradient(180deg, #fb923c, var(--accent));
+      color: #fff;
+      font-weight: 800;
+      font-size: 0.78rem;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .guest-deferred-kitchen-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
     .agegate {
       position: fixed;
       inset: 0;
@@ -1141,6 +1182,7 @@
   </header>
 
   <div id="lastOrderBanner" role="status" aria-live="polite"></div>
+  <div id="guestDeferredKitchenPanel" class="guest-deferred-kitchen-panel" style="display:none" aria-live="polite"></div>
   <p id="courseMenuNotice" class="muted course-menu-notice" style="display:none;font-size:0.82rem;margin:0 0 0.45rem;line-height:1.45;padding:0 0.15rem"></p>
   <div id="courseMenuFilterWrap" class="course-menu-filter-wrap" style="display: none" hidden>
     <button type="button" id="btnCourseItemsOnly" class="course-menu-filter-btn" aria-pressed="false">
@@ -3882,9 +3924,78 @@
       syncGuestMenuCardsVisibility();
     }
 
+    function collectGuestDeferredKitchenLines() {
+      const rows = [];
+      const SET_SERVE_LATER = "set_serve_later";
+      for (const ord of ordersCache || []) {
+        for (const ln of ord.lines || []) {
+          const ex = ln.lineExtra;
+          const kind = ex && typeof ex === "object" && !Array.isArray(ex) ? ex.kind : null;
+          if (ln.status === "guest_deferred" && kind === SET_SERVE_LATER) rows.push(ln);
+        }
+      }
+      return rows;
+    }
+
+    function renderDeferredKitchenPanel() {
+      const root = document.getElementById("guestDeferredKitchenPanel");
+      if (!root) return;
+      const lines = collectGuestDeferredKitchenLines();
+      if (lines.length === 0) {
+        root.style.display = "none";
+        root.innerHTML = "";
+        return;
+      }
+      root.style.display = "block";
+      const title = "後から提供（キッチン未送信）";
+      let html = '<div class="guest-deferred-kitchen-inner">';
+      html += '<div class="guest-deferred-kitchen-title">' + escapeHtml(title) + "</div>";
+      for (const ln of lines) {
+        const nm = escapeHtml(String(ln.nameSnapshot || "商品"));
+        const qty = ln.qty > 1 ? " ×" + String(ln.qty) : "";
+        html += '<div class="guest-deferred-kitchen-row">';
+        html += '<span class="guest-deferred-kitchen-name">' + nm + qty + "</span>";
+        html +=
+          '<button type="button" class="guest-deferred-kitchen-btn" data-deferred-line-id="' +
+          escapeHtml(String(ln.id)) +
+          '">キッチンにオーダー</button>';
+        html += "</div>";
+      }
+      html += "</div>";
+      root.innerHTML = html;
+      root.querySelectorAll("[data-deferred-line-id]").forEach((btn) => {
+        btn.onclick = async () => {
+          const id = btn.getAttribute("data-deferred-line-id");
+          if (!id) return;
+          btn.disabled = true;
+          try {
+            await api(
+              "/guest/" +
+                encodeURIComponent(TOKEN) +
+                "/deferred-lines/" +
+                encodeURIComponent(id) +
+                "/send-kitchen",
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: "{}",
+              },
+            );
+            toast("キッチンに送信しました");
+            await loadOrders();
+          } catch (e) {
+            toast(String(e.message || e));
+          } finally {
+            btn.disabled = false;
+          }
+        };
+      });
+    }
+
     async function loadOrders() {
       const data = await api("/guest/" + encodeURIComponent(TOKEN) + "/orders");
       ordersCache = data.orders || [];
+      renderDeferredKitchenPanel();
       if (document.getElementById("historySheet") && document.getElementById("historySheet").classList.contains("is-open")) {
         await ensureReorderMenuItemsInCache();
         renderHistorySheetBody();

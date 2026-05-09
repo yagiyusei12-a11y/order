@@ -2,6 +2,9 @@ import { extractSetComponentsFromLineExtra } from "./kitchen-expand-set-lines.js
 
 export const SET_SERVE_LATER_LINE_KIND = "set_serve_later";
 
+/** セットの「後出し」子行がゲスト操作でキッチンに送られるまでの保留状態（キッチン一覧には出さない） */
+export const ORDER_LINE_STATUS_GUEST_DEFERRED = "guest_deferred";
+
 export function readBundleId(lineExtra: unknown): string | null {
   if (lineExtra == null || typeof lineExtra !== "object" || Array.isArray(lineExtra)) return null;
   const b = (lineExtra as Record<string, unknown>).bundleId;

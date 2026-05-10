@@ -169,12 +169,23 @@ export function earliestGuestTakeoutPickupWhenStaffClosed(
   return bestMs !== null ? new Date(bestMs) : null;
 }
 
+/** 卓QR等が論理的に営業受付するか（手動閉店の自動解除を含む）。 */
+export function isGuestOperatingEffectiveOpen(settings: StoreSettingsShape, now: Date): boolean {
+  if (settings.guestOperatingOpenByStaff) return true;
+  const u = settings.guestManualClosedUntilUtc;
+  if (typeof u === "string" && u.length > 0) {
+    const untilMs = Date.parse(u);
+    if (Number.isFinite(untilMs) && now.getTime() >= untilMs) return true;
+  }
+  return false;
+}
+
 /**
  * 公開ゲスト向け：いま卓QR等を受け付けるか。
- * スタッフの「営業中」表明が true のときは週次・休業カレンダーを無視して受付可。
+ * スタッフの明示「営業中」、または手動閉店の until 経過後は受付可。
  */
 export function evaluatePublicOrderGate(settings: StoreSettingsShape, now: Date): PublicOrderGateResult {
-  if (settings.guestOperatingOpenByStaff) {
+  if (isGuestOperatingEffectiveOpen(settings, now)) {
     return {
       accepting: true,
       reasonCode: "accepting",
@@ -191,12 +202,12 @@ export function evaluatePublicOrderGate(settings: StoreSettingsShape, now: Date)
   };
 }
 
-/** フッター表示用：スタッフトグルのみ（営業中／営業時間外） */
-export function staffFooterOrderGateState(settings: StoreSettingsShape, _now: Date): {
+/** フッター表示用：論理営業中／営業時間外 */
+export function staffFooterOrderGateState(settings: StoreSettingsShape, now: Date): {
   variant: "paused" | "calendar" | "hours" | "open";
   labelJa: string;
 } {
-  if (settings.guestOperatingOpenByStaff) {
+  if (isGuestOperatingEffectiveOpen(settings, now)) {
     return { variant: "open", labelJa: "営業中" };
   }
   return { variant: "hours", labelJa: "営業時間外" };

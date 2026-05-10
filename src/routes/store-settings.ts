@@ -4,7 +4,11 @@ import { prisma } from "../db.js";
 import { appendStaffAuditFromRequest } from "../lib/staff-audit.js";
 import { normalizeStaffEmail, validatePasswordPlain } from "../lib/staff-credentials.js";
 import { assertManagerRole } from "../lib/staff-role.js";
-import { staffFooterOrderGateState } from "../lib/store-order-gate.js";
+import {
+  earliestGuestTakeoutPickupWhenStaffClosed,
+  isGuestOperatingEffectiveOpen,
+  staffFooterOrderGateState,
+} from "../lib/store-order-gate.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
 
 function staffSubFromReq(req: { user?: unknown }): string | null {
@@ -40,11 +44,14 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
     if (!store) return reply.code(404).send({ error: "store not found" });
     const st = mergeStoreSettings(store.settings);
-    const foot = staffFooterOrderGateState(st, new Date());
+    const now = new Date();
+    const foot = staffFooterOrderGateState(st, now);
     return {
       variant: foot.variant,
       labelJa: foot.labelJa,
       guestOperatingOpenByStaff: st.guestOperatingOpenByStaff,
+      guestManualClosedUntilUtc: st.guestManualClosedUntilUtc,
+      guestOperatingEffectiveOpen: isGuestOperatingEffectiveOpen(st, now),
     };
   });
 
@@ -110,13 +117,23 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
         .send({ error: "guestOperatingOpenByStaff must be a boolean (or legacy ordersPausedManually)" });
     }
     const cur = mergeStoreSettings(store.settings);
-    const next = mergeStoreSettings({ ...cur, guestOperatingOpenByStaff: nextOpen });
+    const next = nextOpen
+      ? mergeStoreSettings({ ...cur, guestOperatingOpenByStaff: true, guestManualClosedUntilUtc: null })
+      : mergeStoreSettings({
+          ...cur,
+          guestOperatingOpenByStaff: false,
+          guestManualClosedUntilUtc: (() => {
+            const e = earliestGuestTakeoutPickupWhenStaffClosed(cur, new Date());
+            return e ? e.toISOString() : null;
+          })(),
+        });
     const updated = await prisma.store.update({
       where: { id: store.id },
       data: { settings: next as object },
     });
     await appendStaffAuditFromRequest(req, store.id, staffSubFromReq(req), "guest_operating_toggle", {
       guestOperatingOpenByStaff: nextOpen,
+      guestManualClosedUntilUtc: mergeStoreSettings(updated.settings).guestManualClosedUntilUtc,
     }).catch(() => {});
     return {
       store: {

@@ -19,6 +19,7 @@ import {
 } from "../lib/menu-set-order.js";
 import {
   earliestGuestTakeoutPickupWhenStaffClosed,
+  isGuestOperatingEffectiveOpen,
   isWallDateClosedByBusinessCalendar,
   isWallDateTimeWithinWeeklyHours,
 } from "../lib/store-order-gate.js";
@@ -225,7 +226,7 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
     const clockNow = new Date();
     const leadMs = Math.max(0, st.takeoutPickupMinLeadMinutes) * 60 * 1000;
     let minPickupMs = clockNow.getTime() + leadMs;
-    if (!st.guestOperatingOpenByStaff) {
+    if (!isGuestOperatingEffectiveOpen(st, clockNow)) {
       const earliest = earliestGuestTakeoutPickupWhenStaffClosed(st, clockNow);
       if (earliest) minPickupMs = Math.max(minPickupMs, earliest.getTime());
     }
@@ -244,6 +245,7 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
       takeoutNetPriceDisplayMode: st.takeoutNetPriceDisplayMode,
       minPickupAtIso,
       guestOperatingOpenByStaff: st.guestOperatingOpenByStaff,
+      guestOperatingEffectiveOpen: isGuestOperatingEffectiveOpen(st, clockNow),
       pickupTimeWindows: pickupWindows.map((w) => ({
         id: w.id,
         name: w.name,
@@ -302,8 +304,9 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
     const leadMin = st.takeoutPickupMinLeadMinutes;
     const leadMs = Math.max(0, leadMin) * 60 * 1000;
     const clockNow = Date.now();
-    const earliest =
-      !st.guestOperatingOpenByStaff ? earliestGuestTakeoutPickupWhenStaffClosed(st, new Date(clockNow)) : null;
+    const earliest = !isGuestOperatingEffectiveOpen(st, new Date(clockNow))
+      ? earliestGuestTakeoutPickupWhenStaffClosed(st, new Date(clockNow))
+      : null;
     let minPickupMs = clockNow + leadMs;
     if (earliest) minPickupMs = Math.max(minPickupMs, earliest.getTime());
     if (pickupAt.getTime() < minPickupMs) {

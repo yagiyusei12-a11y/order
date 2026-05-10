@@ -866,8 +866,12 @@
           if (v === "open") btn.classList.add("is-open");
           else if (v === "paused") btn.classList.add("is-paused");
           else btn.classList.add("is-closed");
-          btn.dataset.guestOpen = r.guestOperatingOpenByStaff ? "1" : "0";
-          hint.textContent = r.guestOperatingOpenByStaff
+          const effOpen =
+            typeof r.guestOperatingEffectiveOpen === "boolean"
+              ? r.guestOperatingEffectiveOpen
+              : Boolean(r.guestOperatingOpenByStaff);
+          btn.dataset.guestOpen = effOpen ? "1" : "0";
+          hint.textContent = effOpen
             ? "タップで営業時間外にします（卓QR停止・テイクアウトは次の枠以降の受取のみ）"
             : "タップで営業中にし、卓QRとテイクアウトを再開します";
         } catch (_) {}

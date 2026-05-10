@@ -134,6 +134,11 @@ export type StoreSettingsShape = {
    */
   guestOperatingOpenByStaff: boolean;
   /**
+   * 手動で「営業時間外」にしたとき、次の週次枠開始までの UTC 時刻（ISO）。
+   * null のときは時間による自動解除なし（週次未設定で閉じた場合など）。
+   */
+  guestManualClosedUntilUtc: string | null;
+  /**
    * null のときは「週次営業時間」による締めを行わない（休業日カレンダー・手動停止のみ）。
    * 長さ7・日曜=0…土曜=6。要素が null はその曜は週次として休業。配列はその日の複数営業枠（いずれかに含まれれば営業時間内）。
    */
@@ -219,6 +224,7 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     stockDailyResetTimeMin: 240,
     stockDailyResetLastRunDate: null,
     guestOperatingOpenByStaff: true,
+    guestManualClosedUntilUtc: null,
     businessWeeklyHours: null,
     businessClosedDates: [],
     businessOpenExceptionDates: [],
@@ -399,6 +405,13 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     d.guestOperatingOpenByStaff = o.guestOperatingOpenByStaff;
   } else if (typeof o.ordersPausedManually === "boolean") {
     d.guestOperatingOpenByStaff = !o.ordersPausedManually;
+  }
+  if (o.guestManualClosedUntilUtc === null || o.guestManualClosedUntilUtc === undefined) {
+    d.guestManualClosedUntilUtc = null;
+  } else if (typeof o.guestManualClosedUntilUtc === "string") {
+    const s = o.guestManualClosedUntilUtc.trim().slice(0, 40);
+    d.guestManualClosedUntilUtc =
+      s.length > 0 && Number.isFinite(Date.parse(s)) ? s : null;
   }
   if (o.businessWeeklyHours === null) {
     d.businessWeeklyHours = null;

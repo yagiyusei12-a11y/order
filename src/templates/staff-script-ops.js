@@ -107,6 +107,40 @@ function formatSessionSwitchOptionLabel(s) {
   return parts.join(" · ");
 }
 
+/**
+ * 卓グリッド上段（.code）: 取れるときはお客様表示名、なければ卓コード
+ * @returns {{ text: string, title: string }}
+ */
+function gridCellTopLineLabel(t, sessList) {
+  let pub = "";
+  try {
+    if (typeof displayTableCode === "function") pub = String(displayTableCode(t.publicCode) || "").trim();
+  } catch (_) {}
+  const tblName = String(t.name || "").trim();
+  const fallbackCode = pub || tblName || "—";
+
+  let pickedName = "";
+  if (sessList.length) {
+    for (const se of sessList) {
+      if (se.status !== "open") continue;
+      const nm = sessionUiCustomerLabel(se);
+      if (!nm) continue;
+      if (nm === pub || nm === tblName) continue;
+      pickedName = nm;
+      break;
+    }
+  }
+
+  const text = pickedName || fallbackCode;
+  let title = "";
+  if (pickedName) {
+    title = pub || "";
+    if (tblName && tblName !== pub) title += (title ? " · " : "") + tblName;
+    if (!title) title = fallbackCode;
+  }
+  return { text, title };
+}
+
 function formatOpsDiscountLabel(d) {
   if (!d || typeof d !== "object") return "";
   const k = d.kind === "percent" ? "%" : "円";
@@ -892,12 +926,16 @@ function renderGrid() {
           );
         })()
       : "<span class=\"meta\">空席</span>";
+    const topLine = gridCellTopLineLabel(t, sessList);
+    const codeTitleAttr = topLine.title ? " title=\"" + escapeHtml(topLine.title) + "\"" : "";
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = cls;
     btn.innerHTML =
-      "<span class=\"code\">" +
-      escapeHtml(displayTableCode(t.publicCode)) +
+      "<span class=\"code\"" +
+      codeTitleAttr +
+      ">" +
+      escapeHtml(topLine.text) +
       "</span><span class=\"name\">" +
       escapeHtml(t.name) +
       "</span>" +

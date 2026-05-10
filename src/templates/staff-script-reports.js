@@ -410,15 +410,32 @@ async function openBillModal(billId) {
   function renderEdit() {
     const box = panel.querySelector("#billTabEdit");
     if (!box) return;
+    const isSettled = detail && detail.status === "settled";
     const isOpen = detail && detail.status === "open";
+    const allowReopen = isSettled && reportsCorrectionAllowed("reopenSettledForRegister");
+    const reopenBlock =
+      allowReopen
+        ? "<div class=\"card\" style=\"padding:0.75rem;margin-bottom:0.75rem;border-color:#fdba74;background:#fffbeb\">" +
+          "<div class=\"muted\" style=\"font-size:0.78rem;margin-bottom:0.35rem\">精算済みの伝票</div>" +
+          "<p style=\"margin:0 0 0.65rem;font-size:0.86rem;line-height:1.45\">取消や入金の修正には、先に精算を取り消してレジ前の状態に戻してください。</p>" +
+          "<button type=\"button\" class=\"btn-primary\" id=\"btnRepReopenSettled\" style=\"width:auto\">精算を取り消してレジに戻す</button>" +
+          "</div>"
+        : "";
+    const editHint =
+      isOpen
+        ? ""
+        : allowReopen
+          ? "※ まず下の「レジに戻す」を実行してください。"
+          : "※ 修正は open の伝票のみ可能です";
     const allowDisc = isOpen && reportsCorrectionAllowed("discounts");
     const allowPay = isOpen && reportsCorrectionAllowed("payments");
     const allowVoidBill = isOpen && reportsCorrectionAllowed("billVoid");
     const allowOl = isOpen && reportsCorrectionAllowed("orderLines");
     const disInp = allowPay ? "" : " disabled";
     box.innerHTML =
+      reopenBlock +
       "<div class=\"muted\" style=\"font-size:0.72rem;margin:0 0 0.5rem\">" +
-      (isOpen ? "" : "※ 修正は open の伝票のみ可能です") +
+      editHint +
       "</div>" +
       "<div class=\"card\" style=\"padding:0.75rem;border-color:#86efac\">" +
       "<div class=\"muted\" style=\"font-size:0.78rem;margin-bottom:0.35rem\">伝票割引</div>" +
@@ -467,6 +484,7 @@ async function openBillModal(billId) {
       "</div>" +
       "<div class=\"card\" style=\"padding:0.75rem;margin-top:0.75rem;border-color:#cbd5e1\">" +
       "<div class=\"muted\" style=\"font-size:0.78rem;margin-bottom:0.35rem\">伝票の取消</div>" +
+      "<p class=\"muted\" style=\"font-size:0.72rem;margin:0 0 0.45rem;line-height:1.45\">未取消の支払いがある場合は、伝票取消と同時に自動で支払いも取消します。</p>" +
       "<button type=\"button\" class=\"btn-ghost\" id=\"btnRepVoidBill\" style=\"width:auto;color:#b91c1c;border-color:#fecaca\"" +
       (allowVoidBill ? "" : " disabled") +
       ">伝票を取消（void）</button>" +
@@ -525,13 +543,35 @@ async function openBillModal(billId) {
                 body: JSON.stringify({ reason }),
               }
             );
-            await openBillModal(detail.id);
-            close();
+            await refreshBillInPlace();
           } catch (e) {
             log(String(e.message || e));
           }
         };
       });
+    }
+
+    const btnReopenSettled = box.querySelector("#btnRepReopenSettled");
+    if (btnReopenSettled) {
+      btnReopenSettled.onclick = async () => {
+        if (
+          !confirm(
+            "精算を取り消し、この伝票をレジで再編集できる状態に戻しますか？\n既存の入金記録は取消扱いとして履歴に残ります。",
+          )
+        ) {
+          return;
+        }
+        try {
+          await api(
+            "/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(detail.id) + "/reopen-for-register",
+            { method: "POST" },
+          );
+          await refreshBillInPlace();
+          if (tabE) tabE.click();
+        } catch (e) {
+          log(String(e.message || e));
+        }
+      };
     }
 
     const btnAdd = box.querySelector("#btnRepAddPay");
@@ -549,8 +589,7 @@ async function openBillModal(billId) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ lines: [{ methodCode, amount, note: note || undefined }] }),
           });
-          await openBillModal(detail.id);
-          close();
+          await refreshBillInPlace();
         } catch (e) {
           log(String(e.message || e));
         }
@@ -561,7 +600,13 @@ async function openBillModal(billId) {
     if (btnVoid) {
       btnVoid.onclick = async () => {
         if (!allowVoidBill) return;
-        if (!confirm("この伝票を取消（void）しますか？（戻せません）")) return;
+        if (
+          !confirm(
+            "この伝票を取消（void）しますか？未取消の支払いはまとめて取消されます。（戻せません）",
+          )
+        ) {
+          return;
+        }
         try {
           await api("/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(detail.id) + "/void", {
             method: "POST",

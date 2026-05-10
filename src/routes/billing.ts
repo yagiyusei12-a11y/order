@@ -1064,9 +1064,12 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     });
     if (!bill) return reply.code(404).send({ error: "bill not found" });
     if (bill.status === "void") return reply.code(400).send({ error: "already void" });
-    if (bill.status === "settled") return reply.code(400).send({ error: "cannot void settled bill" });
-    const paid = bill.payments.reduce((s, p) => s + (p.voidedAt ? 0 : p.amount), 0);
-    if (paid > 0) return reply.code(400).send({ error: "cannot void bill with payments" });
+    if (bill.status === "settled") {
+      return reply.code(400).send({
+        error:
+          "精算済みの伝票はそのままでは取消できません。先に「精算を取り消してレジに戻す」を実行してください（レポートの修正タブ）。",
+      });
+    }
 
     const tbl = bill.session?.table;
     const tag =
@@ -1075,13 +1078,24 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
         : "取消伝票";
     const label = bill.label ? `${bill.label} · ${tag}` : tag;
 
-    const updated = await prisma.bill.update({
-      where: { id: bill.id },
-      data: {
-        status: "void",
-        sessionId: null,
-        label,
-      },
+    const staffUserId = staffUserIdFromReq(req);
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.payment.updateMany({
+        where: { billId: bill.id, voidedAt: null },
+        data: {
+          voidedAt: new Date(),
+          voidReason: "伝票取消に伴う自動取消",
+          ...(staffUserId ? { voidedByStaffUserId: staffUserId } : {}),
+        },
+      });
+      return tx.bill.update({
+        where: { id: bill.id },
+        data: {
+          status: "void",
+          sessionId: null,
+          label,
+        },
+      });
     });
     await logBillEvent(bill.storeId, bill.id, "bill_void", { billId: bill.id }, staffUserIdFromReq(req));
     await appendStaffAuditFromRequest(req, bill.storeId, staffUserIdFromReq(req), "bill_void", {

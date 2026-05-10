@@ -818,11 +818,32 @@ function renderGrid() {
       ? (() => {
           const primary = sessList[0];
           const multi = sessList.length > 1;
-          const totalYen = sessList.reduce((acc, x) => acc + floorSessionTotal(x), 0);
           const gc = Number(primary.guestCount || 0);
           const cc = Number(primary.childCount || 0);
           const ppl = cc > 0 ? gc + "人·子" + cc : gc + "人";
-          const multLab = multi ? "<span class=\"meta\" style=\"font-weight:800\">" + sessList.length + "会計 · </span>" : "";
+          const multLab = multi
+            ? "<span class=\"meta\" style=\"font-weight:800\">" + sessList.length + "会計（別伝票）· </span>"
+            : "";
+          const moneyHtml = multi
+            ? "<span class=\"meta money\" style=\"font-size:0.68rem;color:#64748b\">詳細で切替・合計は出しません</span>"
+            : "<span class=\"meta money\">" + yen(floorSessionTotal(primary)) + "</span>";
+          // #region agent log
+          if (multi) {
+            fetch("http://127.0.0.1:7264/ingest/3e55ed64-37c0-42a5-a321-4645c4275acf", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "4aded8" },
+              body: JSON.stringify({
+                sessionId: "4aded8",
+                location: "staff-script-ops.js:renderGrid",
+                message: "multi-session cell meta",
+                data: { tableId: t.id, sessionCount: sessList.length },
+                timestamp: Date.now(),
+                hypothesisId: "D",
+                runId: "pre-fix",
+              }),
+            }).catch(() => {});
+          }
+          // #endregion
           return (
             multLab +
             "<span class=\"meta " +
@@ -831,9 +852,8 @@ function renderGrid() {
             statusText(primary) +
             " · " +
             ppl +
-            "</span><span class=\"meta money\">" +
-            yen(multi ? totalYen : floorSessionTotal(primary)) +
-            "</span>"
+            "</span>" +
+            moneyHtml
           );
         })()
       : "<span class=\"meta\">空席</span>";

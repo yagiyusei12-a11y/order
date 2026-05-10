@@ -1,9 +1,4 @@
-const api = (path, opt) =>
-  fetch(path, opt).then(async (r) => {
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.error || r.statusText || String(r.status));
-    return j;
-  });
+/** api は staff-frame.html の共通実装（credentials 付き）を使用 */
 
 function esc(s) {
   return String(s || "")
@@ -34,13 +29,58 @@ function fmtTs(d) {
 }
 
 async function load() {
+  // #region agent log
+  fetch("http://127.0.0.1:7264/ingest/3e55ed64-37c0-42a5-a321-4645c4275acf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "4aded8" },
+    body: JSON.stringify({
+      sessionId: "4aded8",
+      location: "staff-script-takeout-net-orders.js:load",
+      message: "load entry",
+      data: { storePresent: typeof STORE !== "undefined" },
+      timestamp: Date.now(),
+      hypothesisId: "A",
+      runId: "pre-fix",
+    }),
+  }).catch(() => {});
+  // #endregion
   const status = (document.getElementById("statusFilter") || {}).value || "";
   const qs = status ? "?status=" + encodeURIComponent(status) : "";
   const data = await api("/stores/" + encodeURIComponent(STORE) + "/takeout/net-orders" + qs);
+  // #region agent log
+  fetch("http://127.0.0.1:7264/ingest/3e55ed64-37c0-42a5-a321-4645c4275acf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "4aded8" },
+    body: JSON.stringify({
+      sessionId: "4aded8",
+      location: "staff-script-takeout-net-orders.js:load",
+      message: "net-orders response",
+      data: { orderCount: Array.isArray(data.orders) ? data.orders.length : -1 },
+      timestamp: Date.now(),
+      hypothesisId: "B",
+      runId: "pre-fix",
+    }),
+  }).catch(() => {});
+  // #endregion
   render(data.orders || []);
 }
 
 function render(orders) {
+  // #region agent log
+  fetch("http://127.0.0.1:7264/ingest/3e55ed64-37c0-42a5-a321-4645c4275acf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "4aded8" },
+    body: JSON.stringify({
+      sessionId: "4aded8",
+      location: "staff-script-takeout-net-orders.js:render",
+      message: "render orders",
+      data: { n: Array.isArray(orders) ? orders.length : -1 },
+      timestamp: Date.now(),
+      hypothesisId: "C",
+      runId: "pre-fix",
+    }),
+  }).catch(() => {});
+  // #endregion
   const root = document.getElementById("takeoutList");
   if (!root) return;
   if (!orders.length) {

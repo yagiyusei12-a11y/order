@@ -21,6 +21,25 @@ function mergeGuestAlcoholAllowed(
   return null;
 }
 
+/** セッション内で最も早い SalesOrder（「注文時」表示用） */
+function firstSalesOrderByTime(
+  orders: { id: string; createdAt: Date }[] | undefined,
+): { id: string; createdAt: Date } | null {
+  if (!orders?.length) return null;
+  return orders.reduce((a, b) => (a.createdAt <= b.createdAt ? a : b));
+}
+
+function normalizeUiCustomerLabel(
+  takeoutName: string | null | undefined,
+  customerName: string | null | undefined,
+): string | null {
+  const t = takeoutName != null ? String(takeoutName).trim() : "";
+  if (t && t !== "口頭注文" && t !== "-") return t;
+  const c = customerName != null ? String(customerName).trim() : "";
+  if (c) return c;
+  return null;
+}
+
 async function recomputeOpenBillTotalForSession(
   tx: Prisma.TransactionClient,
   storeId: string,
@@ -161,6 +180,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
         course: true,
         coursePriceTier: true,
         bill: true,
+        customer: { select: { name: true } },
         mergedIntoSession: {
           select: {
             id: true,
@@ -176,14 +196,34 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
         },
       },
     });
+    const firstOrderIds = sessions
+      .map((s) => firstSalesOrderByTime(s.orders)?.id)
+      .filter((id): id is string => Boolean(id));
+    const takeoutRows =
+      firstOrderIds.length > 0
+        ? await prisma.takeoutNetOrder.findMany({
+            where: { storeId: store.id, salesOrderId: { in: firstOrderIds } },
+            select: { salesOrderId: true, customerName: true },
+          })
+        : [];
+    const takeoutBySalesOrderId = new Map(takeoutRows.map((r) => [r.salesOrderId, r]));
+
     const includeTotals = req.query.includeTotals === "1" || req.query.includeTotals === "true";
     if (!includeTotals) {
       return {
         storeId: store.id,
-        sessions: sessions.map((s) => ({
-          ...s,
-          orders: undefined,
-        })),
+        sessions: sessions.map((s) => {
+          const fo = firstSalesOrderByTime(s.orders);
+          const tno = fo ? takeoutBySalesOrderId.get(fo.id) : undefined;
+          const uiCustomerLabel = normalizeUiCustomerLabel(tno?.customerName, s.customer?.name ?? null);
+          const uiOrderedAt = (fo?.createdAt ?? s.openedAt).toISOString();
+          return {
+            ...s,
+            uiCustomerLabel,
+            uiOrderedAt,
+            orders: undefined,
+          };
+        }),
       };
     }
     return {
@@ -195,9 +235,15 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
             : 0;
         const billDisc = parseBillDiscount(s.bill?.discountJson);
         const suggested = computeSessionSuggestedTotal(courseTotal, s.orders, billDisc).suggestedTotal;
+        const fo = firstSalesOrderByTime(s.orders);
+        const tno = fo ? takeoutBySalesOrderId.get(fo.id) : undefined;
+        const uiCustomerLabel = normalizeUiCustomerLabel(tno?.customerName, s.customer?.name ?? null);
+        const uiOrderedAt = (fo?.createdAt ?? s.openedAt).toISOString();
         return {
           ...s,
           currentTotal: suggested,
+          uiCustomerLabel,
+          uiOrderedAt,
           orders: undefined,
         };
       }),

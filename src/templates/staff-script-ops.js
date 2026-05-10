@@ -72,6 +72,41 @@ function yen(v) {
   return Number(v || 0).toLocaleString("ja-JP") + "円";
 }
 
+/** GET /sessions で付与（テイクアウトの氏名 or ゲスト identify の名前） */
+function sessionUiCustomerLabel(s) {
+  const v = s && s.uiCustomerLabel;
+  return v != null && String(v).trim() ? String(v).trim() : "";
+}
+
+function sessionUiOrderedAtForDisplay(s) {
+  const iso = s && s.uiOrderedAt;
+  if (iso) {
+    const d = new Date(iso);
+    if (isFinite(d.getTime())) return d;
+  }
+  const op = s && s.openedAt;
+  if (op) {
+    const d = new Date(op);
+    if (isFinite(d.getTime())) return d;
+  }
+  return null;
+}
+
+/** 複数テイクアウトの会計切替ドロップダウン：注文日時・名前・金額 */
+function formatSessionSwitchOptionLabel(s) {
+  const d = sessionUiOrderedAtForDisplay(s);
+  const when =
+    d != null
+      ? d.toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
+      : "";
+  const nm = sessionUiCustomerLabel(s);
+  const parts = [];
+  if (when) parts.push(when);
+  if (nm) parts.push(nm);
+  parts.push(yen(floorSessionTotal(s)));
+  return parts.join(" · ");
+}
+
 function formatOpsDiscountLabel(d) {
   if (!d || typeof d !== "object") return "";
   const k = d.kind === "percent" ? "%" : "円";
@@ -887,8 +922,17 @@ function renderMiniSessions() {
   for (const s of sessionsCache) {
     const d = document.createElement("div");
     d.style.margin = "0.25rem 0";
+    const tblName = (s.table && s.table.name) || "—";
+    const pub = s.table && s.table.publicCode;
+    let codeLab = "";
+    try {
+      if (typeof displayTableCode === "function" && pub) codeLab = String(displayTableCode(pub) || "");
+    } catch (_) {}
+    const nm = sessionUiCustomerLabel(s);
+    const showNm = nm && nm !== tblName && nm !== codeLab;
+    const placeLabel = showNm ? tblName + " · " + nm : tblName;
     d.textContent =
-      ((s.table && s.table.name) || "—") +
+      placeLabel +
       " · " +
       statusText(s) +
       " · " +
@@ -1876,12 +1920,7 @@ async function renderDetail() {
     const opts = openSorted
       .map((s) => {
         const sel = s.id === session.id ? " selected" : "";
-        const tail = String(s.id || "").slice(-6);
-        const when =
-          s.openedAt && isFinite(new Date(s.openedAt).getTime())
-            ? new Date(s.openedAt).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
-            : "";
-        const lab = (when ? when + " · " : "") + yen(floorSessionTotal(s)) + " · …" + tail;
+        const lab = formatSessionSwitchOptionLabel(s);
         return "<option value=\"" + escapeHtml(s.id) + "\"" + sel + ">" + escapeHtml(lab) + "</option>";
       })
       .join("");

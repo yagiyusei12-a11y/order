@@ -172,6 +172,7 @@ export async function registerTakeoutStaff(app: FastifyInstance): Promise<void> 
           childCount: 0,
           courseId: null,
           coursePriceTierId: undefined,
+          takeoutOrderSeparateBill: true,
         });
         if (!open.ok) throw new Error("SESSION_OPEN_FAILED");
         const sessionId = open.session.id;

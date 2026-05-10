@@ -35,6 +35,11 @@ export async function openSessionForTable(options: {
   mode: OpenSessionMode;
   /** 店舗設定。新規作成時のみ、コース未選択を拒否する */
   requireCourseWhenStarting?: boolean;
+  /**
+   * true のとき既存の open セッションを再利用しない（同一卓に複数の open を許可）。
+   * ネット／口頭テイクアウトで注文ごとに別会計にするために使用。
+   */
+  skipReuse?: boolean;
 }): Promise<OpenSessionResult> {
   const { tableId, storeId, guestCount, courseId, mode } = options;
   const childCountRaw = options.childCount;
@@ -69,15 +74,18 @@ export async function openSessionForTable(options: {
     include: { course: true, coursePriceTier: true },
   });
   if (openOnTable) {
-    if (mode === "reuseIfOpen") {
+    if (mode === "reuseIfOpen" && !options.skipReuse) {
       return { ok: true, session: openOnTable, reused: true };
     }
-    return {
-      ok: false,
-      error: "table already has an open session",
-      code: "CONFLICT",
-      existingSessionId: openOnTable.id,
-    };
+    if (mode === "failIfOpen") {
+      return {
+        ok: false,
+        error: "table already has an open session",
+        code: "CONFLICT",
+        existingSessionId: openOnTable.id,
+      };
+    }
+    // reuseIfOpen && skipReuse: 卓QR共有をせず新規セッションを追加する（同一卓に複数 open）
   }
 
   const mergedOnTable = await prisma.diningSession.findFirst({
@@ -147,6 +155,12 @@ export function openOrReuseSessionForTable(input: {
   courseId: string | null;
   coursePriceTierId?: string | null;
   requireCourseWhenStarting?: boolean;
+  /** テイクアウト注文ごとに別セッション（別伝票）にする */
+  takeoutOrderSeparateBill?: boolean;
 }): Promise<OpenSessionResult> {
-  return openSessionForTable({ ...input, mode: "reuseIfOpen" });
+  return openSessionForTable({
+    ...input,
+    mode: "reuseIfOpen",
+    skipReuse: input.takeoutOrderSeparateBill === true,
+  });
 }

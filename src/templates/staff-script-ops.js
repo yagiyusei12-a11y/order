@@ -1,4 +1,6 @@
 let selectedTableId = null;
+/** 同一卓に複数 open があるとき、詳細で選んだセッション */
+let selectedSessionIdOverride = null;
 let tablesCache = [];
 let sessionsCache = [];
 let coursesCache = [];
@@ -140,13 +142,17 @@ function netYenFromGross(gross, taxRatePercent) {
 function billPath(id) {
   return "/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(id);
 }
+function sessionsAtTable(tableId) {
+  return sessionsCache.filter((x) => x.tableId === tableId);
+}
 function sessionForTable(tableId) {
-  return sessionsCache.find((x) => x.tableId === tableId) || null;
+  const arr = sessionsAtTable(tableId);
+  return arr.length ? arr[0] : null;
 }
 
 /** @param {{ id: string; tableId?: string }} session @param {{ id: string; name: string; publicCode?: string }} table */
 function openMoveTableDialog(session, table) {
-  const vacant = tablesCache.filter((t) => t.active && t.id !== table.id && !sessionForTable(t.id));
+  const vacant = tablesCache.filter((t) => t.active && t.id !== table.id && sessionsAtTable(t.id).length === 0);
   if (!vacant.length) {
     log("空いている移動先の卓がありません");
     return;
@@ -790,13 +796,14 @@ function renderGrid() {
   const rows = tablesCache
     .filter((t) => t.active)
     .sort((a, b) => {
-      const sa = sessionForTable(a.id);
-      const sb = sessionForTable(b.id);
-      if (Boolean(sb) !== Boolean(sa)) return Number(Boolean(sb)) - Number(Boolean(sa));
+      const sa = sessionsAtTable(a.id).length > 0;
+      const sb = sessionsAtTable(b.id).length > 0;
+      if (Boolean(sb) !== Boolean(sa)) return Number(sb) - Number(sa);
       return Number(a.sortOrder || 0) - Number(b.sortOrder || 0);
     });
   for (const t of rows) {
-    const s = sessionForTable(t.id);
+    const sessList = sessionsAtTable(t.id);
+    const s = sessList.length ? sessList[0] : null;
     const cls =
       "table-cell" +
       (s
@@ -807,20 +814,25 @@ function renderGrid() {
             : " busy"
         : "") +
       (selectedTableId === t.id ? " selected" : "");
-    const meta = s
+    const meta = sessList.length
       ? (() => {
-          const gc = Number(s.guestCount || 0);
-          const cc = Number(s.childCount || 0);
+          const primary = sessList[0];
+          const multi = sessList.length > 1;
+          const totalYen = sessList.reduce((acc, x) => acc + floorSessionTotal(x), 0);
+          const gc = Number(primary.guestCount || 0);
+          const cc = Number(primary.childCount || 0);
           const ppl = cc > 0 ? gc + "人·子" + cc : gc + "人";
+          const multLab = multi ? "<span class=\"meta\" style=\"font-weight:800\">" + sessList.length + "会計 · </span>" : "";
           return (
+            multLab +
             "<span class=\"meta " +
-            (s.status === "bashing_waiting" || s.status === "merged" ? "warn" : "") +
+            (primary.status === "bashing_waiting" || primary.status === "merged" ? "warn" : "") +
             "\">" +
-            statusText(s) +
+            statusText(primary) +
             " · " +
             ppl +
             "</span><span class=\"meta money\">" +
-            yen(floorSessionTotal(s)) +
+            yen(multi ? totalYen : floorSessionTotal(primary)) +
             "</span>"
           );
         })()
@@ -837,6 +849,7 @@ function renderGrid() {
       meta;
     btn.onclick = () => {
       selectedTableId = t.id;
+      selectedSessionIdOverride = null;
       renderGrid();
       renderDetail().catch((e) => log(String(e.message || e)));
     };
@@ -1066,9 +1079,10 @@ function queueGroupedQtyCommit(detail, group, targetQty, session, table) {
   pendingGroupedTimer.set(key, timer);
 }
 
-async function renderRegisterFlow(session, table, detailPreloaded) {
+async function renderRegisterFlow(session, table, detailPreloaded, sessionSwitchPrefixHtml) {
   const panel = document.getElementById("detailPanel");
   await ensurePaymentMethods();
+  const switchPre = sessionSwitchPrefixHtml || "";
   let detail;
   if (detailPreloaded) {
     detail = detailPreloaded;
@@ -1231,6 +1245,7 @@ async function renderRegisterFlow(session, table, detailPreloaded) {
   }
 
   panel.innerHTML =
+    switchPre +
     "<div class=\"ops-register-head\"><span class=\"badge\">" +
     escapeHtml(table.name) +
     "</span><span class=\"ops-register-guest\"> " +
@@ -1665,7 +1680,19 @@ async function renderDetail() {
   }
   const table = tablesCache.find((t) => t.id === selectedTableId);
   if (!table) return;
-  const session = sessionForTable(table.id);
+  const atTable = sessionsAtTable(table.id);
+  const openSorted = atTable
+    .filter((x) => x.status === "open")
+    .sort((a, b) => new Date(b.openedAt || 0).getTime() - new Date(a.openedAt || 0).getTime());
+  let session =
+    openSorted.length > 1
+      ? openSorted.find((x) => x.id === selectedSessionIdOverride) || openSorted[0]
+      : openSorted.length === 1
+        ? openSorted[0]
+        : atTable.find((x) => x.status === "merged") ||
+          atTable.find((x) => x.status === "bashing_waiting") ||
+          atTable[0] ||
+          null;
   if (!session) {
     let opts = "<option value=\"\">なし</option>";
     for (const c of coursesCache) {
@@ -1824,7 +1851,35 @@ async function renderDetail() {
     }
     return;
   }
-  await renderRegisterFlow(session, table);
+  let sessionSwitchPrefixHtml = "";
+  if (openSorted.length > 1) {
+    const opts = openSorted
+      .map((s) => {
+        const sel = s.id === session.id ? " selected" : "";
+        const tail = String(s.id || "").slice(-6);
+        const when =
+          s.openedAt && isFinite(new Date(s.openedAt).getTime())
+            ? new Date(s.openedAt).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
+            : "";
+        const lab = (when ? when + " · " : "") + yen(floorSessionTotal(s)) + " · …" + tail;
+        return "<option value=\"" + escapeHtml(s.id) + "\"" + sel + ">" + escapeHtml(lab) + "</option>";
+      })
+      .join("");
+    sessionSwitchPrefixHtml =
+      "<div class=\"card\" style=\"padding:0.55rem 0.75rem;margin:0 0 0.65rem;background:#f0f9ff;border:1px solid #7dd3fc;border-radius:10px\">" +
+      "<label style=\"font-size:0.82rem;font-weight:800;display:block\">この卓に複数のテイクアウト（別会計）があります。会計する相手を選んでください。</label>" +
+      "<select id=\"sessionSwitchSel\" style=\"width:100%;margin-top:0.35rem;padding:0.45rem;border-radius:8px\">" +
+      opts +
+      "</select></div>";
+  }
+  await renderRegisterFlow(session, table, undefined, sessionSwitchPrefixHtml);
+  const sw = document.getElementById("sessionSwitchSel");
+  if (sw) {
+    sw.onchange = async () => {
+      selectedSessionIdOverride = sw.value || null;
+      await loadAll();
+    };
+  }
 }
 
 async function loadAll() {

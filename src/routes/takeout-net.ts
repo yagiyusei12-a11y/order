@@ -419,6 +419,7 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
           childCount: 0,
           courseId: null,
           coursePriceTierId: undefined,
+          takeoutOrderSeparateBill: true,
         });
 
         if (!open.ok) throw new Error(`OPEN_SESSION:${open.code}`);

@@ -27,6 +27,10 @@ import { mergeStoreSettings } from "../lib/store-settings.js";
 import { utcFromWallDateAndTime, wallDateYmdInZone } from "../lib/store-wall-time.js";
 import { prisma } from "../db.js";
 import { openOrReuseSessionForTable } from "../lib/open-table-session.js";
+import {
+  takeoutTablePrimaryPublicCode,
+  takeoutTableWhereForStore,
+} from "../lib/takeout-table-code.js";
 
 type EatMode = "dine_in" | "takeout";
 function retaxInclusiveYen(taxIncludedYen: number, fromTaxRatePercent: number, toTaxRatePercent: number): number {
@@ -43,10 +47,6 @@ function baseNetFromStoredPrice(
 }
 function taxIncludedFromNet(netExclusiveYen: number, taxRatePercent: number): number {
   return Math.round(netExclusiveYen * (1 + taxRatePercent / 100));
-}
-
-function takeoutTablePublicCode(storeId: string): string {
-  return `takeout-${storeId.slice(0, 12)}`;
 }
 
 function normalizePickupAt(raw: unknown, tz: string): Date | null {
@@ -327,9 +327,8 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
     if (!linesIn.length) return reply.code(400).send({ error: "lines[] required" });
 
     /** openOrReuseSessionForTable は tx 外の prisma を使うため、無効卓をここで先に有効化して BAD_TABLE を防ぐ */
-    const takeoutPublicCode = takeoutTablePublicCode(store.id);
     const inactiveTakeoutTable = await prisma.table.findFirst({
-      where: { publicCode: takeoutPublicCode, storeId: store.id, active: false },
+      where: { ...takeoutTableWhereForStore(store.id), active: false },
     });
     if (inactiveTakeoutTable) {
       await prisma.table.update({
@@ -340,14 +339,13 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
 
     try {
       const result = await prisma.$transaction(async (tx) => {
-        const publicCode = takeoutTablePublicCode(store.id);
         const table =
-          (await tx.table.findUnique({ where: { publicCode } })) ??
+          (await tx.table.findFirst({ where: takeoutTableWhereForStore(store.id) })) ??
           (await tx.table.create({
             data: {
               storeId: store.id,
               name: "テイクアウト",
-              publicCode,
+              publicCode: takeoutTablePrimaryPublicCode(store.id),
               active: true,
             },
           }));

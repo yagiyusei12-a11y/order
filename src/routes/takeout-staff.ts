@@ -20,6 +20,10 @@ import {
   type SetStepForValidation,
 } from "../lib/menu-set-order.js";
 import { openOrReuseSessionForTable } from "../lib/open-table-session.js";
+import {
+  takeoutTablePrimaryPublicCode,
+  takeoutTableWhereForStore,
+} from "../lib/takeout-table-code.js";
 
 type EatMode = "dine_in" | "takeout";
 
@@ -38,10 +42,6 @@ function baseNetFromStoredPrice(
 function taxIncludedFromNet(netExclusiveYen: number, taxRatePercent: number): number {
   return Math.round(netExclusiveYen * (1 + taxRatePercent / 100));
 }
-function takeoutTablePublicCode(storeId: string): string {
-  return `takeout-${storeId.slice(0, 12)}`;
-}
-
 function parseStatus(raw: unknown): string | null {
   const s = typeof raw === "string" ? raw.trim() : "";
   if (!s) return null;
@@ -142,16 +142,25 @@ export async function registerTakeoutStaff(app: FastifyInstance): Promise<void> 
     const linesIn = Array.isArray(req.body?.lines) ? req.body.lines : [];
     if (!linesIn.length) return reply.code(400).send({ error: "lines[] required" });
 
+    const inactiveTakeoutTable = await prisma.table.findFirst({
+      where: { ...takeoutTableWhereForStore(store.id), active: false },
+    });
+    if (inactiveTakeoutTable) {
+      await prisma.table.update({
+        where: { id: inactiveTakeoutTable.id },
+        data: { active: true },
+      });
+    }
+
     try {
       const result = await prisma.$transaction(async (tx) => {
-        const publicCode = takeoutTablePublicCode(store.id);
         const table =
-          (await tx.table.findUnique({ where: { publicCode } })) ??
+          (await tx.table.findFirst({ where: takeoutTableWhereForStore(store.id) })) ??
           (await tx.table.create({
             data: {
               storeId: store.id,
               name: "テイクアウト",
-              publicCode,
+              publicCode: takeoutTablePrimaryPublicCode(store.id),
               active: true,
             },
           }));

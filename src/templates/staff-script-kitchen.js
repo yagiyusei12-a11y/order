@@ -46,6 +46,15 @@ function lineKitchenServeFast(ln) {
   return Boolean(ln && ln.kitchenServeFast);
 }
 
+/** 通常表示: 1注文ブロック内に優先行が1件でもあればその卓タイルを先に並べる */
+function orderGroupHasKitchenServeFast(og) {
+  if (!og || !og.lines) return false;
+  for (const ln of og.lines) {
+    if (lineKitchenServeFast(ln)) return true;
+  }
+  return false;
+}
+
 function lineGroupKey(ln) {
   const base = ln.menuItemId ? "mid:" + ln.menuItemId : "name:" + ln.nameSnapshot;
   if (ln && ln.lineExtra && typeof ln.lineExtra === "object") {
@@ -1362,6 +1371,9 @@ function renderKitList() {
     g.lines.push(ln);
   }
   const orderGroups = [...byOrder.values()].sort((a, b) => {
+    const pa = orderGroupHasKitchenServeFast(a) ? 1 : 0;
+    const pb = orderGroupHasKitchenServeFast(b) ? 1 : 0;
+    if (pb !== pa) return pb - pa;
     const ta = new Date(a.orderCreatedAt || 0).getTime();
     const tb = new Date(b.orderCreatedAt || 0).getTime();
     if (ta !== tb) return ta - tb;

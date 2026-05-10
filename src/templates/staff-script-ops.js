@@ -624,7 +624,11 @@ function statusText(session) {
 function tryOpenDrawer() {
   try {
     if (typeof window.openCashDrawer === "function") {
-      window.openCashDrawer();
+      void Promise.resolve(window.openCashDrawer()).catch(() => {
+        try {
+          window.dispatchEvent(new CustomEvent("pos:drawer-open"));
+        } catch (_) {}
+      });
       return;
     }
   } catch (_) {}
@@ -726,6 +730,78 @@ function buildInvoiceDoc(detail, changeAmount) {
     yen(changeAmount) +
     "</p></body></html>"
   );
+}
+
+/** ESC/POS 用プレーンテキスト行（日本語は機種・モードで文字化けする場合あり） */
+function buildReceiptPlainLines(detail) {
+  const lines = [];
+  lines.push("レシート");
+  lines.push("伝票: " + String(detail.id));
+  if (detail.courseLine && Number(detail.courseLine.lineTotal) > 0) {
+    const showNetForCourse = storeSettingsCache.coursePriceTaxMode === "exclusive";
+    const courseDisp = showNetForCourse
+      ? netYenFromGross(detail.courseLine.lineTotal, storeSettingsCache.taxRatePercent)
+      : detail.courseLine.lineTotal;
+    const courseSuffix = showNetForCourse ? "（税抜）" : "";
+    lines.push(String(detail.courseLine.name) + courseSuffix + "  " + yen(courseDisp));
+  }
+  for (const l of detail.orderLines || []) {
+    if (l.status === "cancelled") continue;
+    const srcLab = (function () {
+      if (!l.sourceTableId) return "";
+      const tb = tablesCache.find((x) => x.id === l.sourceTableId);
+      if (!tb) return "";
+      return displayTableCode(tb.publicCode) || tb.name || "";
+    })();
+    const src = srcLab ? " (" + srcLab + ")" : "";
+    lines.push(String(l.nameSnapshot) + src + " x" + l.qty + "  " + yen(l.lineTotal));
+  }
+  lines.push("--------------------------------");
+  lines.push("合計 " + yen(detail.totalAmount));
+  const cash = (function () {
+    let received = null;
+    let change = null;
+    for (const p of detail.payments || []) {
+      const note = p && typeof p.note === "string" ? p.note : "";
+      const m1 = note.match(/received:(\d+)/);
+      const m2 = note.match(/change:(\d+)/);
+      if (m1) {
+        const n = parseInt(m1[1], 10);
+        if (Number.isFinite(n)) received = Math.max(received ?? 0, n);
+      }
+      if (m2) {
+        const n2 = parseInt(m2[1], 10);
+        if (Number.isFinite(n2)) change = Math.max(change ?? 0, n2);
+      }
+    }
+    return { received, change };
+  })();
+  if (cash.received != null) {
+    lines.push("お預かり " + yen(cash.received));
+    lines.push("お釣り " + yen(cash.change ?? 0));
+  }
+  return lines;
+}
+
+function buildInvoicePlainLines(detail, changeAmount) {
+  return [
+    "領収書",
+    "伝票: " + String(detail.id),
+    "合計: " + yen(detail.totalAmount),
+    "お釣り: " + yen(changeAmount),
+  ];
+}
+
+async function printReceiptOrBrowser(html, plainLines) {
+  if (typeof window.posThermalPrintLines === "function" && window.posPrinterConnected && window.posPrinterConnected()) {
+    try {
+      await window.posThermalPrintLines(plainLines);
+      return;
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  }
+  printHtml(html);
 }
 
 /** 現金支払いメモ received:X,change:Y からお釣りを復元 */
@@ -843,8 +919,12 @@ async function renderReceiptBox() {
         if (!id) return;
         try {
           const detail = await api(billPath(id));
-          if (kind === "invoice") printHtml(buildInvoiceDoc(detail, changeAmountFromBillDetail(detail)));
-          else printHtml(buildReceiptDoc(detail));
+          if (kind === "invoice") {
+            const ch = changeAmountFromBillDetail(detail);
+            await printReceiptOrBrowser(buildInvoiceDoc(detail, ch), buildInvoicePlainLines(detail, ch));
+          } else {
+            await printReceiptOrBrowser(buildReceiptDoc(detail), buildReceiptPlainLines(detail));
+          }
         } catch (e) {
           log(String(e.message || e));
         }
@@ -1842,7 +1922,7 @@ async function renderRegisterFlow(session, table, detailPreloaded, sessionSwitch
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lines: [{ methodCode: methodEl.value, amount: remainder, note }] }),
       });
-      tryOpenDrawer();
+      if (isCash) tryOpenDrawer();
       const refreshed = await api(billPath(detail.id));
       afterBox.innerHTML =
         "<div class=\"card\" style=\"padding:0.75rem;margin-top:0.4rem;background:#ecfdf3;border-color:#86efac\">" +
@@ -1858,8 +1938,12 @@ async function renderRegisterFlow(session, table, detailPreloaded, sessionSwitch
         "<button type=\"button\" class=\"btn-ghost\" id=\"btnPrintInvoice\">領収書印刷</button>" +
         "<button type=\"button\" class=\"btn-primary\" id=\"btnFinishCashier\" style=\"width:auto;padding:0.5rem 0.8rem\">完了</button>" +
         "</div></div>";
-      document.getElementById("btnPrintReceipt").onclick = () => printHtml(buildReceiptDoc(refreshed));
-      document.getElementById("btnPrintInvoice").onclick = () => printHtml(buildInvoiceDoc(refreshed, change));
+      document.getElementById("btnPrintReceipt").onclick = async () => {
+        await printReceiptOrBrowser(buildReceiptDoc(refreshed), buildReceiptPlainLines(refreshed));
+      };
+      document.getElementById("btnPrintInvoice").onclick = async () => {
+        await printReceiptOrBrowser(buildInvoiceDoc(refreshed, change), buildInvoicePlainLines(refreshed, change));
+      };
       document.getElementById("btnFinishCashier").onclick = async () => {
         // 会計完了時にサーバ側で自動でバッシング待ちへ遷移するため、ここでは画面更新のみ
         log("完了しました");

@@ -8,8 +8,17 @@
   <div class="ops-split">
     <div>
       <h2 class="page-title">テーブル・伝票管理</h2>
-      <div class="row" style="margin-bottom:0.5rem">
+      <div class="row" style="margin-bottom:0.5rem;flex-wrap:wrap;align-items:center;gap:0.4rem">
         <button type="button" class="btn-ghost" id="btnRefFloor">一覧を更新</button>
+        <span class="muted" style="font-size:0.72rem;white-space:nowrap">POS（レシート・ドロア）</span>
+        <button type="button" class="btn-ghost" id="btnPosConnect" title="USB 接続のサーマルプリンタ（Web Serial）">接続</button>
+        <button type="button" class="btn-ghost" id="btnPosDisconnect">切断</button>
+        <select id="posSerialBaud" style="font-size:0.78rem;padding:0.25rem 0.35rem;border-radius:6px;border:1px solid var(--border)" title="多くの機種は 9600 または 115200">
+          <option value="9600">9600</option>
+          <option value="115200">115200</option>
+        </select>
+        <button type="button" class="btn-ghost" id="btnPosDrawerOpen" style="font-weight:700">ドロアを開く</button>
+        <span id="posHwStatus" class="muted" style="font-size:0.7rem;flex:1;min-width:8rem"></span>
         <a class="btn-ghost" href="/staff-app/__STORE_PATH__/settings" style="text-decoration:none;display:inline-block;width:auto;margin-left:auto">設定</a>
       </div>
       <div id="tableGrid" class="table-grid"></div>

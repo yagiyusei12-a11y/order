@@ -17,10 +17,17 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function assembleStaffPage(storeId: string, pageTitle: string, bodyFile: string, scriptFile: string): string {
+function assembleStaffPage(
+  storeId: string,
+  pageTitle: string,
+  bodyFile: string,
+  scriptFile: string,
+  extraScriptFile?: string
+): string {
   const pathEnc = encodeURIComponent(storeId);
   const body = loadTemplate(bodyFile).replace(/__STORE_PATH__/g, pathEnc);
   const script = loadTemplate(scriptFile);
+  const extraScript = extraScriptFile ? loadTemplate(extraScriptFile) : "";
   const tableDisplay = loadTemplate("staff-script-table-display.js");
   return loadTemplate("staff-frame.html")
     .replace(/__PAGE_TITLE__/g, escapeHtml(pageTitle))
@@ -29,7 +36,7 @@ function assembleStaffPage(storeId: string, pageTitle: string, bodyFile: string,
     .replace(/__STORE_PATH__/g, pathEnc)
     .replace("__TABLE_DISPLAY_CODE__", tableDisplay)
     .replace("__BODY__", body)
-    .replace("__PAGE_SCRIPT__", script);
+    .replace("__PAGE_SCRIPT__", script + (extraScript ? "\n" + extraScript : ""));
 }
 
 async function assertStaffStore(
@@ -108,15 +115,29 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
     return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(body);
   });
 
-  const staffHtml = (reply: FastifyReply, storeId: string, title: string, bodyFile: string, scriptFile: string) =>
+  const staffHtml = (
+    reply: FastifyReply,
+    storeId: string,
+    title: string,
+    bodyFile: string,
+    scriptFile: string,
+    extraScriptFile?: string
+  ) =>
     reply
       .type("text/html; charset=utf-8")
       .header("Cache-Control", "no-store")
-      .send(assembleStaffPage(storeId, title, bodyFile, scriptFile));
+      .send(assembleStaffPage(storeId, title, bodyFile, scriptFile, extraScriptFile));
 
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/ops", async (req, reply) => {
     if (!(await assertStaffStore(req, reply))) return;
-    return staffHtml(reply, req.params.storeId, "オペレーション", "staff-body-ops.html", "staff-script-ops.js");
+    return staffHtml(
+      reply,
+      req.params.storeId,
+      "オペレーション",
+      "staff-body-ops.html",
+      "staff-script-ops.js",
+      "staff-pos-hardware.js"
+    );
   });
 
   /** 旧スタッフ「テイクアウト一覧」はオペ（卓・会計）に統合したためリダイレクト */

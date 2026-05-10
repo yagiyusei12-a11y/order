@@ -44,7 +44,7 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
     return {
       variant: foot.variant,
       labelJa: foot.labelJa,
-      ordersPausedManually: st.ordersPausedManually,
+      guestOperatingOpenByStaff: st.guestOperatingOpenByStaff,
     };
   });
 
@@ -94,22 +94,29 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
    */
   app.patch<{
     Params: { storeId: string };
-    Body: { ordersPausedManually?: unknown };
+    Body: { guestOperatingOpenByStaff?: unknown; ordersPausedManually?: unknown };
   }>("/stores/:storeId/order-pause", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
     if (!store) return reply.code(404).send({ error: "store not found" });
-    const v = req.body?.ordersPausedManually;
-    if (typeof v !== "boolean") {
-      return reply.code(400).send({ error: "ordersPausedManually must be a boolean" });
+    let nextOpen: boolean | undefined;
+    if (typeof req.body?.guestOperatingOpenByStaff === "boolean") {
+      nextOpen = req.body.guestOperatingOpenByStaff;
+    } else if (typeof req.body?.ordersPausedManually === "boolean") {
+      nextOpen = !req.body.ordersPausedManually;
+    }
+    if (typeof nextOpen !== "boolean") {
+      return reply
+        .code(400)
+        .send({ error: "guestOperatingOpenByStaff must be a boolean (or legacy ordersPausedManually)" });
     }
     const cur = mergeStoreSettings(store.settings);
-    const next = mergeStoreSettings({ ...cur, ordersPausedManually: v });
+    const next = mergeStoreSettings({ ...cur, guestOperatingOpenByStaff: nextOpen });
     const updated = await prisma.store.update({
       where: { id: store.id },
       data: { settings: next as object },
     });
-    await appendStaffAuditFromRequest(req, store.id, staffSubFromReq(req), "order_pause_toggle", {
-      ordersPausedManually: v,
+    await appendStaffAuditFromRequest(req, store.id, staffSubFromReq(req), "guest_operating_toggle", {
+      guestOperatingOpenByStaff: nextOpen,
     }).catch(() => {});
     return {
       store: {

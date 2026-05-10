@@ -1,10 +1,15 @@
 import { minutesSinceMidnightInTimeZone } from "./guest-category-hours.js";
 import type { StoreSettingsShape } from "./store-settings.js";
-import { startOfWallCalendarDayUtc, wallDateYmdInZone } from "./store-wall-time.js";
+import {
+  addCalendarDaysInWallZone,
+  startOfWallCalendarDayUtc,
+  utcFromWallDateAndTime,
+  wallDateYmdInZone,
+} from "./store-wall-time.js";
 
 export type PublicOrderGateReasonCode =
   | "accepting"
-  | "manual_pause"
+  | "staff_closed"
   | "calendar_closed"
   | "outside_hours"
   | "weekday_closed";
@@ -127,75 +132,74 @@ export function isNowWithinWeeklyHours(settings: StoreSettingsShape, now: Date):
 }
 
 /**
- * 公開ゲスト向け：いま注文・予約送信を受け付けるか。
- * 優先: 手動停止 → 当日カレンダー休業 → 週次時間外。
+ * スタッフが「営業時間外」にしたあと、週次マスタに基づく次の枠の開店時刻（いまより後）。
+ * businessWeeklyHours が null のときは null（追加の下限なし）。
+ */
+export function earliestGuestTakeoutPickupWhenStaffClosed(
+  settings: StoreSettingsShape,
+  now: Date,
+): Date | null {
+  const tz = settings.timezone;
+  const weekly = settings.businessWeeklyHours;
+  if (!weekly) return null;
+
+  const nowMs = now.getTime();
+  let bestMs: number | null = null;
+  let ymd = wallDateYmdInZone(now, tz);
+
+  for (let i = 0; i < 14; i++) {
+    if (!isWallDateClosedByBusinessCalendar(settings, ymd)) {
+      const dow = weekdaySun0ForWallYmd(ymd, tz);
+      const daySlots = weekly[dow];
+      if (!isWeeklyDayClosedSlot(daySlots)) {
+        for (const slot of daySlots!) {
+          const hh = Math.floor(slot.openMin / 60);
+          const mm = slot.openMin % 60;
+          const d = utcFromWallDateAndTime(ymd, hh, mm, tz);
+          if (!d) continue;
+          const t = d.getTime();
+          if (t > nowMs && (bestMs === null || t < bestMs)) bestMs = t;
+        }
+      }
+    }
+    const nx = addCalendarDaysInWallZone(ymd, 1, tz);
+    if (!nx) break;
+    ymd = nx;
+  }
+  return bestMs !== null ? new Date(bestMs) : null;
+}
+
+/**
+ * 公開ゲスト向け：いま卓QR等を受け付けるか。
+ * スタッフの「営業中」表明が true のときは週次・休業カレンダーを無視して受付可。
  */
 export function evaluatePublicOrderGate(settings: StoreSettingsShape, now: Date): PublicOrderGateResult {
-  const tz = settings.timezone;
-  const todayYmd = wallDateYmdInZone(now, tz);
-
-  if (settings.ordersPausedManually) {
+  if (settings.guestOperatingOpenByStaff) {
     return {
-      accepting: false,
-      reasonCode: "manual_pause",
-      labelJa: "注文停止中",
-      messageJa: "ただいま注文を停止しています。",
-    };
-  }
-
-  if (isWallDateClosedByBusinessCalendar(settings, todayYmd)) {
-    return {
-      accepting: false,
-      reasonCode: "calendar_closed",
-      labelJa: "休業日",
-      messageJa: "本日は休業です。",
-    };
-  }
-
-  if (!isNowWithinWeeklyHours(settings, now)) {
-    const weekly = settings.businessWeeklyHours;
-    const dow = weekdaySun0InZone(now, tz);
-    const closedDay = weekly && isWeeklyDayClosedSlot(weekly[dow]);
-    return {
-      accepting: false,
-      reasonCode: closedDay ? "weekday_closed" : "outside_hours",
-      labelJa: closedDay ? "定休（曜日）" : "営業時間外",
-      messageJa: closedDay ? "本日は定休日です。" : "現在は営業時間外です。",
+      accepting: true,
+      reasonCode: "accepting",
+      labelJa: "営業中",
+      messageJa: "",
     };
   }
 
   return {
-    accepting: true,
-    reasonCode: "accepting",
-    labelJa: "営業中",
-    messageJa: "",
+    accepting: false,
+    reasonCode: "staff_closed",
+    labelJa: "営業時間外",
+    messageJa: "現在は営業時間外です。",
   };
 }
 
-/** フッター表示用：手動停止・当日カレンダー・週次時間を分解した状態 */
-export function staffFooterOrderGateState(settings: StoreSettingsShape, now: Date): {
+/** フッター表示用：スタッフトグルのみ（営業中／営業時間外） */
+export function staffFooterOrderGateState(settings: StoreSettingsShape, _now: Date): {
   variant: "paused" | "calendar" | "hours" | "open";
   labelJa: string;
 } {
-  const tz = settings.timezone;
-  const todayYmd = wallDateYmdInZone(now, tz);
-
-  if (settings.ordersPausedManually) {
-    return { variant: "paused", labelJa: "注文停止中" };
+  if (settings.guestOperatingOpenByStaff) {
+    return { variant: "open", labelJa: "営業中" };
   }
-  if (isWallDateClosedByBusinessCalendar(settings, todayYmd)) {
-    return { variant: "calendar", labelJa: "休業日" };
-  }
-  if (!isNowWithinWeeklyHours(settings, now)) {
-    const weekly = settings.businessWeeklyHours;
-    const dow = weekdaySun0InZone(now, tz);
-    const closedDay = weekly && isWeeklyDayClosedSlot(weekly[dow]);
-    return {
-      variant: "hours",
-      labelJa: closedDay ? "定休（曜日）" : "営業時間外",
-    };
-  }
-  return { variant: "open", labelJa: "営業中" };
+  return { variant: "hours", labelJa: "営業時間外" };
 }
 
 /**

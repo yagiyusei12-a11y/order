@@ -127,8 +127,12 @@ export type StoreSettingsShape = {
   /** 店舗 TZ で最後に日次リセットを実行した日付 YYYY-MM-DD（同日の再実行防止） */
   stockDailyResetLastRunDate: string | null;
 
-  /** true のときゲスト向け注文・ネット予約・ネットテイクアウトを拒否（スタッフの口頭注文は対象外） */
-  ordersPausedManually: boolean;
+  /**
+   * スタッフフッターで「ゲスト向けは営業中」と表明しているか。
+   * false のとき卓QR等は閉じ、テイクアウト受取は次の週次枠開始以降に制限する。
+   * 旧 `ordersPausedManually` はマージ時に !paused で読み替え。
+   */
+  guestOperatingOpenByStaff: boolean;
   /**
    * null のときは「週次営業時間」による締めを行わない（休業日カレンダー・手動停止のみ）。
    * 長さ7・日曜=0…土曜=6。要素が null はその曜は週次として休業。配列はその日の複数営業枠（いずれかに含まれれば営業時間内）。
@@ -214,7 +218,7 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     stockDailyResetEnabled: false,
     stockDailyResetTimeMin: 240,
     stockDailyResetLastRunDate: null,
-    ordersPausedManually: false,
+    guestOperatingOpenByStaff: true,
     businessWeeklyHours: null,
     businessClosedDates: [],
     businessOpenExceptionDates: [],
@@ -391,8 +395,10 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     const s = o.stockDailyResetLastRunDate.trim();
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) d.stockDailyResetLastRunDate = s;
   }
-  if (typeof o.ordersPausedManually === "boolean") {
-    d.ordersPausedManually = o.ordersPausedManually;
+  if (typeof o.guestOperatingOpenByStaff === "boolean") {
+    d.guestOperatingOpenByStaff = o.guestOperatingOpenByStaff;
+  } else if (typeof o.ordersPausedManually === "boolean") {
+    d.guestOperatingOpenByStaff = !o.ordersPausedManually;
   }
   if (o.businessWeeklyHours === null) {
     d.businessWeeklyHours = null;

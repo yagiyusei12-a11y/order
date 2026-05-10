@@ -909,6 +909,22 @@
         });
       }
 
+      function wallDatetimeLocalFromIso(iso, tz) {
+        const d = new Date(iso);
+        const fmt = new Intl.DateTimeFormat("en-CA", {
+          timeZone: tz || "Asia/Tokyo",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        });
+        const parts = fmt.formatToParts(d);
+        const by = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+        return by.year + "-" + by.month + "-" + by.day + "T" + by.hour + ":" + by.minute;
+      }
+
       function toJstParts(d) {
         const fmt = new Intl.DateTimeFormat("ja-JP", {
           timeZone: (menuData && menuData.timezone) || "Asia/Tokyo",
@@ -947,6 +963,10 @@
             ? menuData.takeoutPickupMinLeadMinutes
             : 2),
         );
+        const minMs =
+          menuData && menuData.minPickupAtIso
+            ? new Date(menuData.minPickupAtIso).getTime()
+            : now.getTime() + leadMin * 60 * 1000;
         const candidates = [];
         for (let dayOffset = 0; dayOffset <= 1; dayOffset++) {
           const base = new Date(now.getTime() + dayOffset * 24 * 60 * 60 * 1000);
@@ -965,7 +985,7 @@
                 const mm = m % 60;
                 const dt = new Date(base);
                 dt.setHours(hh, mm, 0, 0);
-                if (dt.getTime() <= now.getTime() + leadMin * 60 * 1000) continue;
+                if (dt.getTime() <= minMs) continue;
                 candidates.push(dt);
               }
             }
@@ -1602,6 +1622,10 @@
         renderDesktopCatList();
         renderMenu();
         renderAllCartUis();
+        const pickEl = document.getElementById("pickupAt");
+        if (pickEl && menuData.minPickupAtIso) {
+          pickEl.min = wallDatetimeLocalFromIso(menuData.minPickupAtIso, menuData.timezone || "Asia/Tokyo");
+        }
       }
 
       load().catch((e) => setMsg("err", String((e && e.message) || e)));

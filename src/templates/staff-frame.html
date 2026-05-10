@@ -866,10 +866,10 @@
           if (v === "open") btn.classList.add("is-open");
           else if (v === "paused") btn.classList.add("is-paused");
           else btn.classList.add("is-closed");
-          btn.dataset.paused = r.ordersPausedManually ? "1" : "0";
-          hint.textContent = r.ordersPausedManually
-            ? "タップで解除し、お客様からの注文・予約を再開します"
-            : "タップで注文停止（卓QR・ネットは停止・口頭注文は可）";
+          btn.dataset.guestOpen = r.guestOperatingOpenByStaff ? "1" : "0";
+          hint.textContent = r.guestOperatingOpenByStaff
+            ? "タップで営業時間外にします（卓QR停止・テイクアウトは次の枠以降の受取のみ）"
+            : "タップで営業中にし、卓QRとテイクアウトを再開します";
         } catch (_) {}
       }
       refreshOrderFooter();
@@ -878,11 +878,11 @@
       btn.addEventListener("click", async () => {
         try {
           await window.__staffMeLoaded;
-          const cur = btn.dataset.paused === "1";
+          const cur = btn.dataset.guestOpen === "1";
           await api("/stores/" + encodeURIComponent(STORE) + "/order-pause", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ordersPausedManually: !cur }),
+            body: JSON.stringify({ guestOperatingOpenByStaff: !cur }),
           });
           await refreshOrderFooter();
         } catch (e) {

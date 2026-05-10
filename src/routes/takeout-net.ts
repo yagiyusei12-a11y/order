@@ -17,7 +17,11 @@ import {
   type GuestSetStepSelection,
   type SetStepForValidation,
 } from "../lib/menu-set-order.js";
-import { isWallDateClosedByBusinessCalendar, isWallDateTimeWithinWeeklyHours } from "../lib/store-order-gate.js";
+import {
+  earliestGuestTakeoutPickupWhenStaffClosed,
+  isWallDateClosedByBusinessCalendar,
+  isWallDateTimeWithinWeeklyHours,
+} from "../lib/store-order-gate.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
 import { utcFromWallDateAndTime, wallDateYmdInZone } from "../lib/store-wall-time.js";
 import { prisma } from "../db.js";
@@ -218,6 +222,15 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
       }),
     }));
 
+    const clockNow = new Date();
+    const leadMs = Math.max(0, st.takeoutPickupMinLeadMinutes) * 60 * 1000;
+    let minPickupMs = clockNow.getTime() + leadMs;
+    if (!st.guestOperatingOpenByStaff) {
+      const earliest = earliestGuestTakeoutPickupWhenStaffClosed(st, clockNow);
+      if (earliest) minPickupMs = Math.max(minPickupMs, earliest.getTime());
+    }
+    const minPickupAtIso = new Date(minPickupMs).toISOString();
+
     return {
       store: { id: store.id, name: store.name },
       orderGate: {
@@ -229,6 +242,8 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
       timezone: st.timezone,
       takeoutPickupMinLeadMinutes: st.takeoutPickupMinLeadMinutes,
       takeoutNetPriceDisplayMode: st.takeoutNetPriceDisplayMode,
+      minPickupAtIso,
+      guestOperatingOpenByStaff: st.guestOperatingOpenByStaff,
       pickupTimeWindows: pickupWindows.map((w) => ({
         id: w.id,
         name: w.name,
@@ -286,7 +301,15 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
 
     const leadMin = st.takeoutPickupMinLeadMinutes;
     const leadMs = Math.max(0, leadMin) * 60 * 1000;
-    if (pickupAt.getTime() < Date.now() + leadMs) {
+    const clockNow = Date.now();
+    const earliest =
+      !st.guestOperatingOpenByStaff ? earliestGuestTakeoutPickupWhenStaffClosed(st, new Date(clockNow)) : null;
+    let minPickupMs = clockNow + leadMs;
+    if (earliest) minPickupMs = Math.max(minPickupMs, earliest.getTime());
+    if (pickupAt.getTime() < minPickupMs) {
+      if (earliest && pickupAt.getTime() < earliest.getTime()) {
+        return reply.code(403).send({ error: "受取は次の営業枠の開始以降を選んでください。" });
+      }
       return reply.code(400).send({
         error: `受取日時は現在から${leadMin}分以降を選んでください`,
       });

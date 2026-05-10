@@ -1799,8 +1799,6 @@ async function renderDetail() {
           log("空席に戻しました");
           await loadAll();
           selectedTableId = table.id;
-          renderGrid();
-          await renderDetail();
         } catch (e) {
           log(String(e.message || e));
         }
@@ -1812,38 +1810,51 @@ async function renderDetail() {
 }
 
 async function loadAll() {
+  const scrollEl = document.querySelector(".scroll-main");
+  const savedTop = scrollEl ? scrollEl.scrollTop : 0;
   try {
     if (typeof window !== "undefined" && window.__staffMeLoaded) await window.__staffMeLoaded;
   } catch (_) {}
-  const [tablesRes, sessionsRes, coursesRes, billsRes, settingsRes] = await Promise.all([
-    api("/stores/" + encodeURIComponent(STORE) + "/tables"),
-    api("/stores/" + encodeURIComponent(STORE) + "/sessions?status=open,bashing_waiting,merged&includeTotals=1"),
-    api("/stores/" + encodeURIComponent(STORE) + "/courses"),
-    api("/stores/" + encodeURIComponent(STORE) + "/bills?limit=200"),
-    api("/stores/" + encodeURIComponent(STORE) + "/settings"),
-  ]);
-  tablesCache = tablesRes.tables || [];
-  sessionsCache = sessionsRes.sessions || [];
-  coursesCache = coursesRes.courses || [];
-  const incoming = (settingsRes.store && settingsRes.store.settings) || {};
-  const merged = { ...storeSettingsCache, ...incoming };
-  const incP = incoming.billCorrectionPolicy;
-  merged.billCorrectionPolicy = {
-    enabled: true,
-    payments: true,
-    billVoid: true,
-    discounts: true,
-    orderLines: true,
-    reopenSettledForRegister: true,
-    ...(incP && typeof incP === "object" && !Array.isArray(incP) ? incP : {}),
-  };
-  storeSettingsCache = merged;
-  billsBySessionId = new Map();
-  for (const b of billsRes.bills || []) if (b.sessionId) billsBySessionId.set(b.sessionId, b);
-  renderGrid();
-  renderMiniSessions();
-  await renderDetail();
-  await renderReceiptBox();
+  try {
+    const [tablesRes, sessionsRes, coursesRes, billsRes, settingsRes] = await Promise.all([
+      api("/stores/" + encodeURIComponent(STORE) + "/tables"),
+      api("/stores/" + encodeURIComponent(STORE) + "/sessions?status=open,bashing_waiting,merged&includeTotals=1"),
+      api("/stores/" + encodeURIComponent(STORE) + "/courses"),
+      api("/stores/" + encodeURIComponent(STORE) + "/bills?limit=200"),
+      api("/stores/" + encodeURIComponent(STORE) + "/settings"),
+    ]);
+    tablesCache = tablesRes.tables || [];
+    sessionsCache = sessionsRes.sessions || [];
+    coursesCache = coursesRes.courses || [];
+    const incoming = (settingsRes.store && settingsRes.store.settings) || {};
+    const merged = { ...storeSettingsCache, ...incoming };
+    const incP = incoming.billCorrectionPolicy;
+    merged.billCorrectionPolicy = {
+      enabled: true,
+      payments: true,
+      billVoid: true,
+      discounts: true,
+      orderLines: true,
+      reopenSettledForRegister: true,
+      ...(incP && typeof incP === "object" && !Array.isArray(incP) ? incP : {}),
+    };
+    storeSettingsCache = merged;
+    billsBySessionId = new Map();
+    for (const b of billsRes.bills || []) if (b.sessionId) billsBySessionId.set(b.sessionId, b);
+    renderGrid();
+    renderMiniSessions();
+    await renderDetail();
+    await renderReceiptBox();
+  } finally {
+    if (scrollEl) {
+      requestAnimationFrame(() => {
+        scrollEl.scrollTop = savedTop;
+        requestAnimationFrame(() => {
+          scrollEl.scrollTop = savedTop;
+        });
+      });
+    }
+  }
 }
 
 const btnRefReceiptBox = document.getElementById("btnRefReceiptBox");

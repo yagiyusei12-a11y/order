@@ -1,4 +1,10 @@
 <main>
+  <style>
+    /* レシートボックス等の下端DOM差し替え時に scroll anchoring でビューが跳びにくくする */
+    .scroll-main {
+      overflow-anchor: none;
+    }
+  </style>
   <div class="ops-split">
     <div>
       <h2 class="page-title">テーブル・伝票管理</h2>

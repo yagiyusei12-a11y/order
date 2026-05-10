@@ -157,10 +157,29 @@ export function openOrReuseSessionForTable(input: {
   requireCourseWhenStarting?: boolean;
   /** テイクアウト注文ごとに別セッション（別伝票）にする */
   takeoutOrderSeparateBill?: boolean;
+  /** 卓QRで「別会計」を選んだとき、同一卓に新規 open を追加する */
+  dineInSeparateBill?: boolean;
 }): Promise<OpenSessionResult> {
+  const {
+    takeoutOrderSeparateBill,
+    dineInSeparateBill,
+    tableId,
+    storeId,
+    guestCount,
+    childCount,
+    courseId,
+    coursePriceTierId,
+    requireCourseWhenStarting,
+  } = input;
   return openSessionForTable({
-    ...input,
+    tableId,
+    storeId,
+    guestCount,
+    childCount,
+    courseId,
+    coursePriceTierId,
+    requireCourseWhenStarting,
     mode: "reuseIfOpen",
-    skipReuse: input.takeoutOrderSeparateBill === true,
+    skipReuse: takeoutOrderSeparateBill === true || dineInSeparateBill === true,
   });
 }

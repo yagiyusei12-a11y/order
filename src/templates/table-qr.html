@@ -30,9 +30,16 @@
       font-weight: 800; font-size: 0.95rem; cursor: pointer; margin-top: 0.35rem;
     }
     button.primary:disabled { opacity: 0.45; cursor: not-allowed; }
+    button.secondary {
+      width: 100%; padding: 0.7rem; border-radius: 10px; background: transparent; color: var(--text);
+      font-weight: 700; font-size: 0.92rem; cursor: pointer; margin-top: 0.5rem;
+      border: 1px solid var(--line);
+    }
+    button.secondary:disabled { opacity: 0.45; cursor: not-allowed; }
     #err { color: #ffb4b4; font-size: 0.85rem; margin-top: 0.65rem; display: none; }
     #loading { color: var(--muted); text-align: center; padding: 2rem 0; }
     .hint { font-size: 0.72rem; color: var(--muted); margin-top: 0.75rem; line-height: 1.5; }
+    #choiceIntro { margin: 0 0 0.75rem; line-height: 1.5; }
   </style>
 </head>
 <body>
@@ -41,6 +48,12 @@
     <div id="main" style="display:none">
       <h1 id="title">ご注文</h1>
       <p class="sub" id="deskLine"></p>
+      <div class="card" id="choiceCard" style="display: none">
+        <p id="choiceIntro"></p>
+        <div id="sessionPickWrap" style="display: none; margin-bottom: 0.65rem"></div>
+        <button type="button" class="primary" id="btnJoinShared">同じ会計で続ける（注文を合算）</button>
+        <button type="button" class="secondary" id="btnSeparate">別の会計で始める</button>
+      </div>
       <div class="card" id="formCard">
         <label class="lbl" for="guestCount">人数（延べ）</label>
         <input id="guestCount" type="number" min="1" max="99" step="1" value="2" inputmode="numeric" />
@@ -50,7 +63,9 @@
         <div class="course-list" id="courseRadios"></div>
         <button type="button" class="primary" id="btnStart">注文を始める</button>
         <p id="err" role="alert"></p>
-        <p class="hint">すでに同伴の方が開始している場合は、同じ注文画面に入ります。コースは事前にスタッフへご確認ください。</p>
+        <p class="hint" id="hintText">
+          すでに同伴の方が開始している場合は、同じ注文画面に入ります。コースは事前にスタッフへご確認ください。
+        </p>
       </div>
     </div>
   </div>
@@ -133,18 +148,38 @@
       }
     }
 
+    function fmtSessionWhen(iso) {
+      try {
+        const d = new Date(iso);
+        if (!isFinite(d.getTime())) return "";
+        return d.toLocaleString("ja-JP", {
+          month: "numeric",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+      } catch (_) {
+        return "";
+      }
+    }
+
     (async () => {
       const loading = document.getElementById("loading");
       const main = document.getElementById("main");
       const err = document.getElementById("err");
+      let separateBillNext = false;
       try {
         const r = await fetch("/public/tables/" + encodeURIComponent(code));
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error || r.statusText);
-        if (j.session && j.session.guestToken) {
-          goGuest(j.session.guestToken);
-          return;
-        }
+
+        const openList =
+          Array.isArray(j.openSessions) && j.openSessions.length > 0
+            ? j.openSessions
+            : j.session && j.session.guestToken
+              ? [j.session]
+              : [];
+
         loading.style.display = "none";
         main.style.display = "block";
         const dispName =
@@ -154,6 +189,72 @@
         document.getElementById("deskLine").textContent =
           "卓コード " + dispCode + " · 人数とメニュー種類を選んでください。";
         renderCourseRadios(j.courses || [], j.store || {});
+
+        const choiceCard = document.getElementById("choiceCard");
+        const formCard = document.getElementById("formCard");
+        const sessionPickWrap = document.getElementById("sessionPickWrap");
+        const choiceIntro = document.getElementById("choiceIntro");
+
+        if (openList.length > 0) {
+          choiceCard.style.display = "block";
+          formCard.style.display = "none";
+          choiceIntro.innerHTML =
+            "この卓では<strong>すでに注文が始まっています</strong>。<br />同伴と<strong>同じ会計（お支払いをまとめる）</strong>ですか？それとも<strong>別々の会計</strong>ですか？";
+          if (openList.length > 1) {
+            sessionPickWrap.style.display = "block";
+            sessionPickWrap.innerHTML = openList
+              .map(function (s, i) {
+                const when = s.openedAt ? fmtSessionWhen(s.openedAt) : "";
+                const lab =
+                  (when ? when + " · " : "") +
+                  Number(s.guestCount || 0) +
+                  "名" +
+                  (Number(s.childCount || 0) > 0 ? "（子" + s.childCount + "）" : "");
+                const sid = "sessPick-" + i;
+                return (
+                  "<label class=\"row\" style=\"cursor:pointer\"><input type=\"radio\" name=\"sessionPick\" id=\"" +
+                  esc(sid) +
+                  "\" value=\"" +
+                  esc(s.guestToken) +
+                  "\"" +
+                  (i === 0 ? " checked" : "") +
+                  " /><div><strong>会計 " +
+                  (i + 1) +
+                  "</strong><div class=\"course-meta\">" +
+                  esc(lab) +
+                  "</div></div></label>"
+                );
+              })
+              .join("");
+          } else {
+            sessionPickWrap.style.display = "none";
+            sessionPickWrap.innerHTML = "";
+          }
+
+          document.getElementById("btnJoinShared").onclick = function () {
+            let tok = openList[0].guestToken;
+            if (openList.length > 1) {
+              const sel = document.querySelector("input[name=\"sessionPick\"]:checked");
+              tok = sel && sel.value ? sel.value : tok;
+            }
+            goGuest(tok);
+          };
+          document.getElementById("btnSeparate").onclick = function () {
+            separateBillNext = true;
+            choiceCard.style.display = "none";
+            formCard.style.display = "block";
+            document.getElementById("deskLine").textContent =
+              "卓コード " + dispCode + " · <strong>別会計</strong>で始めます。人数とメニュー種類を選んでください。";
+            const ht = document.getElementById("hintText");
+            if (ht) {
+              ht.textContent =
+                "別会計を選んだ場合、レジではこの卓で会計が分かれて表示されます。コースは事前にスタッフへご確認ください。";
+            }
+          };
+        } else {
+          choiceCard.style.display = "none";
+          formCard.style.display = "block";
+        }
 
         document.getElementById("btnStart").onclick = async () => {
           err.style.display = "none";
@@ -183,6 +284,7 @@
           try {
             const body = { guestCount: gc, childCount: childN, courseId: courseId };
             if (coursePriceTierId) body.coursePriceTierId = coursePriceTierId;
+            if (separateBillNext) body.separateBill = true;
             const r2 = await fetch("/public/tables/" + encodeURIComponent(code) + "/session", {
               method: "POST",
               headers: { "Content-Type": "application/json" },

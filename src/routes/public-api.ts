@@ -35,10 +35,22 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
     });
     const st = mergeStoreSettings(store?.settings);
     const gate = evaluatePublicOrderGate(st, new Date());
-    const session = await prisma.diningSession.findFirst({
+    const openSessionsRows = await prisma.diningSession.findMany({
       where: { tableId: table.id, status: "open" },
+      orderBy: { openedAt: "asc" },
       include: { course: true, coursePriceTier: true },
     });
+    const sessionPayload = (session: (typeof openSessionsRows)[0]) => ({
+      id: session.id,
+      guestToken: session.guestToken,
+      guestCount: session.guestCount,
+      childCount: session.childCount,
+      openedAt: session.openedAt.toISOString(),
+      course: session.course,
+      coursePriceTier: session.coursePriceTier,
+    });
+    const openSessions = openSessionsRows.map(sessionPayload);
+    const session = openSessionsRows.length > 0 ? sessionPayload(openSessionsRows[0]) : null;
     const courses = await prisma.course.findMany({
       where: { storeId: table.storeId, active: true },
       orderBy: { name: "asc" },
@@ -78,23 +90,21 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
         displayCode: displayTableCode(table.publicCode),
         displayName: tableDisplayLabel(table.name, table.publicCode),
       },
-      session: session
-        ? {
-            id: session.id,
-            guestToken: session.guestToken,
-            guestCount: session.guestCount,
-            childCount: session.childCount,
-            course: session.course,
-            coursePriceTier: session.coursePriceTier,
-          }
-        : null,
+      session,
+      openSessions,
       courses: coursesOut,
     };
   });
 
   app.post<{
     Params: { publicCode: string };
-    Body: { guestCount?: unknown; courseId?: unknown; childCount?: unknown; coursePriceTierId?: unknown };
+    Body: {
+      guestCount?: unknown;
+      courseId?: unknown;
+      childCount?: unknown;
+      coursePriceTierId?: unknown;
+      separateBill?: unknown;
+    };
   }>("/public/tables/:publicCode/session", async (req, reply) => {
     const table = await prisma.table.findUnique({
       where: { publicCode: req.params.publicCode },
@@ -148,6 +158,8 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
       coursePriceTierId = tierRaw;
     }
 
+    const separateBill = (body as { separateBill?: unknown }).separateBill === true;
+
     const result = await openOrReuseSessionForTable({
       tableId: table.id,
       storeId: table.storeId,
@@ -156,6 +168,7 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
       courseId,
       coursePriceTierId,
       requireCourseWhenStarting: st.requireCourseWhenStartingSession,
+      dineInSeparateBill: separateBill,
     });
     if (!result.ok) {
       if (result.code === "BAD_COUNT") return reply.code(400).send({ error: "guestCount must be integer 1-99" });

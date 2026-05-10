@@ -717,29 +717,41 @@ function renderBizWeeklyEditor(s) {
   }
 }
 
+/** @param {Element | null} rowsHost */
+function collectBizSlotsFromRowsHost(rowsHost, labelJa) {
+  const rows = rowsHost ? [...rowsHost.querySelectorAll(".biz-slot-row")] : [];
+  const slots = [];
+  for (const row of rows) {
+    const oEl = row.querySelector(".biz-open");
+    const cEl = row.querySelector(".biz-close");
+    const om = oEl ? timeInputValueToGuestMin(oEl.value) : null;
+    const cm = cEl ? timeInputValueToGuestMin(cEl.value) : null;
+    if (om === null && cm === null) continue;
+    if (om === null || cm === null) {
+      throw new Error(labelJa + ": 開店・閉店は両方入力するか、行を削除してください");
+    }
+    if (om === cm) {
+      throw new Error(labelJa + ": 開店と閉店が同じです");
+    }
+    slots.push({ openMin: om, closeMin: cm });
+  }
+  return slots;
+}
+
 function collectBusinessWeeklyHoursFromUi() {
   const out = [];
   for (let dow = 0; dow < 7; dow++) {
     const rowsHost = document.querySelector('.biz-day-rows[data-biz-dow="' + dow + '"]');
-    const rows = rowsHost ? [...rowsHost.querySelectorAll(".biz-slot-row")] : [];
-    const slots = [];
-    for (const row of rows) {
-      const oEl = row.querySelector(".biz-open");
-      const cEl = row.querySelector(".biz-close");
-      const om = oEl ? timeInputValueToGuestMin(oEl.value) : null;
-      const cm = cEl ? timeInputValueToGuestMin(cEl.value) : null;
-      if (om === null && cm === null) continue;
-      if (om === null || cm === null) {
-        throw new Error(BIZ_DAY_LABELS_JA[dow] + ": 開店・閉店は両方入力するか、行を削除してください");
-      }
-      if (om === cm) {
-        throw new Error(BIZ_DAY_LABELS_JA[dow] + ": 開店と閉店が同じです");
-      }
-      slots.push({ openMin: om, closeMin: cm });
-    }
+    const slots = collectBizSlotsFromRowsHost(rowsHost, BIZ_DAY_LABELS_JA[dow]);
     out.push(slots.length ? slots : null);
   }
   return out;
+}
+
+function ensureBizBulkTemplate() {
+  const h = document.getElementById("bizBulkTemplateHost");
+  if (!h || h.querySelector(".biz-slot-row")) return;
+  h.appendChild(makeBizSlotRow(null));
 }
 
 async function loadAll() {
@@ -842,6 +854,7 @@ async function loadAll() {
   }
   renderOpsDiscountPresets(s.opsDiscountPresets || []);
   renderBizWeeklyEditor(s);
+  ensureBizBulkTemplate();
   const closedTa = document.getElementById("stBizClosedDates");
   if (closedTa) closedTa.value = (Array.isArray(s.businessClosedDates) ? s.businessClosedDates : []).join("\n");
   const exTa = document.getElementById("stBizOpenExceptions");
@@ -1898,6 +1911,59 @@ if (btnResetStaffSidebar) {
   btnResetStaffSidebar.onclick = () => {
     log("");
     resetStaffSidebarPrefs();
+  };
+}
+
+const btnBizBulkAddSlot = document.getElementById("btnBizBulkAddSlot");
+if (btnBizBulkAddSlot) {
+  btnBizBulkAddSlot.onclick = () => {
+    log("");
+    const h = document.getElementById("bizBulkTemplateHost");
+    if (!h) return;
+    const n = h.querySelectorAll(".biz-slot-row").length;
+    if (n >= MAX_BIZ_SLOTS_PER_DAY) {
+      log("テンプレは最大 " + MAX_BIZ_SLOTS_PER_DAY + " 枠までです");
+      return;
+    }
+    h.appendChild(makeBizSlotRow(null));
+  };
+}
+const btnBizBulkApply = document.getElementById("btnBizBulkApply");
+if (btnBizBulkApply) {
+  btnBizBulkApply.onclick = () => {
+    log("");
+    if (!requireManagerForSettings()) return;
+    const tmpl = document.getElementById("bizBulkTemplateHost");
+    if (!tmpl) return;
+    let slots;
+    try {
+      slots = collectBizSlotsFromRowsHost(tmpl, "一括テンプレ");
+    } catch (e) {
+      log(String(e.message || e));
+      return;
+    }
+    if (!slots.length) {
+      log("テンプレに開店・閉店を入力するか、「テンプレに時間帯を追加」で行を追加してください");
+      return;
+    }
+    const checked = [...document.querySelectorAll("input.biz-bulk-dow:checked")];
+    if (!checked.length) {
+      log("適用先の曜を1つ以上選んでください");
+      return;
+    }
+    const weeklyEn = document.getElementById("stBizWeeklyEnable");
+    if (weeklyEn) weeklyEn.checked = true;
+    for (const cb of checked) {
+      const dow = Number(cb.getAttribute("data-dow"));
+      if (!Number.isFinite(dow) || dow < 0 || dow > 6) continue;
+      const rowsHost = document.querySelector('.biz-day-rows[data-biz-dow="' + dow + '"]');
+      if (!rowsHost) continue;
+      rowsHost.innerHTML = "";
+      for (const sl of slots) {
+        rowsHost.appendChild(makeBizSlotRow(sl));
+      }
+    }
+    log("選択した曜に時間帯をコピーしました。「週次営業時間を保存」で確定してください");
   };
 }
 

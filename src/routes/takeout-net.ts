@@ -17,11 +17,7 @@ import {
   type GuestSetStepSelection,
   type SetStepForValidation,
 } from "../lib/menu-set-order.js";
-import {
-  evaluatePublicOrderGate,
-  isWallDateClosedByBusinessCalendar,
-  isWallDateTimeWithinWeeklyHours,
-} from "../lib/store-order-gate.js";
+import { isWallDateClosedByBusinessCalendar, isWallDateTimeWithinWeeklyHours } from "../lib/store-order-gate.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
 import { utcFromWallDateAndTime, wallDateYmdInZone } from "../lib/store-wall-time.js";
 import { prisma } from "../db.js";
@@ -71,7 +67,6 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
     });
     if (!store) return reply.code(404).send({ error: "store not found" });
     const st = mergeStoreSettings(store.settings);
-    const gatePreview = evaluatePublicOrderGate(st, new Date());
     const nowMin = minutesSinceMidnightInTimeZone(new Date(), st.timezone);
     const storeTaxRatePercent = st.taxRatePercent;
     const takeoutTaxRatePercent = 8;
@@ -226,9 +221,9 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
     return {
       store: { id: store.id, name: store.name },
       orderGate: {
-        acceptingOrders: gatePreview.accepting,
-        reasonCode: gatePreview.reasonCode,
-        messageJa: gatePreview.accepting ? "" : gatePreview.messageJa,
+        acceptingOrders: true,
+        reasonCode: null,
+        messageJa: "",
       },
       taxRatePercent: takeoutTaxRatePercent,
       timezone: st.timezone,
@@ -272,10 +267,6 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
     });
     if (!store) return reply.code(404).send({ error: "store not found" });
     const st = mergeStoreSettings(store.settings);
-    const gate = evaluatePublicOrderGate(st, new Date());
-    if (!gate.accepting) {
-      return reply.code(403).send({ error: gate.messageJa });
-    }
     const nowMin = minutesSinceMidnightInTimeZone(new Date(), st.timezone);
     const storeTaxRatePercent = st.taxRatePercent;
     const eatMode: EatMode = "takeout";

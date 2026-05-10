@@ -92,13 +92,33 @@
     <div class="card" style="border-color:#93c5fd">
       <strong style="font-size:0.9rem">週次営業時間</strong>
       <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
-        オンにすると、下記の時間外は卓QR・ネットテイクアウト・ネット予約の<strong>受付</strong>をしません（スタッフの口頭注文は可）。
+        オンにすると、<strong>卓QR</strong>は「いま」が下記の時間外だと注文を止めます（スタッフの口頭注文は可）。
+        <strong>ネットテイクアウト・ネット予約</strong>は送信時刻ではなく、選んだ受取日時・予約日時が週次・カレンダーに合うかで判定します（深夜に翌日枠を予約する場合なども可）。
         オフのときは曜日の時間では締めません（休業日カレンダー・フッターの注文停止のみ）。1日に複数回営業する場合は「時間帯を追加」で朝・昼・夜などを分けてください。終日またぎは1行で閉店を早朝に（例 17:00〜02:00）。
       </p>
       <label class="row" style="align-items:center;gap:0.45rem;font-size:0.85rem;margin-bottom:0.65rem">
         <input type="checkbox" id="stBizWeeklyEnable" /> <span>週次の開店〜閉店で締める</span>
       </label>
       <p class="muted" style="font-size:0.72rem;margin:-0.35rem 0 0.5rem">時間帯が未設定の曜は休業日扱いです。</p>
+      <div id="bizBulkBlock" style="margin:0.65rem 0;padding:0.65rem 0.75rem;border:1px dashed var(--border);border-radius:10px">
+        <strong style="font-size:0.86rem">一括登録</strong>
+        <p class="muted" style="font-size:0.72rem;margin:0.25rem 0 0.5rem">
+          下の時間帯を、チェックした曜に上書きコピーします（このあと「週次営業時間を保存」で確定）。
+        </p>
+        <div id="bizBulkTemplateHost" style="margin-bottom:0.35rem"></div>
+        <button type="button" class="btn-ghost" id="btnBizBulkAddSlot" style="font-size:0.78rem;margin-bottom:0.5rem">テンプレに時間帯を追加</button>
+        <div class="row" style="flex-wrap:wrap;gap:0.45rem 0.65rem;align-items:center;font-size:0.82rem;margin:0.35rem 0">
+          <span class="muted" style="font-size:0.75rem">適用先:</span>
+          <label><input type="checkbox" class="biz-bulk-dow" data-dow="0" /> 日</label>
+          <label><input type="checkbox" class="biz-bulk-dow" data-dow="1" /> 月</label>
+          <label><input type="checkbox" class="biz-bulk-dow" data-dow="2" /> 火</label>
+          <label><input type="checkbox" class="biz-bulk-dow" data-dow="3" /> 水</label>
+          <label><input type="checkbox" class="biz-bulk-dow" data-dow="4" /> 木</label>
+          <label><input type="checkbox" class="biz-bulk-dow" data-dow="5" /> 金</label>
+          <label><input type="checkbox" class="biz-bulk-dow" data-dow="6" /> 土</label>
+        </div>
+        <button type="button" class="btn-primary" id="btnBizBulkApply" style="margin-top:0.25rem">選択した曜に適用</button>
+      </div>
       <div id="bizWeeklyHost" style="margin-bottom:0.65rem"></div>
       <button type="button" class="btn-primary" id="btnSaveBusinessWeekly">週次営業時間を保存</button>
     </div>

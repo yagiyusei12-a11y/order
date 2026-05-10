@@ -5,7 +5,6 @@ import { prisma } from "../db.js";
 import { openSessionForTable } from "../lib/open-table-session.js";
 import { minutesSinceMidnightInTimeZone } from "../lib/guest-category-hours.js";
 import {
-  evaluatePublicOrderGate,
   isReservationWallDateTimeAllowed,
   isWallDateClosedByBusinessCalendar,
 } from "../lib/store-order-gate.js";
@@ -1119,10 +1118,6 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
     if (!Number.isFinite(num) || num < 1 || num > 20) return reply.code(400).send({ error: "num must be 1..20" });
 
     const stSet = mergeStoreSettings(store.settings);
-    const gateNow = evaluatePublicOrderGate(stSet, new Date());
-    if (!gateNow.accepting) {
-      return reply.code(403).send({ error: gateNow.messageJa });
-    }
     if (isWallDateClosedByBusinessCalendar(stSet, date)) {
       return reply.code(403).send({ error: "この日は休業です。" });
     }

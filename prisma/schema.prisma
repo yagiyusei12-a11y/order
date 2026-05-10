@@ -352,6 +352,8 @@ model MenuItem {
   containsAlcohol   Boolean         @default(false)
   /// テイクアウト可能（ゲスト/ネット注文で選択可能）
   allowTakeout      Boolean         @default(false)
+  /// キッチンで優先表示（早く出す）。注文明細行はこのフラグで並び替え
+  kitchenServeFast  Boolean         @default(false)
   /// メニュー保存の楽観ロック（PATCH 時 ifMasterVersion と照合）
   masterVersion     Int             @default(1)
   category          MenuCategory    @relation(fields: [categoryId], references: [id], onDelete: Cascade)

@@ -858,6 +858,9 @@ function renderItemDetail(right) {
     "<label>キッチン調理タイマー2（秒・空欄＝なし・同一商品で別工程用）</label><input id=\"dCookSec2\" type=\"number\" min=\"1\" max=\"86400\" step=\"1\" value=\"" +
     escapeHtml(item.cookTimerSec2 != null && item.cookTimerSec2 > 0 ? String(item.cookTimerSec2) : "") +
     "\" placeholder=\"例: 60\" title=\"1〜86400秒\" />" +
+    "<label class=\"row\" style=\"margin-top:.35rem;font-size:.82rem;gap:.4rem;align-items:flex-start\"><input type=\"checkbox\" id=\"dKitchenServeFast\"" +
+    (item.kitchenServeFast ? " checked" : "") +
+    " style=\"margin-top:.2rem\" /><span>キッチンで優先表示（早く出す）</span></label>" +
     "<label class=\"row\" style=\"margin-top:.45rem;font-size:.82rem;gap:.4rem;align-items:flex-start\"><input type=\"checkbox\" id=\"dContainsAlcohol\"" +
     (item.containsAlcohol ? " checked" : "") +
     " style=\"margin-top:.2rem\" /><span>アルコール商品（飲酒不可のお客様はゲストから注文できません）</span></label>" +
@@ -946,6 +949,8 @@ function renderItemDetail(right) {
     const containsAlcohol = !!(chkAlc && chkAlc.checked);
     const chkTakeout = right.querySelector("#dAllowTakeout");
     const allowTakeout = !!(chkTakeout && chkTakeout.checked);
+    const chkKitchenFast = right.querySelector("#dKitchenServeFast");
+    const kitchenServeFast = !!(chkKitchenFast && chkKitchenFast.checked);
     const v0 = Number(item.masterVersion ?? 1);
     btnSave.disabled = true;
     const prevLabel = btnSave.textContent;
@@ -969,6 +974,7 @@ function renderItemDetail(right) {
           sellKind,
           containsAlcohol,
           allowTakeout,
+          kitchenServeFast,
           ifMasterVersion: v0,
         }),
       });

@@ -41,6 +41,11 @@ function normCookTimerSec(v) {
   return v;
 }
 
+/** マスタ「早く出す」。キッチンAPIの kitchenServeFast */
+function lineKitchenServeFast(ln) {
+  return Boolean(ln && ln.kitchenServeFast);
+}
+
 function lineGroupKey(ln) {
   const base = ln.menuItemId ? "mid:" + ln.menuItemId : "name:" + ln.nameSnapshot;
   if (ln && ln.lineExtra && typeof ln.lineExtra === "object") {
@@ -1056,9 +1061,11 @@ function renderKitList() {
           menuSetBundleComponents: ln.setBundleComponents ?? null,
           menuSetParentImageUrl: ln.setParentImageUrl ?? null,
           menuSetParentRecipe: ln.setParentRecipe ?? null,
+          kitchenServeFast: lineKitchenServeFast(ln),
         });
       } else {
         prev.qty += Number(ln.qty || 0);
+        prev.kitchenServeFast = prev.kitchenServeFast || lineKitchenServeFast(ln);
         if (createdAtMs < prev.oldestMs) {
           prev.oldestMs = createdAtMs;
           prev.oldestAt = ln.orderCreatedAt;
@@ -1082,7 +1089,12 @@ function renderKitList() {
         }
       }
     }
-    const arr = [...grouped.values()].sort((a, b) => a.oldestMs - b.oldestMs || a.nameSnapshot.localeCompare(b.nameSnapshot, "ja"));
+    const arr = [...grouped.values()].sort((a, b) => {
+      const pa = a.kitchenServeFast ? 1 : 0;
+      const pb = b.kitchenServeFast ? 1 : 0;
+      if (pb !== pa) return pb - pa;
+      return a.oldestMs - b.oldestMs || a.nameSnapshot.localeCompare(b.nameSnapshot, "ja");
+    });
 
     if (arr.length === 0) {
       box.className = "card";
@@ -1132,6 +1144,12 @@ function renderKitList() {
           });
       }
       nameRow.appendChild(nameEl);
+      if (g.kitchenServeFast) {
+        const fb = document.createElement("span");
+        fb.className = "kit-kitchen-fast-badge";
+        fb.textContent = "優先";
+        nameRow.appendChild(fb);
+      }
       main.appendChild(nameRow);
       if (g.extraTxt) {
         const ex = document.createElement("div");
@@ -1352,7 +1370,12 @@ function renderKitList() {
   box.className = "card kit-layout-normal";
   box.innerHTML = "";
   for (const og of orderGroups) {
-    og.lines.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    og.lines.sort((a, b) => {
+      const fa = lineKitchenServeFast(a) ? 1 : 0;
+      const fb = lineKitchenServeFast(b) ? 1 : 0;
+      if (fb !== fa) return fb - fa;
+      return String(a.id).localeCompare(String(b.id));
+    });
     const d = document.createElement("div");
     d.className = "kit-order-box";
 
@@ -1382,6 +1405,12 @@ function renderKitList() {
         name.onclick = () => openKitMenuDetailModal(ln);
       }
       nameRow.appendChild(name);
+      if (lineKitchenServeFast(ln)) {
+        const fb = document.createElement("span");
+        fb.className = "kit-kitchen-fast-badge";
+        fb.textContent = "優先";
+        nameRow.appendChild(fb);
+      }
       if (ln.status === "queued" || ln.status === "cooking" || ln.status === "done") {
         const cancelTxt = document.createElement("button");
         cancelTxt.type = "button";

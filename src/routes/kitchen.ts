@@ -171,6 +171,7 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
           courseKind: course ? course.kind : null,
           readyAt: l.readyAt,
           servedAt: l.servedAt,
+          kitchenServeFast: Boolean(l.menuItem?.kitchenServeFast),
         });
         continue;
       }
@@ -228,8 +229,21 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
           courseKind: course ? course.kind : null,
           readyAt: l.readyAt,
           servedAt: l.servedAt,
+          kitchenServeFast: Boolean(mi.kitchenServeFast),
         });
       }
+    }
+
+    if (lineStatus !== "done" && lineStatus !== "served") {
+      const tagged = outLines.map((line, i) => ({ line, i }));
+      tagged.sort((a, b) => {
+        const fa = a.line.kitchenServeFast ? 1 : 0;
+        const fb = b.line.kitchenServeFast ? 1 : 0;
+        if (fb !== fa) return fb - fa;
+        return a.i - b.i;
+      });
+      outLines.length = 0;
+      for (const t of tagged) outLines.push(t.line);
     }
 
     return { storeId: store.id, lines: outLines };

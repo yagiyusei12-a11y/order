@@ -754,6 +754,43 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     return cat;
   });
 
+  /** カテゴリ一覧の表示順（:categoryId より前に定義 — "order" が id と誤マッチしないため） */
+  app.put<{
+    Params: { storeId: string };
+    Body: { categoryIds: string[] };
+  }>("/stores/:storeId/menu/categories/order", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    const ids = req.body?.categoryIds;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return reply.code(400).send({ error: "categoryIds[] required" });
+    }
+    const uniq = new Set(ids);
+    if (uniq.size !== ids.length) return reply.code(400).send({ error: "duplicate categoryIds" });
+    const existingRows = await prisma.menuCategory.findMany({
+      where: { storeId: store.id },
+      select: { id: true },
+    });
+    const existing = new Set(existingRows.map((r) => r.id));
+    if (existing.size !== ids.length || !ids.every((id) => typeof id === "string" && existing.has(id))) {
+      return reply
+        .code(400)
+        .send({ error: "categoryIds must list each store category exactly once" });
+    }
+    await prisma.$transaction(
+      async (tx) => {
+        for (let idx = 0; idx < ids.length; idx++) {
+          await tx.menuCategory.update({
+            where: { id: ids[idx] },
+            data: { sortOrder: idx },
+          });
+        }
+      },
+      { timeout: 60_000 },
+    );
+    return { ok: true };
+  });
+
   app.post<{
     Params: { storeId: string };
     Body: {

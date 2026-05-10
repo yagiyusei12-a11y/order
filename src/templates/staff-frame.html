@@ -446,6 +446,32 @@
       box-shadow: inset 0 0 0 2px var(--accent);
       background: var(--accent-soft);
     }
+    /* メニュー管理：カテゴリ行のドラッグ並べ替え */
+    .pm-row-category .pm-cat-drag {
+      flex-shrink: 0;
+      align-self: stretch;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 2rem;
+      margin-right: 0.15rem;
+      cursor: grab;
+      user-select: none;
+      font-size: 1rem;
+      line-height: 1;
+      letter-spacing: -0.12em;
+      color: var(--muted);
+    }
+    .pm-row-category .pm-cat-drag:active {
+      cursor: grabbing;
+    }
+    .pm-row-category.is-dragging {
+      opacity: 0.45;
+    }
+    .pm-row-category.drag-over {
+      box-shadow: inset 0 0 0 2px var(--accent);
+      background: var(--accent-soft);
+    }
     .pm-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; justify-content: flex-end; }
 
     /* キッチン */

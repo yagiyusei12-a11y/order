@@ -1118,6 +1118,79 @@ function renderItemDetail(right) {
   };
 }
 
+function wireCategoryPaneDragSort(left) {
+  if (!left) return;
+  let draggedRow = null;
+
+  const clearDragOver = () => {
+    left.querySelectorAll(".pm-row-category.drag-over").forEach((el) => el.classList.remove("drag-over"));
+  };
+
+  left.querySelectorAll(".pm-row-category").forEach((row) => {
+    const handle = row.querySelector(".pm-cat-drag");
+    if (!handle) return;
+
+    handle.addEventListener("dragstart", (e) => {
+      draggedRow = row;
+      row.classList.add("is-dragging");
+      try {
+        e.dataTransfer.setData("text/plain", row.dataset.categoryId || "");
+        e.dataTransfer.effectAllowed = "move";
+      } catch (_) {}
+    });
+
+    handle.addEventListener("dragend", () => {
+      row.classList.remove("is-dragging");
+      clearDragOver();
+      draggedRow = null;
+    });
+
+    row.addEventListener("dragover", (e) => {
+      if (!draggedRow || draggedRow === row) return;
+      e.preventDefault();
+      try {
+        e.dataTransfer.dropEffect = "move";
+      } catch (_) {}
+      clearDragOver();
+      row.classList.add("drag-over");
+    });
+
+    row.addEventListener("dragleave", () => {
+      row.classList.remove("drag-over");
+    });
+
+    row.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      row.classList.remove("drag-over");
+      if (!draggedRow || draggedRow === row) return;
+      const rect = row.getBoundingClientRect();
+      const after = e.clientY > rect.top + rect.height / 2;
+      if (after) row.after(draggedRow);
+      else row.before(draggedRow);
+      await persistCategoryOrderFromPane(left);
+    });
+  });
+}
+
+async function persistCategoryOrderFromPane(left) {
+  const ids = [...left.querySelectorAll(".pm-row-category")].map((r) => r.dataset.categoryId).filter(Boolean);
+  if (!ids.length) return;
+  try {
+    await api("/stores/" + encodeURIComponent(STORE) + "/menu/categories/order", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ categoryIds: ids }),
+    });
+    log("並び順を保存しました");
+    await loadAll();
+    render();
+  } catch (e) {
+    log(String(e.message || e));
+    await loadAll();
+    render();
+  }
+}
+
 function renderCategoriesTab(layout) {
   layout.style.gridTemplateColumns = "1fr 0 0";
   const left = document.getElementById("menuCategoryPane");
@@ -1133,8 +1206,10 @@ function renderCategoriesTab(layout) {
       parentOpts += "<option value=\"" + escapeHtml(c.id) + "\">" + escapeHtml(categoryLabel(c)) + "</option>";
     }
     const row = document.createElement("div");
-    row.className = "pm-row";
+    row.className = "pm-row pm-row-category";
+    row.dataset.categoryId = cat.id;
     row.innerHTML =
+      "<span class=\"pm-cat-drag\" draggable=\"true\" title=\"ドラッグして並べ替え\" aria-label=\"並べ替え\">⋮⋮</span>" +
       "<div class=\"pm-mid\" style=\"display:flex;flex-direction:column;gap:0.35rem\">" +
       "<div><span class=\"muted\" style=\"font-size:0.7rem\">カテゴリ名</span><input type=\"text\" value=\"" +
       escapeHtml(cat.name) +
@@ -1247,6 +1322,7 @@ function renderCategoriesTab(layout) {
       }
     };
   });
+  wireCategoryPaneDragSort(left);
 }
 
 function renderOptionsTab(layout) {

@@ -1,25 +1,16 @@
 import type { FastifyInstance } from "fastify";
-import type { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { computeCourseSessionTotal } from "../lib/course-pricing.js";
 import { computeSessionSuggestedTotal, parseBillDiscount } from "../lib/ops-discount.js";
 import { openSessionForTable } from "../lib/open-table-session.js";
-import { mergeStoreSettings } from "../lib/store-settings.js";
+import {
+  isBillCorrectionAllowed,
+  mergeStoreSettings,
+} from "../lib/store-settings.js";
 import { resolveCourseAndTierForSession } from "../lib/course-tier-resolve.js";
-
-function asStringIdArray(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.filter((x): x is string => typeof x === "string" && x.length > 0);
-}
-
-function mergeGuestAlcoholAllowed(
-  a: boolean | null | undefined,
-  b: boolean | null | undefined,
-): boolean | null {
-  if (a === false || b === false) return false;
-  if (a === true || b === true) return true;
-  return null;
-}
+import { recomputeOpenBillTotalForSession } from "../lib/recompute-session-bill.js";
+import { mergeTwoOpenSessionsTx } from "../lib/session-merge.js";
+import { moveOrderLinesBetweenSessionsTx, type LineMoveSpec } from "../lib/move-session-order-lines.js";
 
 /** セッション内で最も早い SalesOrder（「注文時」表示用） */
 function firstSalesOrderByTime(
@@ -38,37 +29,6 @@ function normalizeUiCustomerLabel(
   const c = customerName != null ? String(customerName).trim() : "";
   if (c) return c;
   return null;
-}
-
-async function recomputeOpenBillTotalForSession(
-  tx: Prisma.TransactionClient,
-  storeId: string,
-  sessionId: string,
-): Promise<void> {
-  const session = await tx.diningSession.findFirst({
-    where: { id: sessionId, storeId },
-    include: {
-      course: true,
-      coursePriceTier: true,
-      orders: { include: { lines: true } },
-      bill: true,
-    },
-  });
-  if (!session?.bill || session.bill.status !== "open") return;
-  const courseTotal =
-    session.courseId && session.coursePriceTier
-      ? computeCourseSessionTotal(
-          session.coursePriceTier,
-          session.courseId,
-          session.guestCount,
-          session.childCount,
-        )
-      : 0;
-  const billDisc = parseBillDiscount(session.bill.discountJson);
-  const suggested = computeSessionSuggestedTotal(courseTotal, session.orders, billDisc).suggestedTotal;
-  if (session.bill.totalAmount !== suggested) {
-    await tx.bill.update({ where: { id: session.bill.id }, data: { totalAmount: suggested } });
-  }
 }
 
 export async function registerSessions(app: FastifyInstance): Promise<void> {
@@ -609,88 +569,9 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
 
     try {
       const targetSession = await prisma.$transaction(async (tx) => {
-        const from = await tx.diningSession.findFirst({
-          where: { id: fromId, storeId: store.id },
-          include: { bill: { include: { payments: true } } },
-        });
-        const to = await tx.diningSession.findFirst({
-          where: { id: toId, storeId: store.id },
-          include: { bill: { include: { payments: true } } },
-        });
-        if (!from || !to) return null;
-        if (from.status !== "open" || to.status !== "open") {
-          throw new Error("MERGE_STATUS");
-        }
-        if (to.mergedIntoSessionId) {
-          throw new Error("MERGE_TARGET_IS_MERGED_CHILD");
-        }
-        if (from.tableId === to.tableId) {
-          throw new Error("MERGE_SAME_TABLE");
-        }
-
-        if (from.courseId) {
-          if (to.courseId !== from.courseId || to.coursePriceTierId !== from.coursePriceTierId) {
-            throw new Error("MERGE_COURSE_MISMATCH");
-          }
-        }
-
-        if (from.bill && from.bill.status !== "open") throw new Error("MERGE_BILL_NOT_OPEN");
-        if (to.bill && to.bill.status !== "open") throw new Error("MERGE_BILL_NOT_OPEN");
-
-        const nextGuest = to.guestCount + from.guestCount;
-        const nextChild = to.childCount + from.childCount;
-        if (nextChild > nextGuest) throw new Error("MERGE_CHILD_COUNT");
-
-        const ordersFrom = await tx.salesOrder.findMany({ where: { sessionId: from.id } });
-        for (const o of ordersFrom) {
-          const src = o.sourceTableId ?? from.tableId;
-          await tx.salesOrder.update({
-            where: { id: o.id },
-            data: { sessionId: to.id, sourceTableId: src },
-          });
-        }
-
-        const toPacks = asStringIdArray(to.purchasedCourseOptionPackIds);
-        const fromPacks = asStringIdArray(from.purchasedCourseOptionPackIds);
-        const mergedPacks = [...new Set([...toPacks, ...fromPacks])];
-
-        const nextAlcohol = mergeGuestAlcoholAllowed(to.guestAlcoholAllowed, from.guestAlcoholAllowed);
-
-        let nextCustomerId = to.customerId;
-        if (!nextCustomerId && from.customerId) nextCustomerId = from.customerId;
-
-        await tx.diningSession.update({
-          where: { id: to.id },
-          data: {
-            guestCount: nextGuest,
-            childCount: nextChild,
-            purchasedCourseOptionPackIds: mergedPacks,
-            guestAlcoholAllowed: nextAlcohol,
-            ...(nextCustomerId !== to.customerId ? { customerId: nextCustomerId } : {}),
-          },
-        });
-
-        const fromBill = from.bill;
-        const toBill = to.bill;
-        if (fromBill && toBill) {
-          await tx.payment.updateMany({ where: { billId: fromBill.id }, data: { billId: toBill.id } });
-          await tx.bill.delete({ where: { id: fromBill.id } });
-        } else if (fromBill && !toBill) {
-          await tx.bill.update({ where: { id: fromBill.id }, data: { sessionId: to.id } });
-        }
-
-        await recomputeOpenBillTotalForSession(tx, store.id, to.id);
-
-        await tx.diningSession.update({
-          where: { id: from.id },
-          data: {
-            status: "merged",
-            mergedIntoSessionId: to.id,
-          },
-        });
-
+        await mergeTwoOpenSessionsTx(tx, store.id, fromId, toId, "different_tables");
         return tx.diningSession.findFirst({
-          where: { id: to.id },
+          where: { id: toId },
           include: { table: true, course: true, coursePriceTier: true, bill: true },
         });
       });
@@ -721,8 +602,229 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       if (code === "MERGE_CHILD_COUNT") {
         return reply.code(400).send({ error: "合算後の子供人数が来店人数を超えます" });
       }
+      if (code === "MERGE_NOT_FOUND") {
+        return reply.code(404).send({ error: "session not found" });
+      }
       throw e;
     }
+  });
+
+  /**
+   * 同一卓に複数ある別会計（open）をまとめる。卓間の merge と同じトランザクションだが同一 tableId を許可する。
+   */
+  app.post<{
+    Params: { storeId: string };
+    Body: { fromSessionId?: unknown; toSessionId?: unknown };
+  }>("/stores/:storeId/sessions/merge-same-table", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+
+    const fromId = typeof req.body?.fromSessionId === "string" ? req.body.fromSessionId.trim() : "";
+    const toId = typeof req.body?.toSessionId === "string" ? req.body.toSessionId.trim() : "";
+    if (!fromId || !toId || fromId === toId) {
+      return reply.code(400).send({ error: "fromSessionId and toSessionId required and must differ" });
+    }
+
+    try {
+      const targetSession = await prisma.$transaction(async (tx) => {
+        await mergeTwoOpenSessionsTx(tx, store.id, fromId, toId, "same_table_only");
+        return tx.diningSession.findFirst({
+          where: { id: toId },
+          include: { table: true, course: true, coursePriceTier: true, bill: true },
+        });
+      });
+
+      if (!targetSession) return reply.code(404).send({ error: "session not found" });
+      return { ok: true, session: targetSession };
+    } catch (e) {
+      const code = e instanceof Error ? e.message : "";
+      if (code === "MERGE_TARGET_IS_MERGED_CHILD") {
+        return reply
+          .code(400)
+          .send({ error: "すでに他卓に合算されている卓を、統合先にはできません（先に分割してください）" });
+      }
+      if (code === "MERGE_STATUS") {
+        return reply.code(400).send({ error: "統合できるのは利用中（open）のセッション同士だけです" });
+      }
+      if (code === "MERGE_DIFFERENT_TABLE") {
+        return reply.code(400).send({ error: "同一卓のセッション同士だけ統合できます" });
+      }
+      if (code === "MERGE_COURSE_MISMATCH") {
+        return reply
+          .code(400)
+          .send({ error: "コース卓を統合する場合、コースと料金パターンが統合先と一致している必要があります" });
+      }
+      if (code === "MERGE_BILL_NOT_OPEN") {
+        return reply.code(400).send({ error: "精算済みの伝票があるセッションは統合できません" });
+      }
+      if (code === "MERGE_CHILD_COUNT") {
+        return reply.code(400).send({ error: "統合後の子供人数が来店人数を超えます" });
+      }
+      if (code === "MERGE_NOT_FOUND") {
+        return reply.code(404).send({ error: "session not found" });
+      }
+      throw e;
+    }
+  });
+
+  /**
+   * 同一卓の別会計へ注文明細を移す。createSeparateBill で新規 open（skipReuse）を挟める。
+   */
+  app.post<{
+    Params: { storeId: string; sessionId: string };
+    Body: {
+      targetSessionId?: unknown;
+      createSeparateBill?: unknown;
+      lineIds?: unknown;
+      orderIds?: unknown;
+      lineMoves?: unknown;
+    };
+  }>("/stores/:storeId/sessions/:sessionId/move-order-lines", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+
+    const st = mergeStoreSettings(store.settings);
+    if (!isBillCorrectionAllowed(st, "orderLines")) {
+      return reply.code(403).send({ error: "店舗設定により明細の移動は無効です" });
+    }
+
+    const sourceSessionId = req.params.sessionId;
+    const rawBody = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+    const createSeparateBill = rawBody.createSeparateBill === true;
+    let targetSessionId: string | null =
+      typeof rawBody.targetSessionId === "string" && rawBody.targetSessionId.trim()
+        ? rawBody.targetSessionId.trim()
+        : null;
+
+    if (createSeparateBill && targetSessionId) {
+      return reply
+        .code(400)
+        .send({ error: "createSeparateBill と targetSessionId は同時に指定できません" });
+    }
+
+    const sourceSession = await prisma.diningSession.findFirst({
+      where: { id: sourceSessionId, storeId: store.id },
+    });
+    if (!sourceSession) return reply.code(404).send({ error: "session not found" });
+    if (sourceSession.status !== "open") {
+      return reply.code(400).send({ error: "only open sessions can move lines" });
+    }
+    if (sourceSession.mergedIntoSessionId) {
+      return reply.code(400).send({ error: "合算中のセッションからは移動できません" });
+    }
+
+    const specs: LineMoveSpec[] = [];
+
+    const rawLineMoves = rawBody.lineMoves;
+    if (Array.isArray(rawLineMoves)) {
+      for (const x of rawLineMoves) {
+        if (!x || typeof x !== "object") continue;
+        const lid =
+          typeof (x as { lineId?: unknown }).lineId === "string"
+            ? (x as { lineId: string }).lineId.trim()
+            : "";
+        if (!lid) continue;
+        const q = (x as { qty?: unknown }).qty;
+        if (q === undefined || q === null) specs.push({ lineId: lid });
+        else if (typeof q === "number" && Number.isInteger(q)) specs.push({ lineId: lid, qty: q });
+      }
+    }
+
+    const rawLineIds = rawBody.lineIds;
+    if (Array.isArray(rawLineIds)) {
+      for (const id of rawLineIds) {
+        if (typeof id === "string" && id.trim()) specs.push({ lineId: id.trim() });
+      }
+    }
+
+    const rawOrderIds = rawBody.orderIds;
+    if (Array.isArray(rawOrderIds)) {
+      const oids = [...new Set(rawOrderIds.filter((x): x is string => typeof x === "string" && x.length > 0))];
+      if (oids.length > 0) {
+        const orders = await prisma.salesOrder.findMany({
+          where: { sessionId: sourceSessionId, id: { in: oids } },
+          include: { lines: true },
+        });
+        for (const o of orders) {
+          for (const ln of o.lines) {
+            if (ln.status !== "cancelled") specs.push({ lineId: ln.id });
+          }
+        }
+      }
+    }
+
+    if (specs.length === 0) {
+      return reply.code(400).send({ error: "lineIds, orderIds, or lineMoves required" });
+    }
+
+    if (!targetSessionId) {
+      if (!createSeparateBill) {
+        return reply.code(400).send({ error: "targetSessionId or createSeparateBill required" });
+      }
+      const opened = await openSessionForTable({
+        tableId: sourceSession.tableId,
+        storeId: store.id,
+        guestCount: sourceSession.guestCount,
+        childCount: sourceSession.childCount,
+        courseId: sourceSession.courseId,
+        coursePriceTierId: sourceSession.coursePriceTierId,
+        mode: "reuseIfOpen",
+        skipReuse: true,
+        requireCourseWhenStarting: st.requireCourseWhenStartingSession,
+      });
+      if (!opened.ok) {
+        return reply.code(400).send({
+          error: opened.error,
+          ...(opened.code === "CONFLICT" && opened.existingSessionId
+            ? { sessionId: opened.existingSessionId }
+            : {}),
+        });
+      }
+      targetSessionId = opened.session.id;
+    }
+
+    try {
+      await prisma.$transaction(async (tx) => {
+        await moveOrderLinesBetweenSessionsTx(tx, store.id, sourceSessionId, targetSessionId!, specs);
+      });
+    } catch (e) {
+      const code = e instanceof Error ? e.message : "";
+      if (code === "MOVE_SAME_SESSION") {
+        return reply.code(400).send({ error: "移動元と移動先が同じです" });
+      }
+      if (code === "MOVE_EMPTY") {
+        return reply.code(400).send({ error: "移動する明細がありません" });
+      }
+      if (code === "MOVE_SESSION_NOT_FOUND") {
+        return reply.code(404).send({ error: "session not found" });
+      }
+      if (code === "MOVE_SESSION_NOT_OPEN") {
+        return reply.code(400).send({ error: "利用中のセッション同士だけ移動できます" });
+      }
+      if (code === "MOVE_TARGET_MERGED_CHILD") {
+        return reply.code(400).send({ error: "合算中のセッションへは移動できません" });
+      }
+      if (code === "MOVE_DIFFERENT_TABLE") {
+        return reply.code(400).send({ error: "同一卓のセッション同士だけ移動できます" });
+      }
+      if (code === "MOVE_BILL_NOT_OPEN") {
+        return reply.code(400).send({ error: "未精算の伝票があるセッションだけ移動できます" });
+      }
+      if (code === "MOVE_LINE_NOT_FOUND" || code === "MOVE_LINE_CANCELLED") {
+        return reply.code(400).send({ error: "指定の明細が見つからないか無効です" });
+      }
+      if (code === "MOVE_BAD_QTY") {
+        return reply.code(400).send({ error: "数量が不正です" });
+      }
+      throw e;
+    }
+
+    const targetFull = await prisma.diningSession.findFirst({
+      where: { id: targetSessionId! },
+      include: { table: true, course: true, coursePriceTier: true, bill: true },
+    });
+
+    return { ok: true, targetSessionId, session: targetFull };
   });
 
   /**

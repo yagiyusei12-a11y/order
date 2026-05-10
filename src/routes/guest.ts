@@ -41,6 +41,7 @@ import {
   type GuestLastOrderAfterDeadlinePolicy,
 } from "../lib/store-settings.js";
 import { displayTableCode } from "../lib/table-display-code.js";
+import { mergeTwoOpenSessionsTx } from "../lib/session-merge.js";
 import { prisma } from "../db.js";
 
 type GuestBillingContext = {
@@ -2211,6 +2212,86 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         }
       }
       return { items: itemsOut };
+    },
+  );
+
+  /**
+   * 同一卓の別会計（別ゲスト URL）を、この URL のセッションへ統合する（相手側を merged にする）。
+   * Body: { peerGuestToken: string }
+   */
+  app.post<{ Params: { token: string }; Body: { peerGuestToken?: unknown } }>(
+    "/guest/:token/combine-same-table-billing",
+    async (req, reply) => {
+      const raw =
+        req.body && typeof req.body === "object" && !Array.isArray(req.body)
+          ? (req.body as { peerGuestToken?: unknown }).peerGuestToken
+          : undefined;
+      const peerGuestToken = typeof raw === "string" ? raw.trim() : "";
+      if (!peerGuestToken) {
+        return reply.code(400).send({ error: "peerGuestToken が必要です" });
+      }
+
+      const caller = await prisma.diningSession.findUnique({
+        where: { guestToken: req.params.token },
+      });
+      if (!caller || caller.status !== "open" || caller.mergedIntoSessionId) {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+
+      const peer = await prisma.diningSession.findUnique({
+        where: { guestToken: peerGuestToken },
+      });
+      if (!peer || peer.storeId !== caller.storeId) {
+        return reply.code(400).send({ error: "相手のセッションが見つかりません" });
+      }
+      if (peer.id === caller.id) {
+        return reply.code(400).send({ error: "同じセッションです" });
+      }
+      if (peer.status !== "open" || peer.mergedIntoSessionId) {
+        return reply.code(400).send({ error: "相手のセッションは統合できません" });
+      }
+      if (peer.tableId !== caller.tableId) {
+        return reply.code(400).send({ error: "同じ卓のセッションだけ統合できます" });
+      }
+
+      const fromId = peer.id;
+      const toId = caller.id;
+
+      try {
+        await prisma.$transaction(async (tx) => {
+          await mergeTwoOpenSessionsTx(tx, caller.storeId, fromId, toId, "same_table_only");
+        });
+      } catch (e) {
+        const code = e instanceof Error ? e.message : "";
+        if (code === "MERGE_TARGET_IS_MERGED_CHILD") {
+          return reply
+            .code(400)
+            .send({ error: "統合先として利用できないセッションです" });
+        }
+        if (code === "MERGE_STATUS") {
+          return reply.code(400).send({ error: "利用中のセッション同士だけ統合できます" });
+        }
+        if (code === "MERGE_DIFFERENT_TABLE") {
+          return reply.code(400).send({ error: "同じ卓のセッションだけ統合できます" });
+        }
+        if (code === "MERGE_COURSE_MISMATCH") {
+          return reply
+            .code(400)
+            .send({ error: "コースと料金パターンがこのセッションと一致している必要があります" });
+        }
+        if (code === "MERGE_BILL_NOT_OPEN") {
+          return reply.code(400).send({ error: "精算済みの伝票があるため統合できません" });
+        }
+        if (code === "MERGE_CHILD_COUNT") {
+          return reply.code(400).send({ error: "統合後の人数が不整合になります" });
+        }
+        if (code === "MERGE_NOT_FOUND") {
+          return reply.code(404).send({ error: "session not found" });
+        }
+        throw e;
+      }
+
+      return { ok: true };
     },
   );
 }

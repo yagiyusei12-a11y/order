@@ -1267,6 +1267,13 @@ async function renderRegisterFlow(session, table, detailPreloaded, sessionSwitch
           escapeHtml(g.key) +
           "\">" +
           "<td>" +
+          (bcOl
+            ? "<label style=\"display:flex;align-items:flex-start;gap:0.35rem;margin-bottom:0.35rem;font-size:0.72rem;font-weight:600\">" +
+              "<input type=\"checkbox\" class=\"ops-split-select-cb\" data-line-ids=\"" +
+              escapeHtml((g.lines || []).map((ln) => ln.id).join(",")) +
+              "\" style=\"margin-top:0.15rem\" />" +
+              "<span>別会計へ</span></label>"
+            : "") +
           "<div class=\"ops-line-name\">" +
           (g.eatMode === "takeout" ? "<span class=\"badge\" style=\"margin-right:.35rem;background:#0ea5e9\">テイクアウト</span>" : "") +
           (g.lines && g.lines[0] ? sourceTableBadgeHtml(g.lines[0].sourceTableId) : "") +
@@ -1419,6 +1426,13 @@ async function renderRegisterFlow(session, table, detailPreloaded, sessionSwitch
         "\""
       : "") +
     ">設定</button></div>" +
+    (bcOl
+      ? "<div class=\"card\" style=\"padding:0.5rem 0.65rem;margin:0 0 0.5rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;font-size:0.82rem\">" +
+        "<div class=\"row\" style=\"gap:0.5rem;flex-wrap:wrap;align-items:center\">" +
+        "<button type=\"button\" class=\"btn-ghost\" id=\"btnMoveLinesSeparateBill\" style=\"font-weight:700;border-color:#93c5fd\">選択を別会計へ</button>" +
+        "<span class=\"muted\" style=\"font-size:0.72rem;line-height:1.35\">商品行にチェックしてから実行します（新しい伝票、または同卓の別セッションへ）。</span>" +
+        "</div></div>"
+      : "") +
     "<h3 class=\"ops-sec-title\">コース・注文</h3>" +
     "<div class=\"card ops-order-card\"><table class=\"ops-order-table\">" +
     orderTableFallback +
@@ -1652,6 +1666,103 @@ async function renderRegisterFlow(session, table, detailPreloaded, sessionSwitch
           selectedTableId = table.id;
           renderGrid();
           await renderDetail();
+        } catch (e) {
+          log(String(e.message || e));
+        }
+      };
+    };
+  }
+
+  const btnMoveLinesSeparateBill = document.getElementById("btnMoveLinesSeparateBill");
+  if (btnMoveLinesSeparateBill && bcOl) {
+    btnMoveLinesSeparateBill.onclick = () => {
+      const panelEl = document.getElementById("detailPanel");
+      const lineIds = [];
+      if (panelEl) {
+        panelEl.querySelectorAll(".ops-split-select-cb:checked").forEach((cb) => {
+          const raw = cb.getAttribute("data-line-ids") || "";
+          raw.split(",").forEach((x) => {
+            const t = String(x).trim();
+            if (t) lineIds.push(t);
+          });
+        });
+      }
+      if (!lineIds.length) {
+        log("別会計へ移す明細にチェックしてください");
+        return;
+      }
+      const others = sessionsAtTable(table.id).filter((s) => s.status === "open" && s.id !== session.id);
+      const box = document.createElement("div");
+      box.style.cssText =
+        "position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem";
+      const destOpts =
+        "<option value=\"\">新しい別会計（伝票を追加）</option>" +
+        others
+          .map((s) => {
+            return (
+              "<option value=\"" +
+              escapeHtml(s.id) +
+              "\">" +
+              escapeHtml(formatSessionSwitchOptionLabel(s)) +
+              "</option>"
+            );
+          })
+          .join("");
+      box.innerHTML =
+        "<div class=\"card\" style=\"max-width:440px;padding:1.1rem;background:#fff;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.12)\">" +
+        "<p style=\"margin:0 0 0.55rem;font-weight:900\">選択明細を別会計へ</p>" +
+        "<p class=\"muted\" style=\"margin:0 0 0.75rem;font-size:0.82rem;line-height:1.45\">" +
+        lineIds.length +
+        " 行を移動します。移動先を選んでください。</p>" +
+        "<label style=\"display:block;font-size:0.78rem;font-weight:800;margin-bottom:0.25rem\">移動先</label>" +
+        "<select id=\"moveOrderLinesTargetSel\" style=\"width:100%;padding:0.5rem;margin-bottom:1rem;border-radius:8px;border:1px solid var(--border)\">" +
+        destOpts +
+        "</select>" +
+        "<div class=\"row\" style=\"gap:0.5rem;justify-content:flex-end\">" +
+        "<button type=\"button\" class=\"btn-ghost\" id=\"moveLinesCancel\">キャンセル</button>" +
+        "<button type=\"button\" class=\"btn-primary\" id=\"moveLinesOk\" style=\"width:auto;padding:0.45rem 0.85rem\">移動する</button>" +
+        "</div></div>";
+      document.body.appendChild(box);
+      const close = () => box.remove();
+      box.querySelector("#moveLinesCancel").onclick = close;
+      box.querySelector("#moveLinesOk").onclick = async () => {
+        const sel = box.querySelector("#moveOrderLinesTargetSel");
+        const dest = sel && sel.value ? String(sel.value) : "";
+        try {
+          /** @type {{ targetSessionId?: string }} */
+          let out;
+          if (dest) {
+            out = await api(
+              "/stores/" +
+                encodeURIComponent(STORE) +
+                "/sessions/" +
+                encodeURIComponent(session.id) +
+                "/move-order-lines",
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ targetSessionId: dest, lineIds }),
+              },
+            );
+          } else {
+            out = await api(
+              "/stores/" +
+                encodeURIComponent(STORE) +
+                "/sessions/" +
+                encodeURIComponent(session.id) +
+                "/move-order-lines",
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ createSeparateBill: true, lineIds }),
+              },
+            );
+          }
+          close();
+          log("別会計へ移しました");
+          selectedSessionIdOverride = (out && out.targetSessionId) || dest || session.id;
+          selectedTableId = table.id;
+          await loadAll();
         } catch (e) {
           log(String(e.message || e));
         }
@@ -2002,7 +2113,10 @@ async function renderDetail() {
       "</label>" +
       "<select id=\"sessionSwitchSel\" style=\"width:100%;margin-top:0.35rem;padding:0.45rem;border-radius:8px\">" +
       opts +
-      "</select></div>";
+      "</select>" +
+      "<button type=\"button\" class=\"btn-primary\" id=\"btnMergeSameTableSessions\" style=\"width:100%;margin-top:0.45rem;padding:0.45rem;border-radius:8px\">別会計を同一会計にまとめる</button>" +
+      "<p class=\"muted\" style=\"font-size:0.72rem;margin:0.35rem 0 0;line-height:1.4\">統合先として残す会計を選び、他の別会計をすべてそちらへ寄せます。</p>" +
+      "</div>";
   }
   await renderRegisterFlow(session, table, undefined, sessionSwitchPrefixHtml);
   const sw = document.getElementById("sessionSwitchSel");
@@ -2010,6 +2124,76 @@ async function renderDetail() {
     sw.onchange = async () => {
       selectedSessionIdOverride = sw.value || null;
       await loadAll();
+    };
+  }
+  const btnMergeSameTable = document.getElementById("btnMergeSameTableSessions");
+  if (btnMergeSameTable) {
+    btnMergeSameTable.onclick = async () => {
+      const openOnTable = sessionsAtTable(table.id).filter((x) => x.status === "open");
+      if (openOnTable.length < 2) {
+        log("統合できる別会計がありません");
+        return;
+      }
+      const box = document.createElement("div");
+      box.style.cssText =
+        "position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem";
+      const targetOpts = openOnTable
+        .map((s) => {
+          const sel = s.id === session.id ? " selected" : "";
+          const lab = formatSessionSwitchOptionLabel(s);
+          return "<option value=\"" + escapeHtml(s.id) + "\"" + sel + ">" + escapeHtml(lab) + "</option>";
+        })
+        .join("");
+      box.innerHTML =
+        "<div class=\"card\" style=\"max-width:420px;padding:1.1rem;background:#fff;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.12)\">" +
+        "<p style=\"margin:0 0 0.65rem;font-weight:900;font-size:0.95rem\">別会計を同一会計にまとめる</p>" +
+        "<p class=\"muted\" style=\"margin:0 0 0.75rem;font-size:0.82rem;line-height:1.45\">統合<strong>先</strong>（この会計に残す）を選んでください。他の別会計はすべて merged になり、注文・伝票が統合先に移ります。</p>" +
+        "<label style=\"display:block;font-size:0.78rem;font-weight:800;margin-bottom:0.25rem\">統合先</label>" +
+        "<select id=\"mergeSameTargetSel\" style=\"width:100%;padding:0.5rem;margin-bottom:1rem;border-radius:8px;border:1px solid var(--border)\">" +
+        targetOpts +
+        "</select>" +
+        "<div class=\"row\" style=\"gap:0.5rem;justify-content:flex-end\">" +
+        "<button type=\"button\" class=\"btn-ghost\" id=\"mergeSameCancel\">キャンセル</button>" +
+        "<button type=\"button\" class=\"btn-primary\" id=\"mergeSameOk\" style=\"width:auto;padding:0.45rem 0.85rem\">まとめる</button>" +
+        "</div></div>";
+      document.body.appendChild(box);
+      const close = () => box.remove();
+      box.querySelector("#mergeSameCancel").onclick = close;
+      box.querySelector("#mergeSameOk").onclick = async () => {
+        const sel = box.querySelector("#mergeSameTargetSel");
+        const targetId = sel && sel.value ? String(sel.value) : "";
+        if (!targetId) return;
+        const others = openOnTable.filter((s) => s.id !== targetId);
+        if (!others.length) {
+          close();
+          return;
+        }
+        if (
+          !confirm(
+            "統合先に残す会計以外（" +
+              others.length +
+              "件）をすべて統合します。よろしいですか？（元の別会計 URL は使えなくなります）",
+          )
+        ) {
+          return;
+        }
+        try {
+          for (const s of others) {
+            await api("/stores/" + encodeURIComponent(STORE) + "/sessions/merge-same-table", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ fromSessionId: s.id, toSessionId: targetId }),
+            });
+          }
+          close();
+          log("別会計をまとめました");
+          selectedSessionIdOverride = targetId;
+          selectedTableId = table.id;
+          await loadAll();
+        } catch (e) {
+          log(String(e.message || e));
+        }
+      };
     };
   }
 }

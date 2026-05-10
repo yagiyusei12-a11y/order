@@ -1,0 +1,68 @@
+<main>
+  <h2 class="page-title">在庫</h2>
+  <p class="muted" style="margin-top:-0.35rem;margin-bottom:0.65rem">
+    カテゴリで絞り込み、残数をその場で変更できます。<strong>売り切れ</strong>は在庫0（管理継続）、<strong>無制限</strong>は在庫管理オフ（日次リセット設定も解除）です。
+  </p>
+
+  <div id="stockDailyPanel" class="card" style="padding:0.75rem;margin-bottom:0.85rem">
+    <strong style="font-size:0.88rem">日次在庫リセット（店舗共通）</strong>
+    <p id="stockDailyManagerHint" class="muted" style="font-size:0.72rem;margin:0.35rem 0 0.6rem;line-height:1.45">
+      マネージャーのみ時刻・オンオフを保存できます。
+    </p>
+    <div class="row" style="gap:0.65rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:0.55rem">
+      <label class="row" style="gap:0.35rem;align-items:center;margin:0">
+        <input type="checkbox" id="stockDailyEnabled" />
+        <span style="font-size:0.82rem">有効</span>
+      </label>
+      <div>
+        <label style="font-size:0.72rem;display:block;margin-bottom:0.15rem">時刻（店舗タイムゾーン）</label>
+        <div class="row" style="gap:0.35rem;align-items:center;margin:0">
+          <input id="stockDailyHour" type="number" min="0" max="23" step="1" style="margin:0;width:4.2rem" title="時" />
+          <span>:</span>
+          <input id="stockDailyMin" type="number" min="0" max="59" step="1" style="margin:0;width:4.2rem" title="分" />
+        </div>
+      </div>
+      <button type="button" class="btn-primary" id="stockDailySave">リセット設定を保存</button>
+    </div>
+    <p id="stockDailyLastRun" class="muted" style="font-size:0.72rem;margin:0"></p>
+  </div>
+
+  <div class="row" style="gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.55rem">
+    <a class="btn-ghost" href="/staff-app/__STORE_PATH__/menu" style="text-decoration:none;display:inline-flex;align-items:center">← メニュー管理</a>
+    <button type="button" class="btn-ghost" id="stockReload">再読込</button>
+  </div>
+
+  <div class="row" style="gap:0.65rem;flex-wrap:wrap;align-items:center;margin-bottom:0.55rem">
+    <label style="font-size:0.82rem;margin:0">カテゴリ</label>
+    <select id="stockCat" style="margin:0;min-width:200px;max-width:100%"></select>
+  </div>
+
+  <div class="row" style="gap:0.75rem;flex-wrap:wrap;align-items:center;margin-bottom:0.65rem">
+    <label class="row" style="gap:0.35rem;align-items:center;margin:0;font-size:0.8rem">
+      <input type="checkbox" id="fltZero" /> 在庫0のみ
+    </label>
+    <label class="row" style="gap:0.35rem;align-items:center;margin:0;font-size:0.8rem">
+      <input type="checkbox" id="fltManaged" /> 在庫管理あり
+    </label>
+    <label class="row" style="gap:0.35rem;align-items:center;margin:0;font-size:0.8rem">
+      <input type="checkbox" id="fltLow" /> 残りわずか
+    </label>
+  </div>
+
+  <div id="stockLog" class="muted" style="font-size:0.78rem;margin-bottom:0.45rem;min-height:1.2rem"></div>
+
+  <div class="card" style="padding:0;margin-bottom:1rem;overflow:auto;max-height:min(62vh,560px)">
+    <table style="width:100%;border-collapse:collapse;font-size:0.82rem">
+      <thead>
+        <tr style="background:#f7f8fa;border-bottom:1px solid var(--border);text-align:left">
+          <th style="padding:0.5rem 0.6rem">商品</th>
+          <th style="padding:0.5rem 0.6rem;width:5rem">在庫</th>
+          <th style="padding:0.5rem 0.6rem;width:5rem">残少閾値</th>
+          <th style="padding:0.5rem 0.6rem;width:5.5rem">日次リセット後</th>
+          <th style="padding:0.5rem 0.6rem;width:11rem">操作</th>
+        </tr>
+      </thead>
+      <tbody id="stockTableBody"></tbody>
+    </table>
+  </div>
+</main>

@@ -120,6 +120,12 @@ export type StoreSettingsShape = {
   /** 会計画面で「レジ機能（現金の受取額/お釣り）」を有効にする支払い方法コード */
   opsRegisterMethodCodes: string[];
   billCorrectionPolicy: BillCorrectionPolicy;
+  /** 日次在庫リセットを有効にする（店舗 TZ の stockDailyResetTimeMin に実行） */
+  stockDailyResetEnabled: boolean;
+  /** 店舗タイムゾーンでのリセット時刻（0時からの分・0〜1439） */
+  stockDailyResetTimeMin: number;
+  /** 店舗 TZ で最後に日次リセットを実行した日付 YYYY-MM-DD（同日の再実行防止） */
+  stockDailyResetLastRunDate: string | null;
 };
 
 export function isBillCorrectionAllowed(settings: StoreSettingsShape, key: BillCorrectionPolicyKey): boolean {
@@ -193,6 +199,9 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
       orderLines: true,
       reopenSettledForRegister: true,
     },
+    stockDailyResetEnabled: false,
+    stockDailyResetTimeMin: 240,
+    stockDailyResetLastRunDate: null,
   };
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return d;
   const o = raw as Record<string, unknown>;
@@ -353,6 +362,18 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     if (typeof p.reopenSettledForRegister === "boolean") {
       d.billCorrectionPolicy.reopenSettledForRegister = p.reopenSettledForRegister;
     }
+  }
+  if (typeof o.stockDailyResetEnabled === "boolean") {
+    d.stockDailyResetEnabled = o.stockDailyResetEnabled;
+  }
+  if (typeof o.stockDailyResetTimeMin === "number" && Number.isFinite(o.stockDailyResetTimeMin)) {
+    d.stockDailyResetTimeMin = Math.min(1439, Math.max(0, Math.round(o.stockDailyResetTimeMin)));
+  }
+  if (o.stockDailyResetLastRunDate === null) {
+    d.stockDailyResetLastRunDate = null;
+  } else if (typeof o.stockDailyResetLastRunDate === "string") {
+    const s = o.stockDailyResetLastRunDate.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) d.stockDailyResetLastRunDate = s;
   }
   return d;
 }

@@ -212,6 +212,7 @@ type MenuItemPatchData = {
   kitchenStationId?: string | null;
   stockQty?: number | null;
   stockLowThreshold?: number | null;
+  stockDailyResetQty?: number | null;
   cookTimerSec?: number | null;
   cookTimerSec2?: number | null;
   sellKind?: string;
@@ -346,6 +347,12 @@ async function buildMenuItemPatchData(
     if (v === null) data.stockLowThreshold = null;
     else if (typeof v === "number" && Number.isInteger(v) && v >= 0) data.stockLowThreshold = v;
     else return { error: "stockLowThreshold must be null or non-negative integer" };
+  }
+  if (body && "stockDailyResetQty" in body) {
+    const v = body.stockDailyResetQty;
+    if (v === null) data.stockDailyResetQty = null;
+    else if (typeof v === "number" && Number.isInteger(v) && v >= 0) data.stockDailyResetQty = v;
+    else return { error: "stockDailyResetQty must be null or non-negative integer" };
   }
   if (body && "cookTimerSec" in body) {
     const v = body.cookTimerSec;
@@ -1049,6 +1056,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
             cookTimerSec: item.cookTimerSec,
             cookTimerSec2: item.cookTimerSec2,
             kitchenServeFast: item.kitchenServeFast,
+            stockDailyResetQty: item.stockDailyResetQty,
           },
         });
         if (item.optionLinks.length > 0) {
@@ -1357,6 +1365,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       kitchenStationId?: string | null;
       stockQty?: number | null;
       stockLowThreshold?: number | null;
+      stockDailyResetQty?: number | null;
       cookTimerSec?: number | null;
       cookTimerSec2?: number | null;
       sellKind?: "single" | "set";
@@ -1727,6 +1736,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
           cookTimerSec2: src.cookTimerSec2,
           containsAlcohol: src.containsAlcohol,
           kitchenServeFast: src.kitchenServeFast,
+          stockDailyResetQty: src.stockDailyResetQty,
         },
       });
       if (src.sellKind === "set" && src.setSteps.length > 0) {

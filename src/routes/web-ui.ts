@@ -220,6 +220,11 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
     );
   });
 
+  app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/stock", async (req, reply) => {
+    if (!(await assertStaffStore(req, reply))) return;
+    return staffHtml(reply, req.params.storeId, "在庫", "staff-body-stock.html", "staff-script-stock.js");
+  });
+
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/courses", async (req, reply) => {
     if (!(await assertStaffStore(req, reply))) return;
     return staffHtml(reply, req.params.storeId, "コース", "staff-body-courses.html", "staff-script-courses.js");

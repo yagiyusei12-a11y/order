@@ -343,6 +343,8 @@ model MenuItem {
   stockQty          Int?
   /// 在庫管理時、残数がこの値以下なら「在庫少」（null ならしきい値アラートなし）
   stockLowThreshold Int?
+  /// 日次リセット対象。null = 店舗のリセット時に在庫数は変えない。値ありのとき stockQty をこの値に戻す
+  stockDailyResetQty Int?
   kitchenStationId  String?
   /// キッチンまとめ表示の調理タイマー（秒）。null / 0 = 未使用
   cookTimerSec      Int?

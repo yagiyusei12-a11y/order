@@ -558,6 +558,9 @@
       <a href="/staff-app/__STORE_PATH__/menu" class="snav" id="nav-menu" data-nav-key="menu" title="メニュー">
         <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
       </a>
+      <a href="/staff-app/__STORE_PATH__/stock" class="snav" id="nav-stock" data-nav-key="stock" title="在庫">
+        <svg viewBox="0 0 24 24"><path d="M4 8h16v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8z"/><path d="M8 8V6a4 4 0 0 1 8 0v2"/></svg>
+      </a>
       <a href="/staff-app/__STORE_PATH__/customers" class="snav" id="nav-customers" data-nav-key="customers" title="お客様">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="9" r="4"/><path d="M5 20v-1a7 7 0 0114 0v1"/></svg>
       </a>
@@ -783,6 +786,7 @@
       "hallReady",
       "takeout",
       "menu",
+      "stock",
       "customers",
       "reports",
       "courses",
@@ -842,6 +846,7 @@
       else if (p.includes("/kitchen")) id = "nav-kitchen";
       else if (p.includes("/takeout")) id = "nav-takeout";
       else if (p.includes("/menu")) id = "nav-menu";
+      else if (p.includes("/stock")) id = "nav-stock";
       else if (p.includes("/customers")) id = "nav-customers";
       else if (p.includes("/reports")) id = "nav-reports";
       else if (p.includes("/courses")) id = "nav-courses";

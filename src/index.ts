@@ -12,6 +12,8 @@ import { registerPublicApi } from "./routes/public-api.js";
 import { registerReception } from "./routes/reception.js";
 import { registerTakeoutNet } from "./routes/takeout-net.js";
 import { registerWebUi } from "./routes/web-ui.js";
+import { prisma } from "./db.js";
+import { runStockDailyResetForAllStores } from "./lib/stock-daily-reset.js";
 
 async function main(): Promise<void> {
   const trustProxy = process.env.TRUST_PROXY === "1";
@@ -67,6 +69,12 @@ async function main(): Promise<void> {
   const host = process.env.HOST ?? "0.0.0.0";
   await app.listen({ port, host });
   app.log.info({ port, https: false }, "listening (TLS should be terminated at proxy/platform)");
+
+  setInterval(() => {
+    runStockDailyResetForAllStores(prisma).catch((err) => {
+      app.log.error({ err }, "stock daily reset failed");
+    });
+  }, 60_000);
 }
 
 main().catch((err) => {

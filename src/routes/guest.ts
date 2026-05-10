@@ -35,6 +35,7 @@ import {
   taxIncludedFromNet,
   type EatMode,
 } from "../lib/order-line-tax.js";
+import { evaluatePublicOrderGate } from "../lib/store-order-gate.js";
 import {
   mergeStoreSettings,
   type GuestLastOrderAfterDeadlinePolicy,
@@ -584,6 +585,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       select: { settings: true },
     });
     const st = mergeStoreSettings(storeRow?.settings);
+    const gatePreview = evaluatePublicOrderGate(st, new Date());
     const nowMin = minutesSinceMidnightInTimeZone(new Date(), st.timezone);
 
     const purchasedSet = new Set(parsePurchasedCourseOptionPackIds(session.purchasedCourseOptionPackIds));
@@ -777,6 +779,11 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     const tableDisplayCode = seatCode ? displayTableCode(seatCode) || seatCode : "";
 
     return {
+      orderGate: {
+        acceptingOrders: gatePreview.accepting,
+        reasonCode: gatePreview.reasonCode,
+        messageJa: gatePreview.accepting ? "" : gatePreview.messageJa,
+      },
       session: {
         id: session.id,
         guestCount: session.guestCount,
@@ -1089,6 +1096,10 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       select: { settings: true },
     });
     const st = mergeStoreSettings(storeRow?.settings);
+    const gate = evaluatePublicOrderGate(st, new Date());
+    if (!gate.accepting) {
+      return reply.code(403).send({ error: gate.messageJa });
+    }
     const nowMin = minutesSinceMidnightInTimeZone(new Date(), st.timezone);
     const storeTaxRatePercent = st.taxRatePercent;
 

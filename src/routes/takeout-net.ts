@@ -17,8 +17,13 @@ import {
   type GuestSetStepSelection,
   type SetStepForValidation,
 } from "../lib/menu-set-order.js";
+import {
+  evaluatePublicOrderGate,
+  isWallDateClosedByBusinessCalendar,
+  isWallDateTimeWithinWeeklyHours,
+} from "../lib/store-order-gate.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
-import { utcFromWallDateAndTime } from "../lib/store-wall-time.js";
+import { utcFromWallDateAndTime, wallDateYmdInZone } from "../lib/store-wall-time.js";
 import { prisma } from "../db.js";
 import { openOrReuseSessionForTable } from "../lib/open-table-session.js";
 
@@ -66,6 +71,7 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
     });
     if (!store) return reply.code(404).send({ error: "store not found" });
     const st = mergeStoreSettings(store.settings);
+    const gatePreview = evaluatePublicOrderGate(st, new Date());
     const nowMin = minutesSinceMidnightInTimeZone(new Date(), st.timezone);
     const storeTaxRatePercent = st.taxRatePercent;
     const takeoutTaxRatePercent = 8;
@@ -219,6 +225,11 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
 
     return {
       store: { id: store.id, name: store.name },
+      orderGate: {
+        acceptingOrders: gatePreview.accepting,
+        reasonCode: gatePreview.reasonCode,
+        messageJa: gatePreview.accepting ? "" : gatePreview.messageJa,
+      },
       taxRatePercent: takeoutTaxRatePercent,
       timezone: st.timezone,
       takeoutPickupMinLeadMinutes: st.takeoutPickupMinLeadMinutes,
@@ -261,6 +272,10 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
     });
     if (!store) return reply.code(404).send({ error: "store not found" });
     const st = mergeStoreSettings(store.settings);
+    const gate = evaluatePublicOrderGate(st, new Date());
+    if (!gate.accepting) {
+      return reply.code(403).send({ error: gate.messageJa });
+    }
     const nowMin = minutesSinceMidnightInTimeZone(new Date(), st.timezone);
     const storeTaxRatePercent = st.taxRatePercent;
     const eatMode: EatMode = "takeout";
@@ -268,6 +283,16 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
 
     const pickupAt = normalizePickupAt(req.body?.pickupAt, st.timezone);
     if (!pickupAt) return reply.code(400).send({ error: "pickupAt required" });
+
+    const pickupYmd = wallDateYmdInZone(pickupAt, st.timezone);
+    if (isWallDateClosedByBusinessCalendar(st, pickupYmd)) {
+      return reply.code(403).send({ error: "この受取日は休業です。" });
+    }
+    const pickupMin = minutesSinceMidnightInTimeZone(pickupAt, st.timezone);
+    if (!isWallDateTimeWithinWeeklyHours(st, st.timezone, pickupYmd, pickupMin)) {
+      return reply.code(403).send({ error: "この受取日時は営業時間外です。" });
+    }
+
     const leadMin = st.takeoutPickupMinLeadMinutes;
     const leadMs = Math.max(0, leadMin) * 60 * 1000;
     if (pickupAt.getTime() < Date.now() + leadMs) {

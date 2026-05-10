@@ -511,6 +511,17 @@
         font-size: 0.78rem;
         font-weight: 800;
       }
+      #takeoutOrderGateBanner {
+        display: none;
+        margin: 0;
+        padding: 0.65rem 0.85rem;
+        background: rgba(185, 28, 28, 0.35);
+        border-bottom: 1px solid rgba(254, 202, 202, 0.35);
+        color: #fecaca;
+        font-size: 0.85rem;
+        font-weight: 800;
+        text-align: center;
+      }
     </style>
   </head>
   <body>
@@ -528,6 +539,8 @@
         <span class="pill" style="border:1px solid var(--line);padding:.2rem .5rem;border-radius:999px;background:rgba(255,255,255,.04);font-size:.76rem">8%</span>
       </div>
     </header>
+
+    <div id="takeoutOrderGateBanner" role="alert"></div>
 
     <div id="msg" style="padding: 0.75rem 0.85rem"></div>
 
@@ -683,6 +696,7 @@
        */
       const cart = new Map();
       let menuData = null;
+      let takeoutGateBlocked = false;
       let activeCatId = "";
       let activeDetailItemId = "";
       let activeDetailSellKind = "";
@@ -1582,13 +1596,28 @@
           toast(errText);
         } finally {
           const btn = document.getElementById("btnSubmit");
-          if (btn) btn.disabled = false;
+          if (btn) btn.disabled = takeoutGateBlocked;
         }
       };
 
       async function load() {
         const data = await api("/takeout/" + encodeURIComponent(STORE_ID) + "/menu");
         menuData = data;
+        const og = data.orderGate;
+        const gateBlocked = !!(og && og.acceptingOrders === false);
+        takeoutGateBlocked = gateBlocked;
+        const gateEl = document.getElementById("takeoutOrderGateBanner");
+        if (gateEl) {
+          if (gateBlocked && og.messageJa) {
+            gateEl.textContent = og.messageJa;
+            gateEl.style.display = "block";
+          } else {
+            gateEl.textContent = "";
+            gateEl.style.display = "none";
+          }
+        }
+        const chkSubmit = document.getElementById("btnSubmit");
+        if (chkSubmit) chkSubmit.disabled = gateBlocked;
         takeoutPriceDisplayExclusive = menuData.takeoutNetPriceDisplayMode === "exclusive";
         takeoutTaxRatePercent = Number(menuData.taxRatePercent) || 8;
         document.getElementById("title").textContent = esc(menuData.store.name) + " / テイクアウト注文";

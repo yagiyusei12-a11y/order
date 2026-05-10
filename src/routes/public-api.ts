@@ -2,12 +2,28 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { openOrReuseSessionForTable } from "../lib/open-table-session.js";
 import { displayTableCode, tableDisplayLabel } from "../lib/table-display-code.js";
+import { evaluatePublicOrderGate } from "../lib/store-order-gate.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
 
 /**
  * 認証不要の公開API（卓の固定QRから参照する想定）
  */
 export async function registerPublicApi(app: FastifyInstance): Promise<void> {
+  app.get<{ Params: { storeId: string } }>("/public/stores/:storeId/order-gate", async (req, reply) => {
+    const store = await prisma.store.findUnique({
+      where: { id: req.params.storeId },
+      select: { settings: true },
+    });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    const st = mergeStoreSettings(store.settings);
+    const g = evaluatePublicOrderGate(st, new Date());
+    return {
+      acceptingOrders: g.accepting,
+      reasonCode: g.reasonCode,
+      messageJa: g.accepting ? "" : g.messageJa,
+    };
+  });
+
   app.get<{ Params: { publicCode: string } }>("/public/tables/:publicCode", async (req, reply) => {
     const table = await prisma.table.findUnique({
       where: { publicCode: req.params.publicCode },
@@ -18,6 +34,7 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
       select: { settings: true },
     });
     const st = mergeStoreSettings(store?.settings);
+    const gate = evaluatePublicOrderGate(st, new Date());
     const session = await prisma.diningSession.findFirst({
       where: { tableId: table.id, status: "open" },
       include: { course: true, coursePriceTier: true },
@@ -43,6 +60,11 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
     }));
     return {
       storeId: table.storeId,
+      orderGate: {
+        acceptingOrders: gate.accepting,
+        reasonCode: gate.reasonCode,
+        messageJa: gate.accepting ? "" : gate.messageJa,
+      },
       store: {
         menuPriceTaxMode: st.menuPriceTaxMode,
         coursePriceTaxMode: st.coursePriceTaxMode,
@@ -84,6 +106,11 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
       select: { settings: true },
     });
     const st = mergeStoreSettings(storeRow?.settings);
+
+    const gate = evaluatePublicOrderGate(st, new Date());
+    if (!gate.accepting) {
+      return reply.code(403).send({ error: gate.messageJa });
+    }
 
     const body = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
     const guestCount = body.guestCount;

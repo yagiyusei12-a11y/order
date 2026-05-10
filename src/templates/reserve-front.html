@@ -21,6 +21,17 @@
     .ok { background:#ecfdf5; border:1px solid #bbf7d0; color:#065f46; padding: 12px; border-radius: 12px; margin-top: 12px; font-weight: 900; }
     .err { background:#fff1f2; border:1px solid #fecdd3; color:#9f1239; padding: 12px; border-radius: 12px; margin-top: 12px; font-weight: 900; }
     .ok, .err { white-space: pre-line; }
+    #reserveOrderGateBanner {
+      display: none;
+      margin: 0 0 12px;
+      padding: 12px 14px;
+      background: #fff1f2;
+      border: 1px solid #fecdd3;
+      border-radius: 12px;
+      color: #9f1239;
+      font-weight: 800;
+      font-size: 0.95em;
+    }
   </style>
 </head>
 <body>
@@ -29,6 +40,8 @@
       <h1>ネット予約</h1>
       <button id="btnFullscreen" class="btn-full" type="button">全画面</button>
     </div>
+
+    <div id="reserveOrderGateBanner" role="alert"></div>
 
     <div class="row">
       <div>
@@ -111,6 +124,8 @@
     }
 
     let cfg = { daysAhead: 30, enableNote: true, seatTypeMode: "any", seatTypes: [] };
+    let reserveOrderGateOk = true;
+    let reserveOrderGateMessage = "";
     function fmtHm(min) {
       const h = Math.floor(Number(min) / 60);
       const m = Number(min) % 60;
@@ -212,6 +227,29 @@
       syncFullscreenButton();
 
       cfg = await apiGetConfig();
+      try {
+        const gr = await fetch(
+          `/public/stores/${encodeURIComponent(STORE_ID)}/order-gate?t=${Date.now()}`,
+          { cache: "no-store" },
+        );
+        if (gr.ok) {
+          const g = await gr.json();
+          reserveOrderGateOk = g.acceptingOrders !== false;
+          reserveOrderGateMessage = typeof g.messageJa === "string" ? g.messageJa : "";
+        }
+      } catch (_) {}
+      const gateB = document.getElementById("reserveOrderGateBanner");
+      if (gateB) {
+        if (!reserveOrderGateOk && reserveOrderGateMessage) {
+          gateB.textContent = reserveOrderGateMessage;
+          gateB.style.display = "block";
+        } else {
+          gateB.textContent = "";
+          gateB.style.display = "none";
+        }
+      }
+      const btnG = document.getElementById("btnSubmit");
+      if (btnG) btnG.disabled = !reserveOrderGateOk;
       cfg.seatTypeMode = cfg.seatTypeMode === "require_select" ? "require_select" : "any";
       cfg.seatTypes = Array.isArray(cfg.seatTypes) ? cfg.seatTypes : [];
       const days = Number(cfg.daysAhead ?? 30);
@@ -246,6 +284,10 @@
       await refreshSlots();
 
       document.getElementById("btnSubmit").onclick = async () => {
+        if (!reserveOrderGateOk) {
+          showMsg("err", reserveOrderGateMessage || "ただいま予約を受け付けておりません。");
+          return;
+        }
         const date = document.getElementById("rDate").value;
         const time = document.getElementById("rTime").value;
         const name = document.getElementById("rName").value.trim();

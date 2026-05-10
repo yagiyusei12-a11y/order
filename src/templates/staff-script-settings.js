@@ -623,6 +623,37 @@ function ensureTablesPanel() {
   bootTables().catch((e) => log(String(e.message || e)));
 }
 
+function parseYmdLines(text) {
+  const lines = String(text || "")
+    .split(/\r?\n/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+  const out = [];
+  for (const line of lines) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(line)) return { ok: false, error: "不正な日付行: " + line };
+    out.push(line);
+  }
+  return { ok: true, dates: [...new Set(out)] };
+}
+
+function ensureBizWeeklyRows() {
+  const tb = document.getElementById("bizWeeklyBody");
+  if (!tb || tb.querySelector("tr")) return;
+  const labels = ["日", "月", "火", "水", "木", "金", "土"];
+  for (let i = 0; i < 7; i++) {
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      "<td>" +
+      labels[i] +
+      '</td><td><input type="time" id="bizOpen' +
+      i +
+      '" /></td><td><input type="time" id="bizClose' +
+      i +
+      '" /></td><td></td>';
+    tb.appendChild(tr);
+  }
+}
+
 async function loadAll() {
   log("");
   try {
@@ -722,6 +753,24 @@ async function loadAll() {
     dispExcl.checked = dm === "exclusive";
   }
   renderOpsDiscountPresets(s.opsDiscountPresets || []);
+  ensureBizWeeklyRows();
+  const weeklyEn = document.getElementById("stBizWeeklyEnable");
+  const wh = s.businessWeeklyHours;
+  if (weeklyEn) weeklyEn.checked = Array.isArray(wh) && wh.length === 7;
+  for (let i = 0; i < 7; i++) {
+    const slot =
+      Array.isArray(wh) && wh[i] && typeof wh[i] === "object" && wh[i].openMin != null && wh[i].closeMin != null
+        ? wh[i]
+        : null;
+    const oEl = document.getElementById("bizOpen" + i);
+    const cEl = document.getElementById("bizClose" + i);
+    if (oEl) oEl.value = slot ? guestMinToTimeInputValue(slot.openMin) : "";
+    if (cEl) cEl.value = slot ? guestMinToTimeInputValue(slot.closeMin) : "";
+  }
+  const closedTa = document.getElementById("stBizClosedDates");
+  if (closedTa) closedTa.value = (Array.isArray(s.businessClosedDates) ? s.businessClosedDates : []).join("\n");
+  const exTa = document.getElementById("stBizOpenExceptions");
+  if (exTa) exTa.value = (Array.isArray(s.businessOpenExceptionDates) ? s.businessOpenExceptionDates : []).join("\n");
   const registerCodes = new Set(Array.isArray(s.opsRegisterMethodCodes) ? s.opsRegisterMethodCodes : []);
 
   const sl = document.getElementById("staffList");
@@ -1774,6 +1823,71 @@ if (btnResetStaffSidebar) {
   btnResetStaffSidebar.onclick = () => {
     log("");
     resetStaffSidebarPrefs();
+  };
+}
+
+const btnSaveBusinessWeekly = document.getElementById("btnSaveBusinessWeekly");
+if (btnSaveBusinessWeekly) {
+  btnSaveBusinessWeekly.onclick = async () => {
+    log("");
+    if (!requireManagerForSettings()) return;
+    ensureBizWeeklyRows();
+    let businessWeeklyHours = null;
+    if (document.getElementById("stBizWeeklyEnable").checked) {
+      businessWeeklyHours = [];
+      for (let i = 0; i < 7; i++) {
+        const om = timeInputValueToGuestMin(document.getElementById("bizOpen" + i).value);
+        const cm = timeInputValueToGuestMin(document.getElementById("bizClose" + i).value);
+        if (om === null && cm === null) {
+          businessWeeklyHours.push(null);
+        } else if (om === null || cm === null) {
+          return log("各曜日は開店・閉店を両方入れるか、両方空にしてください");
+        } else if (om === cm) {
+          return log("開店と閉店が同じです。休業にする場合は両方空にしてください");
+        } else {
+          businessWeeklyHours.push({ openMin: om, closeMin: cm });
+        }
+      }
+    }
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings: { businessWeeklyHours } }),
+      });
+      log("週次営業時間を保存しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+}
+
+const btnSaveBusinessCalendar = document.getElementById("btnSaveBusinessCalendar");
+if (btnSaveBusinessCalendar) {
+  btnSaveBusinessCalendar.onclick = async () => {
+    log("");
+    if (!requireManagerForSettings()) return;
+    const cParse = parseYmdLines(document.getElementById("stBizClosedDates").value);
+    if (!cParse.ok) return log(cParse.error);
+    const eParse = parseYmdLines(document.getElementById("stBizOpenExceptions").value);
+    if (!eParse.ok) return log(eParse.error);
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          settings: {
+            businessClosedDates: cParse.dates,
+            businessOpenExceptionDates: eParse.dates,
+          },
+        }),
+      });
+      log("カレンダーを保存しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
   };
 }
 

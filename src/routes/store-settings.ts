@@ -4,6 +4,7 @@ import { prisma } from "../db.js";
 import { appendStaffAuditFromRequest } from "../lib/staff-audit.js";
 import { normalizeStaffEmail, validatePasswordPlain } from "../lib/staff-credentials.js";
 import { assertManagerRole } from "../lib/staff-role.js";
+import { staffFooterOrderGateState } from "../lib/store-order-gate.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
 
 function staffSubFromReq(req: { user?: unknown }): string | null {
@@ -31,6 +32,19 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
     const settings = mergeStoreSettings(store.settings);
     return {
       store: { id: store.id, name: store.name, settings },
+    };
+  });
+
+  /** スタッフフッター（営業状態・手動停止の表示用） */
+  app.get<{ Params: { storeId: string } }>("/stores/:storeId/order-footer", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    const st = mergeStoreSettings(store.settings);
+    const foot = staffFooterOrderGateState(st, new Date());
+    return {
+      variant: foot.variant,
+      labelJa: foot.labelJa,
+      ordersPausedManually: st.ordersPausedManually,
     };
   });
 
@@ -65,6 +79,37 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
     });
     await appendStaffAuditFromRequest(req, store.id, staffSubFromReq(req), "store_settings_patch", {
       updatedFields: Object.keys(data),
+    }).catch(() => {});
+    return {
+      store: {
+        id: updated.id,
+        name: updated.name,
+        settings: mergeStoreSettings(updated.settings),
+      },
+    };
+  });
+
+  /**
+   * 注文停止フラグのみ更新（店長ロール不要・ログイン済みスタッフ全員）
+   */
+  app.patch<{
+    Params: { storeId: string };
+    Body: { ordersPausedManually?: unknown };
+  }>("/stores/:storeId/order-pause", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    const v = req.body?.ordersPausedManually;
+    if (typeof v !== "boolean") {
+      return reply.code(400).send({ error: "ordersPausedManually must be a boolean" });
+    }
+    const cur = mergeStoreSettings(store.settings);
+    const next = mergeStoreSettings({ ...cur, ordersPausedManually: v });
+    const updated = await prisma.store.update({
+      where: { id: store.id },
+      data: { settings: next as object },
+    });
+    await appendStaffAuditFromRequest(req, store.id, staffSubFromReq(req), "order_pause_toggle", {
+      ordersPausedManually: v,
     }).catch(() => {});
     return {
       store: {

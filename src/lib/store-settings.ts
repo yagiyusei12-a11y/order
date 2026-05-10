@@ -126,6 +126,18 @@ export type StoreSettingsShape = {
   stockDailyResetTimeMin: number;
   /** 店舗 TZ で最後に日次リセットを実行した日付 YYYY-MM-DD（同日の再実行防止） */
   stockDailyResetLastRunDate: string | null;
+
+  /** true のときゲスト向け注文・ネット予約・ネットテイクアウトを拒否（スタッフの口頭注文は対象外） */
+  ordersPausedManually: boolean;
+  /**
+   * null のときは「週次営業時間」による締めを行わない（休業日カレンダー・手動停止のみ）。
+   * 長さ7・日曜=0…土曜=6。要素が null の曜は週次として休業日扱い。
+   */
+  businessWeeklyHours: Array<{ openMin: number; closeMin: number } | null> | null;
+  /** 休業日 YYYY-MM-DD（例外営業日より優先度が低い） */
+  businessClosedDates: string[];
+  /** カレンダー上は休業でも営業する日（祝の临时営業など） */
+  businessOpenExceptionDates: string[];
 };
 
 export function isBillCorrectionAllowed(settings: StoreSettingsShape, key: BillCorrectionPolicyKey): boolean {
@@ -202,6 +214,10 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     stockDailyResetEnabled: false,
     stockDailyResetTimeMin: 240,
     stockDailyResetLastRunDate: null,
+    ordersPausedManually: false,
+    businessWeeklyHours: null,
+    businessClosedDates: [],
+    businessOpenExceptionDates: [],
   };
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return d;
   const o = raw as Record<string, unknown>;
@@ -374,6 +390,60 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
   } else if (typeof o.stockDailyResetLastRunDate === "string") {
     const s = o.stockDailyResetLastRunDate.trim();
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) d.stockDailyResetLastRunDate = s;
+  }
+  if (typeof o.ordersPausedManually === "boolean") {
+    d.ordersPausedManually = o.ordersPausedManually;
+  }
+  if (o.businessWeeklyHours === null) {
+    d.businessWeeklyHours = null;
+  } else if (Array.isArray(o.businessWeeklyHours) && o.businessWeeklyHours.length === 7) {
+    const slots: Array<{ openMin: number; closeMin: number } | null> = [];
+    for (const cell of o.businessWeeklyHours) {
+      if (cell === null) {
+        slots.push(null);
+        continue;
+      }
+      if (!cell || typeof cell !== "object" || Array.isArray(cell)) {
+        slots.push(null);
+        continue;
+      }
+      const c = cell as Record<string, unknown>;
+      const openMin =
+        typeof c.openMin === "number" && Number.isFinite(c.openMin) ? Math.round(c.openMin) : NaN;
+      const closeMin =
+        typeof c.closeMin === "number" && Number.isFinite(c.closeMin) ? Math.round(c.closeMin) : NaN;
+      if (
+        !Number.isFinite(openMin) ||
+        !Number.isFinite(closeMin) ||
+        openMin < 0 ||
+        openMin > 1439 ||
+        closeMin < 0 ||
+        closeMin > 1439
+      ) {
+        slots.push(null);
+        continue;
+      }
+      if (openMin === closeMin) {
+        slots.push(null);
+        continue;
+      }
+      slots.push({ openMin, closeMin });
+    }
+    d.businessWeeklyHours = slots;
+  }
+  if (Array.isArray(o.businessClosedDates)) {
+    const dates = o.businessClosedDates
+      .filter((x) => typeof x === "string")
+      .map((x) => x.trim())
+      .filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x));
+    d.businessClosedDates = [...new Set(dates)].slice(0, 400);
+  }
+  if (Array.isArray(o.businessOpenExceptionDates)) {
+    const dates = o.businessOpenExceptionDates
+      .filter((x) => typeof x === "string")
+      .map((x) => x.trim())
+      .filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x));
+    d.businessOpenExceptionDates = [...new Set(dates)].slice(0, 400);
   }
   return d;
 }

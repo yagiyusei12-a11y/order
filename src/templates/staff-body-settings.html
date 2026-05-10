@@ -6,6 +6,7 @@
 
   <div class="top-tabs" id="settingsTabs" style="margin:0 0 1rem">
     <button type="button" data-stab="basic" class="is-on">基本</button>
+    <button type="button" data-stab="businessHours">営業</button>
     <button type="button" data-stab="billing">会計</button>
     <button type="button" data-stab="menuCourse">メニュー/コース</button>
     <button type="button" data-stab="netReserve">ネット予約</button>
@@ -84,6 +85,43 @@
         <button type="button" class="btn-primary" id="btnSaveStaffSidebar">保存して反映</button>
         <button type="button" class="btn-ghost" id="btnResetStaffSidebar">既定に戻す</button>
       </div>
+    </div>
+  </div>
+
+  <div id="settingsTab-businessHours" data-stab-panel="businessHours" style="display:none">
+    <div class="card" style="border-color:#93c5fd">
+      <strong style="font-size:0.9rem">週次営業時間</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        オンにすると、下記の時間外は卓QR・ネットテイクアウト・ネット予約の<strong>受付</strong>をしません（スタッフの口頭注文は可）。
+        オフのときは曜日の時間では締めません（休業日カレンダー・フッターの注文停止のみ）。終日またぎは閉店時刻を翌日の早朝に設定してください（例 17:00〜02:00）。
+      </p>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.85rem;margin-bottom:0.65rem">
+        <input type="checkbox" id="stBizWeeklyEnable" /> <span>週次の開店〜閉店で締める</span>
+      </label>
+      <table style="width:100%;font-size:0.82rem;border-collapse:collapse;margin-bottom:0.65rem">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border);text-align:left">
+            <th style="padding:0.35rem">曜日</th>
+            <th style="padding:0.35rem">開店</th>
+            <th style="padding:0.35rem">閉店</th>
+            <th class="muted" style="padding:0.35rem;font-weight:500">両方空欄＝その曜は休業</th>
+          </tr>
+        </thead>
+        <tbody id="bizWeeklyBody"></tbody>
+      </table>
+      <button type="button" class="btn-primary" id="btnSaveBusinessWeekly">週次営業時間を保存</button>
+    </div>
+
+    <div class="card" style="margin-top:1rem;border-color:#fcd34d">
+      <strong style="font-size:0.9rem">営業日カレンダー</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        店舗タイムゾーンの日付（<code>YYYY-MM-DD</code>）で指定します。1行に1日。<strong>例外営業日</strong>は休業リストに含まれていても、その日だけ営業として扱います。
+      </p>
+      <label for="stBizClosedDates">休業日</label>
+      <textarea id="stBizClosedDates" rows="5" style="width:100%;font-family:ui-monospace,monospace;font-size:0.78rem" placeholder="例:&#10;2026-01-01&#10;2026-05-15"></textarea>
+      <label for="stBizOpenExceptions" style="margin-top:0.65rem">例外営業日（任意）</label>
+      <textarea id="stBizOpenExceptions" rows="3" style="width:100%;font-family:ui-monospace,monospace;font-size:0.78rem" placeholder="例:&#10;2026-01-02"></textarea>
+      <button type="button" class="btn-primary" id="btnSaveBusinessCalendar" style="margin-top:0.65rem">カレンダーを保存</button>
     </div>
   </div>
 

@@ -8,6 +8,7 @@ let storeSettingsCache = {
   menuPriceTaxMode: "inclusive",
   coursePriceTaxMode: "inclusive",
   taxRatePercent: 10,
+  timezone: "Asia/Tokyo",
   opsDiscountPresets: [],
   billCorrectionPolicy: {
     enabled: true,
@@ -660,6 +661,17 @@ function formatBillWhen(iso) {
   }
 }
 
+/** @param {string} tz */
+function wallYmdNowInTz(tz) {
+  const z = tz && String(tz).trim() ? String(tz).trim() : "Asia/Tokyo";
+  const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: z, year: "numeric", month: "2-digit", day: "2-digit" });
+  const parts = fmt.formatToParts(new Date());
+  const y = parts.find((p) => p.type === "year")?.value;
+  const m = parts.find((p) => p.type === "month")?.value;
+  const d = parts.find((p) => p.type === "day")?.value;
+  return (y || "1970") + "-" + (m || "01") + "-" + (d || "01");
+}
+
 async function renderReceiptBox() {
   const listEl = document.getElementById("receiptBoxList");
   if (!listEl) return;
@@ -668,8 +680,14 @@ async function renderReceiptBox() {
   } catch (_) {}
   const bcReopen = billCorrectionAllowed("reopenSettledForRegister");
   try {
+    const todayYmd = wallYmdNowInTz(storeSettingsCache.timezone || "Asia/Tokyo");
     const res = await api(
-      "/stores/" + encodeURIComponent(STORE) + "/bills?status=settled&limit=40&sort=settledAt"
+      "/stores/" +
+        encodeURIComponent(STORE) +
+        "/bills?status=settled&limit=40&sort=settledAt&from=" +
+        encodeURIComponent(todayYmd) +
+        "&to=" +
+        encodeURIComponent(todayYmd)
     );
     const bills = res.bills || [];
     if (!bills.length) {

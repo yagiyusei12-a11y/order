@@ -1159,6 +1159,17 @@
       font-family: inherit;
       font-size: 0.85rem;
     }
+    .guest-order-gate-banner {
+      display: none;
+      margin: 0;
+      padding: 0.65rem 0.85rem;
+      background: #fef2f2;
+      border-bottom: 1px solid #fecaca;
+      color: #991b1b;
+      font-size: 0.88rem;
+      font-weight: 700;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
@@ -1182,6 +1193,7 @@
   </header>
 
   <div id="lastOrderBanner" role="status" aria-live="polite"></div>
+  <div id="guestOrderGateBanner" class="guest-order-gate-banner" role="alert"></div>
   <div id="guestDeferredKitchenPanel" class="guest-deferred-kitchen-panel" style="display:none" aria-live="polite"></div>
   <p id="courseMenuNotice" class="muted course-menu-notice" style="display:none;font-size:0.82rem;margin:0 0 0.45rem;line-height:1.45;padding:0 0.15rem"></p>
   <div id="courseMenuFilterWrap" class="course-menu-filter-wrap" style="display: none" hidden>
@@ -1387,6 +1399,8 @@
     /** @type {Record<string, unknown>} */
     const cart = {};
     let guestShowMenuPrices = true;
+    let guestOrderGateBlocked = false;
+    let guestOrderGateMessage = "";
     let menuPriceTaxMode = "inclusive";
     let coursePriceTaxMode = "inclusive";
     let taxRatePercent = 10;
@@ -3681,6 +3695,19 @@
 
     async function loadMenu() {
       const data = await api("/guest/" + encodeURIComponent(TOKEN) + "/menu");
+      guestOrderGateBlocked = !!(data.orderGate && data.orderGate.acceptingOrders === false);
+      guestOrderGateMessage =
+        data.orderGate && typeof data.orderGate.messageJa === "string" ? data.orderGate.messageJa : "";
+      const gateBan = document.getElementById("guestOrderGateBanner");
+      if (gateBan) {
+        if (guestOrderGateBlocked && guestOrderGateMessage) {
+          gateBan.textContent = guestOrderGateMessage;
+          gateBan.style.display = "block";
+        } else {
+          gateBan.textContent = "";
+          gateBan.style.display = "none";
+        }
+      }
       syncGuestServeLaterCopyFromStore(data.store);
       guestShowMenuPrices = !(data.store && data.store.showMenuPrices === false);
       menuPriceTaxMode = (data.store && data.store.menuPriceTaxMode) || "inclusive";
@@ -4068,6 +4095,10 @@
     }
 
     document.getElementById("submit").onclick = async () => {
+      if (guestOrderGateBlocked) {
+        toast(guestOrderGateMessage || "ただいま注文を受け付けておりません");
+        return;
+      }
       if (guestSubmitBlockedByLastOrder()) {
         toast(
           guestLoPolicy === "singles_only"

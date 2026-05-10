@@ -166,6 +166,21 @@
       font-weight: 600;
       z-index: 20;
     }
+    .app-footer.staff-order-footer {
+      cursor: pointer;
+      border: none;
+      width: 100%;
+      font-family: inherit;
+      text-align: left;
+      box-sizing: border-box;
+    }
+    .app-footer.staff-order-footer:focus-visible {
+      outline: 2px solid #fff;
+      outline-offset: -2px;
+    }
+    .app-footer.is-open { background: var(--green); }
+    .app-footer.is-closed { background: #b91c1c; }
+    .app-footer.is-paused { background: #7f1d1d; }
     .app-footer small { opacity: 0.9; font-weight: 500; }
 
     .global-call-banner {
@@ -604,10 +619,10 @@
       </div>
     </div>
   </div>
-  <footer class="app-footer">
-    <span>営業中</span>
-    <small>機能は順次ここから増やせます</small>
-  </footer>
+  <button type="button" class="app-footer staff-order-footer is-open" id="staffOrderFooterBtn" aria-live="polite">
+    <span class="staff-footer-label">営業中</span>
+    <small id="staffOrderFooterHint">補助は随時ここからお知らせします</small>
+  </button>
 
   <div id="globalCallBanner" class="global-call-banner" style="display:none" role="status" aria-live="assertive"></div>
 
@@ -834,6 +849,47 @@
     }
     window.applyStaffSidebarPrefs = applyStaffSidebarPrefs;
     applyStaffSidebarPrefs();
+
+    (function staffOrderFooter() {
+      const btn = document.getElementById("staffOrderFooterBtn");
+      const hint = document.getElementById("staffOrderFooterHint");
+      const labelEl = btn && btn.querySelector(".staff-footer-label");
+      if (!btn || !hint || !labelEl) return;
+
+      async function refreshOrderFooter() {
+        try {
+          await window.__staffMeLoaded;
+          const r = await api("/stores/" + encodeURIComponent(STORE) + "/order-footer");
+          labelEl.textContent = r.labelJa || "—";
+          btn.classList.remove("is-open", "is-closed", "is-paused");
+          const v = r.variant;
+          if (v === "open") btn.classList.add("is-open");
+          else if (v === "paused") btn.classList.add("is-paused");
+          else btn.classList.add("is-closed");
+          btn.dataset.paused = r.ordersPausedManually ? "1" : "0";
+          hint.textContent = r.ordersPausedManually
+            ? "タップで解除し、お客様からの注文・予約を再開します"
+            : "タップで注文停止（卓QR・ネットは停止・口頭注文は可）";
+        } catch (_) {}
+      }
+      refreshOrderFooter();
+      setInterval(refreshOrderFooter, 120000);
+
+      btn.addEventListener("click", async () => {
+        try {
+          await window.__staffMeLoaded;
+          const cur = btn.dataset.paused === "1";
+          await api("/stores/" + encodeURIComponent(STORE) + "/order-pause", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ordersPausedManually: !cur }),
+          });
+          await refreshOrderFooter();
+        } catch (e) {
+          alert(String(e && e.message ? e.message : e));
+        }
+      });
+    })();
 
     (function navActive() {
       const p = location.pathname;

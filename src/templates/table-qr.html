@@ -180,6 +180,16 @@
               ? [j.session]
               : [];
 
+        /** 卓QRでコース（時間パターン付き）を選んで開始済みか。先客がコース済みなら同伴は確認なしで同一セッションへ */
+        function sessionHasChosenCourse(s) {
+          return !!(s && s.course && typeof s.course === "object" && s.course.id);
+        }
+
+        if (openList.length > 0 && sessionHasChosenCourse(openList[0]) && openList[0].guestToken) {
+          goGuest(openList[0].guestToken);
+          return;
+        }
+
         loading.style.display = "none";
         main.style.display = "block";
         const dispName =

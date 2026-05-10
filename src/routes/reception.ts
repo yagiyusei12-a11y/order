@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
-import { openSessionForTable } from "../lib/open-table-session.js";
 import { minutesSinceMidnightInTimeZone } from "../lib/guest-category-hours.js";
 import {
   isReservationWallDateTimeAllowed,
@@ -619,23 +618,7 @@ async function syncSeatToSessions(storeId: string, seatId: string, next: SeatSta
       return;
     }
     if (!open) {
-      const storeRow = await prisma.store.findUnique({
-        where: { id: storeId },
-        select: { settings: true },
-      });
-      const st = mergeStoreSettings(storeRow?.settings);
-      const opened = await openSessionForTable({
-        tableId: table.id,
-        storeId,
-        guestCount: nextCount,
-        childCount: 0,
-        courseId: null,
-        mode: "reuseIfOpen",
-        requireCourseWhenStarting: st.requireCourseWhenStartingSession,
-      });
-      if (!opened.ok) {
-        return;
-      }
+      // 受付マップを「利用中」（青）にしただけではオーダー用セッションは作らない（卓QR・オペ・ハンディ等で開始）
       return;
     }
     // Keep guestCount in sync

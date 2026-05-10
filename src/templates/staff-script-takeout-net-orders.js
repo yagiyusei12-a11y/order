@@ -28,6 +28,20 @@ function fmtTs(d) {
   }
 }
 
+/** API の status 値を一覧・カード表示用の日本語に（PATCH の値は変更しない） */
+function takeoutNetOrderStatusJa(raw) {
+  const k = String(raw || "").trim();
+  const m = {
+    new: "新規",
+    accepted: "受付済",
+    preparing: "調理中",
+    ready: "受取待ち",
+    picked_up: "受取済",
+    cancelled: "キャンセル",
+  };
+  return m[k] || k;
+}
+
 async function load() {
   // #region agent log
   fetch("http://127.0.0.1:7264/ingest/3e55ed64-37c0-42a5-a321-4645c4275acf", {
@@ -89,7 +103,7 @@ function render(orders) {
   }
   root.innerHTML = orders
     .map((o) => {
-      const orderId = o.salesOrderId ? `<div class="muted" style="font-size:.75rem">SalesOrder: ${esc(o.salesOrderId)}</div>` : "";
+      const orderId = o.salesOrderId ? `<div class="muted" style="font-size:.75rem">注文ID: ${esc(o.salesOrderId)}</div>` : "";
       const lines = Array.isArray(o.lines) ? o.lines : [];
       const lineHtml =
         lines.length > 0
@@ -108,7 +122,7 @@ function render(orders) {
         "<div style=\"font-weight:800\">" +
         esc(o.customerName || "") +
         " <span class=\"muted\" style=\"font-weight:600\">(" +
-        esc(o.status || "") +
+        esc(takeoutNetOrderStatusJa(o.status)) +
         ")</span></div>" +
         "<div class=\"muted\" style=\"font-size:.85rem\">" +
         "受取: <strong>" +
@@ -124,19 +138,19 @@ function render(orders) {
         "<div class=\"row\" style=\"gap:.35rem;align-items:center\">" +
         "<button type=\"button\" class=\"btn-ghost\" data-st=\"" +
         esc(o.id) +
-        "\" data-next=\"accepted\">accepted</button>" +
+        "\" data-next=\"accepted\">受付済</button>" +
         "<button type=\"button\" class=\"btn-ghost\" data-st=\"" +
         esc(o.id) +
-        "\" data-next=\"preparing\">preparing</button>" +
+        "\" data-next=\"preparing\">調理中</button>" +
         "<button type=\"button\" class=\"btn-ghost\" data-st=\"" +
         esc(o.id) +
-        "\" data-next=\"ready\">ready</button>" +
+        "\" data-next=\"ready\">受取待ち</button>" +
         "<button type=\"button\" class=\"btn-ghost\" data-st=\"" +
         esc(o.id) +
-        "\" data-next=\"picked_up\">picked_up</button>" +
+        "\" data-next=\"picked_up\">受取済</button>" +
         "<button type=\"button\" class=\"btn-ghost\" style=\"color:#fecaca;border-color:#fecaca\" data-st=\"" +
         esc(o.id) +
-        "\" data-next=\"cancelled\">cancel</button>" +
+        "\" data-next=\"cancelled\">キャンセル</button>" +
         "</div>" +
         "</div>" +
         lineHtml +

@@ -326,6 +326,18 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
     const linesIn = Array.isArray(req.body?.lines) ? req.body.lines : [];
     if (!linesIn.length) return reply.code(400).send({ error: "lines[] required" });
 
+    /** openOrReuseSessionForTable は tx 外の prisma を使うため、無効卓をここで先に有効化して BAD_TABLE を防ぐ */
+    const takeoutPublicCode = takeoutTablePublicCode(store.id);
+    const inactiveTakeoutTable = await prisma.table.findFirst({
+      where: { publicCode: takeoutPublicCode, storeId: store.id, active: false },
+    });
+    if (inactiveTakeoutTable) {
+      await prisma.table.update({
+        where: { id: inactiveTakeoutTable.id },
+        data: { active: true },
+      });
+    }
+
     try {
       const result = await prisma.$transaction(async (tx) => {
         const publicCode = takeoutTablePublicCode(store.id);

@@ -221,7 +221,6 @@ function staffSidebarDefaultKeys() {
     "handy",
     "kitchen",
     "hallReady",
-    "takeout",
     "menu",
     "customers",
     "reports",

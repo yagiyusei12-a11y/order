@@ -119,15 +119,10 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
     return staffHtml(reply, req.params.storeId, "オペレーション", "staff-body-ops.html", "staff-script-ops.js");
   });
 
+  /** 旧スタッフ「テイクアウト一覧」はオペ（卓・会計）に統合したためリダイレクト */
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/takeout", async (req, reply) => {
     if (!(await assertStaffStore(req, reply))) return;
-    return staffHtml(
-      reply,
-      req.params.storeId,
-      "テイクアウト（ネット・口頭）",
-      "staff-body-takeout-net-orders.html",
-      "staff-script-takeout-net-orders.js"
-    );
+    return reply.redirect(`/staff-app/${encodeURIComponent(req.params.storeId)}/ops`, 302);
   });
 
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/reception", async (req, reply) => {

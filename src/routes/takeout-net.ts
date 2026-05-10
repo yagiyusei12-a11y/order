@@ -355,21 +355,42 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
       });
     }
 
+    /** openOrReuseSessionForTable は tx 外の prisma のため、卓の find/create は tx の外でコミットさせる（未コミット行は別接続から見えず BAD_TABLE になる） */
+    let tableWasCreated = false;
+    let table =
+      (await prisma.table.findFirst({ where: takeoutTableWhereForStore(store.id) })) ?? null;
+    if (!table) {
+      try {
+        table = await prisma.table.create({
+          data: {
+            storeId: store.id,
+            name: "テイクアウト",
+            publicCode: takeoutTablePrimaryPublicCode(store.id),
+            active: true,
+          },
+        });
+        tableWasCreated = true;
+      } catch (e: unknown) {
+        const code =
+          e && typeof e === "object" && "code" in e
+            ? String((e as { code: unknown }).code)
+            : "";
+        if (code === "P2002") {
+          table = await prisma.table.findFirst({ where: takeoutTableWhereForStore(store.id) });
+        }
+        if (!table) throw e;
+        tableWasCreated = false;
+      }
+    }
+    if (!table.active) {
+      table = await prisma.table.update({
+        where: { id: table.id },
+        data: { active: true },
+      });
+    }
+
     try {
       const result = await prisma.$transaction(async (tx) => {
-        const tableFromFind = await tx.table.findFirst({ where: takeoutTableWhereForStore(store.id) });
-        const table =
-          tableFromFind ??
-          (await tx.table.create({
-            data: {
-              storeId: store.id,
-              name: "テイクアウト",
-              publicCode: takeoutTablePrimaryPublicCode(store.id),
-              active: true,
-            },
-          }));
-        const tableWasCreated = !tableFromFind;
-
         const globalPeek = await prisma.table.findFirst({
           where: { id: table.id, storeId: store.id, active: true },
         });
@@ -380,6 +401,7 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
           location: "takeout-net.ts:before-openOrReuse",
           message: "takeout POST table resolution",
           data: {
+            runLabel: "post-fix",
             reqStoreId: store.id,
             tableId: table.id,
             tableStoreIdMatch: table.storeId === store.id,
@@ -405,6 +427,7 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
           location: "takeout-net.ts:after-openOrReuse",
           message: "openOrReuseSessionForTable",
           data: {
+            runLabel: "post-fix",
             ok: open.ok,
             code: open.ok ? undefined : open.code,
           },
@@ -669,6 +692,7 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
         location: "takeout-net.ts:POST-orders-catch",
         message: "takeout POST error",
         data: {
+          runLabel: "post-fix",
           errKind: e instanceof Error ? e.constructor.name : typeof e,
           errMsgPrefix: String(msg).slice(0, 160),
         },

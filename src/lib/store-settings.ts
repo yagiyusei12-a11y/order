@@ -131,9 +131,9 @@ export type StoreSettingsShape = {
   ordersPausedManually: boolean;
   /**
    * null のときは「週次営業時間」による締めを行わない（休業日カレンダー・手動停止のみ）。
-   * 長さ7・日曜=0…土曜=6。要素が null の曜は週次として休業日扱い。
+   * 長さ7・日曜=0…土曜=6。要素が null はその曜は週次として休業。配列はその日の複数営業枠（いずれかに含まれれば営業時間内）。
    */
-  businessWeeklyHours: Array<{ openMin: number; closeMin: number } | null> | null;
+  businessWeeklyHours: Array<Array<{ openMin: number; closeMin: number }> | null> | null;
   /** 休業日 YYYY-MM-DD（例外営業日より優先度が低い） */
   businessClosedDates: string[];
   /** カレンダー上は休業でも営業する日（祝の临时営業など） */
@@ -397,17 +397,8 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
   if (o.businessWeeklyHours === null) {
     d.businessWeeklyHours = null;
   } else if (Array.isArray(o.businessWeeklyHours) && o.businessWeeklyHours.length === 7) {
-    const slots: Array<{ openMin: number; closeMin: number } | null> = [];
-    for (const cell of o.businessWeeklyHours) {
-      if (cell === null) {
-        slots.push(null);
-        continue;
-      }
-      if (!cell || typeof cell !== "object" || Array.isArray(cell)) {
-        slots.push(null);
-        continue;
-      }
-      const c = cell as Record<string, unknown>;
+    const MAX_SLOTS_PER_DAY = 12;
+    const parseOneSlot = (c: Record<string, unknown>): { openMin: number; closeMin: number } | null => {
       const openMin =
         typeof c.openMin === "number" && Number.isFinite(c.openMin) ? Math.round(c.openMin) : NaN;
       const closeMin =
@@ -418,18 +409,36 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
         openMin < 0 ||
         openMin > 1439 ||
         closeMin < 0 ||
-        closeMin > 1439
+        closeMin > 1439 ||
+        openMin === closeMin
       ) {
-        slots.push(null);
-        continue;
+        return null;
       }
-      if (openMin === closeMin) {
-        slots.push(null);
-        continue;
+      return { openMin, closeMin };
+    };
+    const parseDayCell = (cell: unknown): Array<{ openMin: number; closeMin: number }> | null => {
+      if (cell === null || cell === undefined) return null;
+      if (Array.isArray(cell)) {
+        const daySlots: { openMin: number; closeMin: number }[] = [];
+        for (const el of cell) {
+          if (!el || typeof el !== "object" || Array.isArray(el)) continue;
+          const s = parseOneSlot(el as Record<string, unknown>);
+          if (s) daySlots.push(s);
+          if (daySlots.length >= MAX_SLOTS_PER_DAY) break;
+        }
+        return daySlots.length ? daySlots : null;
       }
-      slots.push({ openMin, closeMin });
+      if (typeof cell === "object" && !Array.isArray(cell)) {
+        const s = parseOneSlot(cell as Record<string, unknown>);
+        return s ? [s] : null;
+      }
+      return null;
+    };
+    const weekOut: Array<Array<{ openMin: number; closeMin: number }> | null> = [];
+    for (const cell of o.businessWeeklyHours) {
+      weekOut.push(parseDayCell(cell));
     }
-    d.businessWeeklyHours = slots;
+    d.businessWeeklyHours = weekOut;
   }
   if (Array.isArray(o.businessClosedDates)) {
     const dates = o.businessClosedDates

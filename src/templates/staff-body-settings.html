@@ -93,22 +93,13 @@
       <strong style="font-size:0.9rem">週次営業時間</strong>
       <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
         オンにすると、下記の時間外は卓QR・ネットテイクアウト・ネット予約の<strong>受付</strong>をしません（スタッフの口頭注文は可）。
-        オフのときは曜日の時間では締めません（休業日カレンダー・フッターの注文停止のみ）。終日またぎは閉店時刻を翌日の早朝に設定してください（例 17:00〜02:00）。
+        オフのときは曜日の時間では締めません（休業日カレンダー・フッターの注文停止のみ）。1日に複数回営業する場合は「時間帯を追加」で朝・昼・夜などを分けてください。終日またぎは1行で閉店を早朝に（例 17:00〜02:00）。
       </p>
       <label class="row" style="align-items:center;gap:0.45rem;font-size:0.85rem;margin-bottom:0.65rem">
         <input type="checkbox" id="stBizWeeklyEnable" /> <span>週次の開店〜閉店で締める</span>
       </label>
-      <table style="width:100%;font-size:0.82rem;border-collapse:collapse;margin-bottom:0.65rem">
-        <thead>
-          <tr style="border-bottom:1px solid var(--border);text-align:left">
-            <th style="padding:0.35rem">曜日</th>
-            <th style="padding:0.35rem">開店</th>
-            <th style="padding:0.35rem">閉店</th>
-            <th class="muted" style="padding:0.35rem;font-weight:500">両方空欄＝その曜は休業</th>
-          </tr>
-        </thead>
-        <tbody id="bizWeeklyBody"></tbody>
-      </table>
+      <p class="muted" style="font-size:0.72rem;margin:-0.35rem 0 0.5rem">時間帯が未設定の曜は休業日扱いです。</p>
+      <div id="bizWeeklyHost" style="margin-bottom:0.65rem"></div>
       <button type="button" class="btn-primary" id="btnSaveBusinessWeekly">週次営業時間を保存</button>
     </div>
 

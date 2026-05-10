@@ -636,22 +636,110 @@ function parseYmdLines(text) {
   return { ok: true, dates: [...new Set(out)] };
 }
 
-function ensureBizWeeklyRows() {
-  const tb = document.getElementById("bizWeeklyBody");
-  if (!tb || tb.querySelector("tr")) return;
-  const labels = ["日", "月", "火", "水", "木", "金", "土"];
-  for (let i = 0; i < 7; i++) {
-    const tr = document.createElement("tr");
-    tr.innerHTML =
-      "<td>" +
-      labels[i] +
-      '</td><td><input type="time" id="bizOpen' +
-      i +
-      '" /></td><td><input type="time" id="bizClose' +
-      i +
-      '" /></td><td></td>';
-    tb.appendChild(tr);
+const BIZ_DAY_LABELS_JA = ["日曜", "月曜", "火曜", "水曜", "木曜", "金曜", "土曜"];
+const MAX_BIZ_SLOTS_PER_DAY = 12;
+
+function makeBizSlotRow(slot) {
+  const row = document.createElement("div");
+  row.className = "biz-slot-row row";
+  row.style.cssText = "gap:0.5rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.35rem";
+  const o = slot && typeof slot.openMin === "number" ? guestMinToTimeInputValue(slot.openMin) : "";
+  const c = slot && typeof slot.closeMin === "number" ? guestMinToTimeInputValue(slot.closeMin) : "";
+  row.innerHTML =
+    '<label style="font-size:0.78rem">開店 <input type="time" class="biz-open" value="' +
+    escapeHtml(o) +
+    '" /></label>' +
+    '<label style="font-size:0.78rem">閉店 <input type="time" class="biz-close" value="' +
+    escapeHtml(c) +
+    '" /></label>' +
+    '<button type="button" class="btn-ghost biz-remove-slot" style="color:#b91c1c;font-size:0.78rem">削除</button>';
+  const rm = row.querySelector(".biz-remove-slot");
+  if (rm) rm.onclick = () => row.remove();
+  return row;
+}
+
+/** @param {unknown} wh API 設定の businessWeeklyHours（正規化済み想定） */
+function renderBizWeeklyEditor(s) {
+  const host = document.getElementById("bizWeeklyHost");
+  if (!host) return;
+  host.innerHTML = "";
+  const wh = s.businessWeeklyHours;
+  const weeklyEn = document.getElementById("stBizWeeklyEnable");
+  const enabled = Array.isArray(wh) && wh.length === 7;
+  if (weeklyEn) weeklyEn.checked = enabled;
+
+  function slotsForDow(dow) {
+    if (!enabled || !Array.isArray(wh)) return [];
+    const cell = wh[dow];
+    if (cell == null) return [];
+    if (Array.isArray(cell)) return cell;
+    if (typeof cell === "object" && cell !== null && cell.openMin != null && cell.closeMin != null) {
+      return [cell];
+    }
+    return [];
   }
+
+  for (let dow = 0; dow < 7; dow++) {
+    const block = document.createElement("div");
+    block.className = "biz-day-block";
+    block.style.cssText =
+      "border:1px solid var(--border);border-radius:10px;padding:0.55rem 0.65rem;background:rgba(0,0,0,.02)";
+    const title = document.createElement("div");
+    title.style.fontWeight = "800";
+    title.style.fontSize = "0.88rem";
+    title.style.marginBottom = "0.35rem";
+    title.textContent = BIZ_DAY_LABELS_JA[dow];
+    block.appendChild(title);
+    const rowsHost = document.createElement("div");
+    rowsHost.className = "biz-day-rows";
+    rowsHost.setAttribute("data-biz-dow", String(dow));
+    const slots = slotsForDow(dow);
+    for (let si = 0; si < slots.length; si++) {
+      rowsHost.appendChild(makeBizSlotRow(slots[si]));
+    }
+    block.appendChild(rowsHost);
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "btn-ghost";
+    addBtn.style.marginTop = "0.35rem";
+    addBtn.style.fontSize = "0.78rem";
+    addBtn.textContent = "時間帯を追加";
+    addBtn.onclick = () => {
+      const n = rowsHost.querySelectorAll(".biz-slot-row").length;
+      if (n >= MAX_BIZ_SLOTS_PER_DAY) {
+        log("この曜は最大 " + MAX_BIZ_SLOTS_PER_DAY + " 枠までです");
+        return;
+      }
+      rowsHost.appendChild(makeBizSlotRow(null));
+    };
+    block.appendChild(addBtn);
+    host.appendChild(block);
+  }
+}
+
+function collectBusinessWeeklyHoursFromUi() {
+  const out = [];
+  for (let dow = 0; dow < 7; dow++) {
+    const rowsHost = document.querySelector('.biz-day-rows[data-biz-dow="' + dow + '"]');
+    const rows = rowsHost ? [...rowsHost.querySelectorAll(".biz-slot-row")] : [];
+    const slots = [];
+    for (const row of rows) {
+      const oEl = row.querySelector(".biz-open");
+      const cEl = row.querySelector(".biz-close");
+      const om = oEl ? timeInputValueToGuestMin(oEl.value) : null;
+      const cm = cEl ? timeInputValueToGuestMin(cEl.value) : null;
+      if (om === null && cm === null) continue;
+      if (om === null || cm === null) {
+        throw new Error(BIZ_DAY_LABELS_JA[dow] + ": 開店・閉店は両方入力するか、行を削除してください");
+      }
+      if (om === cm) {
+        throw new Error(BIZ_DAY_LABELS_JA[dow] + ": 開店と閉店が同じです");
+      }
+      slots.push({ openMin: om, closeMin: cm });
+    }
+    out.push(slots.length ? slots : null);
+  }
+  return out;
 }
 
 async function loadAll() {
@@ -753,20 +841,7 @@ async function loadAll() {
     dispExcl.checked = dm === "exclusive";
   }
   renderOpsDiscountPresets(s.opsDiscountPresets || []);
-  ensureBizWeeklyRows();
-  const weeklyEn = document.getElementById("stBizWeeklyEnable");
-  const wh = s.businessWeeklyHours;
-  if (weeklyEn) weeklyEn.checked = Array.isArray(wh) && wh.length === 7;
-  for (let i = 0; i < 7; i++) {
-    const slot =
-      Array.isArray(wh) && wh[i] && typeof wh[i] === "object" && wh[i].openMin != null && wh[i].closeMin != null
-        ? wh[i]
-        : null;
-    const oEl = document.getElementById("bizOpen" + i);
-    const cEl = document.getElementById("bizClose" + i);
-    if (oEl) oEl.value = slot ? guestMinToTimeInputValue(slot.openMin) : "";
-    if (cEl) cEl.value = slot ? guestMinToTimeInputValue(slot.closeMin) : "";
-  }
+  renderBizWeeklyEditor(s);
   const closedTa = document.getElementById("stBizClosedDates");
   if (closedTa) closedTa.value = (Array.isArray(s.businessClosedDates) ? s.businessClosedDates : []).join("\n");
   const exTa = document.getElementById("stBizOpenExceptions");
@@ -1831,22 +1906,13 @@ if (btnSaveBusinessWeekly) {
   btnSaveBusinessWeekly.onclick = async () => {
     log("");
     if (!requireManagerForSettings()) return;
-    ensureBizWeeklyRows();
     let businessWeeklyHours = null;
     if (document.getElementById("stBizWeeklyEnable").checked) {
-      businessWeeklyHours = [];
-      for (let i = 0; i < 7; i++) {
-        const om = timeInputValueToGuestMin(document.getElementById("bizOpen" + i).value);
-        const cm = timeInputValueToGuestMin(document.getElementById("bizClose" + i).value);
-        if (om === null && cm === null) {
-          businessWeeklyHours.push(null);
-        } else if (om === null || cm === null) {
-          return log("各曜日は開店・閉店を両方入れるか、両方空にしてください");
-        } else if (om === cm) {
-          return log("開店と閉店が同じです。休業にする場合は両方空にしてください");
-        } else {
-          businessWeeklyHours.push({ openMin: om, closeMin: cm });
-        }
+      try {
+        businessWeeklyHours = collectBusinessWeeklyHoursFromUi();
+      } catch (err) {
+        log(String(err.message || err));
+        return;
       }
     }
     try {

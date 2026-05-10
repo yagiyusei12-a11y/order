@@ -77,6 +77,21 @@ export function minutesWithinSlot(nowMin: number, slot: { openMin: number; close
   return nowMin >= openMin || nowMin < closeMin;
 }
 
+/** 同日の複数営業枠のいずれかに含まれるか（枠が空なら false） */
+export function minutesWithinAnyWeeklySlot(
+  nowMin: number,
+  slots: { openMin: number; closeMin: number }[],
+): boolean {
+  if (!slots.length) return false;
+  return slots.some((s) => minutesWithinSlot(nowMin, s));
+}
+
+function isWeeklyDayClosedSlot(
+  daySlots: Array<{ openMin: number; closeMin: number }> | null | undefined,
+): boolean {
+  return daySlots == null || daySlots.length === 0;
+}
+
 export function isWallDateClosedByBusinessCalendar(settings: StoreSettingsShape, ymd: string): boolean {
   const ex = new Set(settings.businessOpenExceptionDates);
   if (ex.has(ymd)) return false;
@@ -96,9 +111,9 @@ export function isWallDateTimeWithinWeeklyHours(
   const weekly = settings.businessWeeklyHours;
   if (!weekly) return true;
   const dow = weekdaySun0ForWallYmd(ymd, timeZone);
-  const slot = weekly[dow];
-  if (!slot) return false;
-  return minutesWithinSlot(minutesSinceMidnight, slot);
+  const daySlots = weekly[dow];
+  if (isWeeklyDayClosedSlot(daySlots)) return false;
+  return minutesWithinAnyWeeklySlot(minutesSinceMidnight, daySlots!);
 }
 
 /** 「いま」が週次の当日枠に入っているか（weekly null なら true） */
@@ -140,7 +155,7 @@ export function evaluatePublicOrderGate(settings: StoreSettingsShape, now: Date)
   if (!isNowWithinWeeklyHours(settings, now)) {
     const weekly = settings.businessWeeklyHours;
     const dow = weekdaySun0InZone(now, tz);
-    const closedDay = weekly && !weekly[dow];
+    const closedDay = weekly && isWeeklyDayClosedSlot(weekly[dow]);
     return {
       accepting: false,
       reasonCode: closedDay ? "weekday_closed" : "outside_hours",
@@ -174,7 +189,7 @@ export function staffFooterOrderGateState(settings: StoreSettingsShape, now: Dat
   if (!isNowWithinWeeklyHours(settings, now)) {
     const weekly = settings.businessWeeklyHours;
     const dow = weekdaySun0InZone(now, tz);
-    const closedDay = weekly && !weekly[dow];
+    const closedDay = weekly && isWeeklyDayClosedSlot(weekly[dow]);
     return {
       variant: "hours",
       labelJa: closedDay ? "定休（曜日）" : "営業時間外",

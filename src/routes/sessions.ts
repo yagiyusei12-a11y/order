@@ -11,14 +11,7 @@ import { resolveCourseAndTierForSession } from "../lib/course-tier-resolve.js";
 import { recomputeOpenBillTotalForSession } from "../lib/recompute-session-bill.js";
 import { mergeTwoOpenSessionsTx } from "../lib/session-merge.js";
 import { moveOrderLinesBetweenSessionsTx, type LineMoveSpec } from "../lib/move-session-order-lines.js";
-
-/** セッション内で最も早い SalesOrder（「注文時」表示用） */
-function firstSalesOrderByTime(
-  orders: { id: string; createdAt: Date }[] | undefined,
-): { id: string; createdAt: Date } | null {
-  if (!orders?.length) return null;
-  return orders.reduce((a, b) => (a.createdAt <= b.createdAt ? a : b));
-}
+import { firstSalesOrderByTime } from "../lib/first-sales-order.js";
 
 function normalizeUiCustomerLabel(
   takeoutName: string | null | undefined,

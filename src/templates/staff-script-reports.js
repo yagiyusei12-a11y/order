@@ -66,6 +66,12 @@ function qsFromInputs() {
   return q.join("&");
 }
 
+function reportPeriodReadyForCsv() {
+  const fromEl = document.getElementById("repFrom");
+  const toEl = document.getElementById("repTo");
+  return !!(fromEl && fromEl.value && toEl && toEl.value);
+}
+
 let reportsBillCorrection = {
   enabled: true,
   payments: true,
@@ -134,6 +140,10 @@ async function loadSummary(q) {
   renderLoading("repSummary");
   const el = document.getElementById("repSummary");
   const res = await api("/stores/" + encodeURIComponent(STORE) + "/reports/summary" + (q ? "?" + q : ""));
+  const tax = (res.confirmed && res.confirmed.lineSalesByTaxRate) || {};
+  const t10 = Number(tax.tax10 || 0);
+  const t8 = Number(tax.tax8 || 0);
+  const tother = Number(tax.other || 0);
   el.innerHTML =
     "<div class=\"row\" style=\"gap:0.65rem;flex-wrap:wrap\">" +
     "<div class=\"card\" style=\"padding:0.6rem 0.75rem;min-width:14rem;flex:1\">" +
@@ -142,7 +152,15 @@ async function loadSummary(q) {
     Number(res.confirmed.totalAmount || 0).toLocaleString("ja-JP") +
     " 円</div><div class=\"muted\" style=\"font-size:0.72rem\">" +
     (res.confirmed.count || 0) +
-    "件</div></div>" +
+    "件</div>" +
+    "<div class=\"muted\" style=\"font-size:0.68rem;margin-top:0.35rem;line-height:1.35\">" +
+    "明細・税区分（行割引後 / 伝票割引除く）税10% " +
+    t10.toLocaleString("ja-JP") +
+    " 円 / 税8% " +
+    t8.toLocaleString("ja-JP") +
+    " 円" +
+    (tother ? " / その他 " + tother.toLocaleString("ja-JP") + " 円" : "") +
+    "</div></div>" +
     "<div class=\"card\" style=\"padding:0.6rem 0.75rem;min-width:14rem;flex:1;background:#fff7ed;border-color:#fed7aa\">" +
     "<div class=\"muted\" style=\"font-size:0.72rem\">未精算（pending）</div>" +
     "<div style=\"font-weight:900;font-size:1.1rem\">" +
@@ -168,10 +186,15 @@ async function loadDaily(q) {
     return;
   }
   let h =
-    "<table style=\"width:100%;border-collapse:collapse;font-size:0.88rem\"><thead><tr>" +
+    "<div style=\"overflow-x:auto\">" +
+    "<table style=\"width:100%;border-collapse:collapse;font-size:0.88rem;min-width:42rem\"><thead><tr>" +
     "<th style=\"text-align:left;padding:0.35rem;border-bottom:1px solid var(--border)\">日付</th>" +
     "<th style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">件数</th>" +
     "<th style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">売上</th>" +
+    "<th style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">平均</th>" +
+    "<th style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">税10%明細</th>" +
+    "<th style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">税8%明細</th>" +
+    "<th style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">その他</th>" +
     "</tr></thead><tbody>";
   for (const r of rows) {
     h +=
@@ -181,9 +204,17 @@ async function loadDaily(q) {
       Number(r.count || 0).toLocaleString("ja-JP") +
       "</td><td style=\"text-align:right;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
       Number(r.totalAmount || 0).toLocaleString("ja-JP") +
+      " 円</td><td style=\"text-align:right;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
+      Number(r.avgAmount || 0).toLocaleString("ja-JP") +
+      " 円</td><td style=\"text-align:right;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
+      Number(r.lineSalesTax10 || 0).toLocaleString("ja-JP") +
+      " 円</td><td style=\"text-align:right;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
+      Number(r.lineSalesTax8 || 0).toLocaleString("ja-JP") +
+      " 円</td><td style=\"text-align:right;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
+      Number(r.lineSalesTaxOther || 0).toLocaleString("ja-JP") +
       " 円</td></tr>";
   }
-  h += "</tbody></table>";
+  h += "</tbody></table></div>";
   el.innerHTML = h;
 }
 
@@ -267,19 +298,14 @@ async function loadBills(q) {
   const methodCode = methodEl && methodEl.value.trim() ? methodEl.value.trim() : "";
   const fromEl = document.getElementById("repFrom");
   const toEl = document.getElementById("repTo");
-  const fromDt = fromEl && fromEl.value ? new Date(fromEl.value) : null;
-  const toDt = toEl && toEl.value ? new Date(toEl.value) : null;
-  function ymd(d) {
-    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
-  }
   const billQs = [];
   billQs.push("status=" + encodeURIComponent(status));
   /** 期間どちらも空なら直近を多めに（API は sort=settledAt で精算が新しい順） */
   const noDateRange =
     status === "settled" && !(fromEl && fromEl.value) && !(toEl && toEl.value);
   billQs.push("limit=" + (noDateRange ? "200" : "80"));
-  if (status === "settled" && fromDt && Number.isFinite(fromDt.getTime())) billQs.push("from=" + encodeURIComponent(ymd(fromDt)));
-  if (status === "settled" && toDt && Number.isFinite(toDt.getTime())) billQs.push("to=" + encodeURIComponent(ymd(toDt)));
+  if (q) billQs.push(q);
+  billQs.push("rangeMode=iso");
   if (status === "settled") billQs.push("sort=settledAt");
   if (methodCode) billQs.push("methodCode=" + encodeURIComponent(methodCode));
   const res = await api("/stores/" + encodeURIComponent(STORE) + "/bills?" + billQs.join("&"));
@@ -289,13 +315,38 @@ async function loadBills(q) {
     return;
   }
   let h =
-    "<table style=\"width:100%;border-collapse:collapse;font-size:0.86rem\"><thead><tr>" +
+    "<div style=\"overflow-x:auto\">" +
+    "<table style=\"width:100%;border-collapse:collapse;font-size:0.86rem;min-width:52rem\"><thead><tr>" +
     "<th style=\"text-align:left;padding:0.35rem;border-bottom:1px solid var(--border)\">伝票</th>" +
+    "<th style=\"text-align:left;padding:0.35rem;border-bottom:1px solid var(--border)\">精算</th>" +
     "<th style=\"text-align:left;padding:0.35rem;border-bottom:1px solid var(--border)\">卓</th>" +
+    "<th style=\"text-align:left;padding:0.35rem;border-bottom:1px solid var(--border)\">コース</th>" +
+    "<th style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">人数</th>" +
+    "<th style=\"text-align:left;padding:0.35rem;border-bottom:1px solid var(--border)\">顧客</th>" +
+    "<th style=\"text-align:left;padding:0.35rem;border-bottom:1px solid var(--border)\">テイクアウト</th>" +
     "<th style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">合計</th>" +
     "<th style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">状態</th>" +
     "</tr></thead><tbody>";
   for (const b of bills) {
+    const settled =
+      b.settledAt != null
+        ? escapeHtml(String(b.settledAt).replace("T", " ").slice(0, 19))
+        : "";
+    const guests =
+      b.guestCount != null
+        ? Number(b.guestCount).toLocaleString("ja-JP") +
+          (b.childCount != null && b.childCount > 0 ? "（子" + b.childCount + "）" : "")
+        : "";
+    const cust =
+      [b.customerName, b.customerPhone].filter(Boolean).join(" / ");
+    const take = [
+      b.takeoutCustomerName || "",
+      b.takeoutPhone || "",
+      b.takeoutEmail || "",
+    ]
+      .map((x) => String(x).trim())
+      .filter(Boolean)
+      .join(" / ");
     h +=
       "<tr>" +
       "<td style=\"padding:0.35rem;border-bottom:1px solid var(--border)\">" +
@@ -304,8 +355,23 @@ async function loadBills(q) {
       "\" style=\"width:auto;padding:0.2rem 0.45rem\">" +
       escapeHtml(String(b.id).slice(0, 8)) +
       "</button></td>" +
+      "<td style=\"padding:0.35rem;border-bottom:1px solid var(--border);white-space:nowrap\">" +
+      settled +
+      "</td>" +
       "<td style=\"padding:0.35rem;border-bottom:1px solid var(--border)\">" +
       escapeHtml(b.tableName || b.label || "") +
+      "</td>" +
+      "<td style=\"padding:0.35rem;border-bottom:1px solid var(--border)\">" +
+      escapeHtml(b.courseName || "") +
+      "</td>" +
+      "<td style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">" +
+      escapeHtml(guests) +
+      "</td>" +
+      "<td style=\"padding:0.35rem;border-bottom:1px solid var(--border);max-width:10rem;word-break:break-all\">" +
+      escapeHtml(cust) +
+      "</td>" +
+      "<td style=\"padding:0.35rem;border-bottom:1px solid var(--border);max-width:12rem;word-break:break-all;font-size:0.78rem\">" +
+      escapeHtml(take) +
       "</td>" +
       "<td style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">" +
       Number(b.totalAmount || 0).toLocaleString("ja-JP") +
@@ -314,7 +380,7 @@ async function loadBills(q) {
       escapeHtml(b.status || "") +
       "</td></tr>";
   }
-  h += "</tbody></table>";
+  h += "</tbody></table></div>";
   el.innerHTML = h;
   el.querySelectorAll("button[data-bill-open]").forEach((btn) => {
     btn.onclick = async () => {
@@ -901,6 +967,48 @@ function renderReportsFatalError(msg) {
   }
 }
 
+async function downloadReportCsv(kind) {
+  if (!reportPeriodReadyForCsv()) {
+    log("CSV には開始・終了の期間を両方指定してください。");
+    return;
+  }
+  const q = qsFromInputs();
+  const stSel = document.getElementById("repBillStatus");
+  const methodEl = document.getElementById("repMethodCode");
+  const status = stSel && stSel.value ? stSel.value : "settled";
+  const methodCode = methodEl && methodEl.value.trim() ? methodEl.value.trim() : "";
+  const path =
+    kind === "bills"
+      ? "/stores/" + encodeURIComponent(STORE) + "/reports/export/bills.csv"
+      : "/stores/" + encodeURIComponent(STORE) + "/reports/export/order-lines.csv";
+  const parts = [q, "status=" + encodeURIComponent(status)];
+  if (methodCode) parts.push("methodCode=" + encodeURIComponent(methodCode));
+  const url = path + "?" + parts.filter(Boolean).join("&");
+  log("CSV 取得中…");
+  const r = await fetch(url, { credentials: "include" });
+  if (r.status === 401) {
+    location.assign("/staff-app/login?next=" + encodeURIComponent(location.pathname));
+    return;
+  }
+  if (!r.ok) {
+    const t = await r.text();
+    let msg = t;
+    try {
+      const j = JSON.parse(t);
+      if (j && j.error) msg = String(j.error);
+    } catch (_) {}
+    log("CSV: " + msg);
+    return;
+  }
+  const blob = await r.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = kind === "bills" ? "bills-export.csv" : "order-lines-export.csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  log("CSV をダウンロードしました。");
+}
+
 async function runAll() {
   log("");
   try {
@@ -920,6 +1028,18 @@ const btnLoadRep = document.getElementById("btnLoadRep");
 if (btnLoadRep) {
   btnLoadRep.onclick = () => {
     runAll().catch((e) => log(String(e.message || e)));
+  };
+}
+const btnCsvBills = document.getElementById("btnCsvBills");
+if (btnCsvBills) {
+  btnCsvBills.onclick = () => {
+    downloadReportCsv("bills").catch((e) => log(String(e.message || e)));
+  };
+}
+const btnCsvLines = document.getElementById("btnCsvLines");
+if (btnCsvLines) {
+  btnCsvLines.onclick = () => {
+    downloadReportCsv("lines").catch((e) => log(String(e.message || e)));
   };
 }
 

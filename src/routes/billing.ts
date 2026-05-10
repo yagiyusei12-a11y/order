@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
+import { Readable } from "node:stream";
 import { Prisma } from "@prisma/client";
 import { computeCourseSessionTotal, formatCourseLineLabel } from "../lib/course-pricing.js";
 import {
@@ -16,6 +17,8 @@ import { prisma } from "../db.js";
 import { appendStaffAuditFromRequest } from "../lib/staff-audit.js";
 import { assertManagerRole } from "../lib/staff-role.js";
 import { isTakeoutTablePublicCode } from "../lib/takeout-table-code.js";
+import { firstSalesOrderByTime } from "../lib/first-sales-order.js";
+import { orderLineNetAfterLineDiscount, sumOrderLineNetsByTaxRate } from "../lib/report-line-tax.js";
 
 type SessionForPreview = {
   guestCount: number;
@@ -247,6 +250,25 @@ async function buildBillDetailPayload(
   };
 }
 
+/** CSV：長すぎる期間・全期間ダンプを避ける */
+const REPORT_EXPORT_MAX_RANGE_MS = 366 * 86400000;
+const REPORT_EXPORT_MAX_LINE_ROWS = 100_000;
+
+function csvEscapeCell(v: unknown): string {
+  const s = v == null ? "" : String(v);
+  if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function assertExportDateRangeBounded(gte: Date | undefined, lt: Date | undefined): void {
+  if (!gte || !lt || !Number.isFinite(gte.getTime()) || !Number.isFinite(lt.getTime())) {
+    throw new Error("CSV エクスポートは開始・終了の期間を指定してください");
+  }
+  if (lt.getTime() - gte.getTime() > REPORT_EXPORT_MAX_RANGE_MS) {
+    throw new Error("エクスポート期間は366日以内にしてください");
+  }
+}
+
 export async function registerBilling(app: FastifyInstance): Promise<void> {
   function staffUserIdFromReq(req: { user?: unknown }): string | null {
     const u = req.user as { sub?: unknown } | undefined;
@@ -302,6 +324,8 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       methodCode?: string;
       /** settled 一覧で精算日時の新しい順に並べる（既定は createdAt desc） */
       sort?: string;
+      /** from/to を ISO 日時として解釈し、レポート画面と同じ集計軸にする */
+      rangeMode?: string;
     };
   }>("/stores/:storeId/bills", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
@@ -312,16 +336,35 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     const from = req.query.from?.trim();
     const to = req.query.to?.trim();
     const methodCode = req.query.methodCode?.trim();
-    const dateRx = /^\d{4}-\d{2}-\d{2}$/;
-    if (from && !dateRx.test(from)) return reply.code(400).send({ error: "from must be YYYY-MM-DD" });
-    if (to && !dateRx.test(to)) return reply.code(400).send({ error: "to must be YYYY-MM-DD" });
     const tz = mergeStoreSettings(store.settings).timezone;
-    const settledAtRange: { gte?: Date; lt?: Date } = {};
-    if (from) settledAtRange.gte = startOfWallCalendarDayUtc(from, tz);
-    if (to) {
-      const end = startOfWallCalendarDayUtc(to, tz);
-      end.setTime(end.getTime() + 86400000);
-      settledAtRange.lt = end;
+    const rangeModeIso = req.query.rangeMode === "iso";
+
+    let settledAtRange: { gte?: Date; lt?: Date } = {};
+    if (rangeModeIso) {
+      try {
+        settledAtRange = parseDateOrDateTimeToUtcRange(req.query.from, req.query.to, tz);
+      } catch (e) {
+        return reply.code(400).send({ error: String((e as Error).message || e) });
+      }
+    } else {
+      const dateRx = /^\d{4}-\d{2}-\d{2}$/;
+      if (from && !dateRx.test(from)) return reply.code(400).send({ error: "from must be YYYY-MM-DD" });
+      if (to && !dateRx.test(to)) return reply.code(400).send({ error: "to must be YYYY-MM-DD" });
+      if (from) settledAtRange.gte = startOfWallCalendarDayUtc(from, tz);
+      if (to) {
+        const end = startOfWallCalendarDayUtc(to, tz);
+        end.setTime(end.getTime() + 86400000);
+        settledAtRange.lt = end;
+      }
+    }
+
+    let dateWhere: { settledAt?: typeof settledAtRange; createdAt?: typeof settledAtRange } = {};
+    if (settledAtRange.gte || settledAtRange.lt) {
+      if (rangeModeIso && (status === "open" || status === "void")) {
+        dateWhere = { createdAt: settledAtRange };
+      } else {
+        dateWhere = { settledAt: settledAtRange };
+      }
     }
 
     /** 精算伝票は既定で精算日時が新しい順。createdAt 順が必要なら sort=createdAt */
@@ -330,7 +373,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       where: {
         storeId: store.id,
         ...(status === "open" || status === "settled" || status === "void" ? { status } : {}),
-        ...(settledAtRange.gte || settledAtRange.lt ? { settledAt: settledAtRange } : {}),
+        ...(dateWhere.settledAt || dateWhere.createdAt ? dateWhere : {}),
         ...(methodCode ? { payments: { some: { methodCode, voidedAt: null } } } : {}),
       },
       orderBy:
@@ -340,14 +383,35 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       take: limit,
       include: {
         payments: true,
-        session: { include: { table: true } },
+        session: {
+          include: {
+            table: true,
+            course: { select: { name: true } },
+            customer: { select: { name: true, phone: true } },
+            orders: { select: { id: true, createdAt: true } },
+          },
+        },
       },
     });
+
+    const firstOrderIds = bills
+      .map((b) => firstSalesOrderByTime(b.session?.orders)?.id)
+      .filter((x): x is string => Boolean(x));
+    const takeoutRows =
+      firstOrderIds.length > 0
+        ? await prisma.takeoutNetOrder.findMany({
+            where: { storeId: store.id, salesOrderId: { in: firstOrderIds } },
+            select: { salesOrderId: true, customerName: true, phone: true, email: true },
+          })
+        : [];
+    const takeoutBySalesOrderId = new Map(takeoutRows.map((r) => [r.salesOrderId, r]));
 
     return {
       storeId: store.id,
       bills: bills.map((b) => {
         const paid = b.payments.reduce((s, p) => s + (p.voidedAt ? 0 : p.amount), 0);
+        const fo = firstSalesOrderByTime(b.session?.orders);
+        const takeout = fo ? takeoutBySalesOrderId.get(fo.id) : undefined;
         return {
           id: b.id,
           totalAmount: b.totalAmount,
@@ -357,11 +421,20 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
           tableName: b.session?.table
             ? tableDisplayLabel(b.session.table.name, b.session.table.publicCode) || null
             : null,
+          tablePublicCode: b.session?.table?.publicCode ?? null,
           createdAt: b.createdAt,
           settledAt: b.settledAt,
           paidTotal: paid,
           remainder: b.totalAmount - paid,
           paymentMethodCodes: [...new Set(b.payments.filter((p) => !p.voidedAt).map((p) => p.methodCode))],
+          courseName: b.session?.course?.name ?? null,
+          guestCount: b.session?.guestCount ?? null,
+          childCount: b.session?.childCount ?? null,
+          customerName: b.session?.customer?.name ?? null,
+          customerPhone: b.session?.customer?.phone ?? null,
+          takeoutCustomerName: takeout?.customerName ?? null,
+          takeoutPhone: takeout?.phone ?? null,
+          takeoutEmail: takeout?.email ?? null,
         };
       }),
     };
@@ -485,15 +558,58 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: String((e as Error).message || e) });
     }
 
-    const confirmedBills = await prisma.bill.findMany({
-      where: {
-        storeId: store.id,
-        status: "settled",
-        ...(settledAtRange.gte || settledAtRange.lt ? { settledAt: settledAtRange } : {}),
-      },
-      select: { id: true, totalAmount: true, settledAt: true },
-    });
-    const confirmedTotal = confirmedBills.reduce((s, b) => s + b.totalAmount, 0);
+    let confirmedTotal = 0;
+    let confirmedCount = 0;
+    let lineTax8 = 0;
+    let lineTax10 = 0;
+    let lineTaxOther = 0;
+    let billCursor: string | undefined;
+    for (;;) {
+      const batch = await prisma.bill.findMany({
+        where: {
+          storeId: store.id,
+          status: "settled",
+          ...(settledAtRange.gte || settledAtRange.lt ? { settledAt: settledAtRange } : {}),
+        },
+        take: 100,
+        orderBy: { id: "asc" },
+        ...(billCursor ? { cursor: { id: billCursor }, skip: 1 } : {}),
+        select: {
+          id: true,
+          totalAmount: true,
+          session: {
+            select: {
+              orders: {
+                select: {
+                  lines: {
+                    select: {
+                      unitPrice: true,
+                      qty: true,
+                      status: true,
+                      discountJson: true,
+                      taxRatePercent: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+      if (batch.length === 0) break;
+      for (const b of batch) {
+        confirmedCount += 1;
+        confirmedTotal += b.totalAmount;
+        if (b.session?.orders?.length) {
+          const t = sumOrderLineNetsByTaxRate(b.session.orders);
+          lineTax8 += t.tax8;
+          lineTax10 += t.tax10;
+          lineTaxOther += t.other;
+        }
+      }
+      billCursor = batch[batch.length - 1]!.id;
+      if (batch.length < 100) break;
+    }
 
     // 未精算は参考値（createdAt基準で同じ期間に作られたものを pending として表示）
     const pendingRange = settledAtRange;
@@ -511,7 +627,11 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       storeId: store.id,
       timeZone: tz,
       range: { from: req.query.from ?? null, to: req.query.to ?? null },
-      confirmed: { count: confirmedBills.length, totalAmount: confirmedTotal },
+      confirmed: {
+        count: confirmedCount,
+        totalAmount: confirmedTotal,
+        lineSalesByTaxRate: { tax8: lineTax8, tax10: lineTax10, other: lineTaxOther },
+      },
       pending: { count: pendingBills.length, totalAmount: pendingTotal },
     };
   });
@@ -533,22 +653,62 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: String((e as Error).message || e) });
     }
 
-    const bills = await prisma.bill.findMany({
-      where: {
-        storeId: store.id,
-        status: "settled",
-        ...(settledAtRange.gte || settledAtRange.lt ? { settledAt: settledAtRange } : {}),
-      },
-      select: { settledAt: true, totalAmount: true },
-    });
-
-    const byDate: Record<string, { count: number; totalAmount: number }> = {};
-    for (const b of bills) {
-      if (!b.settledAt) continue;
-      const ymd = wallDateYmdInZone(b.settledAt, tz);
-      if (!byDate[ymd]) byDate[ymd] = { count: 0, totalAmount: 0 };
-      byDate[ymd].count += 1;
-      byDate[ymd].totalAmount += b.totalAmount;
+    const byDate: Record<
+      string,
+      { count: number; totalAmount: number; tax8: number; tax10: number; taxOther: number }
+    > = {};
+    let dailyCursor: string | undefined;
+    for (;;) {
+      const batch = await prisma.bill.findMany({
+        where: {
+          storeId: store.id,
+          status: "settled",
+          ...(settledAtRange.gte || settledAtRange.lt ? { settledAt: settledAtRange } : {}),
+        },
+        take: 100,
+        orderBy: { id: "asc" },
+        ...(dailyCursor ? { cursor: { id: dailyCursor }, skip: 1 } : {}),
+        select: {
+          id: true,
+          settledAt: true,
+          totalAmount: true,
+          session: {
+            select: {
+              orders: {
+                select: {
+                  lines: {
+                    select: {
+                      unitPrice: true,
+                      qty: true,
+                      status: true,
+                      discountJson: true,
+                      taxRatePercent: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+      if (batch.length === 0) break;
+      for (const b of batch) {
+        if (!b.settledAt) continue;
+        const ymd = wallDateYmdInZone(b.settledAt, tz);
+        if (!byDate[ymd])
+          byDate[ymd] = { count: 0, totalAmount: 0, tax8: 0, tax10: 0, taxOther: 0 };
+        const cell = byDate[ymd];
+        cell.count += 1;
+        cell.totalAmount += b.totalAmount;
+        if (b.session?.orders?.length) {
+          const t = sumOrderLineNetsByTaxRate(b.session.orders);
+          cell.tax8 += t.tax8;
+          cell.tax10 += t.tax10;
+          cell.taxOther += t.other;
+        }
+      }
+      dailyCursor = batch[batch.length - 1]!.id;
+      if (batch.length < 100) break;
     }
 
     return {
@@ -556,7 +716,15 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       timeZone: tz,
       rows: Object.entries(byDate)
         .sort((a, b) => (a[0] < b[0] ? 1 : -1))
-        .map(([date, v]) => ({ date, count: v.count, totalAmount: v.totalAmount })),
+        .map(([date, v]) => ({
+          date,
+          count: v.count,
+          totalAmount: v.totalAmount,
+          avgAmount: v.count > 0 ? Math.round(v.totalAmount / v.count) : 0,
+          lineSalesTax8: v.tax8,
+          lineSalesTax10: v.tax10,
+          lineSalesTaxOther: v.taxOther,
+        })),
     };
   });
 
@@ -699,6 +867,309 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       kind,
       rows,
     };
+  });
+
+  /**
+   * CSV エクスポート（伝票1行。個人情報を含むため取り扱い注意）
+   */
+  app.get<{
+    Params: { storeId: string };
+    Querystring: {
+      from?: string;
+      to?: string;
+      status?: string;
+      methodCode?: string;
+    };
+  }>("/stores/:storeId/reports/export/bills.csv", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    const tz = mergeStoreSettings(store.settings).timezone;
+    let settledAtRange: { gte?: Date; lt?: Date } = {};
+    try {
+      settledAtRange = parseDateOrDateTimeToUtcRange(req.query.from, req.query.to, tz);
+    } catch (e) {
+      return reply.code(400).send({ error: String((e as Error).message || e) });
+    }
+    try {
+      assertExportDateRangeBounded(settledAtRange.gte, settledAtRange.lt);
+    } catch (e) {
+      return reply.code(400).send({ error: String((e as Error).message || e) });
+    }
+
+    const statusRaw = (req.query.status ?? "settled").trim();
+    if (statusRaw !== "open" && statusRaw !== "settled" && statusRaw !== "void") {
+      return reply.code(400).send({ error: "status は open / settled / void のいずれかです" });
+    }
+    const methodCode = req.query.methodCode?.trim();
+
+    let dateWhere: { settledAt?: typeof settledAtRange; createdAt?: typeof settledAtRange } = {};
+    if (settledAtRange.gte || settledAtRange.lt) {
+      if (statusRaw === "open" || statusRaw === "void") dateWhere = { createdAt: settledAtRange };
+      else dateWhere = { settledAt: settledAtRange };
+    }
+
+    const stream = Readable.from(
+      (async function* () {
+        yield "\ufeff";
+        yield (
+          [
+            "billId",
+            "status",
+            "settledAt",
+            "createdAt",
+            "totalAmount",
+            "paidTotal",
+            "remainder",
+            "label",
+            "tableName",
+            "tablePublicCode",
+            "courseName",
+            "guestCount",
+            "childCount",
+            "customerName",
+            "customerPhone",
+            "takeoutCustomerName",
+            "takeoutPhone",
+            "takeoutEmail",
+            "paymentMethodCodes",
+          ]
+            .map(csvEscapeCell)
+            .join(",") + "\r\n"
+        );
+
+        let cursor: string | undefined;
+        for (;;) {
+          const batch = await prisma.bill.findMany({
+            where: {
+              storeId: store.id,
+              status: statusRaw,
+              ...(dateWhere.settledAt || dateWhere.createdAt ? dateWhere : {}),
+              ...(methodCode ? { payments: { some: { methodCode, voidedAt: null } } } : {}),
+            },
+            take: 80,
+            orderBy: { id: "asc" },
+            ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+            include: {
+              payments: true,
+              session: {
+                include: {
+                  table: true,
+                  course: { select: { name: true } },
+                  customer: { select: { name: true, phone: true } },
+                  orders: { select: { id: true, createdAt: true } },
+                },
+              },
+            },
+          });
+          if (batch.length === 0) break;
+
+          const firstOrderIds = batch
+            .map((b) => firstSalesOrderByTime(b.session?.orders)?.id)
+            .filter((x): x is string => Boolean(x));
+          const takeoutRows =
+            firstOrderIds.length > 0
+              ? await prisma.takeoutNetOrder.findMany({
+                  where: { storeId: store.id, salesOrderId: { in: firstOrderIds } },
+                  select: { salesOrderId: true, customerName: true, phone: true, email: true },
+                })
+              : [];
+          const takeoutBySalesOrderId = new Map(takeoutRows.map((r) => [r.salesOrderId, r]));
+
+          for (const b of batch) {
+            const paid = b.payments.reduce((s, p) => s + (p.voidedAt ? 0 : p.amount), 0);
+            const fo = firstSalesOrderByTime(b.session?.orders);
+            const takeout = fo ? takeoutBySalesOrderId.get(fo.id) : undefined;
+            const tableName = b.session?.table
+              ? tableDisplayLabel(b.session.table.name, b.session.table.publicCode) || ""
+              : "";
+            const codes = [...new Set(b.payments.filter((p) => !p.voidedAt).map((p) => p.methodCode))].join(
+              ";",
+            );
+            const row = [
+              b.id,
+              b.status,
+              b.settledAt ? b.settledAt.toISOString() : "",
+              b.createdAt.toISOString(),
+              b.totalAmount,
+              paid,
+              b.totalAmount - paid,
+              b.label ?? "",
+              tableName,
+              b.session?.table?.publicCode ?? "",
+              b.session?.course?.name ?? "",
+              b.session?.guestCount ?? "",
+              b.session?.childCount ?? "",
+              b.session?.customer?.name ?? "",
+              b.session?.customer?.phone ?? "",
+              takeout?.customerName ?? "",
+              takeout?.phone ?? "",
+              takeout?.email ?? "",
+              codes,
+            ]
+              .map(csvEscapeCell)
+              .join(",");
+            yield row + "\r\n";
+          }
+          cursor = batch[batch.length - 1]!.id;
+          if (batch.length < 80) break;
+        }
+      })(),
+    );
+
+    return reply
+      .header("Content-Type", "text/csv; charset=utf-8")
+      .header("Content-Disposition", 'attachment; filename="bills-export.csv"')
+      .send(stream);
+  });
+
+  /**
+   * CSV エクスポート（注文明細1行。個人情報・商品情報を含む）
+   */
+  app.get<{
+    Params: { storeId: string };
+    Querystring: {
+      from?: string;
+      to?: string;
+      status?: string;
+      methodCode?: string;
+    };
+  }>("/stores/:storeId/reports/export/order-lines.csv", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    const tz = mergeStoreSettings(store.settings).timezone;
+    let settledAtRange: { gte?: Date; lt?: Date } = {};
+    try {
+      settledAtRange = parseDateOrDateTimeToUtcRange(req.query.from, req.query.to, tz);
+    } catch (e) {
+      return reply.code(400).send({ error: String((e as Error).message || e) });
+    }
+    try {
+      assertExportDateRangeBounded(settledAtRange.gte, settledAtRange.lt);
+    } catch (e) {
+      return reply.code(400).send({ error: String((e as Error).message || e) });
+    }
+
+    const statusRaw = (req.query.status ?? "settled").trim();
+    if (statusRaw !== "open" && statusRaw !== "settled" && statusRaw !== "void") {
+      return reply.code(400).send({ error: "status は open / settled / void のいずれかです" });
+    }
+    const methodCode = req.query.methodCode?.trim();
+
+    let dateWhere: { settledAt?: typeof settledAtRange; createdAt?: typeof settledAtRange } = {};
+    if (settledAtRange.gte || settledAtRange.lt) {
+      if (statusRaw === "open" || statusRaw === "void") dateWhere = { createdAt: settledAtRange };
+      else dateWhere = { settledAt: settledAtRange };
+    }
+
+    const stream = Readable.from(
+      (async function* () {
+        yield "\ufeff";
+        yield (
+          [
+            "billId",
+            "settledAt",
+            "lineId",
+            "menuItemId",
+            "categoryName",
+            "nameSnapshot",
+            "qty",
+            "unitPrice",
+            "lineTotal",
+            "taxRatePercent",
+            "eatMode",
+            "lineStatus",
+          ]
+            .map(csvEscapeCell)
+            .join(",") + "\r\n"
+        );
+
+        let lineCount = 0;
+        let cursor: string | undefined;
+        for (;;) {
+          const batch = await prisma.bill.findMany({
+            where: {
+              storeId: store.id,
+              status: statusRaw,
+              ...(dateWhere.settledAt || dateWhere.createdAt ? dateWhere : {}),
+              ...(methodCode ? { payments: { some: { methodCode, voidedAt: null } } } : {}),
+            },
+            take: 40,
+            orderBy: { id: "asc" },
+            ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+            select: {
+              id: true,
+              settledAt: true,
+              session: {
+                select: {
+                  orders: {
+                    select: {
+                      lines: {
+                        select: {
+                          id: true,
+                          menuItemId: true,
+                          nameSnapshot: true,
+                          unitPrice: true,
+                          qty: true,
+                          status: true,
+                          discountJson: true,
+                          taxRatePercent: true,
+                          eatMode: true,
+                          menuItem: {
+                            select: {
+                              category: { select: { name: true } },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          });
+          if (batch.length === 0) break;
+
+          for (const b of batch) {
+            const settledStr = b.settledAt ? b.settledAt.toISOString() : "";
+            const orders = b.session?.orders ?? [];
+            for (const o of orders) {
+              for (const l of o.lines) {
+                lineCount += 1;
+                if (lineCount > REPORT_EXPORT_MAX_LINE_ROWS) {
+                  throw new Error("明細行が上限（10万件）を超えました。期間を狭げてください");
+                }
+                const net = orderLineNetAfterLineDiscount(l);
+                const cat = l.menuItem?.category?.name ?? "";
+                const row = [
+                  b.id,
+                  settledStr,
+                  l.id,
+                  l.menuItemId ?? "",
+                  cat,
+                  l.nameSnapshot,
+                  l.qty,
+                  l.unitPrice,
+                  net,
+                  l.taxRatePercent ?? 10,
+                  l.eatMode ?? "dine_in",
+                  l.status,
+                ]
+                  .map(csvEscapeCell)
+                  .join(",");
+                yield row + "\r\n";
+              }
+            }
+          }
+          cursor = batch[batch.length - 1]!.id;
+          if (batch.length < 40) break;
+        }
+      })(),
+    );
+
+    return reply
+      .header("Content-Type", "text/csv; charset=utf-8")
+      .header("Content-Disposition", 'attachment; filename="order-lines-export.csv"')
+      .send(stream);
   });
 
   /** 卓全体割引（税込小計＝コース＋注文の行割引後に対してさらに値引き） */

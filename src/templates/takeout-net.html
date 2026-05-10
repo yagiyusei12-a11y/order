@@ -686,9 +686,32 @@
       let activeCatId = "";
       let activeDetailItemId = "";
       let activeDetailSellKind = "";
+      /** メニューAPIの税込価格を税抜表示に変換するか（伝票計算は税込のまま） */
+      let takeoutPriceDisplayExclusive = false;
+      let takeoutTaxRatePercent = 8;
 
       function yen(n) {
         return "¥" + Number(n || 0).toLocaleString("ja-JP");
+      }
+
+      function takeoutNetFromInclusive(inc) {
+        const p = Number(inc || 0);
+        const r = Math.max(0, Number(takeoutTaxRatePercent) || 8);
+        return Math.round(p / (1 + r / 100));
+      }
+
+      /** API由来の税込円を画面表示用に整形（設定が税抜なら税抜に換算） */
+      function yenTakeout(inclusiveYen) {
+        const v = takeoutPriceDisplayExclusive ? takeoutNetFromInclusive(inclusiveYen) : Number(inclusiveYen || 0);
+        return yen(v);
+      }
+
+      /** オプション差額など税込円の増分を表示用に */
+      function deltaYenTakeout(inclusiveDelta) {
+        const d = Number(inclusiveDelta || 0);
+        if (d <= 0) return "+0円";
+        const v = takeoutPriceDisplayExclusive ? takeoutNetFromInclusive(d) : d;
+        return "+" + Number(v).toLocaleString("ja-JP") + "円";
       }
       function esc(s) {
         return String(s || "")
@@ -764,7 +787,7 @@
         const cnt = rows.reduce((s, r) => s + Number(r.qty || 0), 0);
         const total = cartTotal();
         document.getElementById("cartCount").textContent = "カート " + cnt + "点";
-        document.getElementById("cartSum").textContent = yen(total);
+        document.getElementById("cartSum").textContent = yenTakeout(total);
         const btn = document.getElementById("btnCheckout");
         btn.disabled = cnt <= 0;
       }
@@ -800,9 +823,9 @@
               esc(r.name) +
               "</div>" +
               "<div class=\"sub\">" +
-              yen(r.unitPrice) +
+              yenTakeout(r.unitPrice) +
               " / 点 · " +
-              yen(lineTotal) +
+              yenTakeout(lineTotal) +
               "</div>" +
               "</div>" +
               (allowEdit
@@ -843,10 +866,10 @@
       function renderAllCartUis() {
         const total = cartTotal();
         renderFooter();
-        document.getElementById("cartSheetSum").textContent = yen(total);
-        document.getElementById("checkoutSum").textContent = yen(total);
+        document.getElementById("cartSheetSum").textContent = yenTakeout(total);
+        document.getElementById("checkoutSum").textContent = yenTakeout(total);
         const dSum = document.getElementById("desktopCartSum");
-        if (dSum) dSum.textContent = yen(total);
+        if (dSum) dSum.textContent = yenTakeout(total);
         renderCartLines("cartLines", true);
         renderCartLines("checkoutLines", false);
         renderCartLines("desktopCartLines", true);
@@ -1034,7 +1057,7 @@
               "</div>" +
               (it.description ? "<div class=\"desc\">" + esc(it.description) + "</div>" : "") +
               "<div class=\"row\"><span class=\"pill\">" +
-              yen(it.price) +
+              yenTakeout(it.price) +
               "</span><button type=\"button\" class=\"btn-primary\" data-add=\"" +
               esc(it.id) +
               "\">追加</button></div>" +
@@ -1240,7 +1263,7 @@
           "</div>" +
           (item.description ? "<div class=\"muted\" style=\"font-size:.82rem;line-height:1.45;margin-top:.25rem;white-space:pre-wrap\">" + esc(item.description) + "</div>" : "") +
           "<div style=\"margin-top:.45rem\"><span class=\"pill\">" +
-          yen(item.price) +
+          yenTakeout(item.price) +
           "</span></div>";
 
         if (activeDetailSellKind === "single") {
@@ -1263,7 +1286,7 @@
               const useRadio = Number(g.maxSelect || 1) <= 1;
               for (const oi of g.items || []) {
                 const delta = Number(oi.priceDelta || 0);
-                const priceTxt = delta > 0 ? "+" + delta.toLocaleString("ja-JP") + "円" : "+0円";
+                const priceTxt = delta > 0 ? deltaYenTakeout(delta) : "+0円";
                 if (useRadio) {
                   html +=
                     "<label class=\"row\" style=\"align-items:center;gap:.45rem;margin:.35rem 0\"><input type=\"radio\" name=\"og-" +
@@ -1307,7 +1330,7 @@
               "個</span></div>";
             for (const ch of st.choices || []) {
               const ex = Number(ch.extraPrice || 0);
-              const exTxt = ex > 0 ? "+" + ex.toLocaleString("ja-JP") + "円" : "+0円";
+              const exTxt = ex > 0 ? deltaYenTakeout(ex) : "+0円";
               html +=
                 "<label class=\"row\" style=\"align-items:center;gap:.45rem;margin:.35rem 0\"><input type=\"checkbox\" name=\"st-" +
                 esc(st.id) +
@@ -1334,7 +1357,7 @@
                   const useRadio = Number(g.maxSelect || 1) <= 1;
                   for (const oi of g.items || []) {
                     const delta = Number(oi.priceDelta || 0);
-                    const priceTxt = delta > 0 ? "+" + delta.toLocaleString("ja-JP") + "円" : "+0円";
+                    const priceTxt = delta > 0 ? deltaYenTakeout(delta) : "+0円";
                     if (useRadio) {
                       html +=
                         "<label class=\"row\" style=\"align-items:center;gap:.45rem;margin:.28rem 0\"><input type=\"radio\" name=\"copt-" +
@@ -1394,7 +1417,7 @@
           const compOpt = collectSetComponentOptionSelections(panel, item, sel);
           unit = computeSetUnitPrice(item, sel, compOpt);
         }
-        document.getElementById("detailSheetSum").textContent = yen(unit);
+        document.getElementById("detailSheetSum").textContent = yenTakeout(unit);
       }
 
       function openCartSheet() {
@@ -1566,7 +1589,15 @@
       async function load() {
         const data = await api("/takeout/" + encodeURIComponent(STORE_ID) + "/menu");
         menuData = data;
+        takeoutPriceDisplayExclusive = menuData.takeoutNetPriceDisplayMode === "exclusive";
+        takeoutTaxRatePercent = Number(menuData.taxRatePercent) || 8;
         document.getElementById("title").textContent = esc(menuData.store.name) + " / テイクアウト注文";
+        const subEl = document.getElementById("subTitle");
+        if (subEl) {
+          subEl.textContent = takeoutPriceDisplayExclusive
+            ? "税抜表示（お支払い時に消費税が加算されます）"
+            : "税率" + takeoutTaxRatePercent + "%・税込表示（店頭支払い）";
+        }
         renderTabs();
         renderDesktopCatList();
         renderMenu();

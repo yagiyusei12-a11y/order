@@ -108,6 +108,8 @@ export type StoreSettingsShape = {
   takeoutPickupTimeWindowIds: string[];
   /** ネットテイクアウトで選べる受取時刻が「現在」（店舗TZ）から何分以上先か */
   takeoutPickupMinLeadMinutes: number;
+  /** ネットテイクアウト注文ページの価格表示（API・伝票計算は税込ベースのまま） */
+  takeoutNetPriceDisplayMode: "inclusive" | "exclusive";
   /** オペ割引のプリセット（レジで選択） */
   opsDiscountPresets: {
     id: string;
@@ -180,6 +182,7 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     requireCourseWhenStartingSession: false,
     takeoutPickupTimeWindowIds: [],
     takeoutPickupMinLeadMinutes: 2,
+    takeoutNetPriceDisplayMode: "inclusive",
     opsDiscountPresets: [],
     opsRegisterMethodCodes: [],
     billCorrectionPolicy: {
@@ -313,6 +316,9 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
       2880,
       Math.max(0, Math.round(o.takeoutPickupMinLeadMinutes)),
     );
+  }
+  if (o.takeoutNetPriceDisplayMode === "inclusive" || o.takeoutNetPriceDisplayMode === "exclusive") {
+    d.takeoutNetPriceDisplayMode = o.takeoutNetPriceDisplayMode;
   }
   if (Array.isArray(o.opsDiscountPresets)) {
     const presets: StoreSettingsShape["opsDiscountPresets"] = [];

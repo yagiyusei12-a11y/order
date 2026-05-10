@@ -714,6 +714,13 @@ async function loadAll() {
   renderTakeoutPickupWindows(twRes.timeWindows || [], s.takeoutPickupTimeWindowIds || []);
   const leadEl = document.getElementById("stTakeoutLeadMin");
   if (leadEl) leadEl.value = String(s.takeoutPickupMinLeadMinutes ?? 2);
+  const dispIncl = document.getElementById("stTakeoutPriceIncl");
+  const dispExcl = document.getElementById("stTakeoutPriceExcl");
+  const dm = s.takeoutNetPriceDisplayMode === "exclusive" ? "exclusive" : "inclusive";
+  if (dispIncl && dispExcl) {
+    dispIncl.checked = dm === "inclusive";
+    dispExcl.checked = dm === "exclusive";
+  }
   renderOpsDiscountPresets(s.opsDiscountPresets || []);
   const registerCodes = new Set(Array.isArray(s.opsRegisterMethodCodes) ? s.opsRegisterMethodCodes : []);
 
@@ -1733,11 +1740,18 @@ if (btnSaveTakeoutPickup) {
       const leadRaw = Number(document.getElementById("stTakeoutLeadMin") && document.getElementById("stTakeoutLeadMin").value);
       const takeoutPickupMinLeadMinutes =
         Number.isInteger(leadRaw) && leadRaw >= 0 && leadRaw <= 2880 ? leadRaw : 2;
+      const dispEl = document.querySelector('input[name="stTakeoutPriceDisp"]:checked');
+      const takeoutNetPriceDisplayMode =
+        dispEl && dispEl.value === "exclusive" ? "exclusive" : "inclusive";
       await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          settings: { takeoutPickupTimeWindowIds: ids, takeoutPickupMinLeadMinutes },
+          settings: {
+            takeoutPickupTimeWindowIds: ids,
+            takeoutPickupMinLeadMinutes,
+            takeoutNetPriceDisplayMode,
+          },
         }),
       });
       log("保存しました");

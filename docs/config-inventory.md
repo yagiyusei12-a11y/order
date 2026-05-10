@@ -37,6 +37,7 @@
 | `guestEnforceLastOrder` | true | 互換用。新規は `guestLastOrderAfterDeadlinePolicy` を優先 |
 | `takeoutPickupTimeWindowIds` | [] | |
 | `takeoutPickupMinLeadMinutes` | 2 | ネットテイクアウトの受取時刻が「今」から何分以上先か（候補生成・確定APIの両方） |
+| `takeoutNetPriceDisplayMode` | `inclusive` | ネットテイクアウト画面の価格表示。`inclusive`（税込）／`exclusive`（税抜）。APIの金額は税込ベースのまま |
 
 ## 実装済み（本変更で店舗タイムゾーンへ寄せたもの）
 

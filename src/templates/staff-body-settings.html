@@ -248,6 +248,20 @@
       <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
         テイクアウト注文ページの「受取時間候補ボタン」に使う時間帯マスタを選びます（複数可）。
       </p>
+      <fieldset style="border:none;margin:0;padding:0;margin-bottom:0.65rem">
+        <legend style="font-size:0.82rem;margin-bottom:0.35rem;font-weight:800">ネット注文ページの価格表示</legend>
+        <p class="muted" style="font-size:0.72rem;margin:0 0 0.4rem">
+          お客様向けの見せ方のみです。マスタ・お会計の計算は変わりません。
+        </p>
+        <label class="row" style="align-items:flex-start;gap:0.45rem;font-size:0.82rem;margin:0.3rem 0">
+          <input type="radio" name="stTakeoutPriceDisp" id="stTakeoutPriceIncl" value="inclusive" style="margin-top:0.15rem;flex-shrink:0" />
+          <span>税込み表示（軽減税率8%）</span>
+        </label>
+        <label class="row" style="align-items:flex-start;gap:0.45rem;font-size:0.82rem;margin:0.3rem 0">
+          <input type="radio" name="stTakeoutPriceDisp" id="stTakeoutPriceExcl" value="exclusive" style="margin-top:0.15rem;flex-shrink:0" />
+          <span>税抜き表示</span>
+        </label>
+      </fieldset>
       <label for="stTakeoutLeadMin">最短リードタイム（分）</label>
       <p class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.35rem">
         現在時刻から何分後以降の受取時刻だけ選べるか（0〜2880）。候補ボタン・日時入力の双方に適用されます。

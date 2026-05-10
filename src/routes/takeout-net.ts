@@ -222,6 +222,7 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
       taxRatePercent: takeoutTaxRatePercent,
       timezone: st.timezone,
       takeoutPickupMinLeadMinutes: st.takeoutPickupMinLeadMinutes,
+      takeoutNetPriceDisplayMode: st.takeoutNetPriceDisplayMode,
       pickupTimeWindows: pickupWindows.map((w) => ({
         id: w.id,
         name: w.name,

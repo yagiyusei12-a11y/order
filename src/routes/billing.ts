@@ -15,6 +15,7 @@ import { startOfWallCalendarDayUtc, wallDateYmdInZone } from "../lib/store-wall-
 import { prisma } from "../db.js";
 import { appendStaffAuditFromRequest } from "../lib/staff-audit.js";
 import { assertManagerRole } from "../lib/staff-role.js";
+import { isTakeoutTablePublicCode } from "../lib/takeout-table-code.js";
 
 type SessionForPreview = {
   guestCount: number;
@@ -1258,11 +1259,23 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
         data: { status, settledAt },
       });
       if (status === "settled" && bill.sessionId) {
-        // 会計が完了したら自動でバッシング待ちへ（レジの「完了」押し忘れ防止）
-        await tx.diningSession.updateMany({
+        const sess = await tx.diningSession.findFirst({
           where: { id: bill.sessionId, storeId: bill.storeId, status: "open" },
-          data: { status: "bashing_waiting" },
+          include: { table: { select: { publicCode: true } } },
         });
+        if (sess?.table && isTakeoutTablePublicCode(sess.table.publicCode, bill.storeId)) {
+          // テイクアウト卓は卓片付け（バッシング）対象外 → セッションを終了のみ
+          await tx.diningSession.update({
+            where: { id: sess.id },
+            data: { status: "closed", closedAt: new Date() },
+          });
+        } else if (sess) {
+          // 店内卓: 会計完了後は自動でバッシング待ちへ（レジの「完了」押し忘れ防止）
+          await tx.diningSession.updateMany({
+            where: { id: bill.sessionId, storeId: bill.storeId, status: "open" },
+            data: { status: "bashing_waiting" },
+          });
+        }
       }
       return payments;
     }).catch((e: Error) => {

@@ -22,3 +22,9 @@ export function takeoutTableWhereForStore(storeId: string): Prisma.TableWhereInp
     OR: [{ publicCode: primary }, { publicCode: legacy }],
   };
 }
+
+/** 卓の publicCode が当該店舗のテイクアウト用か（店内卓のバッシング工程とは無関係） */
+export function isTakeoutTablePublicCode(publicCode: string | null | undefined, storeId: string): boolean {
+  const pc = String(publicCode ?? "").trim();
+  return pc === takeoutTablePrimaryPublicCode(storeId) || pc === takeoutTableLegacyPublicCode(storeId);
+}

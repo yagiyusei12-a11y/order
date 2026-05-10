@@ -26,6 +26,18 @@ function managerOpsAllowed() {
   return typeof window !== "undefined" && window.STAFF_ROLE === "manager";
 }
 
+/** テイクアウト卓（卓バッシング対象外）。publicCode は卓行または session.table と一致 */
+function isTakeoutTablePublicCodeForStore(pc) {
+  try {
+    if (typeof STORE === "undefined" || !STORE) return false;
+    const sid = String(STORE);
+    const p = String(pc || "").trim();
+    return p === "takeout-" + sid || p === "takeout-" + sid.slice(0, 12);
+  } catch (_) {
+    return false;
+  }
+}
+
 /** @param {"payments"|"billVoid"|"discounts"|"orderLines"|"reopenSettledForRegister"} key */
 function billCorrectionAllowed(key) {
   const p = storeSettingsCache.billCorrectionPolicy;
@@ -596,7 +608,11 @@ function sourceTableBadgeHtml(sourceTableId) {
   );
 }
 function statusText(session) {
-  if (session.status === "bashing_waiting") return "バッシング待ち";
+  if (session.status === "bashing_waiting") {
+    const pc = session.table && session.table.publicCode;
+    if (isTakeoutTablePublicCodeForStore(pc)) return "精算済";
+    return "バッシング待ち";
+  }
   if (session.status === "merged") {
     const p = parentSessionOfMerged(session);
     const pt = p && p.table;
@@ -873,10 +889,12 @@ function renderGrid() {
   for (const t of rows) {
     const sessList = sessionsAtTable(t.id);
     const s = sessList.length ? sessList[0] : null;
+    const takeoutBashingLegacy =
+      s && s.status === "bashing_waiting" && isTakeoutTablePublicCodeForStore(t.publicCode);
     const cls =
       "table-cell" +
       (s
-        ? s.status === "bashing_waiting"
+        ? s.status === "bashing_waiting" && !takeoutBashingLegacy
           ? " bashing"
           : s.status === "merged"
             ? " busy merged"
@@ -916,7 +934,11 @@ function renderGrid() {
           return (
             multLab +
             "<span class=\"meta " +
-            (primary.status === "bashing_waiting" || primary.status === "merged" ? "warn" : "") +
+            ((primary.status === "bashing_waiting" &&
+              !isTakeoutTablePublicCodeForStore(primary.table && primary.table.publicCode)) ||
+            primary.status === "merged"
+              ? "warn"
+              : "") +
             "\">" +
             statusText(primary) +
             " · " +
@@ -1927,14 +1949,22 @@ async function renderDetail() {
     return;
   }
   if (session.status === "bashing_waiting") {
-    panel.innerHTML =
-      "<p><span class=\"badge\">" +
-      escapeHtml(table.name) +
-      "</span> · <strong style=\"color:#b45309\">バッシング待ち</strong></p>" +
-      "<p class=\"muted\">片付け完了後に空席へ戻してください。</p>" +
-      "<div class=\"row\" style=\"margin-top:0.6rem\">" +
-      "<button type=\"button\" class=\"btn-primary\" id=\"btnBackToEmpty\" style=\"width:auto;padding:0.5rem 0.85rem\">空席に戻す</button>" +
-      "</div>";
+    const takeoutTk = isTakeoutTablePublicCodeForStore(table.publicCode);
+    panel.innerHTML = takeoutTk
+      ? "<p><span class=\"badge\">" +
+        escapeHtml(table.name) +
+        "</span> · <strong style=\"color:#0f766e\">精算済（テイクアウト）</strong></p>" +
+        "<p class=\"muted\">テイクアウトは卓のバッシングは不要です。次のお客様のため「空席に戻す」を押してください。</p>" +
+        "<div class=\"row\" style=\"margin-top:0.6rem\">" +
+        "<button type=\"button\" class=\"btn-primary\" id=\"btnBackToEmpty\" style=\"width:auto;padding:0.5rem 0.85rem\">空席に戻す</button>" +
+        "</div>"
+      : "<p><span class=\"badge\">" +
+        escapeHtml(table.name) +
+        "</span> · <strong style=\"color:#b45309\">バッシング待ち</strong></p>" +
+        "<p class=\"muted\">片付け完了後に空席へ戻してください。</p>" +
+        "<div class=\"row\" style=\"margin-top:0.6rem\">" +
+        "<button type=\"button\" class=\"btn-primary\" id=\"btnBackToEmpty\" style=\"width:auto;padding:0.5rem 0.85rem\">空席に戻す</button>" +
+        "</div>";
     const btnBack = document.getElementById("btnBackToEmpty");
     if (btnBack) {
       btnBack.onclick = async () => {

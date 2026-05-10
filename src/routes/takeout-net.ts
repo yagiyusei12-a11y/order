@@ -1,7 +1,5 @@
 import type { FastifyInstance } from "fastify";
 import type { Prisma } from "@prisma/client";
-import { appendFileSync } from "fs";
-import { join } from "path";
 import { minutesSinceMidnightInTimeZone } from "../lib/guest-category-hours.js";
 import { categoryGuestVisibleAt, applyGuestItemTimeDiscounts } from "../lib/guest-time-pricing.js";
 import {
@@ -33,22 +31,6 @@ import {
   takeoutTablePrimaryPublicCode,
   takeoutTableWhereForStore,
 } from "../lib/takeout-table-code.js";
-
-// #region agent log
-function dbgTakeoutOrderPost(payload: Record<string, unknown>) {
-  const row = { sessionId: "4aded8", timestamp: Date.now(), runId: "pre-fix", ...payload };
-  fetch("http://127.0.0.1:7264/ingest/3e55ed64-37c0-42a5-a321-4645c4275acf", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "4aded8" },
-    body: JSON.stringify(row),
-  }).catch(() => {});
-  try {
-    appendFileSync(join(process.cwd(), "debug-4aded8.log"), JSON.stringify(row) + "\n");
-  } catch {
-    /* ignore */
-  }
-}
-// #endregion
 
 type EatMode = "dine_in" | "takeout";
 function retaxInclusiveYen(taxIncludedYen: number, fromTaxRatePercent: number, toTaxRatePercent: number): number {
@@ -356,7 +338,6 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
     }
 
     /** openOrReuseSessionForTable は tx 外の prisma のため、卓の find/create は tx の外でコミットさせる（未コミット行は別接続から見えず BAD_TABLE になる） */
-    let tableWasCreated = false;
     let table =
       (await prisma.table.findFirst({ where: takeoutTableWhereForStore(store.id) })) ?? null;
     if (!table) {
@@ -369,7 +350,6 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
             active: true,
           },
         });
-        tableWasCreated = true;
       } catch (e: unknown) {
         const code =
           e && typeof e === "object" && "code" in e
@@ -379,7 +359,6 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
           table = await prisma.table.findFirst({ where: takeoutTableWhereForStore(store.id) });
         }
         if (!table) throw e;
-        tableWasCreated = false;
       }
     }
     if (!table.active) {
@@ -391,27 +370,6 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
 
     try {
       const result = await prisma.$transaction(async (tx) => {
-        const globalPeek = await prisma.table.findFirst({
-          where: { id: table.id, storeId: store.id, active: true },
-        });
-
-        // #region agent log
-        dbgTakeoutOrderPost({
-          hypothesisId: "H1-H4",
-          location: "takeout-net.ts:before-openOrReuse",
-          message: "takeout POST table resolution",
-          data: {
-            runLabel: "post-fix",
-            reqStoreId: store.id,
-            tableId: table.id,
-            tableStoreIdMatch: table.storeId === store.id,
-            tableActive: table.active,
-            tableWasCreated,
-            globalPeekOk: Boolean(globalPeek),
-          },
-        });
-        // #endregion
-
         const open = await openOrReuseSessionForTable({
           tableId: table.id,
           storeId: store.id,
@@ -420,19 +378,6 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
           courseId: null,
           coursePriceTierId: undefined,
         });
-
-        // #region agent log
-        dbgTakeoutOrderPost({
-          hypothesisId: "H3",
-          location: "takeout-net.ts:after-openOrReuse",
-          message: "openOrReuseSessionForTable",
-          data: {
-            runLabel: "post-fix",
-            ok: open.ok,
-            code: open.ok ? undefined : open.code,
-          },
-        });
-        // #endregion
 
         if (!open.ok) throw new Error(`OPEN_SESSION:${open.code}`);
         const sessionId = open.session.id;
@@ -685,19 +630,6 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
       return { ok: true, ...result };
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";
-
-      // #region agent log
-      dbgTakeoutOrderPost({
-        hypothesisId: "H5",
-        location: "takeout-net.ts:POST-orders-catch",
-        message: "takeout POST error",
-        data: {
-          runLabel: "post-fix",
-          errKind: e instanceof Error ? e.constructor.name : typeof e,
-          errMsgPrefix: String(msg).slice(0, 160),
-        },
-      });
-      // #endregion
       if (msg === "BAD_QTY") return reply.code(400).send({ error: "qty must be integer >= 1" });
       if (msg === "BAD_ITEM") return reply.code(400).send({ error: "item not found or not takeout-allowed" });
       if (msg === "BAD_SET") return reply.code(400).send({ error: "bad set selections" });

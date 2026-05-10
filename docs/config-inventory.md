@@ -33,6 +33,8 @@
 | `taxRatePercent` | 10 | |
 | `kitchenAutoRefreshSec` | 10 | |
 | `guestCourseLastOrderMinutesBeforeEnd` | 30 | |
+| `guestLastOrderAfterDeadlinePolicy` | `block_all` | `allow_all` / `singles_only` / `block_all`。コース卓のラストオーダー締め後のゲスト注文。未設定時は旧 `guestEnforceLastOrder`（true→`block_all`、false→`allow_all`）から補完 |
+| `guestEnforceLastOrder` | true | 互換用。新規は `guestLastOrderAfterDeadlinePolicy` を優先 |
 | `takeoutPickupTimeWindowIds` | [] | |
 
 ## 実装済み（本変更で店舗タイムゾーンへ寄せたもの）

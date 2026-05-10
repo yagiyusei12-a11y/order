@@ -35,7 +35,10 @@ import {
   taxIncludedFromNet,
   type EatMode,
 } from "../lib/order-line-tax.js";
-import { mergeStoreSettings } from "../lib/store-settings.js";
+import {
+  mergeStoreSettings,
+  type GuestLastOrderAfterDeadlinePolicy,
+} from "../lib/store-settings.js";
 import { displayTableCode } from "../lib/table-display-code.js";
 import { prisma } from "../db.js";
 
@@ -224,22 +227,44 @@ function computeGuestLastOrderPayload(
   openedAt: Date,
   durationMinutes: number,
   offsetMinutesBeforeEnd: number,
-  enforceBlock: boolean,
+  policy: GuestLastOrderAfterDeadlinePolicy,
 ): {
   deadlineIso: string;
   secondsRemaining: number;
+  pastDeadline: boolean;
+  /** block_all かつ締切後（従来の orderingClosed と同等） */
   orderingClosed: boolean;
+  policy: GuestLastOrderAfterDeadlinePolicy;
+  /** 従来: guestEnforceLastOrder。block_all のときだけ締切後にクライアントが全面ブロックする */
+  blocksOrderingAfterDeadline: boolean;
+  /** 締切後に単品（通常行）を拒否する */
+  blocksSinglesAfterDeadline: boolean;
+  /** 締切後にセット行を拒否する */
+  blocksSetsAfterDeadline: boolean;
+  /** 締切後にコースオプションパック購入を拒否する */
+  blocksOptionPackAfterDeadline: boolean;
 } | null {
   if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return null;
   const offset = Math.min(Math.max(0, offsetMinutesBeforeEnd), durationMinutes);
   const deadlineMs = openedAt.getTime() + (durationMinutes - offset) * 60 * 1000;
   const now = Date.now();
-  const orderingClosed = enforceBlock && now > deadlineMs;
+  const pastDeadline = now > deadlineMs;
+  const orderingClosed = pastDeadline && policy === "block_all";
   const secondsRemaining = Math.floor((deadlineMs - now) / 1000);
+  const blocksOrderingAfterDeadline = policy === "block_all";
+  const blocksSinglesAfterDeadline = pastDeadline && policy === "block_all";
+  const blocksSetsAfterDeadline = pastDeadline && policy !== "allow_all";
+  const blocksOptionPackAfterDeadline = pastDeadline && policy !== "allow_all";
   return {
     deadlineIso: new Date(deadlineMs).toISOString(),
     secondsRemaining,
+    pastDeadline,
     orderingClosed,
+    policy,
+    blocksOrderingAfterDeadline,
+    blocksSinglesAfterDeadline,
+    blocksSetsAfterDeadline,
+    blocksOptionPackAfterDeadline,
   };
 }
 
@@ -647,13 +672,12 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
               session.openedAt,
               tierForLo.durationMinutes,
               st.guestCourseLastOrderMinutesBeforeEnd,
-              st.guestEnforceLastOrder,
+              st.guestLastOrderAfterDeadlinePolicy,
             );
             if (!p) return null;
             return {
               ...p,
               minutesBeforeEnd: st.guestCourseLastOrderMinutesBeforeEnd,
-              blocksOrderingAfterDeadline: st.guestEnforceLastOrder,
             };
           })()
         : null;
@@ -1073,10 +1097,25 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         billSession.openedAt,
         billSession.coursePriceTier.durationMinutes,
         st.guestCourseLastOrderMinutesBeforeEnd,
-        st.guestEnforceLastOrder,
+        st.guestLastOrderAfterDeadlinePolicy,
       );
-      if (lo?.orderingClosed) {
-        return reply.code(403).send({ error: "ラストオーダーの時間を過ぎています" });
+      if (lo?.pastDeadline) {
+        const pol = st.guestLastOrderAfterDeadlinePolicy;
+        if (pol === "block_all") {
+          return reply.code(403).send({ error: "ラストオーダーの時間を過ぎています" });
+        }
+        if (pol === "singles_only") {
+          for (const raw of lines) {
+            if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+            const row = raw as { setSelections?: unknown };
+            const sel = Array.isArray(row.setSelections) ? row.setSelections : [];
+            if (sel.length > 0) {
+              return reply
+                .code(403)
+                .send({ error: "ラストオーダー後はセットをご注文いただけません（単品のみご利用いただけます）" });
+            }
+          }
+        }
       }
     }
 
@@ -1752,9 +1791,9 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         billSession.openedAt,
         billSession.coursePriceTier.durationMinutes,
         st0.guestCourseLastOrderMinutesBeforeEnd,
-        st0.guestEnforceLastOrder,
+        st0.guestLastOrderAfterDeadlinePolicy,
       );
-      if (lo?.orderingClosed) {
+      if (lo?.pastDeadline && st0.guestLastOrderAfterDeadlinePolicy !== "allow_all") {
         return reply.code(403).send({ error: "ラストオーダーの時間を過ぎています" });
       }
     }

@@ -21,6 +21,23 @@ export type BillCorrectionPolicy = {
 
 export type BillCorrectionPolicyKey = keyof Omit<BillCorrectionPolicy, "enabled">;
 
+/** コース卓でラストオーダー締め時刻を過ぎたあとのゲスト注文ポリシー */
+export type GuestLastOrderAfterDeadlinePolicy = "allow_all" | "singles_only" | "block_all";
+
+const GUEST_LO_POLICY_SET = new Set<GuestLastOrderAfterDeadlinePolicy>([
+  "allow_all",
+  "singles_only",
+  "block_all",
+]);
+
+export function parseGuestLastOrderAfterDeadlinePolicy(
+  raw: unknown,
+): GuestLastOrderAfterDeadlinePolicy | null {
+  return typeof raw === "string" && GUEST_LO_POLICY_SET.has(raw as GuestLastOrderAfterDeadlinePolicy)
+    ? (raw as GuestLastOrderAfterDeadlinePolicy)
+    : null;
+}
+
 /** 店舗 JSON settings の正規化・既定値 */
 export type StoreSettingsShape = {
   /** キッチン画面の自動更新間隔（秒） */
@@ -46,8 +63,13 @@ export type StoreSettingsShape = {
    * 例: 制限120分・30なら開店から90分後がラストオーダー締め。
    */
   guestCourseLastOrderMinutesBeforeEnd: number;
-  /** true のときラストオーダー時刻を過ぎたゲストの新規注文を拒否する */
+  /**
+   * @deprecated 互換用。ラストオーダー締め後の挙動は guestLastOrderAfterDeadlinePolicy を参照。
+   * true ≒ block_all、false ≒ allow_all（新キー未設定時のマージのみで使用）。
+   */
   guestEnforceLastOrder: boolean;
+  /** コース卓でラストオーダー締め時刻通過後のゲスト注文（単品・セット・オプションパック）の扱い */
+  guestLastOrderAfterDeadlinePolicy: GuestLastOrderAfterDeadlinePolicy;
   /**
    * コース対象に含まれる単品について、トッピング等のオプション差額を請求するか。
    * false のとき本体・オプションとも税込0円（選択は伝票に残る）。
@@ -137,6 +159,7 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     timezone: "Asia/Tokyo",
     guestCourseLastOrderMinutesBeforeEnd: 30,
     guestEnforceLastOrder: true,
+    guestLastOrderAfterDeadlinePolicy: "block_all",
     guestCourseIncludedChargeOptionExtras: true,
     guestCourseIncludedAllowTakeout: true,
     guestCourseAddonAllowTakeout: true,
@@ -206,6 +229,15 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
   }
   if (typeof o.guestEnforceLastOrder === "boolean") {
     d.guestEnforceLastOrder = o.guestEnforceLastOrder;
+  }
+  const parsedPolicy = parseGuestLastOrderAfterDeadlinePolicy(o.guestLastOrderAfterDeadlinePolicy);
+  if (parsedPolicy) {
+    d.guestLastOrderAfterDeadlinePolicy = parsedPolicy;
+    d.guestEnforceLastOrder = parsedPolicy !== "allow_all";
+  } else {
+    d.guestLastOrderAfterDeadlinePolicy =
+      d.guestEnforceLastOrder === false ? "allow_all" : "block_all";
+    d.guestEnforceLastOrder = d.guestLastOrderAfterDeadlinePolicy !== "allow_all";
   }
   if (typeof o.guestCourseIncludedChargeOptionExtras === "boolean") {
     d.guestCourseIncludedChargeOptionExtras = o.guestCourseIncludedChargeOptionExtras;

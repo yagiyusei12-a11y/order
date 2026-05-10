@@ -650,9 +650,19 @@ async function loadAll() {
   document.getElementById("stGuestPrice").checked = s.guestShowMenuPrices !== false;
   document.getElementById("stTz").value = s.timezone || "Asia/Tokyo";
   const loMin = document.getElementById("stLoMin");
-  const loEnf = document.getElementById("stLoEnforce");
   if (loMin) loMin.value = String(s.guestCourseLastOrderMinutesBeforeEnd ?? 30);
-  if (loEnf) loEnf.checked = s.guestEnforceLastOrder !== false;
+  let loPol = s.guestLastOrderAfterDeadlinePolicy;
+  if (loPol !== "allow_all" && loPol !== "singles_only" && loPol !== "block_all") {
+    loPol = s.guestEnforceLastOrder === false ? "allow_all" : "block_all";
+  }
+  const loAllow = document.getElementById("stLoPolicyAllow");
+  const loSingles = document.getElementById("stLoPolicySingles");
+  const loBlock = document.getElementById("stLoPolicyBlock");
+  if (loAllow && loSingles && loBlock) {
+    loAllow.checked = loPol === "allow_all";
+    loSingles.checked = loPol === "singles_only";
+    loBlock.checked = loPol === "block_all";
+  }
   const gci = document.getElementById("stGuestCourseIncTakeout");
   if (gci) gci.checked = s.guestCourseIncludedAllowTakeout !== false;
   const gca = document.getElementById("stGuestCourseAddonTakeout");
@@ -1517,7 +1527,13 @@ document.getElementById("btnSaveLastOrder").onclick = async () => {
   if (!requireManagerForSettings()) return;
   const n = Number(document.getElementById("stLoMin").value);
   if (!Number.isInteger(n) || n < 0 || n > 1440) return log("ラストオーダー前倒しは0〜1440の整数で");
-  const guestEnforceLastOrder = document.getElementById("stLoEnforce").checked;
+  const polEl = document.querySelector('input[name="stLoPolicy"]:checked');
+  const guestLastOrderAfterDeadlinePolicy =
+    polEl && polEl.value === "allow_all"
+      ? "allow_all"
+      : polEl && polEl.value === "singles_only"
+        ? "singles_only"
+        : "block_all";
   try {
     await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
       method: "PATCH",
@@ -1525,7 +1541,7 @@ document.getElementById("btnSaveLastOrder").onclick = async () => {
       body: JSON.stringify({
         settings: {
           guestCourseLastOrderMinutesBeforeEnd: n,
-          guestEnforceLastOrder,
+          guestLastOrderAfterDeadlinePolicy,
         },
       }),
     });

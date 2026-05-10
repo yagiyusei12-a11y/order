@@ -1395,7 +1395,12 @@
     let menuItemById = new Map();
     let lastOrderTimer = null;
     let lastOrderDeadlineTs = 0;
+    /** block_all かつ締切後など、全カテゴリを締めるとき true（従来互換） */
     let lastOrderClosedFlag = false;
+    /** ローカル時計でラストオーダー締切を過ぎたか（単品のみモードの判定に使用） */
+    let guestLastOrderPastLocal = false;
+    /** allow_all | singles_only | block_all */
+    let guestLoPolicy = "block_all";
     /** @type {unknown[]} */
     let guestMenuCategories = [];
     /** @type {unknown[]} */
@@ -1453,10 +1458,41 @@
       });
     }
 
+    function guestCardDimByLastOrderSellKind(sellKind) {
+      if (!guestLastOrderPastLocal) return false;
+      if (guestLoPolicy === "allow_all") return false;
+      if (guestLoPolicy === "block_all") return true;
+      return sellKind === "set";
+    }
+
+    /** 商品詳細・カート追加をブロックするか（単品のみモードではセットのみ） */
+    function guestProductDetailBlocked(item) {
+      if (!guestLastOrderPastLocal) return false;
+      if (guestLoPolicy === "allow_all") return false;
+      if (guestLoPolicy === "block_all") return true;
+      return item && item.sellKind === "set";
+    }
+
+    function guestReorderBlockedByParsed(parsed) {
+      if (!guestLastOrderPastLocal) return false;
+      if (guestLoPolicy === "allow_all") return false;
+      if (guestLoPolicy === "block_all") return true;
+      return parsed && parsed.sellKind === "set";
+    }
+
+    function guestSubmitBlockedByLastOrder() {
+      if (!guestLastOrderPastLocal) return false;
+      if (guestLoPolicy === "allow_all") return false;
+      if (guestLoPolicy === "block_all") return true;
+      const lines = Object.values(cart).filter((x) => x.qty > 0);
+      return lines.some((x) => x.sellKind === "set");
+    }
+
     function syncGuestMenuCardsDimForLastOrder() {
       document.querySelectorAll("#menu .go-card").forEach((card) => {
         const base = card.dataset.guestBlockedBase === "1";
-        card.classList.toggle("is-dim", base || lastOrderClosedFlag);
+        const sk = card.dataset.sellKind === "set" ? "set" : "single";
+        card.classList.toggle("is-dim", base || guestCardDimByLastOrderSellKind(sk));
       });
     }
 
@@ -1593,7 +1629,7 @@
       const sum = lines.reduce((s, x) => s + x.unitPrice * x.qty, 0);
       document.getElementById("cartCount").textContent = "カート " + count + "点";
       document.getElementById("cartSum").textContent = cartSumLabel(sum);
-      document.getElementById("submit").disabled = count === 0 || lastOrderClosedFlag;
+      document.getElementById("submit").disabled = count === 0 || guestSubmitBlockedByLastOrder();
       syncCartSheetIfOpen();
     }
 
@@ -2341,8 +2377,12 @@
         toast("取り消された注文です");
         return;
       }
-      if (lastOrderClosedFlag) {
-        toast("ラストオーダーの時間を過ぎています");
+      if (guestReorderBlockedByParsed(parsed)) {
+        toast(
+          guestLoPolicy === "singles_only"
+            ? "ラストオーダー後はセットをご注文いただけません（単品のみご利用いただけます）"
+            : "ラストオーダーの時間を過ぎています",
+        );
         return;
       }
 
@@ -2893,8 +2933,12 @@
     }
 
     function openProductDetail(item) {
-      if (lastOrderClosedFlag) {
-        toast("ラストオーダーの時間を過ぎています");
+      if (guestProductDetailBlocked(item)) {
+        toast(
+          guestLoPolicy === "singles_only" && item && item.sellKind === "set"
+            ? "ラストオーダー後はセットをご注文いただけません（単品のみご利用いただけます）"
+            : "ラストオーダーの時間を過ぎています",
+        );
         return;
       }
       if (alcoholRestricted && item.containsAlcohol) {
@@ -3489,31 +3533,46 @@
       if (!lo || !lo.deadlineIso) {
         el.style.display = "none";
         lastOrderClosedFlag = false;
+        guestLastOrderPastLocal = false;
+        guestLoPolicy = "block_all";
         syncGuestMenuCardsDimForLastOrder();
         return;
       }
-      /** API と同じ（未送信時は従来どおり締切後ローカルでブロック） */
-      const blocks = lo.blocksOrderingAfterDeadline !== false;
+      guestLoPolicy =
+        lo.policy === "allow_all" || lo.policy === "singles_only" || lo.policy === "block_all"
+          ? lo.policy
+          : "block_all";
+      /** block_all のときだけ従来どおり「締切後は全面ブロック」フラグを立てる */
+      const blocksFull = lo.blocksOrderingAfterDeadline !== false;
       lastOrderDeadlineTs = Date.parse(lo.deadlineIso);
       el.style.display = "block";
       function tick() {
         const left = Math.floor((lastOrderDeadlineTs - Date.now()) / 1000);
         const serverClosed = Boolean(lo.orderingClosed);
         const pastLocal = left <= 0;
-        lastOrderClosedFlag = blocks && (serverClosed || pastLocal);
+        guestLastOrderPastLocal = pastLocal;
+        lastOrderClosedFlag = blocksFull && (serverClosed || pastLocal);
         renderCart();
         syncGuestMenuCardsDimForLastOrder();
-        if (blocks && (serverClosed || pastLocal)) {
+        if (blocksFull && (serverClosed || pastLocal)) {
           el.innerHTML =
             "<span class=\"lo-inner\">ラストオーダーは終了しました（追加のご注文はスタッフへお声がけください）</span>";
           el.classList.add("lo-ended");
           stopLastOrderTicker();
           return;
         }
-        if (!blocks && pastLocal) {
+        if (!blocksFull && pastLocal && guestLoPolicy === "allow_all") {
           el.innerHTML =
             "<span class=\"lo-inner\">ラストオーダーの予定時刻を過ぎました（このままご注文いただけます）</span>";
           el.classList.remove("lo-ended");
+          syncGuestMenuCardsDimForLastOrder();
+          stopLastOrderTicker();
+          return;
+        }
+        if (!blocksFull && pastLocal && guestLoPolicy === "singles_only") {
+          el.innerHTML =
+            "<span class=\"lo-inner\">ラストオーダーは終了しました（セットはご注文いただけません。単品は引き続きご注文いただけます）</span>";
+          el.classList.add("lo-ended");
           syncGuestMenuCardsDimForLastOrder();
           stopLastOrderTicker();
           return;
@@ -3818,7 +3877,9 @@
           card.dataset.cat = c.id;
           card.dataset.courseIncluded = it.courseTier === "included" ? "1" : "0";
           card.dataset.guestBlockedBase = baseBlocked ? "1" : "0";
-          if (baseBlocked || lastOrderClosedFlag) card.classList.add("is-dim");
+          card.dataset.sellKind = it.sellKind === "set" ? "set" : "single";
+          if (baseBlocked || guestCardDimByLastOrderSellKind(it.sellKind === "set" ? "set" : "single"))
+            card.classList.add("is-dim");
 
           const media = document.createElement("div");
           media.className = "go-card-media";
@@ -3912,8 +3973,12 @@
               toast("酒類はご注文いただけません");
               return;
             }
-            if (lastOrderClosedFlag) {
-              toast("ラストオーダーの時間を過ぎています");
+            if (guestProductDetailBlocked(it)) {
+              toast(
+                guestLoPolicy === "singles_only" && it.sellKind === "set"
+                  ? "ラストオーダー後はセットをご注文いただけません（単品のみご利用いただけます）"
+                  : "ラストオーダーの時間を過ぎています",
+              );
               return;
             }
             addLine(it);
@@ -4003,8 +4068,12 @@
     }
 
     document.getElementById("submit").onclick = async () => {
-      if (lastOrderClosedFlag) {
-        toast("ラストオーダーの時間を過ぎています");
+      if (guestSubmitBlockedByLastOrder()) {
+        toast(
+          guestLoPolicy === "singles_only"
+            ? "ラストオーダー後はセットをご注文いただけません（単品のみご利用いただけます）"
+            : "ラストオーダーの時間を過ぎています",
+        );
         return;
       }
       const lines = Object.values(cart)

@@ -156,9 +156,24 @@
         例: 制限90分・30分の場合、セッション開始から60分後がラストオーダー締め。0に近いほど終了ギリギリまで注文可能に近づきます。
       </p>
       <input id="stLoMin" type="number" min="0" max="1440" step="1" />
-      <label class="row" style="margin-top:0.6rem;align-items:center;gap:0.4rem;font-size:0.82rem">
-        <input type="checkbox" id="stLoEnforce" /> <span>締め時刻以降の新規注文を拒否する（推奨）</span>
-      </label>
+      <fieldset style="border:none;margin:0;padding:0;margin-top:0.65rem">
+        <legend style="font-size:0.82rem;margin-bottom:0.4rem">締め時刻以降のゲスト注文（QR）</legend>
+        <p class="muted" style="font-size:0.72rem;margin:0 0 0.45rem">
+          「単品のみ」ではセットメニューとコースオプション（オプションパック）の追加はできません。必要な場合はスタッフへお声がけください。
+        </p>
+        <label class="row" style="align-items:flex-start;gap:0.45rem;font-size:0.82rem;margin:0.35rem 0">
+          <input type="radio" name="stLoPolicy" id="stLoPolicyAllow" value="allow_all" style="margin-top:0.15rem;flex-shrink:0" />
+          <span>締め後もすべて注文できる（単品・セット）</span>
+        </label>
+        <label class="row" style="align-items:flex-start;gap:0.45rem;font-size:0.82rem;margin:0.35rem 0">
+          <input type="radio" name="stLoPolicy" id="stLoPolicySingles" value="singles_only" style="margin-top:0.15rem;flex-shrink:0" />
+          <span>締め後は単品のみ（セット・オプションパックは不可）</span>
+        </label>
+        <label class="row" style="align-items:flex-start;gap:0.45rem;font-size:0.82rem;margin:0.35rem 0">
+          <input type="radio" name="stLoPolicy" id="stLoPolicyBlock" value="block_all" style="margin-top:0.15rem;flex-shrink:0" />
+          <span>締め後はすべて不可（推奨）</span>
+        </label>
+      </fieldset>
       <button type="button" class="btn-primary" id="btnSaveLastOrder" style="margin-top:0.65rem">ラストオーダー設定を保存</button>
     </div>
 

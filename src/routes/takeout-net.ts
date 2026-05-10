@@ -31,6 +31,7 @@ import {
   takeoutTablePrimaryPublicCode,
   takeoutTableWhereForStore,
 } from "../lib/takeout-table-code.js";
+import { sendMailSafe } from "../lib/mail.js";
 
 type EatMode = "dine_in" | "takeout";
 function retaxInclusiveYen(taxIncludedYen: number, fromTaxRatePercent: number, toTaxRatePercent: number): number {
@@ -49,6 +50,10 @@ function taxIncludedFromNet(netExclusiveYen: number, taxRatePercent: number): nu
   return Math.round(netExclusiveYen * (1 + taxRatePercent / 100));
 }
 
+function normalizePhoneDigits(s: string): string {
+  return String(s || "").replace(/\D/g, "");
+}
+
 function normalizePickupAt(raw: unknown, tz: string): Date | null {
   if (typeof raw !== "string" || raw.trim() === "") return null;
   // accept "YYYY-MM-DDTHH:mm" (local wall time in store TZ) or ISO
@@ -65,6 +70,43 @@ function normalizePickupAt(raw: unknown, tz: string): Date | null {
 }
 
 export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
+  app.get<{
+    Params: { storeId: string };
+    Querystring: { email?: string; phone?: string };
+  }>("/takeout/:storeId/purchase-history", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId }, select: { id: true } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    const emailRaw = typeof req.query.email === "string" ? req.query.email.trim().toLowerCase() : "";
+    const phoneRaw = typeof req.query.phone === "string" ? req.query.phone.trim() : "";
+    if (!emailRaw.includes("@") || phoneRaw.length < 2) {
+      return reply.code(400).send({ error: "email and phone required" });
+    }
+    const wantPh = normalizePhoneDigits(phoneRaw);
+    if (wantPh.length < 3) {
+      return reply.code(400).send({ error: "email and phone required" });
+    }
+    const candidates = await prisma.takeoutNetOrder.findMany({
+      where: {
+        storeId: store.id,
+        email: { equals: emailRaw, mode: "insensitive" },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 80,
+      select: {
+        id: true,
+        status: true,
+        pickupAt: true,
+        customerName: true,
+        email: true,
+        phone: true,
+        createdAt: true,
+        lines: true,
+      },
+    });
+    const rows = candidates.filter((r) => normalizePhoneDigits(r.phone) === wantPh).slice(0, 40);
+    return { orders: rows };
+  });
+
   app.get<{ Params: { storeId: string } }>("/takeout/:storeId/menu", async (req, reply) => {
     const store = await prisma.store.findUnique({
       where: { id: req.params.storeId },
@@ -626,6 +668,24 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
 
         return { takeoutNetOrderId: netOrder.id, salesOrderId: salesOrder.id };
       });
+
+      const mailTo = String(email || "").trim();
+      if (mailTo.includes("@")) {
+        void (async () => {
+          try {
+            const subj = `【${store.name}】テイクアウト注文を受け付けました`;
+            const lines =
+              `注文ID: ${result.takeoutNetOrderId}\n` +
+              `受取日時: ${pickupAt.toLocaleString("ja-JP")}\n` +
+              `お名前: ${customerName}\n` +
+              `電話: ${phone}\n` +
+              `店舗で内容をご確認のうえ、受取時にお支払いください。\n`;
+            await sendMailSafe({ to: mailTo, subject: subj, text: lines });
+          } catch (e) {
+            req.log.warn({ err: e }, "takeout confirmation mail failed");
+          }
+        })();
+      }
 
       return { ok: true, ...result };
     } catch (e) {

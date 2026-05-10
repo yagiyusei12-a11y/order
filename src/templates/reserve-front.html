@@ -52,6 +52,9 @@
       </div>
     </div>
 
+    <label for="rEmail">メールアドレス（任意・確認用）</label>
+    <input type="email" id="rEmail" placeholder="予約確定メールを受け取る場合" autocomplete="email" maxlength="200">
+
     <div id="seatTypeWrap" style="display:none">
       <label for="rSeatType">席の種別</label>
       <select id="rSeatType"></select>
@@ -251,6 +254,7 @@
         const name = document.getElementById("rName").value.trim();
         const num = Number(document.getElementById("rNum").value);
         const note = document.getElementById("rNote").value.trim();
+        const email = document.getElementById("rEmail").value.trim();
         const sel = document.getElementById("rTime");
         const opt = sel && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex] : null;
         const stSel = document.getElementById("rSeatType");
@@ -271,19 +275,15 @@
             name,
             num,
             note,
+            ...(email ? { email } : {}),
             ...(seatType ? { seatType } : {}),
           });
-          const seatLine = Array.isArray(out.seatLabels) && out.seatLabels.length
-            ? out.seatLabels.filter(Boolean).join("、")
-            : Array.isArray(out.seats)
-              ? out.seats.join("、")
-              : "";
           const typeLine = (out.seatType || seatType)
             ? `\n席種別: ${String(out.seatType || seatType || "")}`
             : "";
           showMsg(
             "ok",
-            `予約を受け付けました。\n予約番号: ${out.resId || "—"}${typeLine}\n席: ${seatLine || "未指定"}`,
+            `予約を受け付けました。\n予約番号: ${out.resId || "—"}${typeLine}`,
           );
         } catch (e) {
           showMsg("err", String(e.message || e));

@@ -1061,6 +1061,8 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         serveLaterDeferPairDrinkDessert?: boolean;
       }[];
       note?: string;
+      /** 同一卓内で端末を区別する ID（optional） */
+      guestDeviceId?: string;
     };
   }>("/guest/:token/orders", async (req, reply) => {
     const tokenSession = await prisma.diningSession.findUnique({
@@ -1133,6 +1135,12 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     const billingId = billing.ctx.billingSessionId;
     const orderSourceTableId = billing.ctx.orderSourceTableId;
     const orderStoreId = billSession.storeId;
+
+    const bodyOrder = req.body as { guestDeviceId?: unknown };
+    const guestDeviceId =
+      typeof bodyOrder.guestDeviceId === "string" && bodyOrder.guestDeviceId.trim().length >= 4
+        ? bodyOrder.guestDeviceId.trim().slice(0, 128)
+        : undefined;
 
     try {
       const order = await prisma.$transaction(async (tx) => {
@@ -1682,6 +1690,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                 eatMode: r.eatMode,
                 taxRatePercent: r.taxRatePercent,
                 status: initialStatus,
+                ...(guestDeviceId ? { guestDeviceId } : {}),
               },
             });
           } else {
@@ -1697,6 +1706,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                 eatMode: r.eatMode,
                 taxRatePercent: r.taxRatePercent,
                 status: "queued",
+                ...(guestDeviceId ? { guestDeviceId } : {}),
               },
             });
           }
@@ -1989,7 +1999,18 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       orderBy: { createdAt: "desc" },
       include: { lines: true },
     });
-    return { orders };
+    const billingSessionRow = await prisma.diningSession.findUnique({
+      where: { id: listBilling.ctx.billingSessionId },
+      select: {
+        course: { select: { id: true, name: true } },
+      },
+    });
+    return {
+      orders,
+      sessionCourse: billingSessionRow?.course
+        ? { id: billingSessionRow.course.id, name: billingSessionRow.course.name }
+        : null,
+    };
   });
 
   app.post<{ Params: { token: string; lineId: string } }>(

@@ -592,10 +592,13 @@ model OrderLine {
   readyAt      DateTime?
   /// ホールで「提供済み」にした日時（提供済み一覧の並び用）
   servedAt     DateTime?
+  /// ゲスト端末の deviceId（卓内・携帯ごとの会計分割のためのタグ用）
+  guestDeviceId String?
   order        SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   menuItem     MenuItem?  @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
+  @@index([guestDeviceId])
   @@index([status, readyAt])
   @@index([status, servedAt])
 }

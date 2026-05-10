@@ -1198,7 +1198,7 @@
   <p id="courseMenuNotice" class="muted course-menu-notice" style="display:none;font-size:0.82rem;margin:0 0 0.45rem;line-height:1.45;padding:0 0.15rem"></p>
   <div id="courseMenuFilterWrap" class="course-menu-filter-wrap" style="display: none" hidden>
     <button type="button" id="btnCourseItemsOnly" class="course-menu-filter-btn" aria-pressed="false">
-      コース対象商品のみを表示
+      単品メニューも表示
     </button>
   </div>
 
@@ -1331,19 +1331,27 @@
       } catch (_) {}
     }
 
-    function setProfileCollapsed(collapsed) {
+    function setProfileCollapsed(collapsed, focusOpts) {
       const card = document.getElementById("profileCard");
       const btn = document.getElementById("profileToggle");
       const body = document.getElementById("profileBody");
       if (!card || !btn || !body) return;
       card.classList.toggle("is-collapsed", collapsed);
       btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
-      if (!collapsed) {
+      if (!collapsed && focusOpts && focusOpts.focus === true) {
         try {
           const first = body.querySelector("input,button,select,textarea");
           if (first) first.focus();
         } catch (_) {}
       }
+    }
+
+    function blurIfFocusInProfile() {
+      try {
+        const c = document.getElementById("profileCard");
+        const ae = document.activeElement;
+        if (c && ae && c.contains(ae) && typeof ae.blur === "function") ae.blur();
+      } catch (_) {}
     }
 
     function getOrCreateDeviceId() {
@@ -1419,6 +1427,8 @@
     let guestMenuCategories = [];
     /** @type {unknown[]} */
     let ordersCache = [];
+    /** @type {{ id: string, name: string } | null} */
+    let ordersSessionCourse = null;
     let activeGuestCatId = "";
     let courseIncludedOnly = false;
     let guestShowEatModeTaxNote = false;
@@ -1448,19 +1458,20 @@
       const filled = String(template || "").replace(/\{label\}/g, lab);
       return escapeHtml(filled);
     }
+    /** "1" = 単品・全商品も表示 / 未設定・"0" = コース対象のみ（既定） */
     function courseFilterStorageKey() {
-      return "guestCourseIncludedOnly_" + String(TOKEN || "x");
+      return "guestCourseShowAllMenu_" + String(TOKEN || "x");
     }
     function readCourseFilterPref() {
       try {
-        return sessionStorage.getItem(courseFilterStorageKey()) === "1";
+        return sessionStorage.getItem(courseFilterStorageKey()) !== "1";
       } catch (_) {
-        return false;
+        return true;
       }
     }
-    function writeCourseFilterPref(on) {
+    function writeCourseFilterPref(courseIncludedOnly) {
       try {
-        sessionStorage.setItem(courseFilterStorageKey(), on ? "1" : "0");
+        sessionStorage.setItem(courseFilterStorageKey(), courseIncludedOnly ? "0" : "1");
       } catch (_) {}
     }
     function syncGuestMenuCardsVisibility() {
@@ -2183,6 +2194,7 @@
       host.classList.add("is-open");
       host.setAttribute("aria-hidden", "false");
       fillCartSheetBody();
+      blurIfFocusInProfile();
     }
 
     function closeHistorySheet() {
@@ -2208,6 +2220,7 @@
         await loadOrders();
         await ensureReorderMenuItemsInCache();
         renderHistorySheetBody();
+        blurIfFocusInProfile();
       } catch (e) {
         body.textContent = String(e.message || e);
       }
@@ -2585,6 +2598,14 @@
       const body = document.getElementById("historySheetBody");
       if (!body) return;
       body.innerHTML = "";
+      if (ordersSessionCourse && ordersSessionCourse.name) {
+        const courseRow = document.createElement("p");
+        courseRow.className = "muted";
+        courseRow.style.margin = "0 0 0.65rem";
+        courseRow.style.fontSize = "0.82rem";
+        courseRow.textContent = "コース: " + ordersSessionCourse.name;
+        body.appendChild(courseRow);
+      }
       const list = ordersCache || [];
       if (list.length === 0) {
         const p = document.createElement("p");
@@ -3759,13 +3780,17 @@
             String(data.store.guestCourseMenuNotice).trim();
           noticeEl.textContent = custom
             ? String(custom).trim()
-            : "コースに含まれる商品のほか、追加でご注文いただけるメニューも一覧に表示されます。「コース対象商品のみを表示」で絞り込めます。";
+            : "コースに含まれる商品のほか、追加でご注文いただけるメニューも一覧に表示されます。「単品メニューも表示」で表示できます。";
           noticeEl.style.display = s.course ? "" : "none";
         }
       } catch (_) {}
 
       const filterWrap = document.getElementById("courseMenuFilterWrap");
       const filterBtn = document.getElementById("btnCourseItemsOnly");
+      function syncCourseFilterButtonLabel(btn) {
+        if (!btn) return;
+        btn.textContent = courseIncludedOnly ? "単品メニューも表示" : "コース対象のみ表示";
+      }
       if (filterWrap && filterBtn) {
         if (s.course) {
           filterWrap.style.display = "block";
@@ -3773,11 +3798,13 @@
           courseIncludedOnly = readCourseFilterPref();
           filterBtn.setAttribute("aria-pressed", courseIncludedOnly ? "true" : "false");
           filterBtn.classList.toggle("is-active", courseIncludedOnly);
+          syncCourseFilterButtonLabel(filterBtn);
           filterBtn.onclick = function () {
             courseIncludedOnly = !courseIncludedOnly;
             writeCourseFilterPref(courseIncludedOnly);
             filterBtn.setAttribute("aria-pressed", courseIncludedOnly ? "true" : "false");
             filterBtn.classList.toggle("is-active", courseIncludedOnly);
+            syncCourseFilterButtonLabel(filterBtn);
             syncGuestMenuCardsVisibility();
           };
         } else {
@@ -3817,21 +3844,22 @@
         if (lp.email) document.getElementById("custEmail").value = lp.email || "";
       }
 
-      // お客様情報：初期は閉じる（保存済みのときは自動で開く）
+      // お客様情報：開閉はユーザーの明示操作のみ（入力済みでも自動では開かない）
       try {
-        const hasAny = Boolean(
-          (document.getElementById("custName").value || "").trim() ||
-            (document.getElementById("custPhone").value || "").trim() ||
-            (document.getElementById("custEmail").value || "").trim()
-        );
-        const wantOpen = readProfileOpenPref() || hasAny;
+        const wantOpen = readProfileOpenPref();
         setProfileCollapsed(!wantOpen);
         const btn = document.getElementById("profileToggle");
         if (btn) {
           btn.onclick = function () {
-            const isCollapsed = document.getElementById("profileCard").classList.contains("is-collapsed");
-            setProfileCollapsed(!isCollapsed);
-            writeProfileOpenPref(isCollapsed); // 開いたなら true
+            const card = document.getElementById("profileCard");
+            const isCollapsed = card.classList.contains("is-collapsed");
+            if (isCollapsed) {
+              setProfileCollapsed(false, { focus: true });
+              writeProfileOpenPref(true);
+            } else {
+              setProfileCollapsed(true);
+              writeProfileOpenPref(false);
+            }
           };
         }
       } catch (_) {}
@@ -4087,6 +4115,10 @@
     async function loadOrders() {
       const data = await api("/guest/" + encodeURIComponent(TOKEN) + "/orders");
       ordersCache = data.orders || [];
+      ordersSessionCourse =
+        data.sessionCourse && data.sessionCourse.name
+          ? { id: String(data.sessionCourse.id || ""), name: String(data.sessionCourse.name || "") }
+          : null;
       renderDeferredKitchenPanel();
       if (document.getElementById("historySheet") && document.getElementById("historySheet").classList.contains("is-open")) {
         await ensureReorderMenuItemsInCache();
@@ -4137,7 +4169,7 @@
         await api("/guest/" + encodeURIComponent(TOKEN) + "/orders", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ lines }),
+          body: JSON.stringify({ lines, guestDeviceId: getOrCreateDeviceId() }),
         });
         for (const k of Object.keys(cart)) delete cart[k];
         renderCart();
@@ -4206,6 +4238,8 @@
         if (hint && idRes.customer && idRes.customer.visitCount != null) {
           hint.textContent = "ご来店の記録: " + idRes.customer.visitCount + "回 · 保存しました";
         }
+        setProfileCollapsed(true);
+        writeProfileOpenPref(false);
         toast("お客様情報を保存しました");
       } catch (e) {
         toast(String(e.message || e));

@@ -24,6 +24,7 @@ import {
   storeNowWallClock,
 } from "../lib/store-wall-time.js";
 import { displayTableCode, tableDisplayLabel } from "../lib/table-display-code.js";
+import { sendMailSafe } from "../lib/mail.js";
 
 type SeatStatus = "vacant" | "reserved" | "occupied" | "cleaning" | "closed";
 
@@ -1081,7 +1082,15 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
    */
   app.post<{
     Params: { storeId: string };
-    Body: { date?: unknown; time?: unknown; name?: unknown; num?: unknown; note?: unknown; seatType?: unknown };
+    Body: {
+      date?: unknown;
+      time?: unknown;
+      name?: unknown;
+      num?: unknown;
+      note?: unknown;
+      seatType?: unknown;
+      email?: unknown;
+    };
   }>("/reception/:storeId/net/reservations", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
     if (!store) return reply.code(404).send({ error: "store not found" });
@@ -1109,6 +1118,9 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
     const num = typeof req.body?.num === "number" ? req.body.num : Number(req.body?.num);
     const noteRaw = typeof req.body?.note === "string" ? req.body.note.trim() : "";
     const note = enableNote ? noteRaw : "";
+    const emailRaw = typeof req.body?.email === "string" ? req.body.email.trim() : "";
+    const emailForMail =
+      emailRaw.length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw) ? emailRaw : "";
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return reply.code(400).send({ error: "invalid date" });
     const lunchHr = receptionLunchEndHour(c as Record<string, unknown>);
@@ -1215,6 +1227,28 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         });
 
         if (!out.ok) return reply.code(409).send({ error: "no available seats" });
+
+        if (emailForMail) {
+          const mailLines = [
+            `${store.name} のネット予約が確定しました。`,
+            "",
+            `予約番号: ${out.resId}`,
+            `日付: ${date}`,
+            `時間: ${time}`,
+            `お名前: ${name}`,
+            `人数: ${Math.floor(num)}名`,
+            ...(note ? [`備考: ${note}`] : []),
+            ...(seatTypeMode === "require_select" && seatTypeBody ? [`席種別: ${seatTypeBody}`] : []),
+            "",
+            "※このメールは送信専用です。",
+          ];
+          void sendMailSafe({
+            to: emailForMail,
+            subject: `【予約確定】${store.name} ${date} ${time}`,
+            text: mailLines.join("\n"),
+          }).catch((err: unknown) => req.log.warn({ err }, "net reserve confirmation mail failed"));
+        }
+
         return {
           ok: true,
           resId: out.resId,

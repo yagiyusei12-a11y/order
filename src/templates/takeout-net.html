@@ -516,6 +516,9 @@
   <body>
     <header class="go-topbar">
       <div class="go-topicons">
+        <button type="button" class="go-iconbtn" id="btnHistoryTop" aria-label="購入履歴" title="購入履歴">
+          <svg viewBox="0 0 24 24"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/></svg>
+        </button>
         <button type="button" class="go-iconbtn" id="btnCart" aria-label="カートを開く" title="カートを開く">
           <svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>
         </button>
@@ -632,6 +635,27 @@
         <div class="sheet-bar">
           <div class="sheet-sum" id="checkoutSum">¥0</div>
           <button class="btn-primary" id="btnSubmit" type="button">確定</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="historySheet" class="sheet" aria-hidden="true">
+      <div class="sheet-bg" id="historySheetBg" tabindex="-1"></div>
+      <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="historySheetTitle">
+        <div class="sheet-head">
+          <h2 class="sheet-title" id="historySheetTitle">購入履歴</h2>
+          <button class="sheet-close" type="button" id="historySheetClose" aria-label="閉じる">×</button>
+        </div>
+        <div class="sheet-body">
+          <p class="muted" style="font-size: 0.76rem; line-height: 1.35; margin: 0 0 0.65rem">
+            ご注文時のメールアドレス・電話番号の組み合わせで検索します。
+          </p>
+          <label for="histEmail">メールアドレス</label>
+          <input id="histEmail" type="email" autocomplete="email" maxlength="200" />
+          <label for="histPhone">電話番号</label>
+          <input id="histPhone" type="tel" autocomplete="tel" maxlength="20" />
+          <button type="button" class="btn-primary" id="btnHistoryLoad" style="margin-top: 0.65rem; width: 100%">履歴を表示</button>
+          <div id="historyBody" style="margin-top: 0.85rem"></div>
         </div>
       </div>
     </div>
@@ -1483,6 +1507,77 @@
       document.getElementById("detailSheetBg").onclick = () => closeSheet("detailSheet");
       document.getElementById("checkoutSheetClose").onclick = () => closeCheckoutSheet();
       document.getElementById("checkoutSheetBg").onclick = () => closeCheckoutSheet();
+
+      document.getElementById("btnHistoryTop").onclick = () => {
+        const p = readProfile();
+        const he = document.getElementById("histEmail");
+        const hp = document.getElementById("histPhone");
+        if (he && p.email) he.value = p.email;
+        if (hp && p.phone) hp.value = p.phone;
+        document.getElementById("historyBody").innerHTML = "";
+        openSheet("historySheet");
+      };
+      document.getElementById("historySheetClose").onclick = () => closeSheet("historySheet");
+      document.getElementById("historySheetBg").onclick = () => closeSheet("historySheet");
+      document.getElementById("btnHistoryLoad").onclick = async () => {
+        const email = document.getElementById("histEmail").value.trim();
+        const phone = document.getElementById("histPhone").value.trim();
+        const root = document.getElementById("historyBody");
+        if (!email || !phone) {
+          root.innerHTML = '<p class="muted" style="margin:0;font-size:.78rem">メールと電話を入力してください</p>';
+          return;
+        }
+        root.innerHTML = '<p class="muted" style="margin:0;font-size:.78rem">読み込み中…</p>';
+        try {
+          const data = await api(
+            "/takeout/" +
+              encodeURIComponent(STORE_ID) +
+              "/purchase-history?email=" +
+              encodeURIComponent(email) +
+              "&phone=" +
+              encodeURIComponent(phone),
+          );
+          const orders = data.orders || [];
+          if (!orders.length) {
+            root.innerHTML = '<p class="muted" style="margin:0;font-size:.78rem">該当する注文がありません</p>';
+            return;
+          }
+          root.innerHTML = orders
+            .map(function (o) {
+              const lines = Array.isArray(o.lines) ? o.lines : [];
+              const sum = lines.reduce(function (a, ln) {
+                return a + Number(ln.unitPrice || 0) * Number(ln.qty || 0);
+              }, 0);
+              return (
+                '<div style="border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:.65rem;margin-bottom:.5rem;font-size:.82rem">' +
+                "<div><strong>" +
+                esc(o.status || "") +
+                "</strong> · " +
+                esc(new Date(o.pickupAt).toLocaleString("ja-JP")) +
+                "</div>" +
+                '<div class="muted" style="margin-top:.25rem">' +
+                esc(o.customerName || "") +
+                "</div>" +
+                '<div style="margin-top:.35rem">' +
+                lines
+                  .slice(0, 8)
+                  .map(function (ln) {
+                    return "<div>· " + esc(ln.nameSnapshot || "") + " ×" + Number(ln.qty || 0) + "</div>";
+                  })
+                  .join("") +
+                "</div>" +
+                '<div style="margin-top:.35rem;font-weight:800">計 ' +
+                yen(sum) +
+                "</div>" +
+                "</div>"
+              );
+            })
+            .join("");
+        } catch (e) {
+          root.innerHTML =
+            '<p class="err" style="margin:0;font-size:.78rem">' + esc(String((e && e.message) || e)) + "</p>";
+        }
+      };
 
       document.getElementById("detailSheetBody").onchange = () => updateDetailAddPrice();
       document.getElementById("detailSheetAddBtn").onclick = () => {

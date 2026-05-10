@@ -147,7 +147,28 @@ export type StoreSettingsShape = {
   businessClosedDates: string[];
   /** カレンダー上は休業でも営業する日（祝の临时営業など） */
   businessOpenExceptionDates: string[];
+  /**
+   * 店舗単位の SMTP（テイクアウト・ネット予約の通知メール等）。有効かつ host/mailFrom が揃うとき env より優先。
+   * smtpPass は JSON に保存される平文（API では返却しない）。
+   */
+  smtpOutboundEnabled: boolean;
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecure: boolean;
+  smtpUser: string;
+  smtpPass: string;
+  mailFrom: string;
 };
+
+/** スタッフ向け API 用（パスワードを伏せる） */
+export type StoreSettingsApiShape = Omit<StoreSettingsShape, "smtpPass"> & {
+  smtpPassConfigured: boolean;
+};
+
+export function toStoreSettingsApi(st: StoreSettingsShape): StoreSettingsApiShape {
+  const { smtpPass, ...rest } = st;
+  return { ...rest, smtpPassConfigured: Boolean(smtpPass && smtpPass.length > 0) };
+}
 
 export function isBillCorrectionAllowed(settings: StoreSettingsShape, key: BillCorrectionPolicyKey): boolean {
   const p = settings.billCorrectionPolicy;
@@ -228,6 +249,13 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     businessWeeklyHours: null,
     businessClosedDates: [],
     businessOpenExceptionDates: [],
+    smtpOutboundEnabled: false,
+    smtpHost: "",
+    smtpPort: 587,
+    smtpSecure: false,
+    smtpUser: "",
+    smtpPass: "",
+    mailFrom: "",
   };
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return d;
   const o = raw as Record<string, unknown>;
@@ -472,6 +500,27 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
       .map((x) => x.trim())
       .filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x));
     d.businessOpenExceptionDates = [...new Set(dates)].slice(0, 400);
+  }
+  if (typeof o.smtpOutboundEnabled === "boolean") {
+    d.smtpOutboundEnabled = o.smtpOutboundEnabled;
+  }
+  if (typeof o.smtpHost === "string") {
+    d.smtpHost = o.smtpHost.trim().slice(0, 253);
+  }
+  if (typeof o.smtpPort === "number" && Number.isFinite(o.smtpPort)) {
+    d.smtpPort = Math.min(65535, Math.max(1, Math.round(o.smtpPort)));
+  }
+  if (typeof o.smtpSecure === "boolean") {
+    d.smtpSecure = o.smtpSecure;
+  }
+  if (typeof o.smtpUser === "string") {
+    d.smtpUser = o.smtpUser.trim().slice(0, 256);
+  }
+  if (typeof o.smtpPass === "string") {
+    d.smtpPass = o.smtpPass.slice(0, 500);
+  }
+  if (typeof o.mailFrom === "string") {
+    d.mailFrom = o.mailFrom.trim().slice(0, 320);
   }
   return d;
 }

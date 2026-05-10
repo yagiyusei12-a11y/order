@@ -780,6 +780,27 @@ async function loadAll() {
   document.getElementById("stKitSec").value = String(s.kitchenAutoRefreshSec ?? 10);
   document.getElementById("stGuestPrice").checked = s.guestShowMenuPrices !== false;
   document.getElementById("stTz").value = s.timezone || "Asia/Tokyo";
+  const stSe = document.getElementById("stSmtpEnabled");
+  if (stSe) stSe.checked = s.smtpOutboundEnabled === true;
+  const stSh = document.getElementById("stSmtpHost");
+  if (stSh) stSh.value = typeof s.smtpHost === "string" ? s.smtpHost : "";
+  const stSp = document.getElementById("stSmtpPort");
+  if (stSp) stSp.value = String(s.smtpPort != null ? s.smtpPort : 587);
+  const stSs = document.getElementById("stSmtpSecure");
+  if (stSs) stSs.checked = s.smtpSecure === true;
+  const stSu = document.getElementById("stSmtpUser");
+  if (stSu) stSu.value = typeof s.smtpUser === "string" ? s.smtpUser : "";
+  const stPw = document.getElementById("stSmtpPass");
+  if (stPw) stPw.value = "";
+  const stPc = document.getElementById("stSmtpPassClear");
+  if (stPc) stPc.checked = false;
+  const stPh = document.getElementById("stSmtpPassHint");
+  if (stPh) {
+    stPh.textContent =
+      s.smtpPassConfigured === true ? "現在パスワードが保存されています。" : "パスワードは未設定です。";
+  }
+  const stMf = document.getElementById("stMailFrom");
+  if (stMf) stMf.value = typeof s.mailFrom === "string" ? s.mailFrom : "";
   const loMin = document.getElementById("stLoMin");
   if (loMin) loMin.value = String(s.guestCourseLastOrderMinutesBeforeEnd ?? 30);
   let loPol = s.guestLastOrderAfterDeadlinePolicy;
@@ -1667,6 +1688,49 @@ document.getElementById("btnSaveStore").onclick = async () => {
     log(String(e.message || e));
   }
 };
+
+const btnSaveSmtp = document.getElementById("btnSaveSmtp");
+if (btnSaveSmtp) {
+  btnSaveSmtp.onclick = async () => {
+    log("");
+    if (!requireManagerForSettings()) return;
+    const smtpOutboundEnabled = document.getElementById("stSmtpEnabled").checked;
+    const smtpHost = document.getElementById("stSmtpHost").value.trim();
+    const smtpPort = Number(document.getElementById("stSmtpPort").value);
+    const smtpSecure = document.getElementById("stSmtpSecure").checked;
+    const smtpUser = document.getElementById("stSmtpUser").value.trim();
+    const passInput = document.getElementById("stSmtpPass").value;
+    const smtpPassClear = document.getElementById("stSmtpPassClear").checked;
+    const mailFrom = document.getElementById("stMailFrom").value.trim();
+    if (smtpOutboundEnabled && (!smtpHost || !mailFrom)) {
+      return log("店舗SMTPを使う場合はホストと差出人（From）を入力してください");
+    }
+    if (!Number.isInteger(smtpPort) || smtpPort < 1 || smtpPort > 65535) {
+      return log("ポートは1〜65535の整数で入力してください");
+    }
+    const settings = {
+      smtpOutboundEnabled,
+      smtpHost,
+      smtpPort,
+      smtpSecure,
+      smtpUser,
+      mailFrom,
+    };
+    if (smtpPassClear) settings.smtpPassClear = true;
+    else if (passInput && String(passInput).length > 0) settings.smtpPass = String(passInput).slice(0, 500);
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings }),
+      });
+      log("メール（SMTP）設定を保存しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+}
 
 document.getElementById("btnSaveLastOrder").onclick = async () => {
   log("");

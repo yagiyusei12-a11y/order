@@ -1242,11 +1242,14 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
             "",
             "※このメールは送信専用です。",
           ];
-          void sendMailSafe({
-            to: emailForMail,
-            subject: `【予約確定】${store.name} ${date} ${time}`,
-            text: mailLines.join("\n"),
-          }).catch((err: unknown) => req.log.warn({ err }, "net reserve confirmation mail failed"));
+          void sendMailSafe(
+            {
+              to: emailForMail,
+              subject: `【予約確定】${store.name} ${date} ${time}`,
+              text: mailLines.join("\n"),
+            },
+            { storeSettings: stSet },
+          ).catch((err: unknown) => req.log.warn({ err }, "net reserve confirmation mail failed"));
         }
 
         return {

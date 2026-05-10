@@ -680,7 +680,7 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
               `お名前: ${customerName}\n` +
               `電話: ${phone}\n` +
               `店舗で内容をご確認のうえ、受取時にお支払いください。\n`;
-            await sendMailSafe({ to: mailTo, subject: subj, text: lines });
+            await sendMailSafe({ to: mailTo, subject: subj, text: lines }, { storeSettings: st });
           } catch (e) {
             req.log.warn({ err: e }, "takeout confirmation mail failed");
           }

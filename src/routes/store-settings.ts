@@ -9,7 +9,7 @@ import {
   isGuestOperatingEffectiveOpen,
   staffFooterOrderGateState,
 } from "../lib/store-order-gate.js";
-import { mergeStoreSettings } from "../lib/store-settings.js";
+import { mergeStoreSettings, toStoreSettingsApi } from "../lib/store-settings.js";
 
 function staffSubFromReq(req: { user?: unknown }): string | null {
   const u = req.user as { sub?: string } | undefined;
@@ -33,7 +33,7 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
   app.get<{ Params: { storeId: string } }>("/stores/:storeId/settings", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
     if (!store) return reply.code(404).send({ error: "store not found" });
-    const settings = mergeStoreSettings(store.settings);
+    const settings = toStoreSettingsApi(mergeStoreSettings(store.settings));
     return {
       store: { id: store.id, name: store.name, settings },
     };
@@ -74,7 +74,18 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
         return reply.code(400).send({ error: "settings must be an object" });
       }
       const cur = mergeStoreSettings(store.settings);
-      const next = mergeStoreSettings({ ...cur, ...req.body.settings });
+      const patch = { ...(req.body.settings as Record<string, unknown>) };
+      const passClear = patch.smtpPassClear === true;
+      delete patch.smtpPassClear;
+      const rawPass = patch.smtpPass;
+      delete patch.smtpPass;
+      let nextPass = cur.smtpPass;
+      if (passClear) nextPass = "";
+      else if (typeof rawPass === "string" && rawPass.length > 0) {
+        nextPass = rawPass.slice(0, 500);
+      }
+      const next = mergeStoreSettings({ ...cur, ...patch });
+      next.smtpPass = nextPass;
       data.settings = next;
     }
 
@@ -91,7 +102,7 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
       store: {
         id: updated.id,
         name: updated.name,
-        settings: mergeStoreSettings(updated.settings),
+        settings: toStoreSettingsApi(mergeStoreSettings(updated.settings)),
       },
     };
   });
@@ -139,7 +150,7 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
       store: {
         id: updated.id,
         name: updated.name,
-        settings: mergeStoreSettings(updated.settings),
+        settings: toStoreSettingsApi(mergeStoreSettings(updated.settings)),
       },
     };
   });

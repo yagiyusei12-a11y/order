@@ -221,6 +221,7 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
       store: { id: store.id, name: store.name },
       taxRatePercent: takeoutTaxRatePercent,
       timezone: st.timezone,
+      takeoutPickupMinLeadMinutes: st.takeoutPickupMinLeadMinutes,
       pickupTimeWindows: pickupWindows.map((w) => ({
         id: w.id,
         name: w.name,
@@ -266,6 +267,13 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
 
     const pickupAt = normalizePickupAt(req.body?.pickupAt, st.timezone);
     if (!pickupAt) return reply.code(400).send({ error: "pickupAt required" });
+    const leadMin = st.takeoutPickupMinLeadMinutes;
+    const leadMs = Math.max(0, leadMin) * 60 * 1000;
+    if (pickupAt.getTime() < Date.now() + leadMs) {
+      return reply.code(400).send({
+        error: `受取日時は現在から${leadMin}分以降を選んでください`,
+      });
+    }
     const customerName = String(req.body?.customerName || "").trim();
     const phone = String(req.body?.phone || "").trim();
     const email = String(req.body?.email || "").trim();
@@ -297,7 +305,7 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
           courseId: null,
           coursePriceTierId: undefined,
         });
-        if (!open.ok) throw new Error("SESSION_OPEN_FAILED");
+        if (!open.ok) throw new Error(`OPEN_SESSION:${open.code}`);
         const sessionId = open.session.id;
 
         const itemIds = [...new Set(linesIn.map((l) => l.menuItemId))];
@@ -552,7 +560,25 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
       if (msg === "BAD_ITEM") return reply.code(400).send({ error: "item not found or not takeout-allowed" });
       if (msg === "BAD_SET") return reply.code(400).send({ error: "bad set selections" });
       if (msg === "BAD_OPTIONS") return reply.code(400).send({ error: "bad option selections" });
-      throw e;
+      if (msg.startsWith("OPEN_SESSION:")) {
+        const code = msg.slice("OPEN_SESSION:".length);
+        const byCode: Record<string, string> = {
+          CONFLICT:
+            "テイクアウト卓の状態により注文を開始できません。スタッフへお問い合わせください。",
+          BAD_TABLE: "テイクアウト卓の設定を確認できません。スタッフへお問い合わせください。",
+          BAD_COUNT: "注文を開始できませんでした。",
+          BAD_COURSE: "注文を開始できませんでした。",
+          BAD_TIER: "注文を開始できませんでした。",
+          COURSE_REQUIRED: "注文を開始できませんでした。",
+        };
+        return reply.code(409).send({
+          error: byCode[code] || "注文を開始できませんでした。スタッフへお問い合わせください。",
+        });
+      }
+      req.log.error(e);
+      return reply.code(500).send({
+        error: "サーバーで処理できませんでした。時間をおいて再度お試しください。",
+      });
     }
   });
 }

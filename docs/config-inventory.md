@@ -36,6 +36,7 @@
 | `guestLastOrderAfterDeadlinePolicy` | `block_all` | `allow_all` / `singles_only` / `block_all`。コース卓のラストオーダー締め後のゲスト注文。未設定時は旧 `guestEnforceLastOrder`（true→`block_all`、false→`allow_all`）から補完 |
 | `guestEnforceLastOrder` | true | 互換用。新規は `guestLastOrderAfterDeadlinePolicy` を優先 |
 | `takeoutPickupTimeWindowIds` | [] | |
+| `takeoutPickupMinLeadMinutes` | 2 | ネットテイクアウトの受取時刻が「今」から何分以上先か（候補生成・確定APIの両方） |
 
 ## 実装済み（本変更で店舗タイムゾーンへ寄せたもの）
 

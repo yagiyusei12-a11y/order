@@ -106,6 +106,8 @@ export type StoreSettingsShape = {
   requireCourseWhenStartingSession: boolean;
   /** テイクアウト受取の候補に使う時間帯マスタ（複数） */
   takeoutPickupTimeWindowIds: string[];
+  /** ネットテイクアウトで選べる受取時刻が「現在」（店舗TZ）から何分以上先か */
+  takeoutPickupMinLeadMinutes: number;
   /** オペ割引のプリセット（レジで選択） */
   opsDiscountPresets: {
     id: string;
@@ -177,6 +179,7 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     guestServeLaterHelpMulti: GUEST_SERVE_LATER_DEFAULTS.guestServeLaterHelpMulti,
     requireCourseWhenStartingSession: false,
     takeoutPickupTimeWindowIds: [],
+    takeoutPickupMinLeadMinutes: 2,
     opsDiscountPresets: [],
     opsRegisterMethodCodes: [],
     billCorrectionPolicy: {
@@ -304,6 +307,12 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
       .filter(Boolean);
     // unique + cap to avoid bloat
     d.takeoutPickupTimeWindowIds = [...new Set(ids)].slice(0, 50);
+  }
+  if (typeof o.takeoutPickupMinLeadMinutes === "number" && Number.isFinite(o.takeoutPickupMinLeadMinutes)) {
+    d.takeoutPickupMinLeadMinutes = Math.min(
+      2880,
+      Math.max(0, Math.round(o.takeoutPickupMinLeadMinutes)),
+    );
   }
   if (Array.isArray(o.opsDiscountPresets)) {
     const presets: StoreSettingsShape["opsDiscountPresets"] = [];

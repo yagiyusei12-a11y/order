@@ -169,6 +169,19 @@
         margin-bottom: 0.55rem;
         background: rgba(0, 0, 0, 0.15);
       }
+      /* 商品詳細シートは .go-card 外のため別指定（大画像のはみ出し防止） */
+      .sheet-body .img {
+        width: 100%;
+        max-height: min(42vh, 320px);
+        aspect-ratio: 1.6;
+        object-fit: cover;
+        object-position: center;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        margin-bottom: 0.55rem;
+        background: rgba(0, 0, 0, 0.15);
+        display: block;
+      }
       .pill {
         font-size: 0.78rem;
         padding: 0.2rem 0.5rem;
@@ -593,6 +606,7 @@
           <div class="muted" style="font-size:.78rem;line-height:1.35;margin-top:-0.1rem">
             受取日時・お客様情報は必須です（確認の連絡に使用します）
           </div>
+          <div id="checkoutSheetErr" class="err" style="display:none;margin-top:0.55rem" role="alert"></div>
 
           <label for="pickupAt">受取日時</label>
           <div class="pickup-candidates" id="pickupCandidates"></div>
@@ -628,8 +642,29 @@
 
       const api = (path, opt) =>
         fetch(path, opt).then(async (r) => {
-          const j = await r.json().catch(() => ({}));
-          if (!r.ok) throw new Error(j.error || r.statusText || String(r.status));
+          const rawText = await r.text();
+          let j = {};
+          if (rawText) {
+            try {
+              j = JSON.parse(rawText);
+            } catch (_) {
+              j = {};
+            }
+          }
+          if (!r.ok) {
+            const fromJson =
+              (typeof j.error === "string" && j.error.trim()) ||
+              (typeof j.message === "string" && j.message.trim()) ||
+              "";
+            const human =
+              fromJson ||
+              (r.status >= 500
+                ? "サーバーで処理できませんでした。時間をおいて再度お試しください。"
+                : r.statusText && r.statusText !== "error"
+                  ? r.statusText
+                  : "リクエストに失敗しました（" + r.status + "）");
+            throw new Error(human);
+          }
           return j;
         });
 
@@ -674,6 +709,18 @@
         if (!el) return;
         if (!text) return (el.innerHTML = "");
         el.innerHTML = "<div class=\"" + (kind === "ok" ? "ok" : "err") + "\">" + esc(text) + "</div>";
+      }
+
+      function setCheckoutErr(text) {
+        const el = document.getElementById("checkoutSheetErr");
+        if (!el) return;
+        if (!text) {
+          el.style.display = "none";
+          el.textContent = "";
+          return;
+        }
+        el.style.display = "block";
+        el.textContent = text;
       }
 
       function readProfile() {
@@ -871,6 +918,12 @@
         }
         const now = new Date();
         const stepMin = 15;
+        const leadMin = Math.max(
+          0,
+          Number((menuData && menuData.takeoutPickupMinLeadMinutes) != null
+            ? menuData.takeoutPickupMinLeadMinutes
+            : 2),
+        );
         const candidates = [];
         for (let dayOffset = 0; dayOffset <= 1; dayOffset++) {
           const base = new Date(now.getTime() + dayOffset * 24 * 60 * 60 * 1000);
@@ -889,7 +942,7 @@
                 const mm = m % 60;
                 const dt = new Date(base);
                 dt.setHours(hh, mm, 0, 0);
-                if (dt.getTime() <= now.getTime() + 2 * 60 * 1000) continue;
+                if (dt.getTime() <= now.getTime() + leadMin * 60 * 1000) continue;
                 candidates.push(dt);
               }
             }
@@ -1357,6 +1410,7 @@
           setMsg("err", "カートが空です");
           return;
         }
+        setCheckoutErr("");
         const p = readProfile();
         const nameEl = document.getElementById("name");
         const phoneEl = document.getElementById("phone");
@@ -1464,6 +1518,7 @@
       document.getElementById("btnSubmit").onclick = async () => {
         try {
           setMsg("", "");
+          setCheckoutErr("");
           const pickupAt = document.getElementById("pickupAt").value;
           const customerName = document.getElementById("name").value.trim();
           const phone = document.getElementById("phone").value.trim();
@@ -1495,9 +1550,13 @@
           cart.clear();
           renderAllCartUis();
           closeCheckoutSheet();
+          setCheckoutErr("");
           setMsg("ok", "注文を受け付けました。店頭でのお支払いになります。");
         } catch (e) {
-          setMsg("err", String((e && e.message) || e));
+          const errText = String((e && e.message) || e);
+          setMsg("err", errText);
+          setCheckoutErr(errText);
+          toast(errText);
         } finally {
           const btn = document.getElementById("btnSubmit");
           if (btn) btn.disabled = false;

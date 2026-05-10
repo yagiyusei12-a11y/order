@@ -248,7 +248,12 @@
       <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
         テイクアウト注文ページの「受取時間候補ボタン」に使う時間帯マスタを選びます（複数可）。
       </p>
-      <div id="takeoutPickupWindows" style="padding:0"></div>
+      <label for="stTakeoutLeadMin">最短リードタイム（分）</label>
+      <p class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.35rem">
+        現在時刻から何分後以降の受取時刻だけ選べるか（0〜2880）。候補ボタン・日時入力の双方に適用されます。
+      </p>
+      <input id="stTakeoutLeadMin" type="number" min="0" max="2880" step="1" style="max-width:8rem" />
+      <div id="takeoutPickupWindows" style="padding:0;margin-top:0.65rem"></div>
       <button type="button" class="btn-primary" id="btnSaveTakeoutPickup" style="margin-top:0.65rem">受取時間候補を保存</button>
     </div>
   </div>

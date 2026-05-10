@@ -712,6 +712,8 @@ async function loadAll() {
   if (bcRo) bcRo.checked = bc.reopenSettledForRegister !== false;
   syncBillCorrectionSubUi();
   renderTakeoutPickupWindows(twRes.timeWindows || [], s.takeoutPickupTimeWindowIds || []);
+  const leadEl = document.getElementById("stTakeoutLeadMin");
+  if (leadEl) leadEl.value = String(s.takeoutPickupMinLeadMinutes ?? 2);
   renderOpsDiscountPresets(s.opsDiscountPresets || []);
   const registerCodes = new Set(Array.isArray(s.opsRegisterMethodCodes) ? s.opsRegisterMethodCodes : []);
 
@@ -1728,11 +1730,14 @@ if (btnSaveTakeoutPickup) {
       log("");
       if (!requireManagerForSettings()) return;
       const ids = [...document.querySelectorAll(".tw-pickup-chk:checked")].map((x) => x.value);
+      const leadRaw = Number(document.getElementById("stTakeoutLeadMin") && document.getElementById("stTakeoutLeadMin").value);
+      const takeoutPickupMinLeadMinutes =
+        Number.isInteger(leadRaw) && leadRaw >= 0 && leadRaw <= 2880 ? leadRaw : 2;
       await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          settings: { takeoutPickupTimeWindowIds: ids },
+          settings: { takeoutPickupTimeWindowIds: ids, takeoutPickupMinLeadMinutes },
         }),
       });
       log("保存しました");

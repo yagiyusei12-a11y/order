@@ -98,8 +98,43 @@ function flatItems() {
   return out;
 }
 
+/** GET /sessions（includeTotals）で付与：テイクアウト氏名・ゲスト名など */
+function handySessionUiCustomerLabel(s) {
+  const v = s && s.uiCustomerLabel;
+  return v != null && String(v).trim() ? String(v).trim() : "";
+}
+
+function handySessionUiOrderedAtForDisplay(s) {
+  const iso = s && s.uiOrderedAt;
+  if (iso) {
+    const d = new Date(iso);
+    if (isFinite(d.getTime())) return d;
+  }
+  const op = s && s.openedAt;
+  if (op) {
+    const d = new Date(op);
+    if (isFinite(d.getTime())) return d;
+  }
+  return null;
+}
+
+/** 卓オペの会計切替と同じ軸：日時・表示名・請求目安（同一卓の別会計の識別用） */
+function formatHandySessionOptionLabel(s) {
+  const d = handySessionUiOrderedAtForDisplay(s);
+  const when =
+    d != null
+      ? d.toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
+      : "";
+  const nm = handySessionUiCustomerLabel(s);
+  const parts = [];
+  if (when) parts.push(when);
+  if (nm) parts.push(nm);
+  parts.push(yen(Number(s.currentTotal) || 0));
+  return parts.join(" · ");
+}
+
 async function loadSessions() {
-  const res = await api("/stores/" + encodeURIComponent(STORE) + "/sessions?status=open");
+  const res = await api("/stores/" + encodeURIComponent(STORE) + "/sessions?status=open&includeTotals=1");
   sessionsCache = res.sessions || [];
   const sel = document.getElementById("handySession");
   sel.innerHTML = "";
@@ -114,10 +149,7 @@ async function loadSessions() {
     const o = document.createElement("option");
     o.value = s.id;
     const tname = s.table && s.table.name ? s.table.name : "?";
-    const crs = s.course && s.course.name ? s.course.name : "フリー";
-    const cc = Number(s.childCount || 0);
-    const peopleLabel = cc > 0 ? s.guestCount + "名（子" + cc + "）" : s.guestCount + "名";
-    o.textContent = tname + " · " + peopleLabel + " · " + crs;
+    o.textContent = tname + " · " + formatHandySessionOptionLabel(s);
     sel.appendChild(o);
   }
 }

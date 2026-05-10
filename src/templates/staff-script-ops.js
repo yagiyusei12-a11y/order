@@ -104,7 +104,7 @@ function sessionUiOrderedAtForDisplay(s) {
   return null;
 }
 
-/** 複数テイクアウトの会計切替ドロップダウン：注文日時・名前・金額 */
+/** 同一卓に複数 open があるときの会計切替ドロップダウン：注文日時・表示名・請求金額の目安 */
 function formatSessionSwitchOptionLabel(s) {
   const d = sessionUiOrderedAtForDisplay(s);
   const when =
@@ -1992,9 +1992,14 @@ async function renderDetail() {
         return "<option value=\"" + escapeHtml(s.id) + "\"" + sel + ">" + escapeHtml(lab) + "</option>";
       })
       .join("");
+    const multiSessionBannerLabel = isTakeoutTablePublicCodeForStore(table.publicCode)
+      ? "この卓に複数のテイクアウト（別会計）があります。会計する相手を選んでください。"
+      : "この卓に複数の会計（別伝票）があります。会計する相手を選んでください。";
     sessionSwitchPrefixHtml =
       "<div class=\"card\" style=\"padding:0.55rem 0.75rem;margin:0 0 0.65rem;background:#f0f9ff;border:1px solid #7dd3fc;border-radius:10px\">" +
-      "<label style=\"font-size:0.82rem;font-weight:800;display:block\">この卓に複数のテイクアウト（別会計）があります。会計する相手を選んでください。</label>" +
+      "<label style=\"font-size:0.82rem;font-weight:800;display:block\">" +
+      escapeHtml(multiSessionBannerLabel) +
+      "</label>" +
       "<select id=\"sessionSwitchSel\" style=\"width:100%;margin-top:0.35rem;padding:0.45rem;border-radius:8px\">" +
       opts +
       "</select></div>";

@@ -1139,6 +1139,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         const sess = await tx.diningSession.findUnique({
           where: { id: billingId },
           include: {
+            table: { select: { name: true, publicCode: true } },
             course: {
               include: { includedItems: { select: { menuItemId: true } } },
             },
@@ -1709,6 +1710,55 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
               data: { stockQty: { decrement: needQty } },
             });
           }
+        }
+
+        const guestTakeoutLines = resolved.filter((r) => r.eatMode === "takeout");
+        if (guestTakeoutLines.length > 0) {
+          const leadMs = Math.max(0, st.takeoutPickupMinLeadMinutes) * 60 * 1000;
+          const pickupAt = new Date(Date.now() + leadMs);
+          const tbl = sess?.table;
+          const customerLabel =
+            tbl && String(tbl.name || "").trim()
+              ? String(tbl.name).trim()
+              : "ゲスト卓テイクアウト";
+          const linesPayload = resolved.map((r) => {
+            if (r.kind === "single") {
+              const item = itemCache.get(r.menuItemId)!;
+              return {
+                menuItemId: r.menuItemId,
+                qty: r.qty,
+                note: r.note,
+                unitPrice: r.unitPrice ?? item.price,
+                nameSnapshot: r.nameSnapshot ?? item.name,
+                eatMode: r.eatMode,
+                taxRatePercent: r.taxRatePercent,
+                lineExtra: r.lineExtra ?? null,
+              };
+            }
+            return {
+              menuItemId: r.menuItemId,
+              qty: r.qty,
+              note: r.note,
+              unitPrice: r.unitPrice,
+              nameSnapshot: r.nameSnapshot,
+              eatMode: r.eatMode,
+              taxRatePercent: r.taxRatePercent,
+              lineExtra: r.lineExtra ?? null,
+            };
+          });
+          await tx.takeoutNetOrder.create({
+            data: {
+              storeId: orderStoreId,
+              status: "new",
+              pickupAt,
+              salesOrderId: so.id,
+              customerName: customerLabel,
+              phone: "-",
+              email: "-",
+              note: req.body?.note?.trim() || null,
+              lines: linesPayload as unknown as Prisma.InputJsonValue,
+            },
+          });
         }
 
         return tx.salesOrder.findUnique({

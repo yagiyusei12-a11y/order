@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import type { Prisma } from "@prisma/client";
 import { minutesSinceMidnightInTimeZone } from "../lib/guest-category-hours.js";
 import { applyGuestItemTimeDiscounts } from "../lib/guest-time-pricing.js";
 import {
@@ -59,6 +60,7 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
         const sess = await tx.diningSession.findUnique({
           where: { id: session.id },
           include: {
+            table: { select: { name: true, publicCode: true } },
             course: {
               include: { includedItems: { select: { menuItemId: true } } },
             },
@@ -287,6 +289,40 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
               data: { stockQty: { decrement: needQty } },
             });
           }
+        }
+
+        const hasTakeoutLine = resolved.some((r) => r.eatMode === "takeout");
+        if (hasTakeoutLine) {
+          const leadMs = Math.max(0, st.takeoutPickupMinLeadMinutes) * 60 * 1000;
+          const pickupAt = new Date(Date.now() + leadMs);
+          const tbl = sess.table;
+          const customerLabel =
+            tbl && String(tbl.name || "").trim()
+              ? String(tbl.name).trim()
+              : "ハンディ口頭テイクアウト";
+          const linesPayload = resolved.map((r) => ({
+            menuItemId: r.menuItemId,
+            qty: r.qty,
+            note: r.note,
+            unitPrice: r.unitPrice,
+            nameSnapshot: r.nameSnapshot,
+            eatMode: r.eatMode,
+            taxRatePercent: r.taxRatePercent,
+            lineExtra: null,
+          }));
+          await tx.takeoutNetOrder.create({
+            data: {
+              storeId: session.storeId,
+              status: "new",
+              pickupAt,
+              salesOrderId: so.id,
+              customerName: customerLabel,
+              phone: "-",
+              email: "-",
+              note: userNote || null,
+              lines: linesPayload as unknown as Prisma.InputJsonValue,
+            },
+          });
         }
 
         return tx.salesOrder.findUnique({

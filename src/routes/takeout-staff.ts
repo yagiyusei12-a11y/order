@@ -64,14 +64,14 @@ export async function registerTakeoutStaff(app: FastifyInstance): Promise<void> 
     Querystring: { status?: string; limit?: string };
   }>("/stores/:storeId/takeout/net-orders", async (req, reply) => {
     const storeId = req.params.storeId;
-    const limitRaw = req.query.limit ? Number(req.query.limit) : 80;
-    const limit = Number.isInteger(limitRaw) && limitRaw > 0 && limitRaw <= 200 ? limitRaw : 80;
+    const limitRaw = req.query.limit ? Number(req.query.limit) : 120;
+    const limit = Number.isInteger(limitRaw) && limitRaw > 0 && limitRaw <= 200 ? limitRaw : 120;
     const status = req.query.status?.trim();
     const where: { storeId: string; status?: string } = { storeId };
     if (status) where.status = status;
     const rows = await prisma.takeoutNetOrder.findMany({
       where,
-      orderBy: [{ pickupAt: "asc" }, { createdAt: "asc" }],
+      orderBy: [{ createdAt: "desc" }, { pickupAt: "asc" }],
       take: limit,
     });
     return {

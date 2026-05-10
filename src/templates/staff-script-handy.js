@@ -11,6 +11,11 @@ let cart = new Map();
 /** @type {{ id: string; name: string | null; phone: string | null; deviceIdMasked: string; visitCount: number; lastSeenAt: string | null; createdAt: string }[]} */
 let customersCache = [];
 
+/** 別会計モーダル用（遅延読込） */
+let handySeparateCoursesCache = null;
+/** @type {Record<string, unknown> | null} */
+let handySeparateSettingsCache = null;
+
 function escapeHtml(s) {
   return String(s)
     .replace(/&/g, "&amp;")
@@ -133,16 +138,187 @@ function formatHandySessionOptionLabel(s) {
   return parts.join(" · ");
 }
 
-async function loadSessions() {
+function taxRateFactor(ratePercent) {
+  const r = Number(ratePercent || 0);
+  if (!Number.isFinite(r) || r <= 0) return 1;
+  return 1 + r / 100;
+}
+
+function netYenFromGross(grossYen, taxRatePercent) {
+  const g = Number(grossYen) || 0;
+  return Math.round(g / taxRateFactor(taxRatePercent));
+}
+
+function updateHandySeparateBtn() {
+  const btn = document.getElementById("handyOpenSeparateBill");
+  if (!btn) return;
+  const sid = document.getElementById("handySession").value;
+  const sess = sid ? sessionsCache.find((x) => x.id === sid) : null;
+  btn.disabled = !(sess && sess.table && sess.table.id);
+}
+
+/**
+ * @param {unknown[]} courses
+ * @param {Record<string, unknown>} store
+ */
+function renderSepCourseRadios(courses, store) {
+  const box = document.getElementById("handySepCourseRadios");
+  if (!box) return;
+  box.innerHTML = "";
+  const courseMode = store && store.coursePriceTaxMode === "exclusive" ? "exclusive" : "inclusive";
+  const taxRatePercent = store && store.taxRatePercent != null ? Number(store.taxRatePercent) : 10;
+  const suffix = courseMode === "exclusive" ? "（税抜）" : "（税込）";
+  const noneId = "handySep-course-none";
+  const none = document.createElement("label");
+  none.className = "row";
+  none.innerHTML =
+    "<input type=\"radio\" name=\"handySepCoursePick\" id=\"" +
+    noneId +
+    "\" value=\"\" checked /><div><strong>単品メニュー</strong><div class=\"handy-sep-course-meta\">コースなし・全メニューから注文</div></div>";
+  box.appendChild(none);
+  for (const c of courses || []) {
+    const tiers = c.priceTiers || [];
+    for (let i = 0; i < tiers.length; i++) {
+      const t = tiers[i];
+      const id = "handySep-course-" + c.id + "-" + t.id;
+      const val = c.id + "|" + t.id;
+      const adultUnit =
+        courseMode === "exclusive" ? netYenFromGross(t.pricePerPerson, taxRatePercent) : Number(t.pricePerPerson);
+      const childUnit =
+        t.childPricePerPerson != null
+          ? courseMode === "exclusive"
+            ? netYenFromGross(t.childPricePerPerson, taxRatePercent)
+            : Number(t.childPricePerPerson)
+          : null;
+      const childBit =
+        childUnit != null ? " · 子 " + Number(childUnit).toLocaleString("ja-JP") + "円/人" + suffix : "";
+      const lab = document.createElement("label");
+      lab.className = "row";
+      lab.innerHTML =
+        "<input type=\"radio\" name=\"handySepCoursePick\" id=\"" +
+        escapeHtml(id) +
+        "\" value=\"" +
+        escapeHtml(val) +
+        "\" /><div><strong>" +
+        escapeHtml(c.name) +
+        "</strong><div class=\"handy-sep-course-meta\">" +
+        t.durationMinutes +
+        "分 · 大人 " +
+        Number(adultUnit).toLocaleString("ja-JP") +
+        "円/人" +
+        suffix +
+        childBit +
+        " · " +
+        escapeHtml(c.kind || "") +
+        "</div></div>";
+      box.appendChild(lab);
+    }
+  }
+}
+
+async function ensureSeparateModalData() {
+  if (handySeparateCoursesCache != null && handySeparateSettingsCache != null) return;
+  const [cr, sr] = await Promise.all([
+    api("/stores/" + encodeURIComponent(STORE) + "/courses"),
+    api("/stores/" + encodeURIComponent(STORE) + "/settings"),
+  ]);
+  handySeparateCoursesCache = cr.courses || [];
+  handySeparateSettingsCache = (sr.store && sr.store.settings) || {};
+}
+
+async function openSeparateBillModal() {
+  log("");
+  await ensureSeparateModalData();
+  renderSepCourseRadios(handySeparateCoursesCache || [], handySeparateSettingsCache || {});
+  const gcEl = document.getElementById("handySepGuestCount");
+  const ccEl = document.getElementById("handySepChildCount");
+  if (gcEl) gcEl.value = "2";
+  if (ccEl) ccEl.value = "0";
+  const bd = document.getElementById("handySepBackdrop");
+  if (bd) {
+    bd.style.display = "flex";
+    bd.setAttribute("aria-hidden", "false");
+  }
+}
+
+function closeSeparateBillModal() {
+  const bd = document.getElementById("handySepBackdrop");
+  if (bd) {
+    bd.style.display = "none";
+    bd.setAttribute("aria-hidden", "true");
+  }
+}
+
+async function confirmSeparateBill() {
+  log("");
+  const sid = document.getElementById("handySession").value;
+  const sess = sessionsCache.find((x) => x.id === sid);
+  if (!sess || !sess.table || !sess.table.id) {
+    log("先に注文先の卓セッションを選んでください");
+    return;
+  }
+  const gc = Number(document.getElementById("handySepGuestCount").value);
+  const childN = Number(document.getElementById("handySepChildCount").value);
+  if (!Number.isInteger(gc) || gc < 1 || gc > 99) {
+    log("人数は1〜99の整数で入力してください");
+    return;
+  }
+  if (!Number.isInteger(childN) || childN < 0 || childN > gc) {
+    log("子供の人数は0〜人数の整数で入力してください");
+    return;
+  }
+  const picked = document.querySelector("input[name=\"handySepCoursePick\"]:checked");
+  const courseVal = picked ? picked.value : "";
+  let courseId = null;
+  let coursePriceTierId = undefined;
+  if (courseVal && String(courseVal).trim()) {
+    const parts = String(courseVal).split("|");
+    courseId = parts[0] || null;
+    if (parts[1]) coursePriceTierId = parts[1];
+  }
+  const btn = document.getElementById("handySepConfirm");
+  if (btn) btn.disabled = true;
+  try {
+    const body = {
+      tableId: sess.table.id,
+      guestCount: gc,
+      childCount: childN,
+      courseId: courseId,
+      dineInSeparateBill: true,
+    };
+    if (coursePriceTierId) body.coursePriceTierId = coursePriceTierId;
+    const created = await api("/stores/" + encodeURIComponent(STORE) + "/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    log("別会計のセッションを追加しました");
+    closeSeparateBillModal();
+    const newId = created && created.id ? created.id : null;
+    await loadSessions(newId);
+  } catch (e) {
+    log(String(e.message || e));
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+/** @param {string | null | undefined} [preferSessionId] */
+async function loadSessions(preferSessionId) {
   const res = await api("/stores/" + encodeURIComponent(STORE) + "/sessions?status=open&includeTotals=1");
   sessionsCache = res.sessions || [];
   const sel = document.getElementById("handySession");
+  const prevPreferred =
+    preferSessionId != null && String(preferSessionId).trim()
+      ? String(preferSessionId).trim()
+      : sel.value;
   sel.innerHTML = "";
   if (!sessionsCache.length) {
     const o = document.createElement("option");
     o.value = "";
     o.textContent = "開店中のセッションがありません（卓・会計で開始）";
     sel.appendChild(o);
+    updateHandySeparateBtn();
     return;
   }
   for (const s of sessionsCache) {
@@ -152,6 +328,10 @@ async function loadSessions() {
     o.textContent = tname + " · " + formatHandySessionOptionLabel(s);
     sel.appendChild(o);
   }
+  if (prevPreferred && [...sel.options].some((opt) => opt.value === prevPreferred)) {
+    sel.value = prevPreferred;
+  }
+  updateHandySeparateBtn();
 }
 
 async function loadCustomers() {
@@ -502,6 +682,26 @@ document.getElementById("handySearch").oninput = () => renderItems();
 document.getElementById("handyCustSearch").oninput = () => renderCustomerSelect();
 document.getElementById("handyCustomer").onchange = () => loadInsightsForSelection();
 document.getElementById("handySubmit").onclick = () => submitOrder();
+
+(function wireHandySeparateBillUi() {
+  const bs = document.getElementById("handySepBackdrop");
+  if (bs) {
+    bs.addEventListener("click", (ev) => {
+      if (ev.target === bs) closeSeparateBillModal();
+    });
+  }
+  const openB = document.getElementById("handyOpenSeparateBill");
+  if (openB) {
+    openB.onclick = () =>
+      openSeparateBillModal().catch((e) => log(String(e.message || e)));
+  }
+  const cancelB = document.getElementById("handySepCancel");
+  if (cancelB) cancelB.onclick = () => closeSeparateBillModal();
+  const okB = document.getElementById("handySepConfirm");
+  if (okB) okB.onclick = () => confirmSeparateBill().catch((e) => log(String(e.message || e)));
+  const sessSel = document.getElementById("handySession");
+  if (sessSel) sessSel.addEventListener("change", updateHandySeparateBtn);
+})();
 
 (async () => {
   try {

@@ -80,6 +80,8 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       courseId?: string | null;
       coursePriceTierId?: string | null;
       childCount?: number;
+      /** true のとき同一卓に open があっても新規セッションを追加（卓QR「別会計」相当） */
+      dineInSeparateBill?: boolean;
     };
   }>("/stores/:storeId/sessions", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
@@ -125,6 +127,9 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
 
     const st = mergeStoreSettings(store.settings);
 
+    const dineInSeparateBill =
+      (req.body as { dineInSeparateBill?: unknown })?.dineInSeparateBill === true;
+
     const result = await openSessionForTable({
       tableId,
       storeId: store.id,
@@ -132,14 +137,16 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       childCount,
       courseId,
       coursePriceTierId,
-      mode: "failIfOpen",
+      mode: dineInSeparateBill ? "reuseIfOpen" : "failIfOpen",
+      ...(dineInSeparateBill ? { skipReuse: true as const } : {}),
       requireCourseWhenStarting: st.requireCourseWhenStartingSession,
     });
     if (!result.ok) {
       if (result.code === "CONFLICT") {
-        return reply
-          .code(400)
-          .send({ error: "table already has an open session", sessionId: result.existingSessionId });
+        return reply.code(400).send({
+          error: result.error,
+          ...(result.existingSessionId ? { sessionId: result.existingSessionId } : {}),
+        });
       }
       if (result.code === "BAD_TABLE") return reply.code(400).send({ error: "table not found or inactive" });
       if (result.code === "BAD_COUNT") return reply.code(400).send({ error: "guestCount must be integer 1-99" });

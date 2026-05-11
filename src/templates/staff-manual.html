@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>スタッフ向け説明書（ログイン不要）</title>
+  <style>
+    :root {
+      --bg: #f0f4f8;
+      --surface: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --accent: #ea580c;
+      --accent2: #0284c7;
+      --accent3: #7c3aed;
+      --green: #15803d;
+      --card1: #fff7ed;
+      --card2: #e0f2fe;
+      --card3: #f3e8ff;
+      --card4: #ecfdf5;
+      --border: #e2e8f0;
+      --shadow: 0 2px 12px rgba(15, 23, 42, 0.08);
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", sans-serif;
+      background: linear-gradient(180deg, #e8eef5 0%, var(--bg) 40%);
+      color: var(--text);
+      line-height: 1.65;
+      font-size: 0.95rem;
+    }
+    .wrap { max-width: 52rem; margin: 0 auto; padding: 1rem 1rem 3rem; }
+    header.hero {
+      background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 50%, #fef3c7 100%);
+      border: 1px solid #fed7aa;
+      border-radius: var(--radius);
+      padding: 1.25rem 1.35rem;
+      margin-bottom: 1rem;
+      box-shadow: var(--shadow);
+    }
+    header.hero h1 { margin: 0 0 0.35rem; font-size: 1.35rem; color: #9a3412; }
+    header.hero p { margin: 0; color: #78350f; font-size: 0.92rem; }
+    .tablist {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-bottom: 1rem;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: linear-gradient(180deg, var(--bg) 85%, transparent);
+      padding: 0.35rem 0 0.65rem;
+    }
+    .tablist button {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--muted);
+      padding: 0.45rem 0.65rem;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .tablist button:hover { border-color: var(--accent); color: var(--accent); }
+    .tablist button[aria-selected="true"] {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .panel { display: none; }
+    .panel.is-active { display: block; }
+    .panel h2 { font-size: 1.05rem; margin: 0 0 0.75rem; color: var(--text); }
+    .card {
+      border-radius: var(--radius);
+      padding: 1rem 1.1rem;
+      margin-bottom: 0.85rem;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+    .card h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+    .card p, .card li { margin: 0.35rem 0; color: var(--text); font-size: 0.9rem; }
+    .card ul { margin: 0.25rem 0 0; padding-left: 1.2rem; }
+    .card.note { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+    .card.note p { color: inherit; }
+    .c1 { background: var(--card1); border-color: #fed7aa; }
+    .c2 { background: var(--card2); border-color: #bae6fd; }
+    .c3 { background: var(--card3); border-color: #e9d5ff; }
+    .c4 { background: var(--card4); border-color: #bbf7d0; }
+    .fig {
+      margin: 0.65rem 0 0;
+      text-align: center;
+    }
+    .fig img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #fff;
+    }
+    .fig figcaption { font-size: 0.75rem; color: var(--muted); margin-top: 0.35rem; }
+    code {
+      font-size: 0.82em;
+      background: #f1f5f9;
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+    footer {
+      margin-top: 2rem;
+      text-align: center;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <h1>店舗さん向け：かんたん説明書</h1>
+      <p>このページは<strong>ログインなし</strong>で見られます。上の丸いボタン（タブ）を押すと、説明が切り替わります。難しい言葉は少なめに書いています。</p>
+    </header>
+
+    <div class="tablist" role="tablist" aria-label="説明の種類">
+      <button type="button" role="tab" aria-selected="true" data-tab="intro">はじめに</button>
+      <button type="button" role="tab" aria-selected="false" data-tab="login">ログイン・左メニュー</button>
+      <button type="button" role="tab" aria-selected="false" data-tab="ops">卓・会計</button>
+      <button type="button" role="tab" aria-selected="false" data-tab="reception">受付</button>
+      <button type="button" role="tab" aria-selected="false" data-tab="handy">口頭注文</button>
+      <button type="button" role="tab" aria-selected="false" data-tab="kitchen">キッチン・提供</button>
+      <button type="button" role="tab" aria-selected="false" data-tab="menu">メニュー・在庫・コース</button>
+      <button type="button" role="tab" aria-selected="false" data-tab="cust">お客様・レポート</button>
+      <button type="button" role="tab" aria-selected="false" data-tab="settings">設定</button>
+      <button type="button" role="tab" aria-selected="false" data-tab="guest">お客様向けURL</button>
+      <button type="button" role="tab" aria-selected="false" data-tab="help">困ったとき</button>
+    </div>
+
+    <section id="panel-intro" class="panel is-active" role="tabpanel">
+      <h2>はじめに</h2>
+      <div class="card c1">
+        <h3>このシステムでできること（ざっくり）</h3>
+        <ul>
+          <li>お客様が<strong>スマホで注文</strong>したり、店員さんが<strong>卓まわりで会計</strong>したりできます。</li>
+          <li><strong>キッチン</strong>に注文が飛び、<strong>調理が終わったら</strong>また別の画面で管理できます。</li>
+          <li><strong>売上の見方</strong>や<strong>店のルール</strong>は「設定」にまとまっています。</li>
+        </ul>
+      </div>
+      <div class="card c2">
+        <h3>よく出てくる言葉</h3>
+        <ul>
+          <li><strong>卓</strong>＝お客様が座る席。それぞれに番号や名前があります。</li>
+          <li><strong>セッション</strong>＝その卓で、今お店にいるお客様の「一席分」の記録のようなものです。</li>
+          <li><strong>伝票</strong>＝会計のまとまり。お金の合計や支払いがここに載ります。</li>
+          <li><strong>精算</strong>＝お会計が終わって、伝票が確定した状態です。</li>
+        </ul>
+      </div>
+      <figure class="fig">
+        <img src="/manual-assets/illust-sidebar.svg" width="200" height="280" alt="左にメニュー、右に作業画面のイメージ" />
+        <figcaption>※ 実際の画面の見た目は少し違うことがあります。あくまでイメージです。</figcaption>
+      </figure>
+    </section>
+
+    <section id="panel-login" class="panel" role="tabpanel" hidden>
+      <h2>ログインと、左のメニュー</h2>
+      <div class="card c1">
+        <h3>ログインのしかた</h3>
+        <ol>
+          <li>店長さんから教えてもらった<strong>店舗ID</strong>と、<strong>メール</strong>と<strong>パスワード</strong>を入力します。</li>
+          <li><strong>ログイン</strong>ボタンを押します。</li>
+          <li>時間がたつと、もう一度ログインを求められることがあります。そのときは同じように入り直してください。</li>
+        </ol>
+      </div>
+      <div class="card c2">
+        <h3>左の縦アイコン（メニュー）の意味</h3>
+        <p>ログインすると、左に小さなアイコンが並びます。押すと画面が切り替わります。</p>
+        <ul>
+          <li><strong>ホーム</strong>：店舗のトップ。よく使う入口へのリンクがあります。</li>
+          <li><strong>卓・会計</strong>：いちばんよく使う場所。卓を選んで注文やお会計をします。</li>
+          <li><strong>受付</strong>：予約や呼び出しなど、受付まわりの画面です。</li>
+          <li><strong>口頭注文</strong>：電話やカウンターから、代わりに注文を入れる画面です。</li>
+          <li><strong>キッチン</strong>：調理の進み具合を見る画面です。</li>
+          <li><strong>調理済・提供</strong>：できあがった料理を、提供前に扱う画面です。</li>
+          <li><strong>メニュー</strong>：メニュー内容の編集です。</li>
+          <li><strong>在庫</strong>：在庫の数え方・入力です。</li>
+          <li><strong>お客様</strong>：お客様情報の一覧です。</li>
+          <li><strong>レポート</strong>：売上などの集計です。</li>
+          <li><strong>コース</strong>：コース料理の設定です。</li>
+          <li><strong>設定</strong>：店のルール・席・メールなど、まとめて設定します。</li>
+        </ul>
+      </div>
+      <div class="card c3">
+        <h3>画面上部について</h3>
+        <p>店舗IDの横に、<strong>お客様用</strong>の小さなリンク（受付・予約・テイクアウト）が出ることがあります。お客様に見せる画面を開くときに使います。</p>
+      </div>
+    </section>
+
+    <section id="panel-ops" class="panel" role="tabpanel" hidden>
+      <h2>卓・会計（オペレーション）</h2>
+      <div class="card c1">
+        <h3>目的</h3>
+        <p>どの卓が今どうなっているかを見て、<strong>注文を足したり</strong>、<strong>お会計を済ませたり</strong>します。</p>
+      </div>
+      <div class="card c2">
+        <h3>ふつうの流れ</h3>
+        <ol>
+          <li>左か中央の<strong>卓一覧</strong>から、いま操作したい卓を選びます。</li>
+          <li>右側に、その卓の<strong>注文・人数・コース</strong>などが出ます。</li>
+          <li>会計のときは、<strong>支払い方法</strong>や<strong>お釣り</strong>を入力して、精算（確定）します。</li>
+        </ol>
+      </div>
+      <div class="card note">
+        <h3>注意</h3>
+        <p>お金に関わる操作は、店のルール（設定の「会計」など）で<strong>店長だけ</strong>に限られていることがあります。ボタンが押せないときは店長さんに聞いてください。</p>
+      </div>
+    </section>
+
+    <section id="panel-reception" class="panel" role="tabpanel" hidden>
+      <h2>受付</h2>
+      <div class="card c1">
+        <h3>目的</h3>
+        <p>ネット予約や来店の受付、お客様からの<strong>呼び出し</strong>などを扱います。</p>
+      </div>
+      <div class="card c2">
+        <h3>使い方のヒント</h3>
+        <ul>
+          <li>画面の案内に沿って、<strong>予約の確認</strong>や<strong>席の案内</strong>をします。</li>
+          <li>店によって使う機能が違います。分からないときは店長さんに「この店では何をするか」を確認してください。</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="panel-handy" class="panel" role="tabpanel" hidden>
+      <h2>口頭注文（ハンディ）</h2>
+      <div class="card c1">
+        <h3>目的</h3>
+        <p>お客様が<strong>電話</strong>や<strong>カウンター口頭</strong>で注文したとき、代わりにキッチンへ伝える画面です。</p>
+      </div>
+      <div class="card c2">
+        <h3>流れ（大まか）</h3>
+        <ol>
+          <li>先に<strong>卓でセッション</strong>（お客様の席の記録）が開いていることを確認します。</li>
+          <li><strong>どの卓か</strong>と、<strong>店内かテイクアウトか</strong>を選びます。</li>
+          <li>メニューから商品を選び、<strong>カートに入れて送信</strong>します。</li>
+        </ol>
+      </div>
+      <div class="card c4">
+        <h3>お客様情報（任意）</h3>
+        <p>会員さんを選ぶ欄は、<strong>折りたたみ</strong>になっています。必要なときだけ開いてください。</p>
+      </div>
+    </section>
+
+    <section id="panel-kitchen" class="panel" role="tabpanel" hidden>
+      <h2>キッチン・調理済・提供</h2>
+      <div class="card c1">
+        <h3>キッチン画面</h3>
+        <p>入ってきた注文を、調理の進み方で見ます。<strong>自動で更新</strong>される秒数は、設定の「基本」で変えられます。</p>
+      </div>
+      <div class="card c2">
+        <h3>調理済・提供</h3>
+        <p>料理ができあがったあと、<strong>お客様の卓へ運ぶ前</strong>の段取りで使う画面です。店の運用に合わせて使い分けます。</p>
+      </div>
+    </section>
+
+    <section id="panel-menu" class="panel" role="tabpanel" hidden>
+      <h2>メニュー・在庫・コース</h2>
+      <div class="card c1">
+        <h3>メニュー</h3>
+        <p>商品名・価格・写真・カテゴリなどを編集します。大きな変更の前は、店長さんと相談してください。</p>
+      </div>
+      <div class="card c2">
+        <h3>在庫</h3>
+        <p>材料や商品の在庫数を、日々のルールに合わせて入力・更新します。</p>
+      </div>
+      <div class="card c3">
+        <h3>コース</h3>
+        <p>食べ放題の時間や料金のパターンなど、<strong>コース料理のセット</strong>を管理します。</p>
+      </div>
+    </section>
+
+    <section id="panel-cust" class="panel" role="tabpanel" hidden>
+      <h2>お客様・レポート</h2>
+      <div class="card c1">
+        <h3>お客様</h3>
+        <p>店に登録されたお客様情報を検索・閲覧します。個人情報なので、<strong>必要な人だけ</strong>が見るようにしてください。</p>
+      </div>
+      <div class="card c2">
+        <h3>レポート</h3>
+        <p>売上のまとまりや、伝票の一覧などを見ます。伝票の<strong>閲覧・修正</strong>ができるかは、設定の「レポート」で店が決めています。</p>
+      </div>
+    </section>
+
+    <section id="panel-settings" class="panel" role="tabpanel" hidden>
+      <h2>設定（店のルール）</h2>
+      <figure class="fig">
+        <img src="/manual-assets/illust-tabs.svg" width="280" height="120" alt="設定画面のタブのイメージ" />
+        <figcaption>設定の中も、上のタブで種類が分かれています（実物と同じ並びではありません）。</figcaption>
+      </figure>
+      <div class="card c1">
+        <h3>基本</h3>
+        <ul>
+          <li><strong>税</strong>の％や、メニュー・コースの<strong>税込／税抜</strong>の見せ方。</li>
+          <li><strong>店舗名</strong>、メール送信（SMTP）、キッチンの<strong>自動更新の秒数</strong>。</li>
+          <li>お客様の注文画面に<strong>金額を出すかどうか</strong>、時間の基準となる<strong>タイムゾーン</strong>。</li>
+        </ul>
+      </div>
+      <div class="card c2">
+        <h3>営業・会計・印刷</h3>
+        <p>営業時間、会計まわりのルール、レシートなど<strong>印刷</strong>の設定です。変更すると会計やレシートに影響します。店長さんの指示に従ってください。</p>
+      </div>
+      <div class="card c3">
+        <h3>メニュー／コース・ネット予約・キッチン</h3>
+        <p>それぞれの画面に関係する<strong>細かいスイッチ</strong>です。迷ったら変えずに店長さんへ。</p>
+      </div>
+      <div class="card c4">
+        <h3>席マスタ</h3>
+        <p>卓の<strong>名前・並び・QR用の公開コード</strong>などを管理します。並びは、卓一覧の表示順にも使われます。</p>
+        <p>公開コードを変えると、<strong>お客様用URLも変わる</strong>ので注意してください。URLの下に<strong>QRコード</strong>が表示されるので、印刷や貼り付けに使えます。</p>
+      </div>
+      <div class="card c1">
+        <h3>レポート・アカウント</h3>
+        <p>レポートで「伝票を直せるか」などのポリシー。<strong>スタッフのログインアカウント</strong>の管理です。</p>
+      </div>
+    </section>
+
+    <section id="panel-guest" class="panel" role="tabpanel" hidden>
+      <h2>お客様向けの URL（スタッフが案内するとき）</h2>
+      <div class="card c2">
+        <h3>URL の形（例）</h3>
+        <p>店舗ごとに <code>（サイトのドメイン）</code> が違います。次のようなパスだけ覚えると分かりやすいです。</p>
+        <ul>
+          <li>卓の注文：<code>/table-app/（公開コード）</code></li>
+          <li>受付（お客様用画面）：<code>/reception-app/（店舗ID）/front</code></li>
+          <li>ネット予約：<code>/reserve-app/（店舗ID）</code></li>
+          <li>テイクアウト注文：<code>/takeout/（店舗ID）</code></li>
+        </ul>
+      </div>
+      <figure class="fig">
+        <img src="/manual-assets/illust-qr.svg" width="120" height="120" alt="QRコードのイメージ" />
+        <figcaption>卓の案内は、設定の席マスタで出る QR や URL を使います。</figcaption>
+      </figure>
+    </section>
+
+    <section id="panel-help" class="panel" role="tabpanel" hidden>
+      <h2>困ったとき</h2>
+      <div class="card c1">
+        <h3>ログインできない</h3>
+        <ul>
+          <li>店舗ID・メール・パスワードの<strong>打ち間違い</strong>をもう一度確認します。</li>
+          <li>「有効期限が切れた」と出たら、<strong>もう一度ログイン</strong>します。</li>
+        </ul>
+      </div>
+      <div class="card c2">
+        <h3>「権限がありません」と出る</h3>
+        <p>URL の中の <code>/staff-app/（店舗ID）/</code> が、ログインしている店と<strong>同じか</strong>確認してください。別の店の URL を開いていると出ます。</p>
+      </div>
+      <div class="card c3">
+        <h3>それでも直らない</h3>
+        <p><strong>店長さん</strong>または、システムを入れてくれた担当者に、画面の写真と一緒に相談してください。</p>
+      </div>
+    </section>
+
+    <footer>
+      説明書の内容は、システムの更新で変わることがあります。あくまで目安としてお使いください。
+    </footer>
+  </div>
+
+  <script>
+    (function () {
+      var tabs = document.querySelectorAll(".tablist [role=tab]");
+      var panels = document.querySelectorAll(".panel");
+      function activate(id) {
+        tabs.forEach(function (btn) {
+          var on = btn.getAttribute("data-tab") === id;
+          btn.setAttribute("aria-selected", on ? "true" : "false");
+        });
+        panels.forEach(function (p) {
+          var on = p.id === "panel-" + id;
+          p.classList.toggle("is-active", on);
+          p.hidden = !on;
+        });
+      }
+      tabs.forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          activate(btn.getAttribute("data-tab"));
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

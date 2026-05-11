@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
+  <rect width="120" height="120" fill="#fff" stroke="#e2e8f0"/>
+  <g fill="#1e293b">
+    <rect x="12" y="12" width="28" height="28"/><rect x="52" y="12" width="8" height="8"/><rect x="68" y="12" width="8" height="8"/>
+    <rect x="12" y="52" width="8" height="8"/><rect x="28" y="52" width="8" height="8"/><rect x="80" y="80" width="28" height="28"/>
+  </g>
+  <text x="60" y="112" text-anchor="middle" font-size="8" fill="#64748b" font-family="system-ui">QR¤áü¸</text>
+</svg>

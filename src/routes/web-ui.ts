@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { templatePath } from "../lib/paths.js";
 import { displayTableCode } from "../lib/table-display-code.js";
 import { prisma } from "../db.js";
+import QRCode from "qrcode";
 
 function loadTemplate(name: string): string {
   return readFileSync(templatePath(name), "utf8");
@@ -272,6 +273,54 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
     if (!(await assertStaffStore(req, reply))) return;
     return staffHtml(reply, req.params.storeId, "設定", "staff-body-settings.html", "staff-script-settings.js");
   });
+
+  /** 席マスタなど: 卓の table-app URL を QR（SVG）で返す。スタッフ Cookie 認証必須。 */
+  app.get<{ Params: { storeId: string }; Querystring: { d?: string } }>(
+    "/staff-app/:storeId/table-qr.svg",
+    async (req, reply) => {
+      if (!(await assertStaffStore(req, reply))) return;
+      const raw = req.query.d;
+      if (raw == null || typeof raw !== "string" || raw.trim() === "") {
+        return reply.code(400).type("text/plain; charset=utf-8").send("missing d");
+      }
+      let decoded: string;
+      try {
+        decoded = decodeURIComponent(raw);
+      } catch {
+        return reply.code(400).type("text/plain; charset=utf-8").send("bad d");
+      }
+      if (decoded.length > 2048) {
+        return reply.code(400).type("text/plain; charset=utf-8").send("too long");
+      }
+      let u: URL;
+      try {
+        u = new URL(decoded);
+      } catch {
+        return reply.code(400).type("text/plain; charset=utf-8").send("bad url");
+      }
+      if (u.protocol !== "http:" && u.protocol !== "https:") {
+        return reply.code(400).type("text/plain; charset=utf-8").send("bad protocol");
+      }
+      if (!u.pathname.startsWith("/table-app/")) {
+        return reply.code(400).type("text/plain; charset=utf-8").send("not table url");
+      }
+      try {
+        const svg = await QRCode.toString(decoded, {
+          type: "svg",
+          margin: 1,
+          width: 128,
+          errorCorrectionLevel: "M",
+          color: { dark: "#1a1d24ff", light: "#ffffffff" },
+        });
+        return reply
+          .type("image/svg+xml; charset=utf-8")
+          .header("Cache-Control", "private, max-age=3600")
+          .send(svg);
+      } catch {
+        return reply.code(500).type("text/plain; charset=utf-8").send("qr failed");
+      }
+    },
+  );
 
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/customers", async (req, reply) => {
     if (!(await assertStaffStore(req, reply))) return;

@@ -421,6 +421,18 @@ async function renderTablesMaster(list) {
     mid.appendChild(title);
     mid.appendChild(sub);
     mid.appendChild(urlEl);
+    const qrWrap = document.createElement("div");
+    qrWrap.className = "tables-master-qr";
+    const qrImg = document.createElement("img");
+    qrImg.alt = "卓URLのQRコード";
+    qrImg.src = "/staff-app/" + encodeURIComponent(STORE) + "/table-qr.svg?d=" + encodeURIComponent(url);
+    qrImg.width = 128;
+    qrImg.height = 128;
+    qrImg.loading = "lazy";
+    qrImg.decoding = "async";
+    qrImg.className = "tables-master-qr-img";
+    qrWrap.appendChild(qrImg);
+    mid.appendChild(qrWrap);
 
     const nameLab = document.createElement("div");
     nameLab.className = "muted";

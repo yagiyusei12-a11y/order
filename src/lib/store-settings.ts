@@ -181,6 +181,10 @@ export type StoreSettingsShape = {
   }[];
   /** 会計画面で「レジ機能（現金の受取額/お釣り）」を有効にする支払い方法コード */
   opsRegisterMethodCodes: string[];
+  /** true のとき、会計の入金（対象 methodCode）をレジ現金台帳に自動追記する */
+  cashDrawerAutoFromPayments: boolean;
+  /** 台帳連携の対象とする支払い方法コード（空配列は未指定扱いで cash のみ） */
+  cashDrawerAutoMethodCodes: string[];
   /** OPS レシート印字に含める項目 */
   opsReceiptPrintFields: OpsReceiptPrintFields;
   /** OPS 領収書印字に含める項目 */
@@ -396,6 +400,8 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     takeoutNetPriceDisplayMode: "inclusive",
     opsDiscountPresets: [],
     opsRegisterMethodCodes: [],
+    cashDrawerAutoFromPayments: false,
+    cashDrawerAutoMethodCodes: ["cash"],
     opsReceiptPrintFields: { ...DEFAULT_OPS_RECEIPT_PRINT_FIELDS },
     opsInvoicePrintFields: { ...DEFAULT_OPS_INVOICE_PRINT_FIELDS },
     opsPrintLegalProfile: { ...DEFAULT_OPS_PRINT_LEGAL_PROFILE },
@@ -571,6 +577,16 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
       .map((x) => x.trim())
       .filter(Boolean);
     d.opsRegisterMethodCodes = [...new Set(codes)].slice(0, 30);
+  }
+  if (typeof o.cashDrawerAutoFromPayments === "boolean") {
+    d.cashDrawerAutoFromPayments = o.cashDrawerAutoFromPayments;
+  }
+  if (Array.isArray(o.cashDrawerAutoMethodCodes)) {
+    const codes = o.cashDrawerAutoMethodCodes
+      .filter((x) => typeof x === "string")
+      .map((x) => x.trim())
+      .filter(Boolean);
+    d.cashDrawerAutoMethodCodes = codes.length ? [...new Set(codes)].slice(0, 30) : ["cash"];
   }
   d.opsReceiptPrintFields = mergeOpsReceiptPrintFields(o.opsReceiptPrintFields);
   d.opsInvoicePrintFields = mergeOpsInvoicePrintFields(o.opsInvoicePrintFields);

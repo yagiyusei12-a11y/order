@@ -134,22 +134,25 @@ model StaffAuditLog {
   @@index([storeId, createdAt])
 }
 
-/// レジドロワー現金の追記専用台帳（開けログ・銀行移動・実地合わせ）
+/// レジドロワー現金の追記専用台帳（開けログ・銀行移動・実地合わせ・会計連携）
 model CashDrawerEntry {
   id               String    @id @default(cuid())
   storeId          String
   staffUserId      String?
-  /// drawer_open | to_bank | from_bank | count_reconcile
+  /// drawer_open | to_bank | from_bank | count_reconcile | sale_cash | sale_cash_void
   kind             String
   amountDeltaYen   Int
   balanceAfterYen  Int
   countedYen       Int?
   note             String?
+  /// 会計連携: 入金行は Payment.id、取消行は void:<paymentId>（重複防止）
+  sourcePaymentId  String?
   createdAt        DateTime  @default(now())
   store            Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
   staff            StaffUser? @relation(fields: [staffUserId], references: [id], onDelete: SetNull)
 
   @@index([storeId, createdAt])
+  @@unique([storeId, sourcePaymentId])
 }
 
 /// 決済手段の定義（全店共通マスタ。店ごとに有効/無効・並びを上書き）

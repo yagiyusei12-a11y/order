@@ -45,6 +45,8 @@ function kindLabelJa(kind) {
   if (kind === "to_bank") return "銀行へ出金";
   if (kind === "from_bank") return "銀行から入金";
   if (kind === "count_reconcile") return "実地合わせ";
+  if (kind === "sale_cash") return "会計入金（連携）";
+  if (kind === "sale_cash_void") return "会計入金取消（連携）";
   return kind || "—";
 }
 

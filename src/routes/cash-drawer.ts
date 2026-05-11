@@ -49,6 +49,7 @@ export async function registerCashDrawerRoutes(app: FastifyInstance): Promise<vo
         balanceAfterYen: r.balanceAfterYen,
         countedYen: r.countedYen,
         note: r.note,
+        sourcePaymentId: r.sourcePaymentId,
         createdAt: r.createdAt.toISOString(),
         actor: r.staff ? { email: r.staff.email, name: r.staff.name } : null,
       })),

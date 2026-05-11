@@ -12,6 +12,10 @@ import {
 } from "../lib/ops-discount.js";
 import { tableDisplayLabel } from "../lib/table-display-code.js";
 import { isBillCorrectionAllowed, mergeStoreSettings, type BillCorrectionPolicyKey } from "../lib/store-settings.js";
+import {
+  appendSaleCashEntryIfEnabled,
+  appendVoidSaleCashEntryIfEnabled,
+} from "../lib/cash-drawer-from-payments.js";
 import { startOfWallCalendarDayUtc, wallDateYmdInZone } from "../lib/store-wall-time.js";
 import { prisma } from "../db.js";
 import { appendStaffAuditFromRequest } from "../lib/staff-audit.js";
@@ -1551,7 +1555,11 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     const label = bill.label ? `${bill.label} · ${tag}` : tag;
 
     const staffUserId = staffUserIdFromReq(req);
+    const paymentsToVoid = bill.payments.filter((p) => !p.voidedAt);
     const updated = await prisma.$transaction(async (tx) => {
+      for (const p of paymentsToVoid) {
+        await appendVoidSaleCashEntryIfEnabled(tx, st4, bill.storeId, staffUserId, p, "伝票取消");
+      }
       await tx.payment.updateMany({
         where: { billId: bill.id, voidedAt: null },
         data: {
@@ -1604,7 +1612,11 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     }
 
     const staffUserId = staffUserIdFromReq(req);
+    const paymentsToVoidReopen = bill.payments.filter((p) => !p.voidedAt);
     await prisma.$transaction(async (tx) => {
+      for (const p of paymentsToVoidReopen) {
+        await appendVoidSaleCashEntryIfEnabled(tx, st5, bill.storeId, staffUserId, p, "精算取り消し（レジに戻す）");
+      }
       // 既存支払いは削除せず void 扱い（履歴維持）
       await tx.payment.updateMany({
         where: { billId: bill.id, voidedAt: null },
@@ -1706,6 +1718,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
           },
         });
         payments.push(p);
+        await appendSaleCashEntryIfEnabled(tx, st6, bill.storeId, staffUserId, p);
         try {
           await tx.billCorrectionEvent.create({
             data: {
@@ -1793,6 +1806,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
         where: { id: p.id },
         data: { voidedAt: new Date(), voidReason: reason, ...(staffUserId ? { voidedByStaffUserId: staffUserId } : {}) },
       });
+      await appendVoidSaleCashEntryIfEnabled(tx, st7, bill.storeId, staffUserId, p, reason);
       await tx.billCorrectionEvent.create({
         data: {
           storeId: bill.storeId,

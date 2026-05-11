@@ -207,6 +207,20 @@
         ※ 「レジ機能」は会計画面の“受取/お釣り”入力を出す支払い方法を指定します。
       </div>
     </div>
+
+    <div class="card" style="margin-top:1rem;border-color:#fcd34d">
+      <strong style="font-size:0.9rem">レジ現金台帳との連携</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        オンにすると、下記の決済手段コードに一致する会計入金が<strong>レジドロワー現金台帳</strong>へ自動追記されます。入金取消・伝票取消・精算をレジに戻すときは減算行が載ります。既定はオフ（既存店の挙動は変わりません）。
+      </p>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stCashDrawerAutoFromPayments" />
+        <span>会計の入金を台帳に自動反映する</span>
+      </label>
+      <label for="stCashDrawerAutoMethodCodes" style="font-size:0.78rem;margin-top:0.5rem">対象とする決済手段コード（カンマ・空白区切り。空なら <code>cash</code> のみ）</label>
+      <input id="stCashDrawerAutoMethodCodes" type="text" maxlength="500" style="width:100%;margin:0.2rem 0 0.65rem;font-family:ui-monospace,monospace;font-size:0.82rem" placeholder="例: cash, custom_cash" autocomplete="off" />
+      <button type="button" class="btn-primary" id="btnSaveCashDrawerAutoBilling">台帳連携設定を保存</button>
+    </div>
   </div>
 
   <div id="settingsTab-print" data-stab-panel="print" style="display:none">

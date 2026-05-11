@@ -950,6 +950,13 @@ async function loadAll() {
   const exTa = document.getElementById("stBizOpenExceptions");
   if (exTa) exTa.value = (Array.isArray(s.businessOpenExceptionDates) ? s.businessOpenExceptionDates : []).join("\n");
   const registerCodes = new Set(Array.isArray(s.opsRegisterMethodCodes) ? s.opsRegisterMethodCodes : []);
+  const stCdAuto = document.getElementById("stCashDrawerAutoFromPayments");
+  if (stCdAuto) stCdAuto.checked = s.cashDrawerAutoFromPayments === true;
+  const stCdCodes = document.getElementById("stCashDrawerAutoMethodCodes");
+  if (stCdCodes) {
+    const cdm = Array.isArray(s.cashDrawerAutoMethodCodes) ? s.cashDrawerAutoMethodCodes : [];
+    stCdCodes.value = cdm.length ? cdm.join(", ") : "";
+  }
 
   const sl = document.getElementById("staffList");
   const users = staff.staffUsers || [];
@@ -1378,6 +1385,34 @@ if (btnSaveOpsDiscountPresets) {
         body: JSON.stringify({ settings: { opsDiscountPresets: out } }),
       });
       log("プリセットを保存しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+}
+
+const btnSaveCashDrawerAutoBilling = document.getElementById("btnSaveCashDrawerAutoBilling");
+if (btnSaveCashDrawerAutoBilling) {
+  btnSaveCashDrawerAutoBilling.onclick = async () => {
+    log("");
+    if (!requireManagerForSettings()) return;
+    const onEl = document.getElementById("stCashDrawerAutoFromPayments");
+    const codesEl = document.getElementById("stCashDrawerAutoMethodCodes");
+    const raw = codesEl ? String(codesEl.value || "") : "";
+    const tokens = raw.split(/[\s,，]+/).map((x) => x.trim()).filter(Boolean);
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          settings: {
+            cashDrawerAutoFromPayments: !!(onEl && onEl.checked),
+            cashDrawerAutoMethodCodes: tokens,
+          },
+        }),
+      });
+      log("台帳連携設定を保存しました");
       await loadAll();
     } catch (e) {
       log(String(e.message || e));

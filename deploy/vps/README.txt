@@ -47,7 +47,7 @@ Daiko（代行 SaaS / daiko サブフォルダ）
   手編集する場合は daiko/deploy/daiko-app.service の WorkingDirectory / EnvironmentFile をサーバパスに合わせる
 - 初回は daiko でビルドが必須（dist が無いと systemd が即落ちする）:
     cd ~/order/daiko && npm ci && npx prisma migrate deploy && npx prisma generate && npm run build && sudo systemctl restart daiko-app
-  （`npm run build` で `daiko/web` がビルドされ `public/app/` に SPA が出力されること）
+  （`npm run build` で `daiko/web` がビルドされ `public/app/` に SPA が出力されること。`deploy-vps.ps1` 経由では `npm run db:seed` で帳票テンプレも投入される）
 - ヘルス: curl -sS http://127.0.0.1:3001/health
 - PC からデプロイ: daiko/.env.deploy を用意し、リポジトリルートで
     powershell -NoProfile -ExecutionPolicy Bypass -File ./daiko/scripts/deploy-vps.ps1

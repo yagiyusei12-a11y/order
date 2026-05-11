@@ -6,6 +6,7 @@ import { writeAuditEvent } from "../lib/audit.js";
 import { userHasPermission } from "../lib/permissions.js";
 import { prisma } from "../db.js";
 import { tenantIdFromReq } from "./tenant-scope.js";
+import { validateDispatchProfileInCustomJson } from "../lib/dispatch-profile.js";
 
 const patchBodySchema = z.object({
   businessDayRollHour: z.number().int().min(0).max(23).optional(),
@@ -39,6 +40,11 @@ export async function registerTenantSettingsRoutes(app: FastifyInstance): Promis
     }
     const body = parsed.data;
     if (!Object.keys(body).length) return reply.code(400).send({ error: "no fields to update" });
+
+    if (body.customJson !== undefined) {
+      const d = validateDispatchProfileInCustomJson(body.customJson);
+      if (!d.ok) return reply.code(400).send({ error: d.error });
+    }
 
     const flagsStr = body.featureFlags !== undefined ? JSON.stringify(body.featureFlags) : "";
     if (flagsStr.length > 32_000) return reply.code(400).send({ error: "featureFlags too large" });

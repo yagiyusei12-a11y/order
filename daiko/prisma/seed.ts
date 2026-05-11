@@ -1,8 +1,23 @@
 import { PrismaClient } from "@prisma/client";
+import { NINE_DOC_TEMPLATE_SEEDS } from "./nine-doc-templates-seed.js";
 
 const prisma = new PrismaClient();
 
 async function main() {
+  for (const row of NINE_DOC_TEMPLATE_SEEDS) {
+    await prisma.documentTemplate.upsert({
+      where: { kind_version: { kind: row.kind, version: row.version } },
+      create: {
+        kind: row.kind,
+        version: row.version,
+        label: row.label,
+        htmlBody: row.htmlBody,
+      },
+      update: { label: row.label, htmlBody: row.htmlBody },
+    });
+    console.log(`daiko seed: document template ${row.kind} ok`);
+  }
+
   await prisma.documentTemplate.upsert({
     where: { kind_version: { kind: "alcohol_log_stub", version: 1 } },
     create: {

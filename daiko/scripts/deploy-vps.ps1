@@ -56,7 +56,7 @@ git push origin main
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $daikoRel = "daiko"
-$remote = "set -e; cd $remotePath; git pull; cd $daikoRel; npm ci; npx prisma migrate deploy; npx prisma generate; npm run build; sudo systemctl restart $service; sleep 2; curl -sS http://127.0.0.1:3001/health"
+$remote = "set -e; cd $remotePath; git pull; cd $daikoRel; npm ci; npx prisma migrate deploy; npx prisma generate; npm run db:seed; npm run build; sudo systemctl restart $service; sleep 2; curl -sS http://127.0.0.1:3001/health"
 
 Write-Host "SSH $user@${hostName}: daiko pull, migrate, build, restart $service ..." -ForegroundColor Cyan
 & ssh -i $key -o BatchMode=yes -o StrictHostKeyChecking=accept-new "$user@$hostName" $remote

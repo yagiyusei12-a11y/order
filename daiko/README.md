@@ -41,7 +41,7 @@ npm run dev
 - DNS: `daiko.harunoyukoto.jp` → VPS
 - Caddy: [deploy/vps/Caddyfile](../deploy/vps/Caddyfile) にホスト追加済み（`127.0.0.1:3001` 想定）
 - systemd: `daiko/deploy/daiko-app.service` を `/etc/systemd/system/` に配置
-- デプロイ: `daiko/scripts/deploy-vps.ps1`（`.env.deploy` に `DAIKO_VPS_*`）
+- デプロイ: `daiko/scripts/deploy-vps.ps1`（`.env.deploy` に `DAIKO_VPS_*`）。リモートでは `migrate deploy` のあと **`npm run db:seed`** で帳票テンプレ（9 種＋酒気スタブ）を投入する。
 
 ## 事業日
 

@@ -8,7 +8,7 @@ export async function registerTariffRoutes(app: FastifyInstance): Promise<void> 
     const tid = tenantIdFromReq(req);
     const rows = await prisma.tariffPlan.findMany({
       where: { tenantId: tid },
-      include: { versions: { orderBy: { version: "desc" }, take: 3 } },
+      include: { versions: { orderBy: { version: "desc" }, take: 5, include: { segments: true } } },
       orderBy: { name: "asc" },
     });
     return { plans: rows };
@@ -64,4 +64,40 @@ export async function registerTariffRoutes(app: FastifyInstance): Promise<void> 
     });
     return ver;
   });
+
+  app.post<{
+    Params: { versionId: string };
+    Body: { fromM?: number; toM?: number; fareYen?: number };
+  }>("/tariff-versions/:versionId/segments", { preHandler: [authenticate] }, async (req, reply) => {
+    const tid = tenantIdFromReq(req);
+    const ver = await prisma.tariffPlanVersion.findFirst({
+      where: { id: req.params.versionId, plan: { tenantId: tid } },
+    });
+    if (!ver) return reply.code(404).send({ error: "version not found" });
+    const fromM = Math.floor(Number(req.body?.fromM ?? NaN));
+    const toM = Math.floor(Number(req.body?.toM ?? NaN));
+    const fareYen = Math.floor(Number(req.body?.fareYen ?? NaN));
+    if (!Number.isFinite(fromM) || !Number.isFinite(toM) || !Number.isFinite(fareYen)) {
+      return reply.code(400).send({ error: "fromM, toM, fareYen required as numbers" });
+    }
+    if (fromM > toM) return reply.code(400).send({ error: "fromM must be <= toM" });
+    const seg = await prisma.tariffSegment.create({
+      data: { versionId: ver.id, fromM, toM, fareYen },
+    });
+    return seg;
+  });
+
+  app.delete<{ Params: { segmentId: string } }>(
+    "/tariff-segments/:segmentId",
+    { preHandler: [authenticate] },
+    async (req, reply) => {
+      const tid = tenantIdFromReq(req);
+      const seg = await prisma.tariffSegment.findFirst({
+        where: { id: req.params.segmentId, version: { plan: { tenantId: tid } } },
+      });
+      if (!seg) return reply.code(404).send({ error: "not found" });
+      await prisma.tariffSegment.delete({ where: { id: seg.id } });
+      return { ok: true };
+    },
+  );
 }

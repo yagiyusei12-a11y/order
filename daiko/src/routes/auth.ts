@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import bcrypt from "bcryptjs";
 import { authenticate } from "../auth/pre.js";
+import { userEffectivePermissionList } from "../lib/permissions.js";
 import { prisma } from "../db.js";
 import { hashToken, randomRefreshToken } from "../lib/tokens.js";
 
@@ -86,6 +87,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       where: { id: u.sub },
       include: { roles: { include: { role: true } }, tenant: { select: { id: true, name: true, slug: true } } },
     });
+    const permissions = user ? await userEffectivePermissionList(user.id, user.tenantId) : [];
     return {
       user: user
         ? {
@@ -94,6 +96,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
             displayName: user.displayName,
             tenant: user.tenant,
             roles: user.roles.map((r) => r.role.name),
+            permissions,
           }
         : null,
     };

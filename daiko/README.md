@@ -11,6 +11,12 @@
 - 給与: 月次プレビュー（ドラフト保存）・確定ロック
 - 帳票: テンプレート CRUD（シード）と HTML プレビュー（PDF は後段で Chromium 等を追加可能）
 
+## ブラウザ UI（SPA）
+
+- `daiko/web` を Vite でビルドし、成果物は `daiko/public/app/` に出力されます。
+- 本番・開発サーバとも `http://<host>:3001/app/` がエントリ（`/` と `/web` は `/app/` へリダイレクト）。
+- `npm run build` は **先に web をビルド**してから `tsc` で API サーバをコンパイルします。
+
 ## ローカル開発
 
 ```bash
@@ -20,7 +26,8 @@ cp .env.example .env
 npx prisma migrate deploy
 npm run db:seed
 npm run dev
-# http://localhost:3001/health
+# API: http://localhost:3001/health
+# UI 開発: 別ターミナルで cd daiko/web && npm run dev（Vite が /api を 3001 にプロキシ）
 ```
 
 ## API プレフィックス

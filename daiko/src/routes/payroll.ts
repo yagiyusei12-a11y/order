@@ -14,6 +14,37 @@ import { tenantFeatureEnabled } from "../lib/tenant-features.js";
 import { tenantIdFromReq } from "./tenant-scope.js";
 
 export async function registerPayrollRoutes(app: FastifyInstance): Promise<void> {
+  app.get<{ Querystring: { periodYm?: string; limit?: string } }>(
+    "/payroll-runs",
+    { preHandler: [authenticate] },
+    async (req) => {
+      const tid = tenantIdFromReq(req);
+      const periodYm = String(req.query?.periodYm || "").trim();
+      const limit = Math.min(100, Math.max(1, Math.floor(Number(req.query?.limit ?? 24))));
+      const where: { tenantId: string; periodYm?: string } = { tenantId: tid };
+      if (/^\d{4}-\d{2}$/.test(periodYm)) where.periodYm = periodYm;
+      const runs = await prisma.payrollRun.findMany({
+        where,
+        orderBy: { periodYm: "desc" },
+        take: limit,
+        include: {
+          lines: { include: { employee: true } },
+        },
+      });
+      return { runs };
+    },
+  );
+
+  app.get<{ Params: { id: string } }>("/payroll-runs/:id", { preHandler: [authenticate] }, async (req, reply) => {
+    const tid = tenantIdFromReq(req);
+    const run = await prisma.payrollRun.findFirst({
+      where: { id: req.params.id, tenantId: tid },
+      include: { lines: { include: { employee: true } } },
+    });
+    if (!run) return reply.code(404).send({ error: "not found" });
+    return { run };
+  });
+
   app.post<{ Body: { periodYm?: string; poolRateBps?: number } }>(
     "/payroll-runs/preview",
     { preHandler: [authenticate] },

@@ -1,10 +1,10 @@
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
+import fastifyStatic from "@fastify/static";
 import jwt from "@fastify/jwt";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import Fastify from "fastify";
-import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { prisma } from "./db.js";
@@ -21,6 +21,7 @@ import { registerTenantSettingsRoutes } from "./routes/tenant-settings.js";
 import { registerRoleRoutes } from "./routes/roles.js";
 import { registerDashboardRoutes } from "./routes/dashboard.js";
 import { registerLegalRoutes } from "./routes/legal.js";
+import { registerUserRoutes } from "./routes/users.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -34,7 +35,28 @@ await app.register(cors, {
   credentials: true,
 });
 
-await app.register(helmet, { global: true });
+const helmetOpts =
+  process.env.NODE_ENV === "production"
+    ? {
+        global: true as const,
+        contentSecurityPolicy: {
+          useDefaults: false,
+          directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            imgSrc: ["'self'", "data:", "blob:"],
+            connectSrc: ["'self'"],
+            fontSrc: ["'self'", "data:"],
+            frameSrc: ["'self'"],
+            objectSrc: ["'none'"],
+            baseUri: ["'self'"],
+          },
+        },
+      }
+    : { global: true as const, contentSecurityPolicy: false };
+
+await app.register(helmet, helmetOpts);
 await app.register(jwt, {
   secret: process.env.JWT_SECRET || "daiko-dev-secret-change-me-min-32-chars!!",
 });
@@ -60,6 +82,7 @@ app.get("/health", async () => ({ ok: true, service: "daiko" }));
 
 const v1 = "/api/v1";
 await app.register(registerAuthRoutes, { prefix: v1 });
+await app.register(registerUserRoutes, { prefix: v1 });
 await app.register(registerEmployeeRoutes, { prefix: v1 });
 await app.register(registerVehicleRoutes, { prefix: v1 });
 await app.register(registerTariffRoutes, { prefix: v1 });
@@ -75,9 +98,26 @@ await app.register(registerLegalRoutes, { prefix: v1 });
 
 app.get("/api/v1/openapi.json", async () => app.swagger());
 
-app.get("/web", async (_, reply) => {
-  reply.type("text/html; charset=utf-8");
-  return readFile(join(__dirname, "../public/index.html"), "utf8");
+const appStaticRoot = join(__dirname, "../public/app");
+await app.register(fastifyStatic, {
+  root: appStaticRoot,
+  prefix: "/app/",
+});
+
+app.get("/app", async (_, reply) => reply.redirect("/app/", 302));
+app.get("/", async (_, reply) => reply.redirect("/app/", 302));
+app.get("/web", async (_, reply) => reply.redirect("/app/", 302));
+
+app.setNotFoundHandler((req, reply) => {
+  const raw = req.raw.url ?? "";
+  const pathOnly = raw.split("?")[0] ?? "";
+  if (
+    req.method === "GET" &&
+    (pathOnly === "/app" || (pathOnly.startsWith("/app/") && !pathOnly.startsWith("/app/assets/")))
+  ) {
+    return reply.type("text/html; charset=utf-8").sendFile("index.html", appStaticRoot);
+  }
+  void reply.code(404).send({ error: "not found" });
 });
 
 const port = Number(process.env.PORT || 3001);

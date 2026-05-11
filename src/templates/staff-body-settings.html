@@ -210,6 +210,33 @@
   </div>
 
   <div id="settingsTab-print" data-stab-panel="print" style="display:none">
+    <div class="card" style="border-color:#0d9488;margin-bottom:1rem">
+      <strong style="font-size:0.9rem">事業者・インボイス（印字用）</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        レシート／領収書に出す<strong>適格請求書発行事業者の登録番号</strong>や所在地などを登録します（表示する項目は下のチェックで選びます）。屋号が空のときは「基本」タブの店舗名を印字に使います。
+      </p>
+      <label for="stLegalIssuerTradeName" style="font-size:0.78rem">屋号（正式な事業者名・任意）</label>
+      <input id="stLegalIssuerTradeName" type="text" maxlength="120" style="width:100%;margin:0.2rem 0 0.5rem" placeholder="空なら店舗名" />
+      <label for="stLegalRegNo" style="font-size:0.78rem">適格請求書発行事業者の登録番号（T+12または13桁）</label>
+      <input id="stLegalRegNo" type="text" maxlength="24" style="width:100%;margin:0.2rem 0 0.5rem;font-family:ui-monospace,monospace" placeholder="例: T1234567890123" autocomplete="off" />
+      <div class="row" style="gap:0.65rem;flex-wrap:wrap;align-items:flex-end">
+        <div style="min-width:8rem;flex:0">
+          <label for="stLegalPostal" style="font-size:0.78rem">郵便番号</label>
+          <input id="stLegalPostal" type="text" maxlength="16" style="width:100%;margin:0.2rem 0 0" placeholder="例: 123-4567" />
+        </div>
+        <div style="flex:1;min-width:12rem">
+          <label for="stLegalPhone" style="font-size:0.78rem">電話</label>
+          <input id="stLegalPhone" type="text" maxlength="40" style="width:100%;margin:0.2rem 0 0" />
+        </div>
+      </div>
+      <label for="stLegalAddress" style="font-size:0.78rem;margin-top:0.5rem">住所</label>
+      <input id="stLegalAddress" type="text" maxlength="400" style="width:100%;margin:0.2rem 0 0.5rem" />
+      <label for="stLegalRep" style="font-size:0.78rem">代表者名（任意）</label>
+      <input id="stLegalRep" type="text" maxlength="80" style="width:100%;margin:0.2rem 0 0.5rem" />
+      <label for="stLegalFooter" style="font-size:0.78rem">印字末尾の注記（任意・インボイス案内など）</label>
+      <textarea id="stLegalFooter" rows="2" maxlength="500" style="width:100%;margin:0.2rem 0 0;font-size:0.82rem"></textarea>
+      <button type="button" class="btn-primary" id="btnSaveOpsPrintLegal" style="margin-top:0.75rem">事業者・登録番号を保存</button>
+    </div>
     <div class="card" style="border-color:#a78bfa">
       <strong style="font-size:0.9rem">レシート（OPS）に載せる項目</strong>
       <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
@@ -229,6 +256,34 @@
       </label>
       <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
         <input type="checkbox" id="stPrRfCashChange" /> <span>現金お預かり・お釣り</span>
+      </label>
+      <p class="muted" style="font-size:0.72rem;margin:0.5rem 0 0.25rem">インボイス・法定向け（上の登録番号等が入力されている項目のみ印字されます）</p>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrRfRegNo" /> <span>登録番号</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrRfTradeName" /> <span>屋号（設定の屋号または店舗名）</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrRfAddress" /> <span>住所・電話ブロック</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrRfTxWhen" /> <span>取引年月日（精算日時）</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrRfTaxTbl" /> <span>税率別内訳（税込対価・税額）</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrRfPay" /> <span>支払方法別内訳</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrRfDisc" /> <span>卓割引（伝票割引）</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrRfSess" /> <span>卓・会計セッション情報</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrRfTaxCol" /> <span>明細に税率（%）列</span>
       </label>
       <button type="button" class="btn-primary" id="btnSaveOpsReceiptPrint" style="margin-top:0.75rem">レシート項目を保存</button>
     </div>
@@ -257,6 +312,35 @@
       </label>
       <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
         <input type="checkbox" id="stPrIfChangeLine" /> <span>お釣りの注記（現金時）</span>
+      </label>
+      <p class="muted" style="font-size:0.72rem;margin:0.5rem 0 0.25rem">インボイス・法定向け</p>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrIfRegNo" /> <span>登録番号</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrIfTradeName" /> <span>屋号</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrIfAddress" /> <span>住所・電話ブロック</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrIfTxWhen" /> <span>取引年月日</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrIfTaxTbl" /> <span>税率別内訳</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrIfPay" /> <span>支払方法別内訳</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrIfDisc" /> <span>卓割引</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrIfSess" /> <span>卓・会計セッション情報</span>
+      </label>
+      <label class="row" style="align-items:flex-start;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrIfTaxFullWhenPart" style="margin-top:0.12rem" />
+        <span>一部金額のとき税率別表を伝票<strong>全額</strong>ベースで参考表示</span>
       </label>
       <button type="button" class="btn-primary" id="btnSaveOpsInvoicePrint" style="margin-top:0.75rem">領収書項目を保存</button>
     </div>

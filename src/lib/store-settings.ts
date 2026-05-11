@@ -28,6 +28,24 @@ export type OpsReceiptPrintFields = {
   lineItems: boolean;
   total: boolean;
   cashChange: boolean;
+  /** 適格請求書発行事業者の登録番号（opsPrintLegalProfile の値があれば印字） */
+  qualifiedInvoiceRegistrationNumber: boolean;
+  /** 屋号（空なら店舗名）。issuerTradeName 優先 */
+  issuerTradeName: boolean;
+  /** 郵便番号・住所・電話（プロフィール） */
+  issuerAddressBlock: boolean;
+  /** 取引年月日（精算日時または伝票作成） */
+  transactionDatetime: boolean;
+  /** 税率別の税込対価・税額等 */
+  taxBreakdownTable: boolean;
+  /** 支払方法別の内訳 */
+  paymentBreakdown: boolean;
+  /** 卓割引等（billDiscountJson） */
+  billDiscount: boolean;
+  /** 卓名・会計セッション情報 */
+  sessionTableInfo: boolean;
+  /** 明細表に税率（%）列を追加 */
+  lineTaxRateColumn: boolean;
 };
 
 /** OPS 領収書に載せる項目 */
@@ -39,6 +57,30 @@ export type OpsInvoicePrintFields = {
   purpose: boolean;
   recipient: boolean;
   changeLine: boolean;
+  qualifiedInvoiceRegistrationNumber: boolean;
+  issuerTradeName: boolean;
+  issuerAddressBlock: boolean;
+  transactionDatetime: boolean;
+  taxBreakdownTable: boolean;
+  paymentBreakdown: boolean;
+  billDiscount: boolean;
+  sessionTableInfo: boolean;
+  /** 一部金額のとき税率別表を伝票全額ベースで参考表示する */
+  taxBreakdownFullBillWhenPartial: boolean;
+};
+
+/** OPS 印字用の事業者・インボイス情報（店舗 settings JSON） */
+export type OpsPrintLegalProfile = {
+  /** 空のとき店舗名を印字に使用 */
+  issuerTradeName: string;
+  /** 例: T1234567890123（保存時に正規化） */
+  qualifiedInvoiceRegistrationNumber: string;
+  issuerPostalCode: string;
+  issuerAddress: string;
+  issuerPhone: string;
+  issuerRepresentativeName: string;
+  /** レシート／領収書末尾の任意注記 */
+  legalNoteFooter: string;
 };
 
 /** コース卓でラストオーダー締め時刻を過ぎたあとのゲスト注文ポリシー */
@@ -143,6 +185,8 @@ export type StoreSettingsShape = {
   opsReceiptPrintFields: OpsReceiptPrintFields;
   /** OPS 領収書印字に含める項目 */
   opsInvoicePrintFields: OpsInvoicePrintFields;
+  /** OPS レシート・領収書の事業者表記・登録番号など */
+  opsPrintLegalProfile: OpsPrintLegalProfile;
   billCorrectionPolicy: BillCorrectionPolicy;
   /** 日次在庫リセットを有効にする（店舗 TZ の stockDailyResetTimeMin に実行） */
   stockDailyResetEnabled: boolean;
@@ -228,6 +272,15 @@ const DEFAULT_OPS_RECEIPT_PRINT_FIELDS: OpsReceiptPrintFields = {
   lineItems: true,
   total: true,
   cashChange: true,
+  qualifiedInvoiceRegistrationNumber: false,
+  issuerTradeName: false,
+  issuerAddressBlock: false,
+  transactionDatetime: false,
+  taxBreakdownTable: false,
+  paymentBreakdown: false,
+  billDiscount: false,
+  sessionTableInfo: false,
+  lineTaxRateColumn: false,
 };
 
 const DEFAULT_OPS_INVOICE_PRINT_FIELDS: OpsInvoicePrintFields = {
@@ -238,7 +291,55 @@ const DEFAULT_OPS_INVOICE_PRINT_FIELDS: OpsInvoicePrintFields = {
   purpose: true,
   recipient: true,
   changeLine: true,
+  qualifiedInvoiceRegistrationNumber: false,
+  issuerTradeName: false,
+  issuerAddressBlock: false,
+  transactionDatetime: false,
+  taxBreakdownTable: false,
+  paymentBreakdown: false,
+  billDiscount: false,
+  sessionTableInfo: false,
+  taxBreakdownFullBillWhenPartial: false,
 };
+
+const DEFAULT_OPS_PRINT_LEGAL_PROFILE: OpsPrintLegalProfile = {
+  issuerTradeName: "",
+  qualifiedInvoiceRegistrationNumber: "",
+  issuerPostalCode: "",
+  issuerAddress: "",
+  issuerPhone: "",
+  issuerRepresentativeName: "",
+  legalNoteFooter: "",
+};
+
+function mergeOpsPrintLegalProfile(raw: unknown): OpsPrintLegalProfile {
+  const d = { ...DEFAULT_OPS_PRINT_LEGAL_PROFILE };
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return d;
+  const o = raw as Record<string, unknown>;
+  const str = (k: keyof OpsPrintLegalProfile, max: number) => {
+    const v = o[k];
+    if (typeof v !== "string") return;
+    d[k] = v.trim().slice(0, max);
+  };
+  str("issuerTradeName", 120);
+  str("qualifiedInvoiceRegistrationNumber", 24);
+  str("issuerPostalCode", 16);
+  str("issuerAddress", 400);
+  str("issuerPhone", 40);
+  str("issuerRepresentativeName", 80);
+  str("legalNoteFooter", 500);
+  if (d.qualifiedInvoiceRegistrationNumber) {
+    let x = d.qualifiedInvoiceRegistrationNumber.toUpperCase().replace(/[^0-9T]/g, "");
+    if (!x.startsWith("T") && /^\d{12,13}$/.test(x)) x = "T" + x;
+    if (x.startsWith("T")) {
+      const digits = x.slice(1).replace(/\D/g, "").slice(0, 13);
+      if (digits.length === 12 || digits.length === 13) {
+        d.qualifiedInvoiceRegistrationNumber = "T" + digits;
+      }
+    }
+  }
+  return d;
+}
 
 function mergeOpsReceiptPrintFields(raw: unknown): OpsReceiptPrintFields {
   const o = { ...DEFAULT_OPS_RECEIPT_PRINT_FIELDS };
@@ -297,6 +398,7 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     opsRegisterMethodCodes: [],
     opsReceiptPrintFields: { ...DEFAULT_OPS_RECEIPT_PRINT_FIELDS },
     opsInvoicePrintFields: { ...DEFAULT_OPS_INVOICE_PRINT_FIELDS },
+    opsPrintLegalProfile: { ...DEFAULT_OPS_PRINT_LEGAL_PROFILE },
     billCorrectionPolicy: {
       enabled: true,
       payments: true,
@@ -472,6 +574,7 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
   }
   d.opsReceiptPrintFields = mergeOpsReceiptPrintFields(o.opsReceiptPrintFields);
   d.opsInvoicePrintFields = mergeOpsInvoicePrintFields(o.opsInvoicePrintFields);
+  d.opsPrintLegalProfile = mergeOpsPrintLegalProfile(o.opsPrintLegalProfile);
   if (o.billCorrectionPolicy && typeof o.billCorrectionPolicy === "object" && !Array.isArray(o.billCorrectionPolicy)) {
     const p = o.billCorrectionPolicy as Record<string, unknown>;
     if (typeof p.enabled === "boolean") d.billCorrectionPolicy.enabled = p.enabled;

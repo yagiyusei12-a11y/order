@@ -21,6 +21,15 @@ let storeSettingsCache = {
     lineItems: true,
     total: true,
     cashChange: true,
+    qualifiedInvoiceRegistrationNumber: false,
+    issuerTradeName: false,
+    issuerAddressBlock: false,
+    transactionDatetime: false,
+    taxBreakdownTable: false,
+    paymentBreakdown: false,
+    billDiscount: false,
+    sessionTableInfo: false,
+    lineTaxRateColumn: false,
   },
   opsInvoicePrintFields: {
     storeName: true,
@@ -30,6 +39,24 @@ let storeSettingsCache = {
     purpose: true,
     recipient: true,
     changeLine: true,
+    qualifiedInvoiceRegistrationNumber: false,
+    issuerTradeName: false,
+    issuerAddressBlock: false,
+    transactionDatetime: false,
+    taxBreakdownTable: false,
+    paymentBreakdown: false,
+    billDiscount: false,
+    sessionTableInfo: false,
+    taxBreakdownFullBillWhenPartial: false,
+  },
+  opsPrintLegalProfile: {
+    issuerTradeName: "",
+    qualifiedInvoiceRegistrationNumber: "",
+    issuerPostalCode: "",
+    issuerAddress: "",
+    issuerPhone: "",
+    issuerRepresentativeName: "",
+    legalNoteFooter: "",
   },
   billCorrectionPolicy: {
     enabled: true,
@@ -65,25 +92,58 @@ function billCorrectionAllowed(key) {
   return p[key] === true;
 }
 
+function getOpsPrintLegalProfile() {
+  const empty = {
+    issuerTradeName: "",
+    qualifiedInvoiceRegistrationNumber: "",
+    issuerPostalCode: "",
+    issuerAddress: "",
+    issuerPhone: "",
+    issuerRepresentativeName: "",
+    legalNoteFooter: "",
+  };
+  const lp = storeSettingsCache.opsPrintLegalProfile;
+  if (!lp || typeof lp !== "object") return empty;
+  const out = { ...empty };
+  for (const k of Object.keys(empty)) {
+    if (typeof lp[k] === "string") out[k] = lp[k];
+  }
+  return out;
+}
+
+function effectiveIssuerTradeNameForPrint() {
+  const t = getOpsPrintLegalProfile().issuerTradeName.trim();
+  return t || opsStoreDisplayName || "";
+}
+
 function getOpsReceiptPrintFields() {
-  const d = {
+  const base = {
     storeName: true,
     billId: true,
     lineItems: true,
     total: true,
     cashChange: true,
+    qualifiedInvoiceRegistrationNumber: false,
+    issuerTradeName: false,
+    issuerAddressBlock: false,
+    transactionDatetime: false,
+    taxBreakdownTable: false,
+    paymentBreakdown: false,
+    billDiscount: false,
+    sessionTableInfo: false,
+    lineTaxRateColumn: false,
   };
   const p = storeSettingsCache.opsReceiptPrintFields;
   if (p && typeof p === "object") {
-    for (const k of Object.keys(d)) {
-      if (typeof p[k] === "boolean") d[k] = p[k];
+    for (const k of Object.keys(base)) {
+      if (typeof p[k] === "boolean") base[k] = p[k];
     }
   }
-  return d;
+  return base;
 }
 
 function getOpsInvoicePrintFields() {
-  const d = {
+  const base = {
     storeName: true,
     billId: true,
     issueDate: true,
@@ -91,14 +151,23 @@ function getOpsInvoicePrintFields() {
     purpose: true,
     recipient: true,
     changeLine: true,
+    qualifiedInvoiceRegistrationNumber: false,
+    issuerTradeName: false,
+    issuerAddressBlock: false,
+    transactionDatetime: false,
+    taxBreakdownTable: false,
+    paymentBreakdown: false,
+    billDiscount: false,
+    sessionTableInfo: false,
+    taxBreakdownFullBillWhenPartial: false,
   };
   const p = storeSettingsCache.opsInvoicePrintFields;
   if (p && typeof p === "object") {
-    for (const k of Object.keys(d)) {
-      if (typeof p[k] === "boolean") d[k] = p[k];
+    for (const k of Object.keys(base)) {
+      if (typeof p[k] === "boolean") base[k] = p[k];
     }
   }
-  return d;
+  return base;
 }
 
 const pendingGroupedQty = new Map();
@@ -745,23 +814,234 @@ function formatInvoiceIssueWhen(d) {
   }
 }
 
+function formatBillTransactionWhen(detail) {
+  const iso = detail.settledAt || detail.createdAt;
+  if (!iso) return "—";
+  try {
+    const d = new Date(String(iso));
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleString("ja-JP", {
+      timeZone: storeSettingsCache.timezone || "Asia/Tokyo",
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch (_) {
+    return "—";
+  }
+}
+
+function buildIssuerAddressBlockHtml(lp) {
+  const bits = [];
+  const pc = (lp.issuerPostalCode || "").trim();
+  const ad = (lp.issuerAddress || "").trim();
+  const ph = (lp.issuerPhone || "").trim();
+  const rep = (lp.issuerRepresentativeName || "").trim();
+  if (pc) bits.push("〒" + escapeHtml(pc));
+  if (ad) bits.push(escapeHtml(ad));
+  if (ph) bits.push("TEL " + escapeHtml(ph));
+  if (rep) bits.push("代表者 " + escapeHtml(rep));
+  if (!bits.length) return "";
+  return "<p style=\"font-size:0.88rem;line-height:1.45\">" + bits.join("<br/>") + "</p>";
+}
+
+function buildIssuerAddressBlockPlain(lp) {
+  const lines = [];
+  const pc = (lp.issuerPostalCode || "").trim();
+  const ad = (lp.issuerAddress || "").trim();
+  const ph = (lp.issuerPhone || "").trim();
+  const rep = (lp.issuerRepresentativeName || "").trim();
+  if (pc) lines.push("〒" + pc);
+  if (ad) lines.push(ad);
+  if (ph) lines.push("TEL " + ph);
+  if (rep) lines.push("代表者 " + rep);
+  return lines;
+}
+
+function buildTaxBreakdownHtml(detail) {
+  const tb = taxBreakdownFromLines(linesForTaxBreakdown(detail));
+  if (!tb.rows.length) return "";
+  let html =
+    "<p><strong>税率別内訳</strong></p><table style=\"font-size:0.86rem;width:100%;border-collapse:collapse\">" +
+    "<thead><tr><th style=\"text-align:left;border-bottom:1px solid #ccc\">税率</th>" +
+    "<th style=\"text-align:right;border-bottom:1px solid #ccc\">税込対価</th>" +
+    "<th style=\"text-align:right;border-bottom:1px solid #ccc\">税額</th>" +
+    "<th style=\"text-align:right;border-bottom:1px solid #ccc\">税抜対価</th></tr></thead><tbody>";
+  for (const r of tb.rows) {
+    html +=
+      "<tr><td>" +
+      escapeHtml(String(r.rate)) +
+      "%</td><td style=\"text-align:right\">" +
+      yen(r.gross) +
+      "</td><td style=\"text-align:right\">" +
+      yen(r.tax) +
+      "</td><td style=\"text-align:right\">" +
+      yen(r.net) +
+      "</td></tr>";
+  }
+  html +=
+    "<tr><td><strong>計</strong></td><td style=\"text-align:right\"><strong>" +
+    yen(tb.grossTotal) +
+    "</strong></td><td style=\"text-align:right\"><strong>" +
+    yen(tb.taxTotal) +
+    "</strong></td><td style=\"text-align:right\"><strong>" +
+    yen(tb.netTotal) +
+    "</strong></td></tr></tbody></table>";
+  return html;
+}
+
+function buildTaxBreakdownPlainLines(detail) {
+  const tb = taxBreakdownFromLines(linesForTaxBreakdown(detail));
+  if (!tb.rows.length) return [];
+  const lines = ["【税率別内訳】"];
+  for (const r of tb.rows) {
+    lines.push("税率 " + r.rate + "%  税込" + yen(r.gross) + " 税" + yen(r.tax) + " 税抜" + yen(r.net));
+  }
+  lines.push("計 税込" + yen(tb.grossTotal) + " 税" + yen(tb.taxTotal) + " 税抜" + yen(tb.netTotal));
+  return lines;
+}
+
+function buildPaymentBreakdownHtml(detail) {
+  const ps = (detail.payments || []).filter((p) => p && !p.voidedAt);
+  if (!ps.length) return "";
+  let h =
+    "<p><strong>お支払内訳</strong></p><ul style=\"margin:0.2rem 0;padding-left:1.15rem;font-size:0.88rem\">";
+  for (const p of ps) {
+    const lab = (p.labelJa && String(p.labelJa).trim()) || p.methodCode || "";
+    h += "<li>" + escapeHtml(String(lab)) + " … " + yen(p.amount) + "</li>";
+  }
+  h += "</ul>";
+  return h;
+}
+
+function buildPaymentBreakdownPlainLines(detail) {
+  const ps = (detail.payments || []).filter((p) => p && !p.voidedAt);
+  if (!ps.length) return [];
+  const lines = ["【お支払内訳】"];
+  for (const p of ps) {
+    const lab = (p.labelJa && String(p.labelJa).trim()) || p.methodCode || "";
+    lines.push(String(lab) + " " + yen(p.amount));
+  }
+  return lines;
+}
+
+function buildSessionTableInfoHtml(detail) {
+  const s = detail.sessionSummary;
+  if (!s || typeof s !== "object") return "";
+  const bits = [];
+  if (s.tableName) bits.push("卓: " + escapeHtml(String(s.tableName)));
+  if (s.courseName) bits.push("コース: " + escapeHtml(String(s.courseName)));
+  const gc = Number(s.guestCount || 0);
+  const cc = Number(s.childCount || 0);
+  bits.push("人数: " + gc + (cc > 0 ? "（子 " + cc + "）" : ""));
+  return "<p style=\"font-size:0.86rem\">" + bits.join(" · ") + "</p>";
+}
+
+function buildSessionTableInfoPlainLines(detail) {
+  const s = detail.sessionSummary;
+  if (!s || typeof s !== "object") return [];
+  const lines = [];
+  if (s.tableName) lines.push("卓: " + String(s.tableName));
+  if (s.courseName) lines.push("コース: " + String(s.courseName));
+  lines.push("人数: " + String(s.guestCount || 0));
+  return lines;
+}
+
+function buildBillDiscountHtml(detail) {
+  if (!detail.billDiscountJson) return "";
+  const lab = formatOpsDiscountLabel(detail.billDiscountJson);
+  if (!lab) return "";
+  return "<p style=\"font-size:0.86rem\">卓割引等: " + escapeHtml(lab) + "</p>";
+}
+
+function buildBillDiscountPlainLine(detail) {
+  if (!detail.billDiscountJson) return "";
+  const lab = formatOpsDiscountLabel(detail.billDiscountJson);
+  return lab ? "卓割引等: " + lab : "";
+}
+
+function appendLegalFooterHtml(fragments) {
+  const f = getOpsPrintLegalProfile().legalNoteFooter.trim();
+  if (!f) return;
+  fragments.push(
+    "<p class=\"muted\" style=\"font-size:0.78rem;margin-top:0.55rem;white-space:pre-wrap\">" + escapeHtml(f) + "</p>"
+  );
+}
+
+function appendLegalFooterPlain(lines) {
+  const f = getOpsPrintLegalProfile().legalNoteFooter.trim();
+  if (!f) return;
+  lines.push("---");
+  lines.push(f);
+}
+
 function buildReceiptDoc(detail) {
   const pf = getOpsReceiptPrintFields();
+  const legal = getOpsPrintLegalProfile();
+  const fragments = ["<h3>レシート</h3>"];
+  if (pf.storeName && opsStoreDisplayName) {
+    fragments.push("<p><strong>" + escapeHtml(opsStoreDisplayName) + "</strong></p>");
+  }
+  if (pf.issuerTradeName) {
+    const nm = effectiveIssuerTradeNameForPrint();
+    if (nm) fragments.push("<p>屋号: " + escapeHtml(nm) + "</p>");
+  }
+  if (pf.qualifiedInvoiceRegistrationNumber && legal.qualifiedInvoiceRegistrationNumber) {
+    fragments.push(
+      "<p>適格請求書発行事業者の登録番号: " + escapeHtml(legal.qualifiedInvoiceRegistrationNumber) + "</p>"
+    );
+  }
+  if (pf.issuerAddressBlock) {
+    const blk = buildIssuerAddressBlockHtml(legal);
+    if (blk) fragments.push(blk);
+  }
+  if (pf.transactionDatetime) {
+    fragments.push("<p>取引年月日: " + escapeHtml(formatBillTransactionWhen(detail)) + "</p>");
+  }
+  if (pf.sessionTableInfo) {
+    const s = buildSessionTableInfoHtml(detail);
+    if (s) fragments.push(s);
+  }
+  if (pf.billDiscount) {
+    const bd = buildBillDiscountHtml(detail);
+    if (bd) fragments.push(bd);
+  }
+  if (pf.billId) {
+    fragments.push("<p>伝票: " + escapeHtml(detail.id) + "</p>");
+  }
+
+  const useTaxCol = !!pf.lineTaxRateColumn;
   const rows = [];
   if (pf.lineItems && detail.courseLine && Number(detail.courseLine.lineTotal) > 0) {
     const showNetForCourse = storeSettingsCache.coursePriceTaxMode === "exclusive";
     const courseDisp = showNetForCourse
       ? netYenFromGross(detail.courseLine.lineTotal, storeSettingsCache.taxRatePercent)
       : detail.courseLine.lineTotal;
-    const courseSuffix = showNetForCourse ? "（税抜）" : "";
-    rows.push(
-      "<tr><td>" +
-        escapeHtml(detail.courseLine.name) +
-        (courseSuffix ? " <span style=\"color:#666;font-size:0.82em\">" + courseSuffix + "</span>" : "") +
-        "</td><td style=\"text-align:right\">" +
-        yen(courseDisp) +
-        "</td></tr>"
-    );
+    const courseSuffix = showNetForCourse ? " <span style=\"color:#666;font-size:0.82em\">（税抜）</span>" : "";
+    const rate = Number(storeSettingsCache.taxRatePercent ?? 10);
+    if (useTaxCol) {
+      rows.push(
+        "<tr><td>" +
+          escapeHtml(detail.courseLine.name) +
+          courseSuffix +
+          "</td><td style=\"text-align:right\">" +
+          rate +
+          "%</td><td style=\"text-align:right\">" +
+          yen(courseDisp) +
+          "</td></tr>"
+      );
+    } else {
+      rows.push(
+        "<tr><td>" +
+          escapeHtml(detail.courseLine.name) +
+          (courseSuffix ? " <span style=\"color:#666;font-size:0.82em\">（税抜）</span>" : "") +
+          "</td><td style=\"text-align:right\">" +
+          yen(courseDisp) +
+          "</td></tr>"
+      );
+    }
   }
   if (pf.lineItems) {
     for (const l of detail.orderLines || []) {
@@ -773,39 +1053,64 @@ function buildReceiptDoc(detail) {
         return displayTableCode(tb.publicCode) || tb.name || "";
       })();
       const srcSuffix = srcLab ? " <span style=\"color:#666\">(" + escapeHtml(srcLab) + ")</span>" : "";
-      rows.push(
-        "<tr><td>" +
-          escapeHtml(l.nameSnapshot) +
-          srcSuffix +
-          " ×" +
-          l.qty +
-          "</td><td style=\"text-align:right\">" +
-          yen(l.lineTotal) +
-          "</td></tr>"
-      );
+      const rate = Number(l.taxRatePercent ?? storeSettingsCache.taxRatePercent ?? 10);
+      if (useTaxCol) {
+        rows.push(
+          "<tr><td>" +
+            escapeHtml(l.nameSnapshot) +
+            srcSuffix +
+            " ×" +
+            l.qty +
+            "</td><td style=\"text-align:right\">" +
+            rate +
+            "%</td><td style=\"text-align:right\">" +
+            yen(l.lineTotal) +
+            "</td></tr>"
+        );
+      } else {
+        rows.push(
+          "<tr><td>" +
+            escapeHtml(l.nameSnapshot) +
+            srcSuffix +
+            " ×" +
+            l.qty +
+            "</td><td style=\"text-align:right\">" +
+            yen(l.lineTotal) +
+            "</td></tr>"
+        );
+      }
     }
   }
-  const cash = extractCashFromBillDetail(detail);
-  const headParts = ["<h3>レシート</h3>"];
-  if (pf.storeName && opsStoreDisplayName) {
-    headParts.push("<p><strong>" + escapeHtml(opsStoreDisplayName) + "</strong></p>");
-  }
-  if (pf.billId) {
-    headParts.push("<p>伝票: " + escapeHtml(detail.id) + "</p>");
-  }
-  const tableHtml =
-    rows.length > 0 ? "<table>" + rows.join("") + "</table><hr>" : pf.lineItems ? "<p class=\"muted\">（明細なし）</p><hr>" : "";
-  const totalHtml = pf.total ? "<p><strong>合計 " + yen(detail.totalAmount) + "</strong></p>" : "";
-  const cashHtml =
-    pf.cashChange && cash.received != null
-      ? "<p>現金お預かり: " + yen(cash.received) + "<br>お釣り: " + yen(cash.change ?? 0) + "</p>"
+  let tableHtml = "";
+  if (rows.length) {
+    const th = useTaxCol
+      ? "<tr><th style=\"text-align:left\">品目</th><th style=\"text-align:right\">税率</th><th style=\"text-align:right\">金額</th></tr>"
       : "";
+    tableHtml = "<table style=\"width:100%;border-collapse:collapse;font-size:0.9rem\">" + th + rows.join("") + "</table><hr>";
+  } else if (pf.lineItems) {
+    tableHtml = "<p class=\"muted\">（明細なし）</p><hr>";
+  }
+
+  fragments.push(tableHtml);
+  if (pf.taxBreakdownTable) {
+    const tx = buildTaxBreakdownHtml(detail);
+    if (tx) fragments.push(tx);
+  }
+  if (pf.total) {
+    fragments.push("<p><strong>合計 " + yen(detail.totalAmount) + "</strong></p>");
+  }
+  if (pf.paymentBreakdown) {
+    const py = buildPaymentBreakdownHtml(detail);
+    if (py) fragments.push(py);
+  }
+  const cash = extractCashFromBillDetail(detail);
+  if (pf.cashChange && cash.received != null) {
+    fragments.push("<p>現金お預かり: " + yen(cash.received) + "<br>お釣り: " + yen(cash.change ?? 0) + "</p>");
+  }
+  appendLegalFooterHtml(fragments);
   return (
-    "<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\"><title>レシート</title><style>body{font-family:sans-serif;padding:12px}table{width:100%;border-collapse:collapse}td{padding:2px 0}</style></head><body>" +
-    headParts.join("") +
-    tableHtml +
-    totalHtml +
-    cashHtml +
+    "<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\"><title>レシート</title><style>body{font-family:sans-serif;padding:12px}table{width:100%;border-collapse:collapse}td,th{padding:3px 2px}</style></head><body>" +
+    fragments.join("") +
     "</body></html>"
   );
 }
@@ -813,11 +1118,14 @@ function buildReceiptDoc(detail) {
 /** @param {object} opts changeAmount, amountYen, recipient, purpose, issueDate */
 function buildInvoiceDoc(detail, opts) {
   const inv = getOpsInvoicePrintFields();
+  const legal = getOpsPrintLegalProfile();
   const changeAmount = Number(opts.changeAmount || 0);
   const amountYen = Number(opts.amountYen != null ? opts.amountYen : detail.totalAmount);
   const recipient = typeof opts.recipient === "string" ? opts.recipient.trim() : "";
   const purpose = typeof opts.purpose === "string" ? opts.purpose.trim() : "";
   const issueD = opts.issueDate instanceof Date ? opts.issueDate : new Date(opts.issueDate || Date.now());
+  const totalBill = Number(detail.totalAmount || 0);
+  const isPartial = amountYen < totalBill;
   const parts = [
     "<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\"><title>領収書</title><style>body{font-family:sans-serif;padding:12px;line-height:1.5}</style></head><body>",
     "<h2>領収書</h2>",
@@ -834,6 +1142,30 @@ function buildInvoiceDoc(detail, opts) {
   if (inv.storeName && opsStoreDisplayName) {
     parts.push("<p>" + escapeHtml(opsStoreDisplayName) + "</p>");
   }
+  if (inv.issuerTradeName) {
+    const nm = effectiveIssuerTradeNameForPrint();
+    if (nm) parts.push("<p>屋号: " + escapeHtml(nm) + "</p>");
+  }
+  if (inv.qualifiedInvoiceRegistrationNumber && legal.qualifiedInvoiceRegistrationNumber) {
+    parts.push(
+      "<p>適格請求書発行事業者の登録番号: " + escapeHtml(legal.qualifiedInvoiceRegistrationNumber) + "</p>"
+    );
+  }
+  if (inv.issuerAddressBlock) {
+    const blk = buildIssuerAddressBlockHtml(legal);
+    if (blk) parts.push(blk);
+  }
+  if (inv.transactionDatetime) {
+    parts.push("<p>取引年月日: " + escapeHtml(formatBillTransactionWhen(detail)) + "</p>");
+  }
+  if (inv.sessionTableInfo) {
+    const s = buildSessionTableInfoHtml(detail);
+    if (s) parts.push(s);
+  }
+  if (inv.billDiscount) {
+    const bd = buildBillDiscountHtml(detail);
+    if (bd) parts.push(bd);
+  }
   if (inv.billId) {
     parts.push("<p>伝票: " + escapeHtml(detail.id) + "</p>");
   }
@@ -843,6 +1175,23 @@ function buildInvoiceDoc(detail, opts) {
   if (inv.changeLine) {
     parts.push("<p>お釣り: " + yen(changeAmount) + "</p>");
   }
+  if (inv.taxBreakdownTable) {
+    if (isPartial && inv.taxBreakdownFullBillWhenPartial) {
+      parts.push(
+        "<p class=\"muted\" style=\"font-size:0.75rem\">※税率別内訳は伝票<strong>全額</strong>ベースです（領収金額は一部の場合があります）。</p>"
+      );
+      const tx = buildTaxBreakdownHtml(detail);
+      if (tx) parts.push(tx);
+    } else if (!isPartial) {
+      const tx = buildTaxBreakdownHtml(detail);
+      if (tx) parts.push(tx);
+    }
+  }
+  if (inv.paymentBreakdown) {
+    const py = buildPaymentBreakdownHtml(detail);
+    if (py) parts.push(py);
+  }
+  appendLegalFooterHtml(parts);
   parts.push("</body></html>");
   return parts.join("");
 }
@@ -850,10 +1199,31 @@ function buildInvoiceDoc(detail, opts) {
 /** ESC/POS 用プレーンテキスト行（日本語は機種・モードで文字化けする場合あり） */
 function buildReceiptPlainLines(detail) {
   const pf = getOpsReceiptPrintFields();
+  const legal = getOpsPrintLegalProfile();
   const lines = [];
   lines.push("レシート");
   if (pf.storeName && opsStoreDisplayName) {
     lines.push(opsStoreDisplayName);
+  }
+  if (pf.issuerTradeName) {
+    const nm = effectiveIssuerTradeNameForPrint();
+    if (nm) lines.push("屋号: " + nm);
+  }
+  if (pf.qualifiedInvoiceRegistrationNumber && legal.qualifiedInvoiceRegistrationNumber) {
+    lines.push("登録番号: " + legal.qualifiedInvoiceRegistrationNumber);
+  }
+  if (pf.issuerAddressBlock) {
+    lines.push.apply(lines, buildIssuerAddressBlockPlain(legal));
+  }
+  if (pf.transactionDatetime) {
+    lines.push("取引年月日: " + formatBillTransactionWhen(detail));
+  }
+  if (pf.sessionTableInfo) {
+    lines.push.apply(lines, buildSessionTableInfoPlainLines(detail));
+  }
+  const disc = buildBillDiscountPlainLine(detail);
+  if (pf.billDiscount && disc) {
+    lines.push(disc);
   }
   if (pf.billId) {
     lines.push("伝票: " + String(detail.id));
@@ -866,7 +1236,14 @@ function buildReceiptPlainLines(detail) {
         ? netYenFromGross(detail.courseLine.lineTotal, storeSettingsCache.taxRatePercent)
         : detail.courseLine.lineTotal;
       const courseSuffix = showNetForCourse ? "（税抜）" : "";
-      lines.push(String(detail.courseLine.name) + courseSuffix + "  " + yen(courseDisp));
+      const rate = Number(storeSettingsCache.taxRatePercent ?? 10);
+      lines.push(
+        (pf.lineTaxRateColumn ? "税率" + rate + "% " : "") +
+          String(detail.courseLine.name) +
+          courseSuffix +
+          "  " +
+          yen(courseDisp)
+      );
       hadLineItems = true;
     }
     for (const l of detail.orderLines || []) {
@@ -878,31 +1255,50 @@ function buildReceiptPlainLines(detail) {
         return displayTableCode(tb.publicCode) || tb.name || "";
       })();
       const src = srcLab ? " (" + srcLab + ")" : "";
-      lines.push(String(l.nameSnapshot) + src + " x" + l.qty + "  " + yen(l.lineTotal));
+      const rate = Number(l.taxRatePercent ?? storeSettingsCache.taxRatePercent ?? 10);
+      lines.push(
+        (pf.lineTaxRateColumn ? "税率" + rate + "% " : "") +
+          String(l.nameSnapshot) +
+          src +
+          " x" +
+          l.qty +
+          "  " +
+          yen(l.lineTotal)
+      );
       hadLineItems = true;
     }
   }
   if (hadLineItems) {
     lines.push("--------------------------------");
   }
+  if (pf.taxBreakdownTable) {
+    lines.push.apply(lines, buildTaxBreakdownPlainLines(detail));
+  }
   if (pf.total) {
     lines.push("合計 " + yen(detail.totalAmount));
+  }
+  if (pf.paymentBreakdown) {
+    lines.push.apply(lines, buildPaymentBreakdownPlainLines(detail));
   }
   const cash = extractCashFromBillDetail(detail);
   if (pf.cashChange && cash.received != null) {
     lines.push("お預かり " + yen(cash.received));
     lines.push("お釣り " + yen(cash.change ?? 0));
   }
+  appendLegalFooterPlain(lines);
   return lines;
 }
 
 function buildInvoicePlainLines(detail, opts) {
   const inv = getOpsInvoicePrintFields();
+  const legal = getOpsPrintLegalProfile();
   const changeAmount = Number(opts.changeAmount || 0);
   const amountYen = Number(opts.amountYen != null ? opts.amountYen : detail.totalAmount);
   const recipient = typeof opts.recipient === "string" ? opts.recipient.trim() : "";
   const purpose = typeof opts.purpose === "string" ? opts.purpose.trim() : "";
   const issueD = opts.issueDate instanceof Date ? opts.issueDate : new Date(opts.issueDate || Date.now());
+  const totalBill = Number(detail.totalAmount || 0);
+  const isPartial = amountYen < totalBill;
   const lines = ["領収書"];
   if (inv.recipient && recipient) {
     lines.push("宛名: " + recipient);
@@ -916,6 +1312,26 @@ function buildInvoicePlainLines(detail, opts) {
   if (inv.storeName && opsStoreDisplayName) {
     lines.push(opsStoreDisplayName);
   }
+  if (inv.issuerTradeName) {
+    const nm = effectiveIssuerTradeNameForPrint();
+    if (nm) lines.push("屋号: " + nm);
+  }
+  if (inv.qualifiedInvoiceRegistrationNumber && legal.qualifiedInvoiceRegistrationNumber) {
+    lines.push("登録番号: " + legal.qualifiedInvoiceRegistrationNumber);
+  }
+  if (inv.issuerAddressBlock) {
+    lines.push.apply(lines, buildIssuerAddressBlockPlain(legal));
+  }
+  if (inv.transactionDatetime) {
+    lines.push("取引年月日: " + formatBillTransactionWhen(detail));
+  }
+  if (inv.sessionTableInfo) {
+    lines.push.apply(lines, buildSessionTableInfoPlainLines(detail));
+  }
+  const disc = buildBillDiscountPlainLine(detail);
+  if (inv.billDiscount && disc) {
+    lines.push(disc);
+  }
   if (inv.billId) {
     lines.push("伝票: " + String(detail.id));
   }
@@ -925,6 +1341,18 @@ function buildInvoicePlainLines(detail, opts) {
   if (inv.changeLine) {
     lines.push("お釣り " + yen(changeAmount));
   }
+  if (inv.taxBreakdownTable) {
+    if (isPartial && inv.taxBreakdownFullBillWhenPartial) {
+      lines.push("※税率別内訳は伝票全額ベース（領収は一部の場合あり）");
+      lines.push.apply(lines, buildTaxBreakdownPlainLines(detail));
+    } else if (!isPartial) {
+      lines.push.apply(lines, buildTaxBreakdownPlainLines(detail));
+    }
+  }
+  if (inv.paymentBreakdown) {
+    lines.push.apply(lines, buildPaymentBreakdownPlainLines(detail));
+  }
+  appendLegalFooterPlain(lines);
   return lines;
 }
 
@@ -2546,17 +2974,31 @@ async function loadAll() {
       ...(incP && typeof incP === "object" && !Array.isArray(incP) ? incP : {}),
     };
     opsStoreDisplayName = (settingsRes.store && String(settingsRes.store.name || "").trim()) || "";
-    merged.opsReceiptPrintFields = {
+    const receiptFieldDefaults = {
       storeName: true,
       billId: true,
       lineItems: true,
       total: true,
       cashChange: true,
-      ...(typeof merged.opsReceiptPrintFields === "object" && merged.opsReceiptPrintFields
-        ? merged.opsReceiptPrintFields
-        : {}),
+      qualifiedInvoiceRegistrationNumber: false,
+      issuerTradeName: false,
+      issuerAddressBlock: false,
+      transactionDatetime: false,
+      taxBreakdownTable: false,
+      paymentBreakdown: false,
+      billDiscount: false,
+      sessionTableInfo: false,
+      lineTaxRateColumn: false,
     };
-    merged.opsInvoicePrintFields = {
+    const prevRf = merged.opsReceiptPrintFields;
+    merged.opsReceiptPrintFields = {
+      ...receiptFieldDefaults,
+      ...(typeof prevRf === "object" && prevRf ? prevRf : {}),
+    };
+    for (const k of Object.keys(receiptFieldDefaults)) {
+      if (typeof merged.opsReceiptPrintFields[k] !== "boolean") merged.opsReceiptPrintFields[k] = receiptFieldDefaults[k];
+    }
+    const invoiceFieldDefaults = {
       storeName: true,
       billId: true,
       issueDate: true,
@@ -2564,10 +3006,43 @@ async function loadAll() {
       purpose: true,
       recipient: true,
       changeLine: true,
-      ...(typeof merged.opsInvoicePrintFields === "object" && merged.opsInvoicePrintFields
-        ? merged.opsInvoicePrintFields
-        : {}),
+      qualifiedInvoiceRegistrationNumber: false,
+      issuerTradeName: false,
+      issuerAddressBlock: false,
+      transactionDatetime: false,
+      taxBreakdownTable: false,
+      paymentBreakdown: false,
+      billDiscount: false,
+      sessionTableInfo: false,
+      taxBreakdownFullBillWhenPartial: false,
     };
+    const prevIf = merged.opsInvoicePrintFields;
+    merged.opsInvoicePrintFields = {
+      ...invoiceFieldDefaults,
+      ...(typeof prevIf === "object" && prevIf ? prevIf : {}),
+    };
+    for (const k of Object.keys(invoiceFieldDefaults)) {
+      if (typeof merged.opsInvoicePrintFields[k] !== "boolean") merged.opsInvoicePrintFields[k] = invoiceFieldDefaults[k];
+    }
+    const legalProfileEmpty = {
+      issuerTradeName: "",
+      qualifiedInvoiceRegistrationNumber: "",
+      issuerPostalCode: "",
+      issuerAddress: "",
+      issuerPhone: "",
+      issuerRepresentativeName: "",
+      legalNoteFooter: "",
+    };
+    const incLp = incoming.opsPrintLegalProfile;
+    const prevLp = merged.opsPrintLegalProfile;
+    merged.opsPrintLegalProfile = {
+      ...legalProfileEmpty,
+      ...(typeof prevLp === "object" && prevLp ? prevLp : {}),
+      ...(incLp && typeof incLp === "object" ? incLp : {}),
+    };
+    for (const k of Object.keys(legalProfileEmpty)) {
+      if (typeof merged.opsPrintLegalProfile[k] !== "string") merged.opsPrintLegalProfile[k] = legalProfileEmpty[k];
+    }
     storeSettingsCache = merged;
     billsBySessionId = new Map();
     for (const b of billsRes.bills || []) if (b.sessionId) billsBySessionId.set(b.sessionId, b);

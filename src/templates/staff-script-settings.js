@@ -766,6 +766,15 @@ function syncOpsPrintFieldsFromSettings(s) {
   setChk("stPrRfLineItems", true, rf, "lineItems");
   setChk("stPrRfTotal", true, rf, "total");
   setChk("stPrRfCashChange", true, rf, "cashChange");
+  setChk("stPrRfRegNo", false, rf, "qualifiedInvoiceRegistrationNumber");
+  setChk("stPrRfTradeName", false, rf, "issuerTradeName");
+  setChk("stPrRfAddress", false, rf, "issuerAddressBlock");
+  setChk("stPrRfTxWhen", false, rf, "transactionDatetime");
+  setChk("stPrRfTaxTbl", false, rf, "taxBreakdownTable");
+  setChk("stPrRfPay", false, rf, "paymentBreakdown");
+  setChk("stPrRfDisc", false, rf, "billDiscount");
+  setChk("stPrRfSess", false, rf, "sessionTableInfo");
+  setChk("stPrRfTaxCol", false, rf, "lineTaxRateColumn");
   setChk("stPrIfStoreName", true, inv, "storeName");
   setChk("stPrIfBillId", true, inv, "billId");
   setChk("stPrIfIssueDate", true, inv, "issueDate");
@@ -773,6 +782,31 @@ function syncOpsPrintFieldsFromSettings(s) {
   setChk("stPrIfPurpose", true, inv, "purpose");
   setChk("stPrIfRecipient", true, inv, "recipient");
   setChk("stPrIfChangeLine", true, inv, "changeLine");
+  setChk("stPrIfRegNo", false, inv, "qualifiedInvoiceRegistrationNumber");
+  setChk("stPrIfTradeName", false, inv, "issuerTradeName");
+  setChk("stPrIfAddress", false, inv, "issuerAddressBlock");
+  setChk("stPrIfTxWhen", false, inv, "transactionDatetime");
+  setChk("stPrIfTaxTbl", false, inv, "taxBreakdownTable");
+  setChk("stPrIfPay", false, inv, "paymentBreakdown");
+  setChk("stPrIfDisc", false, inv, "billDiscount");
+  setChk("stPrIfSess", false, inv, "sessionTableInfo");
+  setChk("stPrIfTaxFullWhenPart", false, inv, "taxBreakdownFullBillWhenPartial");
+}
+
+function syncOpsPrintLegalProfileFromSettings(s) {
+  const lp = s.opsPrintLegalProfile && typeof s.opsPrintLegalProfile === "object" ? s.opsPrintLegalProfile : {};
+  const setVal = (id, key) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.value = typeof lp[key] === "string" ? lp[key] : "";
+  };
+  setVal("stLegalIssuerTradeName", "issuerTradeName");
+  setVal("stLegalRegNo", "qualifiedInvoiceRegistrationNumber");
+  setVal("stLegalPostal", "issuerPostalCode");
+  setVal("stLegalAddress", "issuerAddress");
+  setVal("stLegalPhone", "issuerPhone");
+  setVal("stLegalRep", "issuerRepresentativeName");
+  setVal("stLegalFooter", "legalNoteFooter");
 }
 
 async function loadAll() {
@@ -896,6 +930,7 @@ async function loadAll() {
   }
   renderOpsDiscountPresets(s.opsDiscountPresets || []);
   syncOpsPrintFieldsFromSettings(s);
+  syncOpsPrintLegalProfileFromSettings(s);
   renderBizWeeklyEditor(s);
   ensureBizBulkTemplate();
   const closedTa = document.getElementById("stBizClosedDates");
@@ -2116,6 +2151,15 @@ function collectOpsReceiptPrintFieldsFromUi() {
     lineItems: document.getElementById("stPrRfLineItems")?.checked !== false,
     total: document.getElementById("stPrRfTotal")?.checked !== false,
     cashChange: document.getElementById("stPrRfCashChange")?.checked !== false,
+    qualifiedInvoiceRegistrationNumber: document.getElementById("stPrRfRegNo")?.checked === true,
+    issuerTradeName: document.getElementById("stPrRfTradeName")?.checked === true,
+    issuerAddressBlock: document.getElementById("stPrRfAddress")?.checked === true,
+    transactionDatetime: document.getElementById("stPrRfTxWhen")?.checked === true,
+    taxBreakdownTable: document.getElementById("stPrRfTaxTbl")?.checked === true,
+    paymentBreakdown: document.getElementById("stPrRfPay")?.checked === true,
+    billDiscount: document.getElementById("stPrRfDisc")?.checked === true,
+    sessionTableInfo: document.getElementById("stPrRfSess")?.checked === true,
+    lineTaxRateColumn: document.getElementById("stPrRfTaxCol")?.checked === true,
   };
 }
 
@@ -2128,6 +2172,27 @@ function collectOpsInvoicePrintFieldsFromUi() {
     purpose: document.getElementById("stPrIfPurpose")?.checked !== false,
     recipient: document.getElementById("stPrIfRecipient")?.checked !== false,
     changeLine: document.getElementById("stPrIfChangeLine")?.checked !== false,
+    qualifiedInvoiceRegistrationNumber: document.getElementById("stPrIfRegNo")?.checked === true,
+    issuerTradeName: document.getElementById("stPrIfTradeName")?.checked === true,
+    issuerAddressBlock: document.getElementById("stPrIfAddress")?.checked === true,
+    transactionDatetime: document.getElementById("stPrIfTxWhen")?.checked === true,
+    taxBreakdownTable: document.getElementById("stPrIfTaxTbl")?.checked === true,
+    paymentBreakdown: document.getElementById("stPrIfPay")?.checked === true,
+    billDiscount: document.getElementById("stPrIfDisc")?.checked === true,
+    sessionTableInfo: document.getElementById("stPrIfSess")?.checked === true,
+    taxBreakdownFullBillWhenPartial: document.getElementById("stPrIfTaxFullWhenPart")?.checked === true,
+  };
+}
+
+function collectOpsPrintLegalProfileFromUi() {
+  return {
+    issuerTradeName: String(document.getElementById("stLegalIssuerTradeName")?.value || "").trim(),
+    qualifiedInvoiceRegistrationNumber: String(document.getElementById("stLegalRegNo")?.value || "").trim(),
+    issuerPostalCode: String(document.getElementById("stLegalPostal")?.value || "").trim(),
+    issuerAddress: String(document.getElementById("stLegalAddress")?.value || "").trim(),
+    issuerPhone: String(document.getElementById("stLegalPhone")?.value || "").trim(),
+    issuerRepresentativeName: String(document.getElementById("stLegalRep")?.value || "").trim(),
+    legalNoteFooter: String(document.getElementById("stLegalFooter")?.value || "").trim(),
   };
 }
 
@@ -2162,6 +2227,25 @@ if (btnSaveOpsInvoicePrint) {
         body: JSON.stringify({ settings: { opsInvoicePrintFields: collectOpsInvoicePrintFieldsFromUi() } }),
       });
       log("領収書印字項目を保存しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+}
+
+const btnSaveOpsPrintLegal = document.getElementById("btnSaveOpsPrintLegal");
+if (btnSaveOpsPrintLegal) {
+  btnSaveOpsPrintLegal.onclick = async () => {
+    log("");
+    if (!requireManagerForSettings()) return;
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings: { opsPrintLegalProfile: collectOpsPrintLegalProfileFromUi() } }),
+      });
+      log("事業者・登録番号を保存しました");
       await loadAll();
     } catch (e) {
       log(String(e.message || e));

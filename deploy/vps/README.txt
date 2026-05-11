@@ -38,12 +38,15 @@ Daiko（代行 SaaS / daiko サブフォルダ）
 --------------------------------------
 - コード: リポジトリの daiko/（別 package.json・Prisma・ポート既定 3001）
 - Caddy: daiko.harunoyukoto.jp → host.docker.internal:3001（DNS を向けたあと有効）
-- PostgreSQL: 初回のみスーパーユーザで DB 作成（例）
-    sudo -u postgres psql -f deploy/vps/create-daiko-db.sql
+- PostgreSQL: order と同じ Docker 内 Postgres のことが多い。その場合は OS の postgres ユーザーは無いので、例:
+    cd ~/order && docker compose exec -T postgres psql -U order -d order -c "CREATE DATABASE daiko;"
+  （別サーバに素の PostgreSQL がある場合は create-daiko-db.sql をスーパーユーザで流す）
   daiko/.env に DATABASE_URL（daiko DB を指す）、JWT_SECRET、PORT=3001 を設定
 - systemd: ビルド後に（リポジトリルートを引数に）
     sudo bash deploy/vps/install-daiko-systemd.sh ~/order
   手編集する場合は daiko/deploy/daiko-app.service の WorkingDirectory / EnvironmentFile をサーバパスに合わせる
+- 初回は daiko でビルドが必須（dist が無いと systemd が即落ちする）:
+    cd ~/order/daiko && npm ci && npx prisma migrate deploy && npx prisma generate && npm run build && sudo systemctl restart daiko-app
 - ヘルス: curl -sS http://127.0.0.1:3001/health
 - PC からデプロイ: daiko/.env.deploy を用意し、リポジトリルートで
     powershell -NoProfile -ExecutionPolicy Bypass -File ./daiko/scripts/deploy-vps.ps1
@@ -52,3 +55,12 @@ Daiko（代行 SaaS / daiko サブフォルダ）
   を置き npm run deploy:vps（order の pull/build のあと daiko も migrate/build/restart）
 - PDF: 本番で Playwright を使う場合、初回のみ VPS で
     cd ~/order/daiko && npx playwright install chromium
+
+Caddy（プロキシ）でホスト名を増やしたとき
+--------------------------------------
+- Caddyfile に新しい `*.harunoyukoto.jp { ... }` を追加したあと、`reload` だけでは TLS 対象に載らないことがある。
+  その場合はプロキシを再起動する:
+    cd ~/order/deploy/vps && docker compose -f docker-compose.proxy.yml restart caddy
+- ログで `certificate obtained successfully` と対象ホスト名が出るか確認:
+    docker compose -f docker-compose.proxy.yml logs caddy --tail 80
+- 外向き HTTPS 確認: curl -sS https://daiko.harunoyukoto.jp/health

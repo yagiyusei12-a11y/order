@@ -20,52 +20,63 @@ export const NINE_DOC_TEMPLATE_SEEDS: { kind: string; version: number; label: st
   {
     kind: "hyojun_jidosha",
     version: 1,
-    label: "標準自動車（届出様式イメージ）",
+    label: "標準自動車運送約款（届出様式イメージ）",
     htmlBody: wrap(
-      "標準自動車（届出）",
+      "標準自動車運送約款（届出）",
       `<table class="meta"><tr><th>事業者名</th><td>{{tenantName}}</td><th>商号等</th><td>{{tradeName}}</td></tr>
 <tr><th>テナント slug</th><td>{{tenantSlug}}</td><th>届出・認定番号等</th><td>{{registrationNumber}}</td></tr>
 <tr><th>本店・事業所所在地</th><td colspan="3">{{businessAddress}}</td></tr>
+<tr><th>主たる事務所の名称</th><td colspan="3">{{mainOfficeName}}</td></tr>
+<tr><th>主たる事務所の所在地</th><td colspan="3">{{mainOfficeAddress}}</td></tr>
 <tr><th>電話</th><td>{{phone}}</td><th>代表者</th><td>{{representativeName}}</td></tr>
 <tr><th>運輸支局・連絡</th><td colspan="3">{{transportOfficeContact}}</td></tr>
+<tr><th>点検の実施の有無</th><td>{{inspectionDoneYesNo}}</td><th>点検実施日</th><td>{{inspectionDateYmd}}</td></tr>
 <tr><th>備考</th><td colspan="3">{{extraNotes}}</td></tr></table>`,
     ),
   },
   {
     kind: "henko_kisai",
     version: 1,
-    label: "変更記載（様式イメージ）",
+    label: "変更届（様式イメージ）",
     htmlBody: wrap(
-      "変更記載",
-      `<table class="meta"><tr><th>事業者名</th><td>{{tenantName}}</td></tr>
-<tr><th>商号</th><td>{{tradeName}}</td></tr>
-<tr><th>変更事項の内容</th><td colspan="1">{{extraNotes}}</td></tr>
-<tr><th>所在地</th><td>{{businessAddress}}</td></tr>
-<tr><th>届出番号等</th><td>{{registrationNumber}}</td></tr></table>`,
+      "変更届（記載例）",
+      `<p style="font-size:12px;margin:0 0 8px;"><strong>{{publicSafetySubmissionAddressee}}</strong></p>
+<table class="meta"><tr><th>提出年月日</th><td>{{henko_submittedOnYmd}}</td><th>商号</th><td>{{tradeName}}</td></tr>
+<tr><th>事業者名</th><td>{{tenantName}}</td><th>届出番号等</th><td>{{registrationNumber}}</td></tr>
+<tr><th>所在地</th><td colspan="3">{{businessAddress}}</td></tr>
+<tr><th>変更の効力が生ずる日</th><td colspan="3">{{henko_changeEffectiveOnYmd}}</td></tr>
+<tr><th>協定組合に加入している期間（変更前）</th><td colspan="3">{{henko_mutualAidPeriodOld}}</td></tr>
+<tr><th>協定組合に加入している期間（変更後）</th><td colspan="3">{{henko_mutualAidPeriodNew}}</td></tr>
+<tr><th>変更の内容・理由</th><td colspan="3" style="white-space:pre-wrap;">{{henko_changeReasonDetail}}</td></tr>
+<tr><th>代表者</th><td colspan="3">{{representativeName}}</td></tr></table>`,
     ),
   },
   {
-    kind: "gyomu_kenshu",
+    kind: "joroku_kensyu",
     version: 1,
-    label: "業務件集計（月次）",
+    label: "乗務記録簿兼酒気帯び確認（様式イメージ）",
     htmlBody: wrap(
-      "業務件集計",
-      `<p>集計月: <strong>{{periodYm}}</strong></p>
-<table class="meta"><tr><th>運行件数（TripLeg）</th><td>{{tripLegCount}}</td></tr>
-<tr><th>日報件数</th><td>{{dailyReportCount}}</td></tr>
-<tr><th>運賃合計（円）</th><td>{{salesYen}}</td></tr>
-<tr><th>事業者名</th><td>{{tenantName}}</td></tr></table>`,
+      "乗務記録簿兼酒気帯び確認",
+      `<table class="meta"><tr><th>運行日</th><td>{{businessDate}}</td><th>事業者（商号）</th><td>{{tradeName}}</td></tr>
+<tr><th>運行管理者</th><td>{{safeDrivingManagerName}}</td><th>アルコール検知器の型式</th><td>{{alcoholDetectorModelName}}</td></tr>
+<tr><th>事業者名</th><td colspan="3">{{tenantName}}</td></tr></table>
+<div>{{joroku_bodyHtml}}</div>`,
     ),
   },
   {
     kind: "songai",
     version: 1,
-    label: "損害（様式イメージ）",
+    label: "損害てん補に関する届出（様式イメージ）",
     htmlBody: wrap(
-      "損害に関する届出（イメージ）",
+      "損害てん補に関する届出（イメージ）",
       `<table class="meta"><tr><th>事業者</th><td>{{tenantName}} / {{tradeName}}</td></tr>
-<tr><th>連絡先</th><td>{{phone}}</td></tr>
-<tr><th>内容・経緯</th><td>{{extraNotes}}</td></tr></table>`,
+<tr><th>連絡先</th><td>{{phone}}</td><th>代表者</th><td>{{representativeName}}</td></tr>
+<tr><th>所在地</th><td colspan="3">{{businessAddress}}</td></tr>
+<tr><th>協定組合の契約期間</th><td colspan="3">{{songai_mutualAidContractPeriod}}</td></tr>
+<tr><th>車両についての共済の限度額（万円）</th><td>{{songai_vehicleKyousaiLimitManYen}}</td><th>車両の認定年月日</th><td>{{songai_vehicleApprovedOnYmd}}</td></tr>
+<tr><th>車両の認定番号</th><td colspan="3">{{songai_vehicleApprovalNumber}}</td></tr>
+<tr><th>事故・損害の経過・内容</th><td colspan="3" style="white-space:pre-wrap;">{{songai_incidentSummary}}</td></tr>
+<tr><th>その他備考</th><td colspan="3">{{extraNotes}}</td></tr></table>`,
     ),
   },
   {
@@ -74,40 +85,48 @@ export const NINE_DOC_TEMPLATE_SEEDS: { kind: string; version: number; label: st
     label: "認定（様式イメージ）",
     htmlBody: wrap(
       "認定（イメージ）",
-      `<table class="meta"><tr><th>事業者名</th><td>{{tenantName}}</td></tr>
-<tr><th>商号</th><td>{{tradeName}}</td></tr>
-<tr><th>認定・届出番号</th><td>{{registrationNumber}}</td></tr>
-<tr><th>代表者</th><td>{{representativeName}}</td></tr>
-<tr><th>所在地</th><td>{{businessAddress}}</td></tr></table>`,
+      `<table class="meta"><tr><th>認定を受けた公安委員会</th><td colspan="3">{{certificationAuthorityName}}</td></tr>
+<tr><th>事業者名</th><td>{{tenantName}}</td><th>商号</th><td>{{tradeName}}</td></tr>
+<tr><th>認定・届出番号</th><td>{{registrationNumber}}</td><th>代表者</th><td>{{representativeName}}</td></tr>
+<tr><th>所在地</th><td colspan="3">{{businessAddress}}</td></tr>
+<tr><th>認定の内容・記載</th><td colspan="3" style="white-space:pre-wrap;">{{nintei_bodyOrMemo}}</td></tr></table>`,
     ),
   },
   {
     kind: "kujo",
     version: 1,
-    label: "苦情（登録一覧）",
-    htmlBody: wrap("苦情登録一覧", `<p>基準月（表示用）: {{periodYm}}</p><div>{{legalTableHtml}}</div>`),
+    label: "苦情処理簿（登録一覧）",
+    htmlBody: wrap("苦情処理簿", `<p style="font-size:11px;">表示用基準月: {{periodYm}}</p><div>{{legalTableHtml}}</div>`),
   },
   {
     kind: "shido",
     version: 1,
-    label: "指導（登録一覧）",
-    htmlBody: wrap("指導登録一覧", `<p>基準月（表示用）: {{periodYm}}</p><div>{{legalTableHtml}}</div>`),
+    label: "指導記録（登録一覧）",
+    htmlBody: wrap("指導記録", `<p style="font-size:11px;">表示用基準月: {{periodYm}}</p><div>{{legalTableHtml}}</div>`),
   },
   {
     kind: "jukyusha",
     version: 1,
-    label: "従事者名簿（登録一覧）",
-    htmlBody: wrap("従事者名簿（スタブ一覧）", `<p>基準月（表示用）: {{periodYm}}</p><div>{{legalTableHtml}}</div>`),
+    label: "従事者名簿",
+    htmlBody: wrap(
+      "従事者名簿",
+      `<table class="meta"><tr><th>事業者名</th><td>{{tenantName}}</td><th>商号</th><td>{{tradeName}}</td></tr>
+<tr><th>所在地</th><td colspan="3">{{businessAddress}}</td></tr></table>
+<div>{{legalTableHtml}}</div>`,
+    ),
   },
   {
     kind: "seiyaku_jukyu",
     version: 1,
-    label: "誓約（重症者等・様式イメージ）",
+    label: "誓約書（重症患者等・様式イメージ）",
     htmlBody: wrap(
-      "誓約（イメージ）",
-      `<table class="meta"><tr><th>事業者</th><td>{{tenantName}}</td></tr>
-<tr><th>代表者</th><td>{{representativeName}}</td></tr>
-<tr><th>誓約・確認事項</th><td>{{extraNotes}}</td></tr></table>`,
+      "誓約書（重症患者等の運送）",
+      `<table class="meta"><tr><th>事業者</th><td>{{tenantName}}</td><th>商号</th><td>{{tradeName}}</td></tr>
+<tr><th>代表者</th><td colspan="3">{{representativeName}}</td></tr>
+<tr><th>誓約者（従事者）氏名</th><td>{{seiyaku_employeeLine}}</td><th>ふりがな</th><td>{{seiyaku_employeeFurigana}}</td></tr>
+<tr><th>誓約者住所</th><td colspan="3">{{seiyaku_employeeAddress}}</td></tr>
+<tr><th>誓約・確認事項（追記）</th><td colspan="3" style="white-space:pre-wrap;">{{extraNotes}}</td></tr></table>
+<p style="font-size:11px;margin-top:12px;">私は、重症患者等の運送に従事するにあたり、関係法令を遵守し安全かつ適正な運送を行うことを誓約します。</p>`,
     ),
   },
 ];

@@ -1,7 +1,21 @@
 import type { FastifyInstance } from "fastify";
+import type { Prisma } from "@prisma/client";
+import { z } from "zod";
 import { authenticate } from "../auth/pre.js";
+import { registerExtensionSchema } from "../lib/dispatch-profile.js";
 import { prisma } from "../db.js";
 import { tenantIdFromReq } from "./tenant-scope.js";
+
+const patchBodySchema = z
+  .object({
+    status: z.enum(["active", "ACTIVE", "retired", "RETIRED"]).optional(),
+    familyName: z.string().min(1).max(100).optional(),
+    givenName: z.string().min(1).max(100).optional(),
+    furigana: z.string().max(200).nullable().optional(),
+    address: z.string().max(2000).nullable().optional(),
+    registerExtension: z.record(z.unknown()).optional(),
+  })
+  .strict();
 
 export async function registerEmployeeRoutes(app: FastifyInstance): Promise<void> {
   app.get("/employees", { preHandler: [authenticate] }, async (req) => {
@@ -38,6 +52,7 @@ export async function registerEmployeeRoutes(app: FastifyInstance): Promise<void
         furigana: req.body?.furigana ? String(req.body.furigana).trim() || null : null,
         address: req.body?.address ? String(req.body.address).trim() || null : null,
         status: "ACTIVE",
+        registerExtension: {},
       },
     });
     return row;
@@ -45,20 +60,61 @@ export async function registerEmployeeRoutes(app: FastifyInstance): Promise<void
 
   app.patch<{
     Params: { id: string };
-    Body: { status?: string; retiredAt?: string | null };
+    Body: {
+      status?: string;
+      retiredAt?: string | null;
+      familyName?: string;
+      givenName?: string;
+      furigana?: string | null;
+      address?: string | null;
+      registerExtension?: Record<string, unknown>;
+    };
   }>("/employees/:id", { preHandler: [authenticate] }, async (req, reply) => {
     const tid = tenantIdFromReq(req);
     const id = req.params.id;
     const cur = await prisma.employee.findFirst({ where: { id, tenantId: tid } });
     if (!cur) return reply.code(404).send({ error: "not found" });
-    const data: { status?: "ACTIVE" | "RETIRED"; retiredAt?: Date | null } = {};
-    if (req.body?.status === "retired" || req.body?.status === "RETIRED") {
+
+    const parsed = patchBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "invalid body", details: parsed.error.flatten() });
+    }
+    const body = parsed.data;
+
+    const data: Prisma.EmployeeUpdateInput = {};
+
+    if (body.status === "retired" || body.status === "RETIRED") {
       data.status = "RETIRED";
       data.retiredAt = new Date();
-    } else if (req.body?.status === "active" || req.body?.status === "ACTIVE") {
+    } else if (body.status === "active" || body.status === "ACTIVE") {
       data.status = "ACTIVE";
       data.retiredAt = null;
     }
+
+    if (body.familyName !== undefined) data.familyName = body.familyName;
+    if (body.givenName !== undefined) data.givenName = body.givenName;
+    if (body.furigana !== undefined) data.furigana = body.furigana;
+    if (body.address !== undefined) data.address = body.address;
+
+    if (body.registerExtension !== undefined) {
+      const prev =
+        cur.registerExtension !== null &&
+        typeof cur.registerExtension === "object" &&
+        !Array.isArray(cur.registerExtension)
+          ? (cur.registerExtension as Record<string, unknown>)
+          : {};
+      const merged = { ...prev, ...body.registerExtension };
+      const ext = registerExtensionSchema.safeParse(merged);
+      if (!ext.success) {
+        return reply.code(400).send({ error: `registerExtension: ${ext.error.message}` });
+      }
+      data.registerExtension = ext.data as Prisma.InputJsonValue;
+    }
+
+    if (Object.keys(data).length === 0) {
+      return reply.code(400).send({ error: "no valid fields to update" });
+    }
+
     const row = await prisma.employee.update({ where: { id }, data });
     return row;
   });

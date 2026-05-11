@@ -5,50 +5,52 @@
 export const LEGAL_NINE_DOCUMENTS = [
   {
     kind: "hyojun_jidosha",
-    label: "標準自動車（届出様式イメージ）",
+    label: "標準自動車運送約款（届出様式イメージ）",
     dataSources:
-      "Tenant.name, Tenant.slug, customJson.dispatchProfile（商号・住所・届出番号・代表者など）。詳細欄は運用で customJson に追記可能。",
+      "dispatchProfile（商号・所在地・代表者・届出番号・運輸支局連絡・点検情報など）。Tenant.name / slug。",
   },
   {
     kind: "henko_kisai",
-    label: "変更記載（様式イメージ）",
-    dataSources: "dispatchProfile + 変更内容は extraNotes または今後専用キーで拡張。",
+    label: "変更届（様式イメージ）",
+    dataSources:
+      "dispatchProfile（提出先公安委員会・商号等）+ documentForms.henko（提出日・協定組合期間・効力発生日・変更理由）。",
   },
   {
-    kind: "gyomu_kenshu",
-    label: "業務件集計（月次サマリ）",
+    kind: "joroku_kensyu",
+    label: "乗務記録簿兼酒気帯び確認（様式イメージ）",
     dataSources:
-      "TripLeg / DailyReport を periodYm（YYYY-MM）で集計。dashboard と同ロジック相当の売上・件数。",
+      "preview の businessDate（YYYY-MM-DD）に該当する DailyReport・TripLeg・AlcoholCheck。dispatchProfile（運行管理者・検知器型式など）。",
   },
   {
     kind: "songai",
-    label: "損害（様式イメージ）",
-    dataSources: "dispatchProfile + 事故・損害概要は extraNotes。",
+    label: "損害てん補に関する届出（様式イメージ）",
+    dataSources: "dispatchProfile + documentForms.songai（事故経緯・車両認定番号・協定組合契約期間など）。",
   },
   {
     kind: "nintei",
     label: "認定（様式イメージ）",
-    dataSources: "dispatchProfile.registrationNumber, representativeName, tradeName 等。",
+    dataSources: "dispatchProfile（認定公安委員会・商号）+ documentForms.nintei（認定内容の記載）。",
   },
   {
     kind: "kujo",
-    label: "苦情（登録スタブ一覧）",
-    dataSources: "LegalRegisterStub kind=complaint の payload を表形式で表示。",
+    label: "苦情処理簿（登録一覧）",
+    dataSources: "LegalRegisterStub kind=complaint の payload を様式に近い列で表示。",
   },
   {
     kind: "shido",
-    label: "指導（登録スタブ一覧）",
-    dataSources: "LegalRegisterStub kind=guidance。",
+    label: "指導記録（登録一覧）",
+    dataSources: "LegalRegisterStub kind=guidance の payload を列表示。",
   },
   {
     kind: "jukyusha",
-    label: "従事者名簿（登録スタブ一覧）",
-    dataSources: "LegalRegisterStub kind=roster。",
+    label: "従事者名簿",
+    dataSources: "Employee（ACTIVE）の氏名・住所・ふりがな + registerExtension（性別・生年月日・免許・緊急連絡先など）。",
   },
   {
     kind: "seiyaku_jukyu",
-    label: "誓約（重症者等・様式イメージ）",
-    dataSources: "dispatchProfile + 誓約本文は extraNotes。",
+    label: "誓約書（重症患者等の運送・様式イメージ）",
+    dataSources:
+      "dispatchProfile（代表者・商号）+ preview の employeeId で指定した従事者。誓約文面は extraNotes で補完可能。",
   },
 ] as const;
 

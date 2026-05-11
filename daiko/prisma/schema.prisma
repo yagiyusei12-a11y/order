@@ -137,6 +137,8 @@ model Employee {
   givenName   String
   furigana    String?
   address     String?
+  /// 従事者名簿用（性別・生年月日・連絡先・免許・緊急連絡先など）JSON
+  registerExtension Json @default("{}")
   status      EmployeeStatus @default(ACTIVE)
   retiredAt   DateTime?
   createdAt   DateTime       @default(now())

@@ -3,7 +3,12 @@ import { authenticate, jwtUser } from "../auth/pre.js";
 import { writeAuditEvent } from "../lib/audit.js";
 import { prisma } from "../db.js";
 import { buildLegalNinePayload } from "../lib/document-payloads.js";
-import { LEGAL_NINE_DOCUMENTS, isLegalNineKind } from "../lib/nine-documents.js";
+import {
+  parseDispatchProfileFromCustomJson,
+  parseDocumentFormsFromCustomJson,
+} from "../lib/dispatch-profile.js";
+import { computeLegalNineMissing } from "../lib/legal-nine-required.js";
+import { LEGAL_NINE_DOCUMENTS, isLegalNineKind, type LegalNineKind } from "../lib/nine-documents.js";
 import { requireFeature } from "../middleware/require-feature.js";
 import { tenantIdFromReq } from "./tenant-scope.js";
 
@@ -28,7 +33,13 @@ export async function registerDocumentRoutes(app: FastifyInstance): Promise<void
   });
 
   app.post<{
-    Body: { kind?: string; periodYm?: string; overrides?: Record<string, string> };
+    Body: {
+      kind?: string;
+      periodYm?: string;
+      businessDate?: string;
+      employeeId?: string;
+      overrides?: Record<string, string>;
+    };
   }>("/documents/preview-auto", { preHandler: [authenticate] }, async (req, reply) => {
     const tid = tenantIdFromReq(req);
     const kind = String(req.body?.kind || "").trim();
@@ -39,9 +50,21 @@ export async function registerDocumentRoutes(app: FastifyInstance): Promise<void
     });
     if (!tpl) return reply.code(404).send({ error: "template not found; run npm run db:seed on server" });
     const periodYm = String(req.body?.periodYm || "").trim();
-    const auto = await buildLegalNinePayload(prisma, kind, tid, {
+    const businessDate = String(req.body?.businessDate || "").trim();
+    const employeeId = String(req.body?.employeeId || "").trim();
+    const [settings, activeEmployeeCount] = await Promise.all([
+      prisma.tenantSettings.findUnique({ where: { tenantId: tid } }),
+      prisma.employee.count({ where: { tenantId: tid, status: "ACTIVE" } }),
+    ]);
+    const customJson = settings?.customJson;
+    const profile = parseDispatchProfileFromCustomJson(customJson);
+    const forms = parseDocumentFormsFromCustomJson(customJson);
+    const ctx = {
       periodYm: /^\d{4}-\d{2}$/.test(periodYm) ? periodYm : undefined,
-    });
+      businessDate: /^\d{4}-\d{2}-\d{2}$/.test(businessDate) ? businessDate : undefined,
+      employeeId: employeeId || undefined,
+    };
+    const auto = await buildLegalNinePayload(prisma, kind, tid, ctx);
     const overrides =
       (req.body?.overrides && typeof req.body.overrides === "object" ? req.body.overrides : {}) as Record<
         string,
@@ -49,11 +72,13 @@ export async function registerDocumentRoutes(app: FastifyInstance): Promise<void
       >;
     const data: Record<string, string> = { ...auto, ...overrides };
     const html = fillTemplate(tpl.htmlBody, data);
+    const missingRequired = computeLegalNineMissing(kind as LegalNineKind, profile, forms, ctx, { activeEmployeeCount });
     return {
       kind,
       version: 1,
       html,
       data,
+      missingRequired,
       note: "PDF は POST /documents/render-pdf-auto（プラン pdfExport）で取得できます。",
     };
   });
@@ -140,7 +165,13 @@ export async function registerDocumentRoutes(app: FastifyInstance): Promise<void
   );
 
   app.post<{
-    Body: { kind?: string; periodYm?: string; overrides?: Record<string, string> };
+    Body: {
+      kind?: string;
+      periodYm?: string;
+      businessDate?: string;
+      employeeId?: string;
+      overrides?: Record<string, string>;
+    };
   }>(
     "/documents/render-pdf-auto",
     { preHandler: [authenticate, requireFeature("pdfExport")] },
@@ -155,8 +186,12 @@ export async function registerDocumentRoutes(app: FastifyInstance): Promise<void
       });
       if (!tpl) return reply.code(404).send({ error: "template not found; run npm run db:seed on server" });
       const periodYm = String(req.body?.periodYm || "").trim();
+      const businessDate = String(req.body?.businessDate || "").trim();
+      const employeeId = String(req.body?.employeeId || "").trim();
       const auto = await buildLegalNinePayload(prisma, kind, tid, {
         periodYm: /^\d{4}-\d{2}$/.test(periodYm) ? periodYm : undefined,
+        businessDate: /^\d{4}-\d{2}-\d{2}$/.test(businessDate) ? businessDate : undefined,
+        employeeId: employeeId || undefined,
       });
       const overrides =
         (req.body?.overrides && typeof req.body.overrides === "object" ? req.body.overrides : {}) as Record<

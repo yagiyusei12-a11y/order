@@ -4,6 +4,13 @@ import { Card, Err } from "../ui";
 
 type CatDoc = { kind: string; label: string; dataSources: string };
 
+type MissingField = { key: string; labelJa: string };
+
+function todayYmd(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export default function Documents(): JSX.Element {
   const [catalog, setCatalog] = useState<CatDoc[]>([]);
   const [err, setErr] = useState<string | null>(null);
@@ -11,9 +18,15 @@ export default function Documents(): JSX.Element {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   });
+  const [businessDate, setBusinessDate] = useState(todayYmd);
+  const [employeeId, setEmployeeId] = useState("");
+  const [employees, setEmployees] = useState<{ id: string; familyName: string; givenName: string; status: string }[]>(
+    [],
+  );
   const [activeKind, setActiveKind] = useState<string | null>(null);
   const [html, setHtml] = useState<string | null>(null);
   const [dataPreview, setDataPreview] = useState<string | null>(null);
+  const [missing, setMissing] = useState<MissingField[] | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -23,17 +36,38 @@ export default function Documents(): JSX.Element {
     })();
   }, []);
 
+  useEffect(() => {
+    void (async () => {
+      const r = await apiFetch<{ employees: { id: string; familyName: string; givenName: string; status: string }[] }>(
+        "/employees?status=active",
+      );
+      if (r.ok) setEmployees(r.data.employees);
+    })();
+  }, []);
+
+  function previewBody(kind: string): Record<string, unknown> {
+    const body: Record<string, unknown> = { kind, periodYm: ym };
+    if (kind === "joroku_kensyu") body.businessDate = businessDate;
+    if (kind === "seiyaku_jukyu") body.employeeId = employeeId || undefined;
+    return body;
+  }
+
   async function previewAuto(kind: string): Promise<void> {
     setErr(null);
     setActiveKind(kind);
-    const r = await apiFetch<{ html: string; data?: Record<string, string> }>("/documents/preview-auto", {
+    const r = await apiFetch<{
+      html: string;
+      data?: Record<string, string>;
+      missingRequired?: MissingField[];
+    }>("/documents/preview-auto", {
       method: "POST",
-      json: { kind, periodYm: ym },
+      json: previewBody(kind),
     });
     if (!r.ok) setErr(r.error);
     else {
       setHtml(r.data.html);
       setDataPreview(r.data.data ? JSON.stringify(r.data.data, null, 2) : null);
+      setMissing(r.data.missingRequired ?? []);
     }
   }
 
@@ -41,7 +75,7 @@ export default function Documents(): JSX.Element {
     setErr(null);
     const r = await apiFetchBlob("/documents/render-pdf-auto", {
       method: "POST",
-      json: { kind, periodYm: ym },
+      json: previewBody(kind),
     });
     if (!r.ok) {
       setErr(
@@ -64,10 +98,21 @@ export default function Documents(): JSX.Element {
       <Card title="法定・届出系帳票（9 種）">
         <Err msg={err} />
         <p style={{ fontSize: "0.85rem", marginTop: 0 }}>
-          テナント設定の <code>customJson.dispatchProfile</code> と業務データから自動埋めします。印刷はプレビュー表示後にブラウザの印刷を利用してください。
+          テナント設定の <code>customJson.dispatchProfile</code>・<code>documentForms</code> と業務データから自動埋めします。印刷はプレビュー表示後にブラウザの印刷を利用してください。
         </p>
-        <label>集計・表示用の月（YYYY-MM）</label>
+        <label>表示・集計用の月（YYYY-MM）</label>
         <input type="month" value={ym} onChange={(e) => setYm(e.target.value)} />
+        <label style={{ display: "block", marginTop: "0.5rem" }}>乗務記録・酒気確認用 運行日（YYYY-MM-DD）</label>
+        <input type="date" value={businessDate} onChange={(e) => setBusinessDate(e.target.value)} />
+        <label style={{ display: "block", marginTop: "0.5rem" }}>誓約書用 従事者</label>
+        <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} style={{ minWidth: 220 }}>
+          <option value="">（未選択）</option>
+          {employees.map((e) => (
+            <option key={e.id} value={e.id}>
+              {e.familyName} {e.givenName}
+            </option>
+          ))}
+        </select>
       </Card>
       <div style={{ display: "grid", gap: "0.75rem", marginTop: "0.5rem" }}>
         {catalog.map((d) => (
@@ -87,6 +132,26 @@ export default function Documents(): JSX.Element {
       </div>
       {html ? (
         <Card title={activeKind ? `プレビュー: ${activeKind}` : "プレビュー"}>
+          {missing && missing.length > 0 ? (
+            <div
+              style={{
+                marginBottom: "0.5rem",
+                padding: "0.5rem 0.65rem",
+                background: "#fff8e6",
+                border: "1px solid #e6c200",
+                fontSize: "0.85rem",
+              }}
+            >
+              <strong>未入力の必須項目</strong>
+              <ul style={{ margin: "0.35rem 0 0", paddingLeft: "1.2rem" }}>
+                {missing.map((m) => (
+                  <li key={m.key}>
+                    {m.labelJa} <code style={{ fontSize: "0.75rem" }}>{m.key}</code>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           {dataPreview ? (
             <details style={{ marginBottom: "0.5rem" }}>
               <summary style={{ cursor: "pointer", fontSize: "0.85rem" }}>埋め込みデータ（JSON）</summary>

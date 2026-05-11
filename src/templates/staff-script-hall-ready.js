@@ -1,4 +1,5 @@
 const HALL_FILTER_KEY = "orderHallReadyFilters:v1:" + STORE;
+const HALL_LIST_FS_KEY = "orderHallListFullscreen:v1:" + STORE;
 
 let hallRefreshMs = 10000;
 /** @type {"done"|"served"} */
@@ -451,6 +452,40 @@ document.getElementById("btnRefHall").onclick = () => {
     .catch((e) => log(String(e.message || e)));
 };
 
+function applyHallListFullscreen(on) {
+  const want = !!on;
+  document.body.classList.toggle("hall-list-fullscreen", want);
+  const bar = document.getElementById("hallFullExitBar");
+  if (bar) bar.hidden = !want;
+  try {
+    if (want) sessionStorage.setItem(HALL_LIST_FS_KEY, "1");
+    else sessionStorage.removeItem(HALL_LIST_FS_KEY);
+  } catch (_) {}
+}
+
+{
+  const b = document.getElementById("btnHallFullList");
+  if (b) b.onclick = () => applyHallListFullscreen(true);
+}
+{
+  const b = document.getElementById("btnHallFullExit");
+  if (b) b.onclick = () => applyHallListFullscreen(false);
+}
+{
+  const b = document.getElementById("btnHallFsRef");
+  if (b)
+    b.onclick = () => {
+      const ref = document.getElementById("btnRefHall");
+      if (ref) ref.click();
+    };
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && document.body.classList.contains("hall-list-fullscreen")) {
+    applyHallListFullscreen(false);
+  }
+});
+
 document.getElementById("hallFltClear").onclick = () => {
   saveFilterState([], []);
   renderFilterControls();
@@ -482,6 +517,10 @@ const hallTabDoneEl = document.getElementById("hallTabDone");
 const hallTabServedEl = document.getElementById("hallTabServed");
 if (hallTabDoneEl) hallTabDoneEl.onclick = () => setHallTab("done");
 if (hallTabServedEl) hallTabServedEl.onclick = () => setHallTab("served");
+
+try {
+  if (sessionStorage.getItem(HALL_LIST_FS_KEY) === "1") applyHallListFullscreen(true);
+} catch (_) {}
 
 refreshHallIntervalFromServer()
   .then(() => {

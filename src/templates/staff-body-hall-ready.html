@@ -1,5 +1,62 @@
 <main>
   <style>
+    /* リストのみ全画面（サイドバー・ヘッダー・フッター非表示） */
+    body.hall-list-fullscreen .sidebar,
+    body.hall-list-fullscreen .topbar,
+    body.hall-list-fullscreen .app-footer {
+      display: none !important;
+    }
+    body.hall-list-fullscreen .app {
+      height: 100vh;
+      height: 100dvh;
+    }
+    body.hall-list-fullscreen .col {
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+      height: 100%;
+    }
+    body.hall-list-fullscreen .scroll-main {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      padding: 0 !important;
+      padding-bottom: 0 !important;
+    }
+    body.hall-list-fullscreen .global-call-banner {
+      left: 0 !important;
+    }
+    body.hall-list-fullscreen .hall-fs-hide {
+      display: none !important;
+    }
+    .hall-full-exit-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      padding: 0.4rem 0.55rem;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
+    }
+    .hall-full-exit-bar .hall-full-exit-title {
+      font-size: 0.78rem;
+      font-weight: 800;
+      color: var(--accent);
+    }
+    .hall-full-exit-bar .row {
+      margin: 0;
+      gap: 0.35rem;
+    }
+    body.hall-list-fullscreen #hallReadyRoot {
+      min-height: calc(100dvh - 2.75rem);
+      margin-bottom: 0;
+    }
+
     .hall-ready-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.65rem; }
     .hall-ready-groups { display: flex; flex-direction: column; gap: 1.35rem; }
     .hall-ready-table-head {
@@ -54,22 +111,33 @@
     .hall-ready-empty { text-align: center; padding: 2.2rem 1rem; color: var(--muted); }
     .hall-ready-empty .ico { font-size: 2.2rem; margin-bottom: 0.45rem; opacity: 0.4; }
   </style>
-  <h2 class="page-title">調理済・提供</h2>
-  <div class="top-tabs" role="tablist" aria-label="提供リスト" style="margin-top:-0.25rem;margin-bottom:0.5rem">
-    <button type="button" class="is-on" id="hallTabDone">提供待ち（調理済）</button>
-    <button type="button" id="hallTabServed">提供済み</button>
+  <div id="hallFullExitBar" class="hall-full-exit-bar" hidden>
+    <span class="hall-full-exit-title">調理済・提供 · リスト全画面</span>
+    <div class="row">
+      <button type="button" class="btn-ghost" id="btnHallFsRef" style="width:auto">再読込</button>
+      <button type="button" class="btn-ghost" id="btnHallFullExit" style="width:auto;font-weight:800">全画面を終了</button>
+    </div>
   </div>
-  <p class="muted" style="margin-top:-0.15rem;margin-bottom:0.65rem;font-size:0.8rem">
-    <strong>提供待ち</strong>ではキッチンで「調理済」にした商品を表示します。お渡し後に「提供済み」にしてください（並びは<strong>調理完了が早い順</strong>・<strong>卓ごと</strong>）。<strong>提供済み</strong>タブでは、会計前のセッション内で提供済みにした商品を<strong>提供が新しい順</strong>で確認できます。
-  </p>
-  <div class="hall-ready-toolbar">
-    <button type="button" class="btn-ghost" id="btnRefHall" style="width:auto">再読込</button>
-    <label class="row" style="margin:0;align-items:flex-start;gap:0.35rem;font-size:0.8rem;color:var(--muted)">
-      <input type="checkbox" id="hallAuto" checked style="margin-top:0.2rem" />
-      <span>自動再読込（間隔は設定の「キッチン自動更新（秒）」）</span>
-    </label>
+  <div class="hall-fs-hide">
+    <h2 class="page-title">調理済・提供</h2>
+    <div class="top-tabs" role="tablist" aria-label="提供リスト" style="margin-top:-0.25rem;margin-bottom:0.5rem">
+      <button type="button" class="is-on" id="hallTabDone">提供待ち（調理済）</button>
+      <button type="button" id="hallTabServed">提供済み</button>
+    </div>
+    <p class="muted" style="margin-top:-0.15rem;margin-bottom:0.65rem;font-size:0.8rem">
+      <strong>提供待ち</strong>ではキッチンで「調理済」にした商品を表示します。お渡し後に「提供済み」にしてください（並びは<strong>調理完了が早い順</strong>・<strong>卓ごと</strong>）。<strong>提供済み</strong>タブでは、会計前のセッション内で提供済みにした商品を<strong>提供が新しい順</strong>で確認できます。
+    </p>
+    <div class="hall-ready-toolbar">
+      <button type="button" class="btn-ghost" id="btnRefHall" style="width:auto">再読込</button>
+      <button type="button" class="btn-ghost" id="btnHallFullList" style="width:auto;font-weight:700">リスト全画面</button>
+      <label class="row" style="margin:0;align-items:flex-start;gap:0.35rem;font-size:0.8rem;color:var(--muted)">
+        <input type="checkbox" id="hallAuto" checked style="margin-top:0.2rem" />
+        <span>自動再読込（間隔は設定の「キッチン自動更新（秒）」）</span>
+      </label>
+    </div>
+    <div id="log"></div>
   </div>
-  <div class="card" id="hallFilterCard" style="margin-bottom:0.75rem;padding:0.75rem 1rem">
+  <div class="card hall-fs-hide" id="hallFilterCard" style="margin-bottom:0.75rem;padding:0.75rem 1rem">
     <div style="font-size:0.82rem;font-weight:700;margin-bottom:0.35rem">絞り込み</div>
     <p class="muted" style="font-size:0.72rem;margin:0 0 0.5rem">キッチン画面と同じく、カテゴリ・調理場を複数選ぶと<strong>すべて一致</strong>する行だけ表示します。</p>
     <div class="row" style="align-items:flex-start;flex-wrap:wrap;gap:1rem">
@@ -87,5 +155,4 @@
     </div>
   </div>
   <div id="hallReadyRoot" class="card" style="min-height:200px;padding:0.85rem 1rem"></div>
-  <div id="log"></div>
 </main>

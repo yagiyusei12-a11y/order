@@ -80,6 +80,11 @@ if (process.env.OPENAPI_UI === "1" || process.env.NODE_ENV !== "production") {
 
 app.get("/health", async () => ({ ok: true, service: "daiko" }));
 
+/** ルートは API より先に登録（本番でトップが 404 にならないよう明示的に） */
+app.get("/app", async (_, reply) => reply.redirect("/app/", 302));
+app.get("/", async (_, reply) => reply.redirect("/app/", 302));
+app.get("/web", async (_, reply) => reply.redirect("/app/", 302));
+
 const v1 = "/api/v1";
 await app.register(registerAuthRoutes, { prefix: v1 });
 await app.register(registerUserRoutes, { prefix: v1 });
@@ -103,10 +108,6 @@ await app.register(fastifyStatic, {
   root: appStaticRoot,
   prefix: "/app/",
 });
-
-app.get("/app", async (_, reply) => reply.redirect("/app/", 302));
-app.get("/", async (_, reply) => reply.redirect("/app/", 302));
-app.get("/web", async (_, reply) => reply.redirect("/app/", 302));
 
 app.setNotFoundHandler((req, reply) => {
   const raw = req.raw.url ?? "";

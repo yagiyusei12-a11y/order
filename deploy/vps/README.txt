@@ -32,3 +32,13 @@ VPS デプロイ（概要）
 止めたい:
   sudo systemctl stop order-app
   cd ~/order/deploy/vps && sudo docker compose -f docker-compose.proxy.yml down
+
+---
+Daiko（代行 SaaS / daiko サブフォルダ）
+--------------------------------------
+- コード: リポジトリの daiko/（別 package.json・Prisma・ポート既定 3001）
+- Caddy: daiko.harunoyukoto.jp → host.docker.internal:3001（DNS を向けたあと有効）
+- systemd ユニット例: daiko/deploy/daiko-app.service（WorkingDirectory をサーバの ~/order/daiko に合わせる）
+- PC からデプロイ: daiko/.env.deploy を用意し、リポジトリルートで
+    powershell -NoProfile -ExecutionPolicy Bypass -File ./daiko/scripts/deploy-vps.ps1
+  （VPS では PostgreSQL に daiko 用 DB を作成し、daiko/.env に DATABASE_URL を設定）

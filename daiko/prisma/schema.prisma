@@ -1,0 +1,342 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PlanTier {
+  FREE
+  STANDARD
+  PREMIUM
+}
+
+enum CompensationType {
+  HOURLY_ONLY
+  COMMISSION_ONLY
+  HOURLY_AND_COMMISSION
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  RETIRED
+}
+
+enum PayrollRunStatus {
+  DRAFT
+  LOCKED
+}
+
+enum TripRole {
+  MAIN_DRIVER
+  PARTNER_DRIVER
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  timezone  String   @default("Asia/Tokyo")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  settings      TenantSettings?
+  subscriptions Subscription[]
+  users         User[]
+  roles         Role[]
+  employees     Employee[]
+  vehicles      Vehicle[]
+  tariffPlans   TariffPlan[]
+  dailyReports  DailyReport[]
+  timePunches   TimePunch[]
+  alcoholChecks AlcoholCheck[]
+  payrollRuns   PayrollRun[]
+  refreshTokens RefreshToken[]
+}
+
+model TenantSettings {
+  tenantId String @id
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// 0–23: この時刻までは前日の事業日に含める
+  businessDayRollHour Int @default(4)
+
+  /// プラン由来の機能フラグ（JSON）。例: { "receiptEnabled": true, "paymentMethodsEnabled": false }
+  featureFlags Json @default("{}")
+
+  /// 任意の拡張（領収書・決済手段など）
+  customJson Json @default("{}")
+}
+
+model Subscription {
+  id        String    @id @default(cuid())
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  planTier  PlanTier
+  validFrom DateTime  @default(now())
+  validTo   DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model Role {
+  id          String     @id @default(cuid())
+  tenantId    String
+  tenant      Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  permissions Json       @default("[]")
+  userRoles   UserRole[]
+
+  @@unique([tenantId, name])
+}
+
+model User {
+  id           String    @id @default(cuid())
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  email        String
+  passwordHash String
+  displayName  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  roles         UserRole[]
+  refreshTokens RefreshToken[]
+
+  @@unique([tenantId, email])
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+model RefreshToken {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+}
+
+model Employee {
+  id          String         @id @default(cuid())
+  tenantId    String
+  tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  familyName  String
+  givenName   String
+  furigana    String?
+  address     String?
+  status      EmployeeStatus @default(ACTIVE)
+  retiredAt   DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  compensationPeriods EmployeeCompensationPeriod[]
+  timePunches         TimePunch[]
+  alcoholChecks       AlcoholCheck[]
+  payrollLines           PayrollLine[]
+  dailyReportsAsMain    DailyReport[] @relation("DailyReportMain")
+  dailyReportsAsPartner DailyReport[] @relation("DailyReportPartner")
+
+  @@index([tenantId, status])
+}
+
+model EmployeeCompensationPeriod {
+  id             String            @id @default(cuid())
+  employeeId     String
+  employee       Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  validFrom      DateTime
+  validTo        DateTime?
+  compensationType CompensationType
+  baseHourlyYen  Int               @default(0)
+  commissionMainRateBps    Int     @default(0)
+  commissionPartnerRateBps Int     @default(0)
+  createdAt      DateTime          @default(now())
+
+  @@index([employeeId, validFrom])
+}
+
+model Vehicle {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  label     String
+  plate     String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dailyReports DailyReport[]
+
+  @@index([tenantId, active])
+}
+
+model TariffPlan {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  versions TariffPlanVersion[]
+
+  @@index([tenantId])
+}
+
+model TariffPlanVersion {
+  id        String   @id @default(cuid())
+  planId    String
+  plan      TariffPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  version   Int
+  validFrom DateTime @default(now())
+  validTo   DateTime?
+
+  /// 初乗り: 距離m, 金額円
+  initialDistanceM Int @default(0)
+  initialFareYen   Int @default(0)
+  /// 加算単位（この距離ごとに addFareYen）
+  addUnitDistanceM Int @default(0)
+  addFareYen       Int @default(0)
+  waitingFareYenPerMin Int @default(0)
+
+  segments TariffSegment[]
+  tripLegs TripLeg[]
+
+  @@unique([planId, version])
+}
+
+/// 距離帯の上書き（任意・将来拡張）
+model TariffSegment {
+  id         String @id @default(cuid())
+  versionId  String
+  version    TariffPlanVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  fromM      Int
+  toM        Int
+  fareYen    Int
+}
+
+model DailyReport {
+  id                String    @id @default(cuid())
+  tenantId          String
+  tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  businessDate      String
+  vehicleId         String
+  vehicle           Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  mainEmployeeId    String
+  mainEmployee      Employee  @relation("DailyReportMain", fields: [mainEmployeeId], references: [id], onDelete: Restrict)
+  partnerEmployeeId String?
+  partnerEmployee   Employee? @relation("DailyReportPartner", fields: [partnerEmployeeId], references: [id], onDelete: SetNull)
+  meterStart        Int
+  meterEnd          Int
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  trips TripLeg[]
+
+  @@index([tenantId, businessDate])
+}
+
+model TripLeg {
+  id               String   @id @default(cuid())
+  dailyReportId    String
+  dailyReport      DailyReport @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
+  clientName       String
+  charterVehicleNo String?
+  origin           String
+  destination      String
+  viaNote          String?
+  departedAt       DateTime
+  arrivedAt        DateTime
+  distanceM        Int
+  tariffVersionId  String?
+  tariffVersion    TariffPlanVersion? @relation(fields: [tariffVersionId], references: [id], onDelete: SetNull)
+  fareYen          Int      @default(0)
+  role             TripRole @default(MAIN_DRIVER)
+  createdAt        DateTime @default(now())
+
+  @@index([dailyReportId])
+}
+
+model TimePunch {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  employeeId   String
+  employee     Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  businessDate String
+  clockInAt    DateTime
+  clockOutAt   DateTime?
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId, businessDate, employeeId])
+}
+
+model AlcoholCheck {
+  id              String   @id @default(cuid())
+  tenantId        String
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  employeeId      String
+  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  businessDate    String
+  phase           String
+  checkedAt       DateTime
+  methodNote      String?
+  detectorUsed    Boolean  @default(false)
+  resultPositive  Boolean  @default(false)
+  supervisorNote  String?
+  createdAt       DateTime @default(now())
+
+  @@index([tenantId, businessDate])
+}
+
+model PayrollRun {
+  id            String            @id @default(cuid())
+  tenantId      String
+  tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  periodYm      String
+  status        PayrollRunStatus  @default(DRAFT)
+  poolRateBps   Int               @default(0)
+  createdAt     DateTime          @default(now())
+  lockedAt      DateTime?
+
+  lines PayrollLine[]
+
+  @@unique([tenantId, periodYm])
+}
+
+model PayrollLine {
+  id            String     @id @default(cuid())
+  runId         String
+  run           PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  employeeId    String
+  employee      Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  grossSalesYen Int        @default(0)
+  hourlyYen     Int        @default(0)
+  commissionYen Int        @default(0)
+  poolYen       Int        @default(0)
+  netPayYen     Int        @default(0)
+  breakdownJson Json       @default("{}")
+
+  @@unique([runId, employeeId])
+}
+
+model DocumentTemplate {
+  id        String   @id @default(cuid())
+  kind      String
+  version   Int
+  label     String
+  htmlBody  String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@unique([kind, version])
+}

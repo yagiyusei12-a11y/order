@@ -3,3 +3,8 @@
 morder.harunoyukoto.jp {
 	reverse_proxy host.docker.internal:3000
 }
+
+# 代行業向け Daiko API（同一 VPS 上の Node、既定ポート 3001）
+daiko.harunoyukoto.jp {
+	reverse_proxy host.docker.internal:3001
+}

@@ -1,10 +1,19 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:harunoyukoto_pos/main.dart';
 
 void main() {
-  testWidgets('AppBar title is visible', (WidgetTester tester) async {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+  });
+
+  testWidgets('初回はセットアップ画面に OPS URL 入力がある', (WidgetTester tester) async {
     await tester.pumpWidget(const HarunoyukotoPosApp());
-    expect(find.text('はるのゆこと レジシステム'), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.text('OPS の URL'), findsOneWidget);
+    expect(find.text('はるのゆこと レジ'), findsOneWidget);
   });
 }

@@ -27,6 +27,8 @@ alwaysApply: true
 
 HTML テンプレだけの変更でも **ビルド＋再起動** でよい（スクリプト既定のまま）。
 
+**Daiko** はリポジトリが分かれ、ディスク上は多くの場合 `order` の親と同階層の `daiko/` に置く。変更したら **`order/order` で `npm run deploy:vps:daiko`**（スクリプトは `../daiko/scripts/deploy-vps.ps1`）。VPS では `DAIKO_VPS_PATH` / `ORDER_VPS_DAIKO_PATH` を **daiko 専用 clone のルート**（既定 `~/daiko`）に合わせる。
+
 ## やらないこと
 
 - 本番反映が必要な変更を **コミット・プッシュだけで終わらせない**。

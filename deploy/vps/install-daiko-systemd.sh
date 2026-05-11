@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Daiko API を systemd で常駐。引数: リポジトリルート（既定 ~/order）
+# Daiko API を systemd で常駐。引数: daiko 専用 clone のルート（既定 ~/daiko）
 set -euo pipefail
 
-REPO_ROOT="${1:-$HOME/order}"
-DAIKO_DIR="$REPO_ROOT/daiko"
+REPO_ROOT="${1:-$HOME/daiko}"
+DAIKO_DIR="$REPO_ROOT"
 UNIT_DST="/etc/systemd/system/daiko-app.service"
 UNIT_SRC="$DAIKO_DIR/deploy/daiko-app.service"
 

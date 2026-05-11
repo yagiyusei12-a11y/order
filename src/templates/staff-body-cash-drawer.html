@@ -1,0 +1,73 @@
+<main>
+  <h2 class="page-title">レジドロワー現金</h2>
+  <p class="muted" style="margin-top:-0.35rem;margin-bottom:0.85rem;font-size:0.82rem">
+    台帳上のドロワー内の現金残高です。会計の入金とは<strong>自動では連動しません</strong>。銀行への移動・入金や締め時の実数合わせを記録してください。履歴は全件がデータベースに残ります（マネージャー向け監査ログにも記録されます）。
+  </p>
+
+  <div class="card" style="padding:1rem 1.1rem;margin-bottom:0.85rem">
+    <div class="muted" style="font-size:0.78rem;margin-bottom:0.25rem">現在のドロワー残高（台帳）</div>
+    <div id="balanceBig" style="font-size:1.85rem;font-weight:800;color:var(--accent);letter-spacing:0.02em">—</div>
+    <div class="row" style="margin-top:0.75rem;flex-wrap:wrap;gap:0.5rem;align-items:flex-end">
+      <button type="button" class="btn-primary" id="btnOpenDrawer" style="width:auto;padding:0.45rem 0.9rem;font-weight:700">ドロワーを開く</button>
+      <label style="flex:1;min-width:12rem;margin:0">
+        <span class="muted" style="font-size:0.72rem">開けたときのメモ（任意）</span>
+        <input type="text" id="openNote" maxlength="500" placeholder="例: お釣り補充のため" style="width:100%;margin-top:0.2rem" />
+      </label>
+      <button type="button" class="btn-ghost" id="btnRefCash" style="width:auto">再読込</button>
+    </div>
+  </div>
+
+  <div id="mgrPanel" class="card" style="padding:0.85rem 1rem;margin-bottom:0.85rem;display:none">
+    <strong style="font-size:0.88rem">出納・締め（店長のみ）</strong>
+    <p class="muted" style="font-size:0.74rem;margin:0.35rem 0 0.65rem">一般スタッフには表示されません。</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0.75rem">
+      <div style="border:1px solid var(--border);border-radius:10px;padding:0.65rem">
+        <div style="font-weight:700;font-size:0.82rem;margin-bottom:0.35rem">銀行へ出金</div>
+        <label class="muted" style="font-size:0.72rem">金額（円）</label>
+        <input type="text" id="toBankAmt" inputmode="numeric" style="width:100%;margin:0.2rem 0 0.35rem" />
+        <label class="muted" style="font-size:0.72rem">メモ</label>
+        <input type="text" id="toBankNote" maxlength="500" style="width:100%;margin:0.2rem 0 0.45rem" />
+        <button type="button" class="btn-ghost" id="btnToBank" style="width:100%">記録する</button>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:10px;padding:0.65rem">
+        <div style="font-weight:700;font-size:0.82rem;margin-bottom:0.35rem">銀行から入金</div>
+        <label class="muted" style="font-size:0.72rem">金額（円）</label>
+        <input type="text" id="fromBankAmt" inputmode="numeric" style="width:100%;margin:0.2rem 0 0.35rem" />
+        <label class="muted" style="font-size:0.72rem">メモ</label>
+        <input type="text" id="fromBankNote" maxlength="500" style="width:100%;margin:0.2rem 0 0.45rem" />
+        <button type="button" class="btn-ghost" id="btnFromBank" style="width:100%">記録する</button>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:10px;padding:0.65rem">
+        <div style="font-weight:700;font-size:0.82rem;margin-bottom:0.35rem">実地で合わせる</div>
+        <p class="muted" style="font-size:0.7rem;margin:0 0 0.35rem">数えた現金の合計を入力。台帳残高がその金額に一致するよう調整されます。</p>
+        <label class="muted" style="font-size:0.72rem">実数（円）</label>
+        <input type="text" id="countAmt" inputmode="numeric" style="width:100%;margin:0.2rem 0 0.35rem" />
+        <label class="muted" style="font-size:0.72rem">メモ</label>
+        <input type="text" id="countNote" maxlength="500" style="width:100%;margin:0.2rem 0 0.45rem" />
+        <button type="button" class="btn-ghost" id="btnCount" style="width:100%">記録する</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="padding:0;overflow:hidden">
+    <div style="padding:0.65rem 1rem;border-bottom:1px solid var(--border);font-weight:700;font-size:0.88rem">履歴（直近 200 件）</div>
+    <div style="overflow:auto;max-height:min(60vh,520px)">
+      <table class="cd-table" style="width:100%;border-collapse:collapse;font-size:0.8rem">
+        <thead>
+          <tr style="background:#f9fafb;text-align:left">
+            <th style="padding:0.45rem 0.6rem;border-bottom:1px solid var(--border)">日時</th>
+            <th style="padding:0.45rem 0.6rem;border-bottom:1px solid var(--border)">種別</th>
+            <th style="padding:0.45rem 0.6rem;border-bottom:1px solid var(--border);text-align:right">増減</th>
+            <th style="padding:0.45rem 0.6rem;border-bottom:1px solid var(--border);text-align:right">取引後</th>
+            <th style="padding:0.45rem 0.6rem;border-bottom:1px solid var(--border)">担当</th>
+            <th style="padding:0.45rem 0.6rem;border-bottom:1px solid var(--border)">メモ</th>
+          </tr>
+        </thead>
+        <tbody id="cdTbody">
+          <tr><td colspan="6" class="muted" style="padding:1rem">読み込み中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div id="log" style="margin-top:0.65rem;font-size:0.82rem;color:#b91c1c"></div>
+</main>

@@ -12,6 +12,7 @@ import { registerCustomers } from "./customers.js";
 import { registerTables } from "./tables.js";
 import { registerTakeoutStaff } from "./takeout-staff.js";
 import { registerStaffAuditLogRoutes } from "./staff-audit-log.js";
+import { registerCashDrawerRoutes } from "./cash-drawer.js";
 
 async function verifyStaff(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   try {
@@ -56,4 +57,5 @@ export async function registerProtectedStaffRoutes(app: FastifyInstance): Promis
   await registerKitchen(app);
   await registerTakeoutStaff(app);
   await registerStaffAuditLogRoutes(app);
+  await registerCashDrawerRoutes(app);
 }

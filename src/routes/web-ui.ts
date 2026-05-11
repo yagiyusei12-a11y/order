@@ -292,6 +292,11 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
     });
   });
 
+  app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/cash-drawer", async (req, reply) => {
+    if (!(await assertStaffStore(req, reply))) return;
+    return staffHtml(reply, req.params.storeId, "レジ現金", "staff-body-cash-drawer.html", "staff-script-cash-drawer.js");
+  });
+
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/billing", async (req, reply) => {
     if (!(await assertStaffStore(req, reply))) return;
     return reply.redirect(`/staff-app/${encodeURIComponent(req.params.storeId)}/ops`, 302);

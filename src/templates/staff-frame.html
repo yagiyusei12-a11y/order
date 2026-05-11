@@ -617,6 +617,9 @@
       <a href="/staff-app/__STORE_PATH__/reports" class="snav" id="nav-reports" data-nav-key="reports" title="レポート">
         <svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16"/><path d="M8 17V9M12 17v-5M16 17v-8"/></svg>
       </a>
+      <a href="/staff-app/__STORE_PATH__/cash-drawer" class="snav" id="nav-cash-drawer" data-nav-key="cashDrawer" title="レジ現金">
+        <svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg>
+      </a>
       <a href="/staff-app/__STORE_PATH__/courses" class="snav" id="nav-courses" data-nav-key="courses" title="コース">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
       </a>
@@ -838,6 +841,7 @@
       "stock",
       "customers",
       "reports",
+      "cashDrawer",
       "courses",
       "settings",
     ];
@@ -942,6 +946,7 @@
       else if (p.includes("/stock")) id = "nav-stock";
       else if (p.includes("/customers")) id = "nav-customers";
       else if (p.includes("/reports")) id = "nav-reports";
+      else if (p.includes("/cash-drawer")) id = "nav-cash-drawer";
       else if (p.includes("/courses")) id = "nav-courses";
       else if (p.includes("/settings")) {
         id = "nav-settings";

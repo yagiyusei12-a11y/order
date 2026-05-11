@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">order レジ</string>
+    <string name="hint_ops_url">店舗コンソールの卓・会計ページのURL（例: https://ドメイン/staff-app/店舗ID/ops）</string>
+    <string name="save_open">保存して開く</string>
+    <string name="change_url">URLを変更</string>
+</resources>

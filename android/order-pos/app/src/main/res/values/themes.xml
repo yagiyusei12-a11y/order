@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.OrderPos" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#ea580c</item>
+        <item name="colorPrimaryVariant">#c2410c</item>
+        <item name="colorOnPrimary">#ffffff</item>
+    </style>
+</resources>

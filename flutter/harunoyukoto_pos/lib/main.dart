@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -90,8 +91,22 @@ class _OpsShellPageState extends State<OpsShellPage> {
       ..addJavaScriptChannel(
         'HarunoyukotoPos',
         onMessageReceived: (JavaScriptMessage message) {
-          if (message.message == 'openDrawer') {
+          final raw = message.message;
+          if (raw == 'openDrawer') {
             _openDrawerTcp();
+            return;
+          }
+          try {
+            final decoded = jsonDecode(raw);
+            if (decoded is Map<String, dynamic> && decoded['cmd'] == 'printLines') {
+              final lines = decoded['lines'];
+              if (lines is List) {
+                final strs = lines.map((e) => e?.toString() ?? '').toList();
+                _printThermalLines(strs);
+              }
+            }
+          } catch (_) {
+            // 非 JSON メッセージは無視
           }
         },
       )
@@ -164,6 +179,72 @@ class _OpsShellPageState extends State<OpsShellPage> {
       }
     } catch (e, st) {
       debugPrint('Drawer open failed: $e\n$st');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('プリンターに接続できませんでした: $e')),
+        );
+      }
+    } finally {
+      try {
+        socket?.destroy();
+      } catch (_) {}
+    }
+  }
+
+  /// staff-pos-hardware.js の escPosFromTextLines と同等（UTF-8 行・部分カット）
+  Uint8List _escPosFromTextLines(List<String> lines) {
+    final b = BytesBuilder(copy: false);
+    b.addByte(0x1b);
+    b.addByte(0x40);
+    b.addByte(0x1b);
+    b.addByte(0x61);
+    b.addByte(0x00);
+    for (final line in lines) {
+      b.add(utf8.encode('$line\n'));
+    }
+    b.addByte(0x0a);
+    b.addByte(0x0a);
+    b.addByte(0x1d);
+    b.addByte(0x56);
+    b.addByte(0x00);
+    return b.takeBytes();
+  }
+
+  Future<void> _printThermalLines(List<String> lines) async {
+    final ip = _printerIp.trim();
+    if (ip.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('設定でプリンター IP を入力してください')),
+        );
+      }
+      return;
+    }
+    if (!_looksLikeIpv4(ip)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('プリンター IP の形式が正しくありません')),
+        );
+      }
+      return;
+    }
+
+    Socket? socket;
+    try {
+      socket = await Socket.connect(
+        ip,
+        _printerPort,
+        timeout: _connectTimeout,
+      );
+      socket.add(_escPosFromTextLines(lines));
+      await socket.flush();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('印刷を送信しました')),
+        );
+      }
+    } catch (e, st) {
+      debugPrint('Thermal print failed: $e\n$st');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('プリンターに接続できませんでした: $e')),

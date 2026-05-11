@@ -8,6 +8,7 @@
     <button type="button" data-stab="basic" class="is-on">基本</button>
     <button type="button" data-stab="businessHours">営業</button>
     <button type="button" data-stab="billing">会計</button>
+    <button type="button" data-stab="print">印刷</button>
     <button type="button" data-stab="menuCourse">メニュー/コース</button>
     <button type="button" data-stab="netReserve">ネット予約</button>
     <button type="button" data-stab="kitchen">キッチン</button>
@@ -205,6 +206,59 @@
       <div class="muted" style="font-size:0.72rem;margin-top:0.55rem">
         ※ 「レジ機能」は会計画面の“受取/お釣り”入力を出す支払い方法を指定します。
       </div>
+    </div>
+  </div>
+
+  <div id="settingsTab-print" data-stab-panel="print" style="display:none">
+    <div class="card" style="border-color:#a78bfa">
+      <strong style="font-size:0.9rem">レシート（OPS）に載せる項目</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        卓オペのレシート印刷（サーマル直送またはブラウザ印刷）に含める行を選びます。オフにした項目は印字されません。
+      </p>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrRfStoreName" /> <span>店舗名</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrRfBillId" /> <span>伝票 ID</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrRfLineItems" /> <span>明細（コース・注文行）</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrRfTotal" /> <span>合計</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrRfCashChange" /> <span>現金お預かり・お釣り</span>
+      </label>
+      <button type="button" class="btn-primary" id="btnSaveOpsReceiptPrint" style="margin-top:0.75rem">レシート項目を保存</button>
+    </div>
+    <div class="card" style="margin-top:1rem;border-color:#38bdf8">
+      <strong style="font-size:0.9rem">領収書（OPS）に載せる項目</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        領収書は印刷前に宛名・但し書き・金額（全額／一部）を入力します。ここでは印字ブロックの表示のオンオフです。
+      </p>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrIfStoreName" /> <span>店舗名</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrIfBillId" /> <span>伝票 ID</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrIfIssueDate" /> <span>発行日時</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrIfAmountYen" /> <span>領収金額（円）</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrIfPurpose" /> <span>但し書き</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrIfRecipient" /> <span>宛名</span>
+      </label>
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stPrIfChangeLine" /> <span>お釣りの注記（現金時）</span>
+      </label>
+      <button type="button" class="btn-primary" id="btnSaveOpsInvoicePrint" style="margin-top:0.75rem">領収書項目を保存</button>
     </div>
   </div>
 

@@ -753,6 +753,28 @@ function ensureBizBulkTemplate() {
   h.appendChild(makeBizSlotRow(null));
 }
 
+function syncOpsPrintFieldsFromSettings(s) {
+  const rf = s.opsReceiptPrintFields && typeof s.opsReceiptPrintFields === "object" ? s.opsReceiptPrintFields : {};
+  const inv = s.opsInvoicePrintFields && typeof s.opsInvoicePrintFields === "object" ? s.opsInvoicePrintFields : {};
+  const setChk = (id, defVal, obj, key) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.checked = typeof obj[key] === "boolean" ? obj[key] : defVal;
+  };
+  setChk("stPrRfStoreName", true, rf, "storeName");
+  setChk("stPrRfBillId", true, rf, "billId");
+  setChk("stPrRfLineItems", true, rf, "lineItems");
+  setChk("stPrRfTotal", true, rf, "total");
+  setChk("stPrRfCashChange", true, rf, "cashChange");
+  setChk("stPrIfStoreName", true, inv, "storeName");
+  setChk("stPrIfBillId", true, inv, "billId");
+  setChk("stPrIfIssueDate", true, inv, "issueDate");
+  setChk("stPrIfAmountYen", true, inv, "amountYen");
+  setChk("stPrIfPurpose", true, inv, "purpose");
+  setChk("stPrIfRecipient", true, inv, "recipient");
+  setChk("stPrIfChangeLine", true, inv, "changeLine");
+}
+
 async function loadAll() {
   log("");
   try {
@@ -873,6 +895,7 @@ async function loadAll() {
     dispExcl.checked = dm === "exclusive";
   }
   renderOpsDiscountPresets(s.opsDiscountPresets || []);
+  syncOpsPrintFieldsFromSettings(s);
   renderBizWeeklyEditor(s);
   ensureBizBulkTemplate();
   const closedTa = document.getElementById("stBizClosedDates");
@@ -2079,6 +2102,66 @@ if (btnSaveBusinessCalendar) {
         }),
       });
       log("カレンダーを保存しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+}
+
+function collectOpsReceiptPrintFieldsFromUi() {
+  return {
+    storeName: document.getElementById("stPrRfStoreName")?.checked !== false,
+    billId: document.getElementById("stPrRfBillId")?.checked !== false,
+    lineItems: document.getElementById("stPrRfLineItems")?.checked !== false,
+    total: document.getElementById("stPrRfTotal")?.checked !== false,
+    cashChange: document.getElementById("stPrRfCashChange")?.checked !== false,
+  };
+}
+
+function collectOpsInvoicePrintFieldsFromUi() {
+  return {
+    storeName: document.getElementById("stPrIfStoreName")?.checked !== false,
+    billId: document.getElementById("stPrIfBillId")?.checked !== false,
+    issueDate: document.getElementById("stPrIfIssueDate")?.checked !== false,
+    amountYen: document.getElementById("stPrIfAmountYen")?.checked !== false,
+    purpose: document.getElementById("stPrIfPurpose")?.checked !== false,
+    recipient: document.getElementById("stPrIfRecipient")?.checked !== false,
+    changeLine: document.getElementById("stPrIfChangeLine")?.checked !== false,
+  };
+}
+
+const btnSaveOpsReceiptPrint = document.getElementById("btnSaveOpsReceiptPrint");
+if (btnSaveOpsReceiptPrint) {
+  btnSaveOpsReceiptPrint.onclick = async () => {
+    log("");
+    if (!requireManagerForSettings()) return;
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings: { opsReceiptPrintFields: collectOpsReceiptPrintFieldsFromUi() } }),
+      });
+      log("レシート印字項目を保存しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+}
+
+const btnSaveOpsInvoicePrint = document.getElementById("btnSaveOpsInvoicePrint");
+if (btnSaveOpsInvoicePrint) {
+  btnSaveOpsInvoicePrint.onclick = async () => {
+    log("");
+    if (!requireManagerForSettings()) return;
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings: { opsInvoicePrintFields: collectOpsInvoicePrintFieldsFromUi() } }),
+      });
+      log("領収書印字項目を保存しました");
       await loadAll();
     } catch (e) {
       log(String(e.message || e));

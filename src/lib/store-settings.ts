@@ -21,6 +21,26 @@ export type BillCorrectionPolicy = {
 
 export type BillCorrectionPolicyKey = keyof Omit<BillCorrectionPolicy, "enabled">;
 
+/** OPS レシートに載せる項目（サーマル／ブラウザ印刷共通の論理行） */
+export type OpsReceiptPrintFields = {
+  storeName: boolean;
+  billId: boolean;
+  lineItems: boolean;
+  total: boolean;
+  cashChange: boolean;
+};
+
+/** OPS 領収書に載せる項目 */
+export type OpsInvoicePrintFields = {
+  storeName: boolean;
+  billId: boolean;
+  issueDate: boolean;
+  amountYen: boolean;
+  purpose: boolean;
+  recipient: boolean;
+  changeLine: boolean;
+};
+
 /** コース卓でラストオーダー締め時刻を過ぎたあとのゲスト注文ポリシー */
 export type GuestLastOrderAfterDeadlinePolicy = "allow_all" | "singles_only" | "block_all";
 
@@ -119,6 +139,10 @@ export type StoreSettingsShape = {
   }[];
   /** 会計画面で「レジ機能（現金の受取額/お釣り）」を有効にする支払い方法コード */
   opsRegisterMethodCodes: string[];
+  /** OPS レシート印字に含める項目 */
+  opsReceiptPrintFields: OpsReceiptPrintFields;
+  /** OPS 領収書印字に含める項目 */
+  opsInvoicePrintFields: OpsInvoicePrintFields;
   billCorrectionPolicy: BillCorrectionPolicy;
   /** 日次在庫リセットを有効にする（店舗 TZ の stockDailyResetTimeMin に実行） */
   stockDailyResetEnabled: boolean;
@@ -198,6 +222,44 @@ function mergeGuestServeLaterString(
   return t.length ? t : fallback;
 }
 
+const DEFAULT_OPS_RECEIPT_PRINT_FIELDS: OpsReceiptPrintFields = {
+  storeName: true,
+  billId: true,
+  lineItems: true,
+  total: true,
+  cashChange: true,
+};
+
+const DEFAULT_OPS_INVOICE_PRINT_FIELDS: OpsInvoicePrintFields = {
+  storeName: true,
+  billId: true,
+  issueDate: true,
+  amountYen: true,
+  purpose: true,
+  recipient: true,
+  changeLine: true,
+};
+
+function mergeOpsReceiptPrintFields(raw: unknown): OpsReceiptPrintFields {
+  const o = { ...DEFAULT_OPS_RECEIPT_PRINT_FIELDS };
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return o;
+  const p = raw as Record<string, unknown>;
+  for (const k of Object.keys(DEFAULT_OPS_RECEIPT_PRINT_FIELDS) as (keyof OpsReceiptPrintFields)[]) {
+    if (typeof p[k] === "boolean") o[k] = p[k];
+  }
+  return o;
+}
+
+function mergeOpsInvoicePrintFields(raw: unknown): OpsInvoicePrintFields {
+  const o = { ...DEFAULT_OPS_INVOICE_PRINT_FIELDS };
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return o;
+  const p = raw as Record<string, unknown>;
+  for (const k of Object.keys(DEFAULT_OPS_INVOICE_PRINT_FIELDS) as (keyof OpsInvoicePrintFields)[]) {
+    if (typeof p[k] === "boolean") o[k] = p[k];
+  }
+  return o;
+}
+
 export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
   const d: StoreSettingsShape = {
     kitchenAutoRefreshSec: 10,
@@ -233,6 +295,8 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     takeoutNetPriceDisplayMode: "inclusive",
     opsDiscountPresets: [],
     opsRegisterMethodCodes: [],
+    opsReceiptPrintFields: { ...DEFAULT_OPS_RECEIPT_PRINT_FIELDS },
+    opsInvoicePrintFields: { ...DEFAULT_OPS_INVOICE_PRINT_FIELDS },
     billCorrectionPolicy: {
       enabled: true,
       payments: true,
@@ -406,6 +470,8 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
       .filter(Boolean);
     d.opsRegisterMethodCodes = [...new Set(codes)].slice(0, 30);
   }
+  d.opsReceiptPrintFields = mergeOpsReceiptPrintFields(o.opsReceiptPrintFields);
+  d.opsInvoicePrintFields = mergeOpsInvoicePrintFields(o.opsInvoicePrintFields);
   if (o.billCorrectionPolicy && typeof o.billCorrectionPolicy === "object" && !Array.isArray(o.billCorrectionPolicy)) {
     const p = o.billCorrectionPolicy as Record<string, unknown>;
     if (typeof p.enabled === "boolean") d.billCorrectionPolicy.enabled = p.enabled;

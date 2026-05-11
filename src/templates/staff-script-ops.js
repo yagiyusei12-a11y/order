@@ -184,7 +184,10 @@ function buildOpsRegisterMountContext(session, table, detailPreloaded) {
     readOnly: false,
     storeId: STORE,
     storeSettings: storeSettingsCache,
-    paymentMethods: paymentMethodsCache,
+    /** 常に最新のキャッシュを参照（ensurePaymentMethods が配列を差し替えても古い参照を掴まない） */
+    get paymentMethods() {
+      return paymentMethodsCache;
+    },
     courses: coursesCache,
     sessions: sessionsCache,
     tables: tablesCache,
@@ -1756,9 +1759,59 @@ function renderMiniSessions() {
 }
 
 async function ensurePaymentMethods() {
+  // #region agent log
+  const __preLen = paymentMethodsCache.length;
+  fetch("http://127.0.0.1:7264/ingest/3e55ed64-37c0-42a5-a321-4645c4275acf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "161e6e" },
+    body: JSON.stringify({
+      sessionId: "161e6e",
+      hypothesisId: "A",
+      location: "staff-script-ops.js:ensurePaymentMethods:entry",
+      message: "ensurePaymentMethods entry",
+      data: { preCacheLen: __preLen, storeId: String(typeof STORE !== "undefined" ? STORE : "") },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
   if (paymentMethodsCache.length) return;
   const rows = await api("/stores/" + encodeURIComponent(STORE) + "/payment-methods");
+  // #region agent log
+  fetch("http://127.0.0.1:7264/ingest/3e55ed64-37c0-42a5-a321-4645c4275acf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "161e6e" },
+    body: JSON.stringify({
+      sessionId: "161e6e",
+      hypothesisId: "B",
+      location: "staff-script-ops.js:ensurePaymentMethods:afterApi",
+      message: "payment-methods response shape",
+      data: {
+        isArray: Array.isArray(rows),
+        type: typeof rows,
+        rowLen: Array.isArray(rows) ? rows.length : null,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
   paymentMethodsCache = Array.isArray(rows) ? rows : [];
+  // #region agent log
+  try {
+    window.__dbgPmGlobalLen = paymentMethodsCache.length;
+  } catch (_) {}
+  fetch("http://127.0.0.1:7264/ingest/3e55ed64-37c0-42a5-a321-4645c4275acf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "161e6e" },
+    body: JSON.stringify({
+      sessionId: "161e6e",
+      hypothesisId: "C",
+      location: "staff-script-ops.js:ensurePaymentMethods:afterAssign",
+      message: "cache after assign",
+      data: { newCacheLen: paymentMethodsCache.length },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
 }
 
 async function ensureBillForSession(session, table) {

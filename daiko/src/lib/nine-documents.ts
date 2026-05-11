@@ -7,39 +7,39 @@ export const LEGAL_NINE_DOCUMENTS = [
     kind: "hyojun_jidosha",
     label: "標準自動車運送約款（届出様式イメージ）",
     dataSources:
-      "dispatchProfile（商号・所在地・代表者・届出番号・運輸支局連絡・点検情報など）。Tenant.name / slug。",
+      "TenantSettings の法定プロフィール列（商号・所在地・代表者・認定番号・点検情報など）。Tenant.name / slug。",
   },
   {
     kind: "henko_kisai",
     label: "変更届（様式イメージ）",
     dataSources:
-      "dispatchProfile（提出先公安委員会・商号等）+ documentForms.henko（提出日・協定組合期間・効力発生日・変更理由）。",
+      "TenantSettings 法定プロフィール + LegalChangeNotice（最新1件の新旧値・理由・日付）+ 既存 documentForms.henko。",
   },
   {
     kind: "joroku_kensyu",
     label: "乗務記録簿兼酒気帯び確認（様式イメージ）",
     dataSources:
-      "preview の businessDate（YYYY-MM-DD）に該当する DailyReport・TripLeg・AlcoholCheck。dispatchProfile（運行管理者・検知器型式など）。",
+      "preview の businessDate（YYYY-MM-DD）に該当する DailyReport・TripLeg・AlcoholCheck（確認者/指示事項含む）。TenantSettings（運行管理者・検知器型式など）。",
   },
   {
     kind: "songai",
     label: "損害てん補に関する届出（様式イメージ）",
-    dataSources: "dispatchProfile + documentForms.songai（事故経緯・車両認定番号・協定組合契約期間など）。",
+    dataSources: "TenantSettings 法定プロフィール + Vehicle（登録番号/補償開始日）+ documentForms.songai（事故経緯・車両認定番号など）。",
   },
   {
     kind: "nintei",
     label: "認定（様式イメージ）",
-    dataSources: "dispatchProfile（認定公安委員会・商号）+ documentForms.nintei（認定内容の記載）。",
+    dataSources: "TenantSettings 法定プロフィール（認定公安委員会・認定番号・認定日・所在地）+ documentForms.nintei。",
   },
   {
     kind: "kujo",
     label: "苦情処理簿（登録一覧）",
-    dataSources: "LegalRegisterStub kind=complaint の payload を様式に近い列で表示。",
+    dataSources: "ComplaintLedger（正規化テーブル）を様式列にマッピングして表示。",
   },
   {
     kind: "shido",
     label: "指導記録（登録一覧）",
-    dataSources: "LegalRegisterStub kind=guidance の payload を列表示。",
+    dataSources: "GuidanceSession + GuidanceAttendee（正規化テーブル）を列表示。",
   },
   {
     kind: "jukyusha",
@@ -50,7 +50,7 @@ export const LEGAL_NINE_DOCUMENTS = [
     kind: "seiyaku_jukyu",
     label: "誓約書（重症患者等の運送・様式イメージ）",
     dataSources:
-      "dispatchProfile（代表者・商号）+ preview の employeeId で指定した従事者。誓約文面は extraNotes で補完可能。",
+      "TenantSettings（代表者・商号）+ preview の employeeId で指定した従事者 + registerExtension.pledgeSignedOnYmd。",
   },
 ] as const;
 

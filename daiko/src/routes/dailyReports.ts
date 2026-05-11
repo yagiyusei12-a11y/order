@@ -28,6 +28,12 @@ export async function registerDailyReportRoutes(app: FastifyInstance): Promise<v
       meterStart?: number;
       meterEnd?: number;
       occurredAt?: string;
+      dutyStartAt?: string;
+      dutyEndAt?: string;
+      breakTaken?: boolean;
+      breakStartAt?: string;
+      breakEndAt?: string;
+      breakLocation?: string;
     };
   }>("/daily-reports", { preHandler: [authenticate] }, async (req, reply) => {
     const tid = tenantIdFromReq(req);
@@ -45,6 +51,18 @@ export async function registerDailyReportRoutes(app: FastifyInstance): Promise<v
     }
     const at = req.body?.occurredAt ? new Date(req.body.occurredAt) : new Date();
     if (!Number.isFinite(at.getTime())) return reply.code(400).send({ error: "invalid occurredAt" });
+    const dutyStartAt = req.body?.dutyStartAt ? new Date(req.body.dutyStartAt) : null;
+    const dutyEndAt = req.body?.dutyEndAt ? new Date(req.body.dutyEndAt) : null;
+    const breakStartAt = req.body?.breakStartAt ? new Date(req.body.breakStartAt) : null;
+    const breakEndAt = req.body?.breakEndAt ? new Date(req.body.breakEndAt) : null;
+    if (
+      (dutyStartAt && !Number.isFinite(dutyStartAt.getTime())) ||
+      (dutyEndAt && !Number.isFinite(dutyEndAt.getTime())) ||
+      (breakStartAt && !Number.isFinite(breakStartAt.getTime())) ||
+      (breakEndAt && !Number.isFinite(breakEndAt.getTime()))
+    ) {
+      return reply.code(400).send({ error: "invalid duty/break datetime" });
+    }
     const businessDate = businessDateYmdForOccurredAt(at, tenant.timezone, tenant.settings.businessDayRollHour);
     const row = await prisma.dailyReport.create({
       data: {
@@ -55,6 +73,12 @@ export async function registerDailyReportRoutes(app: FastifyInstance): Promise<v
         partnerEmployeeId: req.body?.partnerEmployeeId ? String(req.body.partnerEmployeeId) : null,
         meterStart,
         meterEnd,
+        dutyStartAt,
+        dutyEndAt,
+        breakTaken: Boolean(req.body?.breakTaken),
+        breakStartAt,
+        breakEndAt,
+        breakLocation: req.body?.breakLocation ? String(req.body.breakLocation).trim() || null : null,
       },
     });
     return row;

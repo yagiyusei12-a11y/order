@@ -56,6 +56,9 @@ model Tenant {
   refreshTokens       RefreshToken[]
   auditEvents         AuditEvent[]
   legalRegisterStubs  LegalRegisterStub[]
+  complaintLedgers    ComplaintLedger[]
+  guidanceSessions    GuidanceSession[]
+  legalChangeNotices  LegalChangeNotice[]
 }
 
 model TenantSettings {
@@ -70,6 +73,27 @@ model TenantSettings {
 
   /// 任意の拡張（領収書・決済手段など）
   customJson Json @default("{}")
+
+  /// 法定9帳票向けの共通情報（customJson ではなく構造化列で管理）
+  legalTradeName                  String?
+  legalRepresentativeName         String?
+  legalBusinessAddress            String?
+  legalPhone                      String?
+  legalPublicSafetyCommission     String?
+  legalCertificationNumber        String?
+  legalCertificationDate          DateTime?
+  legalMainOfficeName             String?
+  legalMainOfficeAddress          String?
+  legalSafetyManagerName          String?
+  legalAlcoholDetectorModel       String?
+  legalAlcoholInspectionDone      Boolean?
+  legalAlcoholInspectionDate      DateTime?
+  legalMutualAidOrganizationName  String?
+  legalMutualAidContractFrom      DateTime?
+  legalMutualAidContractTo        DateTime?
+  legalBodilyCoverage             String?
+  legalPropertyCoverage           String?
+  legalVehicleCoverageLimitManYen String?
 }
 
 model Subscription {
@@ -150,6 +174,8 @@ model Employee {
   payrollLines           PayrollLine[]
   dailyReportsAsMain    DailyReport[] @relation("DailyReportMain")
   dailyReportsAsPartner DailyReport[] @relation("DailyReportPartner")
+  complaintRowsAsDriver    ComplaintLedger[]
+  guidanceAttendances      GuidanceAttendee[]
 
   @@index([tenantId, status])
 }
@@ -175,6 +201,7 @@ model Vehicle {
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   label     String
   plate     String?
+  legalCoverageStartOn DateTime?
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -242,6 +269,12 @@ model DailyReport {
   partnerEmployee   Employee? @relation("DailyReportPartner", fields: [partnerEmployeeId], references: [id], onDelete: SetNull)
   meterStart        Int
   meterEnd          Int
+  dutyStartAt       DateTime?
+  dutyEndAt         DateTime?
+  breakTaken        Boolean   @default(false)
+  breakStartAt      DateTime?
+  breakEndAt        DateTime?
+  breakLocation     String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -296,9 +329,14 @@ model AlcoholCheck {
   businessDate    String
   phase           String
   checkedAt       DateTime
+  checkerName     String?
+  checkMethod     String?
+  checkMethodOther String?
   methodNote      String?
   detectorUsed    Boolean  @default(false)
   resultPositive  Boolean  @default(false)
+  instructionNote String?
+  otherNote       String?
   supervisorNote  String?
   createdAt       DateTime @default(now())
 
@@ -372,4 +410,86 @@ model LegalRegisterStub {
   createdAt DateTime @default(now())
 
   @@index([tenantId, kind])
+}
+
+model ComplaintLedger {
+  id                    String    @id @default(cuid())
+  tenantId              String
+  tenant                Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  receivedAt            DateTime
+  receivedBy            String?
+  occurredOn            DateTime?
+  placeOrSection        String?
+  driverEmployeeId      String?
+  driverEmployee        Employee? @relation(fields: [driverEmployeeId], references: [id], onDelete: SetNull)
+  complainantName       String?
+  complainantAddress    String?
+  complainantContact    String?
+  category              String?
+  categoryOther         String?
+  detail                String?
+  causeAnalysis         String?
+  rebuttal              String?
+  correctiveAction      String?
+  handlerName           String?
+  completedOn           DateTime?
+  representativeChecked Boolean   @default(false)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([tenantId, receivedAt])
+}
+
+model GuidanceSession {
+  id                    String             @id @default(cuid())
+  tenantId              String
+  tenant                Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  startedAt             DateTime
+  endedAt               DateTime?
+  location              String?
+  instructorName        String?
+  topicFeeCollection    Boolean            @default(false)
+  topicTerms            Boolean            @default(false)
+  topicConditionExplain Boolean            @default(false)
+  topicMarking          Boolean            @default(false)
+  topicRoadTransportLaw Boolean            @default(false)
+  topicOther            String?
+  topicOtherDetail      String?
+  remarks               String?
+  representativeChecked Boolean            @default(false)
+  attendees             GuidanceAttendee[]
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  @@index([tenantId, startedAt])
+}
+
+model GuidanceAttendee {
+  id                String          @id @default(cuid())
+  guidanceSessionId String
+  guidanceSession   GuidanceSession @relation(fields: [guidanceSessionId], references: [id], onDelete: Cascade)
+  employeeId        String?
+  employee          Employee?       @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  attendeeName      String?
+  createdAt         DateTime        @default(now())
+
+  @@index([guidanceSessionId])
+}
+
+model LegalChangeNotice {
+  id             String   @id @default(cuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  changeType     String?
+  submittedOn    DateTime?
+  changedOn      DateTime?
+  effectiveOn    DateTime?
+  oldValue       String?
+  newValue       String?
+  reason         String?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([tenantId, createdAt])
 }

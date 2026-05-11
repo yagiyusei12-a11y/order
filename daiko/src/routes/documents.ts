@@ -3,10 +3,6 @@ import { authenticate, jwtUser } from "../auth/pre.js";
 import { writeAuditEvent } from "../lib/audit.js";
 import { prisma } from "../db.js";
 import { buildLegalNinePayload } from "../lib/document-payloads.js";
-import {
-  parseDispatchProfileFromCustomJson,
-  parseDocumentFormsFromCustomJson,
-} from "../lib/dispatch-profile.js";
 import { computeLegalNineMissing } from "../lib/legal-nine-required.js";
 import { LEGAL_NINE_DOCUMENTS, isLegalNineKind, type LegalNineKind } from "../lib/nine-documents.js";
 import { requireFeature } from "../middleware/require-feature.js";
@@ -52,13 +48,7 @@ export async function registerDocumentRoutes(app: FastifyInstance): Promise<void
     const periodYm = String(req.body?.periodYm || "").trim();
     const businessDate = String(req.body?.businessDate || "").trim();
     const employeeId = String(req.body?.employeeId || "").trim();
-    const [settings, activeEmployeeCount] = await Promise.all([
-      prisma.tenantSettings.findUnique({ where: { tenantId: tid } }),
-      prisma.employee.count({ where: { tenantId: tid, status: "ACTIVE" } }),
-    ]);
-    const customJson = settings?.customJson;
-    const profile = parseDispatchProfileFromCustomJson(customJson);
-    const forms = parseDocumentFormsFromCustomJson(customJson);
+    const activeEmployeeCount = await prisma.employee.count({ where: { tenantId: tid, status: "ACTIVE" } });
     const ctx = {
       periodYm: /^\d{4}-\d{2}$/.test(periodYm) ? periodYm : undefined,
       businessDate: /^\d{4}-\d{2}-\d{2}$/.test(businessDate) ? businessDate : undefined,
@@ -72,7 +62,7 @@ export async function registerDocumentRoutes(app: FastifyInstance): Promise<void
       >;
     const data: Record<string, string> = { ...auto, ...overrides };
     const html = fillTemplate(tpl.htmlBody, data);
-    const missingRequired = computeLegalNineMissing(kind as LegalNineKind, profile, forms, ctx, { activeEmployeeCount });
+    const missingRequired = computeLegalNineMissing(kind as LegalNineKind, data, ctx, { activeEmployeeCount });
     return {
       kind,
       version: 1,

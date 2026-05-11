@@ -4,20 +4,26 @@ import { z } from "zod";
 export const registerExtensionSchema = z
   .object({
     gender: z.string().max(20).optional(),
+    postalCode: z.string().max(20).optional(),
     dateOfBirthYmd: z.string().max(20).optional(),
     phoneHome: z.string().max(100).optional(),
     phoneMobile: z.string().max(100).optional(),
     emergencyContactName: z.string().max(200).optional(),
     emergencyPhone: z.string().max(100).optional(),
+    emergencyAddress: z.string().max(2000).optional(),
     emergencyRelation: z.string().max(100).optional(),
     hiredOnYmd: z.string().max(20).optional(),
     retiredOnYmd: z.string().max(20).optional(),
+    employmentType: z.string().max(100).optional(),
+    interviewerName: z.string().max(200).optional(),
     jobCategory: z.string().max(200).optional(),
     licenseTypes: z.string().max(200).optional(),
     licenseNumber: z.string().max(100).optional(),
     licenseExpiresOnYmd: z.string().max(20).optional(),
     licenseConditionsNote: z.string().max(500).optional(),
+    pledgeSignedOnYmd: z.string().max(20).optional(),
     educationNotes: z.string().max(2000).optional(),
+    rosterNotes: z.string().max(4000).optional(),
   });
 
 export type RegisterExtension = z.infer<typeof registerExtensionSchema>;

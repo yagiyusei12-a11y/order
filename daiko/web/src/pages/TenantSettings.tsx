@@ -7,7 +7,31 @@ type Row = {
   businessDayRollHour: number;
   featureFlags: Record<string, unknown>;
   customJson: Record<string, unknown>;
+  legalTradeName: string | null;
+  legalRepresentativeName: string | null;
+  legalBusinessAddress: string | null;
+  legalPhone: string | null;
+  legalPublicSafetyCommission: string | null;
+  legalCertificationNumber: string | null;
+  legalCertificationDate: string | null;
+  legalMainOfficeName: string | null;
+  legalMainOfficeAddress: string | null;
+  legalSafetyManagerName: string | null;
+  legalAlcoholDetectorModel: string | null;
+  legalAlcoholInspectionDone: boolean | null;
+  legalAlcoholInspectionDate: string | null;
+  legalMutualAidOrganizationName: string | null;
+  legalMutualAidContractFrom: string | null;
+  legalMutualAidContractTo: string | null;
+  legalBodilyCoverage: string | null;
+  legalPropertyCoverage: string | null;
+  legalVehicleCoverageLimitManYen: string | null;
 };
+
+function asYmd(s: string | null | undefined): string {
+  if (!s) return "";
+  return s.slice(0, 10);
+}
 
 function readDp(c: Record<string, unknown>): Record<string, string> {
   const p = c.dispatchProfile;
@@ -118,29 +142,41 @@ export default function TenantSettings(): JSX.Element {
       const cj = (r.data.customJson ?? {}) as Record<string, unknown>;
       setCustomText(JSON.stringify(cj, null, 2));
       const dp = readDp(cj);
-      setDpTradeName(dp.tradeName);
-      setDpAddress(dp.businessAddress);
-      setDpPhone(dp.phone);
-      setDpRep(dp.representativeName);
-      setDpReg(dp.registrationNumber);
+      setDpTradeName(r.data.legalTradeName ?? dp.tradeName);
+      setDpAddress(r.data.legalBusinessAddress ?? dp.businessAddress);
+      setDpPhone(r.data.legalPhone ?? dp.phone);
+      setDpRep(r.data.legalRepresentativeName ?? dp.representativeName);
+      setDpReg(r.data.legalCertificationNumber ?? dp.registrationNumber);
       setDpTransport(dp.transportOfficeContact);
       setDpExtra(dp.extraNotes);
-      setDpCertAuthority(dp.certificationAuthorityName);
-      setDpMainOfficeName(dp.mainOfficeName);
-      setDpMainOfficeAddress(dp.mainOfficeAddress);
-      setDpPublicSafety(dp.publicSafetySubmissionAddressee);
-      setDpSafeManager(dp.safeDrivingManagerName);
-      setDpAlcoholModel(dp.alcoholDetectorModelName);
-      setDpInspectionYn(dp.inspectionDoneYesNo);
-      setDpInspectionDate(dp.inspectionDateYmd);
+      setDpCertAuthority(r.data.legalPublicSafetyCommission ?? dp.certificationAuthorityName);
+      setDpMainOfficeName(r.data.legalMainOfficeName ?? dp.mainOfficeName);
+      setDpMainOfficeAddress(r.data.legalMainOfficeAddress ?? dp.mainOfficeAddress);
+      setDpPublicSafety(r.data.legalPublicSafetyCommission ?? dp.publicSafetySubmissionAddressee);
+      setDpSafeManager(r.data.legalSafetyManagerName ?? dp.safeDrivingManagerName);
+      setDpAlcoholModel(r.data.legalAlcoholDetectorModel ?? dp.alcoholDetectorModelName);
+      setDpInspectionYn(
+        r.data.legalAlcoholInspectionDone === null
+          ? dp.inspectionDoneYesNo
+          : r.data.legalAlcoholInspectionDone
+            ? "有"
+            : "無",
+      );
+      setDpInspectionDate(asYmd(r.data.legalAlcoholInspectionDate) || dp.inspectionDateYmd);
+      setSgPeriod(
+        [asYmd(r.data.legalMutualAidContractFrom), asYmd(r.data.legalMutualAidContractTo)]
+          .filter(Boolean)
+          .join(" ～ ") || "",
+      );
+      setSgLimit(r.data.legalVehicleCoverageLimitManYen ?? "");
       const df = readDf(cj);
       setHkSubmitted(df.henko.submittedOnYmd ?? "");
       setHkMutualOld(df.henko.mutualAidPeriodOld ?? "");
       setHkMutualNew(df.henko.mutualAidPeriodNew ?? "");
       setHkEffective(df.henko.changeEffectiveOnYmd ?? "");
       setHkReason(df.henko.changeReasonDetail ?? "");
-      setSgPeriod(df.songai.mutualAidContractPeriod ?? "");
-      setSgLimit(df.songai.vehicleKyousaiLimitManYen ?? "");
+      setSgPeriod((prev) => prev || df.songai.mutualAidContractPeriod || "");
+      setSgLimit((prev) => prev || df.songai.vehicleKyousaiLimitManYen || "");
       setSgApprNo(df.songai.vehicleApprovalNumber ?? "");
       setSgApprDate(df.songai.vehicleApprovedOnYmd ?? "");
       setSgIncident(df.songai.incidentSummary ?? "");
@@ -223,6 +259,26 @@ export default function TenantSettings(): JSX.Element {
         businessDayRollHour: Number(hour),
         featureFlags,
         customJson,
+        legalTradeName: dpTradeName.trim() || null,
+        legalRepresentativeName: dpRep.trim() || null,
+        legalBusinessAddress: dpAddress.trim() || null,
+        legalPhone: dpPhone.trim() || null,
+        legalPublicSafetyCommission: dpPublicSafety.trim() || dpCertAuthority.trim() || null,
+        legalCertificationNumber: dpReg.trim() || null,
+        legalMainOfficeName: dpMainOfficeName.trim() || null,
+        legalMainOfficeAddress: dpMainOfficeAddress.trim() || null,
+        legalSafetyManagerName: dpSafeManager.trim() || null,
+        legalAlcoholDetectorModel: dpAlcoholModel.trim() || null,
+        legalAlcoholInspectionDone:
+          dpInspectionYn.trim() === ""
+            ? null
+            : dpInspectionYn.trim() === "有" || dpInspectionYn.trim().toLowerCase() === "yes",
+        legalAlcoholInspectionDate: dpInspectionDate.trim() || null,
+        legalMutualAidContractFrom: sgPeriod.includes("～") ? sgPeriod.split("～")[0].trim() || null : null,
+        legalMutualAidContractTo: sgPeriod.includes("～") ? sgPeriod.split("～")[1].trim() || null : null,
+        legalVehicleCoverageLimitManYen: sgLimit.trim() || null,
+        legalBodilyCoverage: "無制限",
+        legalPropertyCoverage: "1億円",
       },
     });
     if (!r.ok) setErr(r.error);
@@ -232,29 +288,39 @@ export default function TenantSettings(): JSX.Element {
       const cj = (r.data.customJson ?? {}) as Record<string, unknown>;
       setCustomText(JSON.stringify(cj, null, 2));
       const dp = readDp(cj);
-      setDpTradeName(dp.tradeName);
-      setDpAddress(dp.businessAddress);
-      setDpPhone(dp.phone);
-      setDpRep(dp.representativeName);
-      setDpReg(dp.registrationNumber);
+      setDpTradeName(r.data.legalTradeName ?? dp.tradeName);
+      setDpAddress(r.data.legalBusinessAddress ?? dp.businessAddress);
+      setDpPhone(r.data.legalPhone ?? dp.phone);
+      setDpRep(r.data.legalRepresentativeName ?? dp.representativeName);
+      setDpReg(r.data.legalCertificationNumber ?? dp.registrationNumber);
       setDpTransport(dp.transportOfficeContact);
       setDpExtra(dp.extraNotes);
-      setDpCertAuthority(dp.certificationAuthorityName);
-      setDpMainOfficeName(dp.mainOfficeName);
-      setDpMainOfficeAddress(dp.mainOfficeAddress);
-      setDpPublicSafety(dp.publicSafetySubmissionAddressee);
-      setDpSafeManager(dp.safeDrivingManagerName);
-      setDpAlcoholModel(dp.alcoholDetectorModelName);
-      setDpInspectionYn(dp.inspectionDoneYesNo);
-      setDpInspectionDate(dp.inspectionDateYmd);
+      setDpCertAuthority(r.data.legalPublicSafetyCommission ?? dp.certificationAuthorityName);
+      setDpMainOfficeName(r.data.legalMainOfficeName ?? dp.mainOfficeName);
+      setDpMainOfficeAddress(r.data.legalMainOfficeAddress ?? dp.mainOfficeAddress);
+      setDpPublicSafety(r.data.legalPublicSafetyCommission ?? dp.publicSafetySubmissionAddressee);
+      setDpSafeManager(r.data.legalSafetyManagerName ?? dp.safeDrivingManagerName);
+      setDpAlcoholModel(r.data.legalAlcoholDetectorModel ?? dp.alcoholDetectorModelName);
+      setDpInspectionYn(
+        r.data.legalAlcoholInspectionDone === null
+          ? dp.inspectionDoneYesNo
+          : r.data.legalAlcoholInspectionDone
+            ? "有"
+            : "無",
+      );
+      setDpInspectionDate(asYmd(r.data.legalAlcoholInspectionDate) || dp.inspectionDateYmd);
       const df = readDf(cj);
       setHkSubmitted(df.henko.submittedOnYmd ?? "");
       setHkMutualOld(df.henko.mutualAidPeriodOld ?? "");
       setHkMutualNew(df.henko.mutualAidPeriodNew ?? "");
       setHkEffective(df.henko.changeEffectiveOnYmd ?? "");
       setHkReason(df.henko.changeReasonDetail ?? "");
-      setSgPeriod(df.songai.mutualAidContractPeriod ?? "");
-      setSgLimit(df.songai.vehicleKyousaiLimitManYen ?? "");
+      setSgPeriod(
+        [asYmd(r.data.legalMutualAidContractFrom), asYmd(r.data.legalMutualAidContractTo)]
+          .filter(Boolean)
+          .join(" ～ ") || df.songai.mutualAidContractPeriod || "",
+      );
+      setSgLimit(r.data.legalVehicleCoverageLimitManYen ?? df.songai.vehicleKyousaiLimitManYen ?? "");
       setSgApprNo(df.songai.vehicleApprovalNumber ?? "");
       setSgApprDate(df.songai.vehicleApprovedOnYmd ?? "");
       setSgIncident(df.songai.incidentSummary ?? "");

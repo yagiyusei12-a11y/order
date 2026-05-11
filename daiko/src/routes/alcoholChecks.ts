@@ -22,9 +22,14 @@ export async function registerAlcoholRoutes(app: FastifyInstance): Promise<void>
       employeeId?: string;
       phase?: string;
       checkedAt?: string;
+      checkerName?: string;
+      checkMethod?: string;
+      checkMethodOther?: string;
       methodNote?: string;
       detectorUsed?: boolean;
       resultPositive?: boolean;
+      instructionNote?: string;
+      otherNote?: string;
       supervisorNote?: string;
     };
   }>("/alcohol-checks", { preHandler: [authenticate] }, async (req, reply) => {
@@ -45,9 +50,14 @@ export async function registerAlcoholRoutes(app: FastifyInstance): Promise<void>
         businessDate,
         phase,
         checkedAt,
+        checkerName: req.body?.checkerName ? String(req.body.checkerName).slice(0, 200) : null,
+        checkMethod: req.body?.checkMethod ? String(req.body.checkMethod).slice(0, 50) : null,
+        checkMethodOther: req.body?.checkMethodOther ? String(req.body.checkMethodOther).slice(0, 200) : null,
         methodNote: req.body?.methodNote ? String(req.body.methodNote).slice(0, 500) : null,
         detectorUsed: Boolean(req.body?.detectorUsed),
         resultPositive: Boolean(req.body?.resultPositive),
+        instructionNote: req.body?.instructionNote ? String(req.body.instructionNote).slice(0, 500) : null,
+        otherNote: req.body?.otherNote ? String(req.body.otherNote).slice(0, 500) : null,
         supervisorNote: req.body?.supervisorNote ? String(req.body.supervisorNote).slice(0, 1000) : null,
       },
     });

@@ -12,7 +12,36 @@ const patchBodySchema = z.object({
   businessDayRollHour: z.number().int().min(0).max(23).optional(),
   featureFlags: z.record(z.unknown()).optional(),
   customJson: z.record(z.unknown()).optional(),
+  legalTradeName: z.string().max(500).nullable().optional(),
+  legalRepresentativeName: z.string().max(200).nullable().optional(),
+  legalBusinessAddress: z.string().max(2000).nullable().optional(),
+  legalPhone: z.string().max(100).nullable().optional(),
+  legalPublicSafetyCommission: z.string().max(500).nullable().optional(),
+  legalCertificationNumber: z.string().max(200).nullable().optional(),
+  legalCertificationDate: z.string().max(50).nullable().optional(),
+  legalMainOfficeName: z.string().max(500).nullable().optional(),
+  legalMainOfficeAddress: z.string().max(2000).nullable().optional(),
+  legalSafetyManagerName: z.string().max(200).nullable().optional(),
+  legalAlcoholDetectorModel: z.string().max(200).nullable().optional(),
+  legalAlcoholInspectionDone: z.boolean().nullable().optional(),
+  legalAlcoholInspectionDate: z.string().max(50).nullable().optional(),
+  legalMutualAidOrganizationName: z.string().max(500).nullable().optional(),
+  legalMutualAidContractFrom: z.string().max(50).nullable().optional(),
+  legalMutualAidContractTo: z.string().max(50).nullable().optional(),
+  legalBodilyCoverage: z.string().max(200).nullable().optional(),
+  legalPropertyCoverage: z.string().max(200).nullable().optional(),
+  legalVehicleCoverageLimitManYen: z.string().max(100).nullable().optional(),
 });
+
+function parseDateOrNull(v: string | null | undefined): Date | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null) return null;
+  const s = v.trim();
+  if (!s) return null;
+  const d = new Date(s);
+  if (!Number.isFinite(d.getTime())) return undefined;
+  return d;
+}
 
 export async function registerTenantSettingsRoutes(app: FastifyInstance): Promise<void> {
   app.get("/tenant-settings", { preHandler: [authenticate] }, async (req, reply) => {
@@ -53,6 +82,19 @@ export async function registerTenantSettingsRoutes(app: FastifyInstance): Promis
     const customStr = body.customJson !== undefined ? JSON.stringify(body.customJson) : "";
     if (customStr.length > 64_000) return reply.code(400).send({ error: "customJson too large" });
 
+    const legalCertificationDate = parseDateOrNull(body.legalCertificationDate);
+    const legalAlcoholInspectionDate = parseDateOrNull(body.legalAlcoholInspectionDate);
+    const legalMutualAidContractFrom = parseDateOrNull(body.legalMutualAidContractFrom);
+    const legalMutualAidContractTo = parseDateOrNull(body.legalMutualAidContractTo);
+    if (
+      (body.legalCertificationDate !== undefined && legalCertificationDate === undefined) ||
+      (body.legalAlcoholInspectionDate !== undefined && legalAlcoholInspectionDate === undefined) ||
+      (body.legalMutualAidContractFrom !== undefined && legalMutualAidContractFrom === undefined) ||
+      (body.legalMutualAidContractTo !== undefined && legalMutualAidContractTo === undefined)
+    ) {
+      return reply.code(400).send({ error: "invalid date format in legal settings" });
+    }
+
     const updated = await prisma.tenantSettings.update({
       where: { tenantId: tid },
       data: {
@@ -61,6 +103,51 @@ export async function registerTenantSettingsRoutes(app: FastifyInstance): Promis
           ? { featureFlags: body.featureFlags as Prisma.InputJsonValue }
           : {}),
         ...(body.customJson !== undefined ? { customJson: body.customJson as Prisma.InputJsonValue } : {}),
+        ...(body.legalTradeName !== undefined ? { legalTradeName: body.legalTradeName?.trim() || null } : {}),
+        ...(body.legalRepresentativeName !== undefined
+          ? { legalRepresentativeName: body.legalRepresentativeName?.trim() || null }
+          : {}),
+        ...(body.legalBusinessAddress !== undefined
+          ? { legalBusinessAddress: body.legalBusinessAddress?.trim() || null }
+          : {}),
+        ...(body.legalPhone !== undefined ? { legalPhone: body.legalPhone?.trim() || null } : {}),
+        ...(body.legalPublicSafetyCommission !== undefined
+          ? { legalPublicSafetyCommission: body.legalPublicSafetyCommission?.trim() || null }
+          : {}),
+        ...(body.legalCertificationNumber !== undefined
+          ? { legalCertificationNumber: body.legalCertificationNumber?.trim() || null }
+          : {}),
+        ...(body.legalCertificationDate !== undefined ? { legalCertificationDate } : {}),
+        ...(body.legalMainOfficeName !== undefined
+          ? { legalMainOfficeName: body.legalMainOfficeName?.trim() || null }
+          : {}),
+        ...(body.legalMainOfficeAddress !== undefined
+          ? { legalMainOfficeAddress: body.legalMainOfficeAddress?.trim() || null }
+          : {}),
+        ...(body.legalSafetyManagerName !== undefined
+          ? { legalSafetyManagerName: body.legalSafetyManagerName?.trim() || null }
+          : {}),
+        ...(body.legalAlcoholDetectorModel !== undefined
+          ? { legalAlcoholDetectorModel: body.legalAlcoholDetectorModel?.trim() || null }
+          : {}),
+        ...(body.legalAlcoholInspectionDone !== undefined
+          ? { legalAlcoholInspectionDone: body.legalAlcoholInspectionDone }
+          : {}),
+        ...(body.legalAlcoholInspectionDate !== undefined ? { legalAlcoholInspectionDate } : {}),
+        ...(body.legalMutualAidOrganizationName !== undefined
+          ? { legalMutualAidOrganizationName: body.legalMutualAidOrganizationName?.trim() || null }
+          : {}),
+        ...(body.legalMutualAidContractFrom !== undefined ? { legalMutualAidContractFrom } : {}),
+        ...(body.legalMutualAidContractTo !== undefined ? { legalMutualAidContractTo } : {}),
+        ...(body.legalBodilyCoverage !== undefined
+          ? { legalBodilyCoverage: body.legalBodilyCoverage?.trim() || null }
+          : {}),
+        ...(body.legalPropertyCoverage !== undefined
+          ? { legalPropertyCoverage: body.legalPropertyCoverage?.trim() || null }
+          : {}),
+        ...(body.legalVehicleCoverageLimitManYen !== undefined
+          ? { legalVehicleCoverageLimitManYen: body.legalVehicleCoverageLimitManYen?.trim() || null }
+          : {}),
       },
     });
 

@@ -98,7 +98,7 @@ export default function Documents(): JSX.Element {
       <Card title="法定・届出系帳票（9 種）">
         <Err msg={err} />
         <p style={{ fontSize: "0.85rem", marginTop: 0 }}>
-          テナント設定の <code>customJson.dispatchProfile</code>・<code>documentForms</code> と業務データから自動埋めします。印刷はプレビュー表示後にブラウザの印刷を利用してください。
+          テナント設定の法定プロフィール列・<code>documentForms</code> と業務データ（苦情/指導/日報等）から自動埋めします。印刷はプレビュー表示後にブラウザの印刷を利用してください。
         </p>
         <label>表示・集計用の月（YYYY-MM）</label>
         <input type="month" value={ym} onChange={(e) => setYm(e.target.value)} />

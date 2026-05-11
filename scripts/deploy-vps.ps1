@@ -60,7 +60,7 @@ $daikoRemotePath = if ($env:ORDER_VPS_DAIKO_PATH) { $env:ORDER_VPS_DAIKO_PATH } 
 # Single-line remote script avoids CRLF breaking bash on Windows.
 $remote = "set -e; cd $remotePath; git pull; npm ci; npx prisma migrate deploy; npx prisma generate; npm run build; sudo systemctl restart $service; sleep 2; curl -sS http://127.0.0.1:3000/health"
 if ($daikoDeploy) {
-  $remote += "; cd $daikoRemotePath; git pull; npm ci; npx prisma migrate deploy; npx prisma generate; npm run build; sudo systemctl restart $daikoService; sleep 2; curl -sS http://127.0.0.1:3001/health"
+  $remote += "; cd $daikoRemotePath; git pull; npm ci; npx prisma migrate deploy; npx prisma generate; npm run db:seed; npm run build; sudo systemctl restart $daikoService; sleep 2; curl -sS http://127.0.0.1:3001/health"
 }
 
 Write-Host "SSH $user@${hostName}: pull, build, restart $service ..." -ForegroundColor Cyan

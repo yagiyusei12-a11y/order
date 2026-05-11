@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import type { CompensationType, Prisma } from "@prisma/client";
-import { authenticate } from "../auth/pre.js";
+import { authenticate, jwtUser } from "../auth/pre.js";
+import { writeAuditEvent } from "../lib/audit.js";
+import { userHasPermission, userHasWildcard } from "../lib/permissions.js";
 import { prisma } from "../db.js";
 import {
   commissionYenForSales,
@@ -8,6 +10,7 @@ import {
   netPayYen,
   poolYenFromGross,
 } from "../lib/payroll-calc.js";
+import { tenantFeatureEnabled } from "../lib/tenant-features.js";
 import { tenantIdFromReq } from "./tenant-scope.js";
 
 export async function registerPayrollRoutes(app: FastifyInstance): Promise<void> {
@@ -130,12 +133,52 @@ export async function registerPayrollRoutes(app: FastifyInstance): Promise<void>
 
   app.post<{ Params: { id: string } }>("/payroll-runs/:id/lock", { preHandler: [authenticate] }, async (req, reply) => {
     const tid = tenantIdFromReq(req);
+    const u = jwtUser(req);
     const run = await prisma.payrollRun.findFirst({ where: { id: req.params.id, tenantId: tid } });
     if (!run) return reply.code(404).send({ error: "not found" });
     if (run.status === "LOCKED") return reply.code(400).send({ error: "already locked" });
-    return prisma.payrollRun.update({
+    const updated = await prisma.payrollRun.update({
       where: { id: run.id },
       data: { status: "LOCKED", lockedAt: new Date() },
     });
+    await writeAuditEvent({
+      tenantId: tid,
+      actorUserId: u.sub,
+      action: "payroll.lock",
+      entityType: "PayrollRun",
+      entityId: run.id,
+      payload: { periodYm: run.periodYm },
+    });
+    return updated;
+  });
+
+  app.post<{ Params: { id: string } }>("/payroll-runs/:id/unlock", { preHandler: [authenticate] }, async (req, reply) => {
+    const tid = tenantIdFromReq(req);
+    const u = jwtUser(req);
+    const run = await prisma.payrollRun.findFirst({ where: { id: req.params.id, tenantId: tid } });
+    if (!run) return reply.code(404).send({ error: "not found" });
+    if (run.status !== "LOCKED") return reply.code(400).send({ error: "not locked" });
+
+    const star = await userHasWildcard(u.sub, tid);
+    const reopen = await tenantFeatureEnabled(tid, "payrollReopen");
+    const canUnlock = await userHasPermission(u.sub, tid, "payroll.unlock");
+    if (!star) {
+      if (!reopen) return reply.code(403).send({ error: "payroll reopen disabled for this plan" });
+      if (!canUnlock) return reply.code(403).send({ error: "missing permission payroll.unlock" });
+    }
+
+    const updated = await prisma.payrollRun.update({
+      where: { id: run.id },
+      data: { status: "DRAFT", lockedAt: null },
+    });
+    await writeAuditEvent({
+      tenantId: tid,
+      actorUserId: u.sub,
+      action: "payroll.unlock",
+      entityType: "PayrollRun",
+      entityId: run.id,
+      payload: { periodYm: run.periodYm },
+    });
+    return updated;
   });
 }

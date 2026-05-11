@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { authenticate } from "../auth/pre.js";
 import { prisma } from "../db.js";
 import { businessDateYmdForOccurredAt } from "../lib/business-date.js";
-import { fareYenForDistance } from "../lib/pricing.js";
+import { fareYenForTrip } from "../lib/pricing.js";
 import { tenantIdFromReq } from "./tenant-scope.js";
 
 export async function registerDailyReportRoutes(app: FastifyInstance): Promise<void> {
@@ -84,6 +84,7 @@ export async function registerDailyReportRoutes(app: FastifyInstance): Promise<v
       departedAt?: string;
       arrivedAt?: string;
       distanceM?: number;
+      waitingMinutes?: number;
       tariffVersionId?: string | null;
       role?: string;
     };
@@ -97,6 +98,7 @@ export async function registerDailyReportRoutes(app: FastifyInstance): Promise<v
     const departedAt = req.body?.departedAt ? new Date(req.body.departedAt) : null;
     const arrivedAt = req.body?.arrivedAt ? new Date(req.body.arrivedAt) : null;
     const distanceM = Math.floor(Number(req.body?.distanceM ?? NaN));
+    const waitingMinutes = Math.max(0, Math.floor(Number(req.body?.waitingMinutes ?? 0)));
     if (!clientName || !origin || !destination || !departedAt || !arrivedAt || !Number.isFinite(distanceM)) {
       return reply.code(400).send({ error: "clientName, origin, destination, departedAt, arrivedAt, distanceM required" });
     }
@@ -105,9 +107,10 @@ export async function registerDailyReportRoutes(app: FastifyInstance): Promise<v
     if (tariffVersionId) {
       const ver = await prisma.tariffPlanVersion.findFirst({
         where: { id: tariffVersionId, plan: { tenantId: tid } },
+        include: { segments: true },
       });
       if (!ver) return reply.code(400).send({ error: "invalid tariffVersionId" });
-      fareYen = fareYenForDistance(ver, distanceM);
+      fareYen = fareYenForTrip(ver, distanceM, waitingMinutes, ver.segments);
     }
     const role = req.body?.role === "PARTNER_DRIVER" ? "PARTNER_DRIVER" : "MAIN_DRIVER";
     const trip = await prisma.tripLeg.create({
@@ -121,11 +124,74 @@ export async function registerDailyReportRoutes(app: FastifyInstance): Promise<v
         departedAt,
         arrivedAt,
         distanceM,
+        waitingMinutes,
         tariffVersionId,
         fareYen,
         role,
       },
     });
     return trip;
+  });
+
+  app.patch<{
+    Params: { id: string; tripId: string };
+    Body: {
+      distanceM?: number;
+      waitingMinutes?: number;
+      tariffVersionId?: string | null;
+      clientName?: string;
+      origin?: string;
+      destination?: string;
+    };
+  }>("/daily-reports/:id/trips/:tripId", { preHandler: [authenticate] }, async (req, reply) => {
+    const tid = tenantIdFromReq(req);
+    const rep = await prisma.dailyReport.findFirst({ where: { id: req.params.id, tenantId: tid } });
+    if (!rep) return reply.code(404).send({ error: "not found" });
+    const trip = await prisma.tripLeg.findFirst({
+      where: { id: req.params.tripId, dailyReportId: rep.id },
+    });
+    if (!trip) return reply.code(404).send({ error: "trip not found" });
+
+    const distanceM =
+      req.body?.distanceM !== undefined ? Math.floor(Number(req.body.distanceM)) : trip.distanceM;
+    const waitingMinutes =
+      req.body?.waitingMinutes !== undefined
+        ? Math.max(0, Math.floor(Number(req.body.waitingMinutes)))
+        : trip.waitingMinutes;
+    let tariffVersionId =
+      req.body?.tariffVersionId !== undefined
+        ? req.body.tariffVersionId
+          ? String(req.body.tariffVersionId)
+          : null
+        : trip.tariffVersionId;
+
+    if (!Number.isFinite(distanceM)) return reply.code(400).send({ error: "invalid distanceM" });
+
+    let fareYen = trip.fareYen;
+    if (tariffVersionId) {
+      const ver = await prisma.tariffPlanVersion.findFirst({
+        where: { id: tariffVersionId, plan: { tenantId: tid } },
+        include: { segments: true },
+      });
+      if (!ver) return reply.code(400).send({ error: "invalid tariffVersionId" });
+      fareYen = fareYenForTrip(ver, distanceM, waitingMinutes, ver.segments);
+    } else {
+      fareYen = 0;
+      tariffVersionId = null;
+    }
+
+    const updated = await prisma.tripLeg.update({
+      where: { id: trip.id },
+      data: {
+        ...(req.body?.clientName !== undefined ? { clientName: String(req.body.clientName).trim() } : {}),
+        ...(req.body?.origin !== undefined ? { origin: String(req.body.origin).trim() } : {}),
+        ...(req.body?.destination !== undefined ? { destination: String(req.body.destination).trim() } : {}),
+        distanceM,
+        waitingMinutes,
+        tariffVersionId,
+        fareYen,
+      },
+    });
+    return updated;
   });
 }

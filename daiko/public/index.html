@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Daiko</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { margin: 0 auto; max-width: 28rem; padding: 1rem; line-height: 1.45; }
+    h1 { font-size: 1.25rem; margin: 0 0 1rem; }
+    label { display: block; font-size: 0.85rem; margin-top: 0.75rem; }
+    input, button { width: 100%; box-sizing: border-box; padding: 0.6rem 0.5rem; font-size: 1rem; margin-top: 0.25rem; }
+    button { margin-top: 0.75rem; cursor: pointer; }
+    pre { background: rgba(127,127,127,0.15); padding: 0.75rem; border-radius: 0.5rem; overflow: auto; font-size: 0.8rem; }
+    .row { display: flex; gap: 0.5rem; }
+    .row input { flex: 1; }
+    .muted { font-size: 0.8rem; opacity: 0.8; margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+  <h1>Daiko（第1画面）</h1>
+  <p class="muted">同一オリジンで API を叩きます。本番では CORS_ALLOWED_ORIGINS に Web オリジンを追加してください。</p>
+
+  <section id="login-section">
+    <label>テナント slug</label>
+    <input id="slug" type="text" autocomplete="organization" placeholder="your-tenant" />
+    <label>メール</label>
+    <input id="email" type="email" autocomplete="username" />
+    <label>パスワード</label>
+    <input id="password" type="password" autocomplete="current-password" />
+    <button type="button" id="btn-login">ログイン</button>
+  </section>
+
+  <section id="dash-section" hidden>
+    <div class="row">
+      <label style="flex:1">集計月 (YYYY-MM)
+        <input id="ym" type="text" placeholder="2026-05" />
+      </label>
+    </div>
+    <button type="button" id="btn-dash">ダッシュボード取得</button>
+    <button type="button" id="btn-logout">ログアウト</button>
+    <pre id="out">{}</pre>
+  </section>
+
+  <script>
+    const api = (path, opts = {}) => fetch(path, {
+      ...opts,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(opts.headers || {}),
+      },
+    });
+
+    const tokenKey = 'daiko_access_token';
+
+    function showDash() {
+      document.getElementById('login-section').hidden = true;
+      document.getElementById('dash-section').hidden = false;
+    }
+    function showLogin() {
+      localStorage.removeItem(tokenKey);
+      document.getElementById('login-section').hidden = false;
+      document.getElementById('dash-section').hidden = true;
+    }
+
+    document.getElementById('btn-login').onclick = async () => {
+      const slug = document.getElementById('slug').value.trim();
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      const res = await api('/api/v1/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ slug, email, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data.error || 'login failed');
+        return;
+      }
+      localStorage.setItem(tokenKey, data.accessToken);
+      const ym = new Date();
+      const y = ym.getFullYear();
+      const m = String(ym.getMonth() + 1).padStart(2, '0');
+      document.getElementById('ym').value = `${y}-${m}`;
+      showDash();
+    };
+
+    document.getElementById('btn-dash').onclick = async () => {
+      const t = localStorage.getItem(tokenKey);
+      const ym = document.getElementById('ym').value.trim();
+      const res = await api(`/api/v1/dashboard?ym=${encodeURIComponent(ym)}`, {
+        headers: { Authorization: 'Bearer ' + t },
+      });
+      const data = await res.json().catch(() => ({}));
+      document.getElementById('out').textContent = JSON.stringify(data, null, 2);
+    };
+
+    document.getElementById('btn-logout').onclick = () => showLogin();
+
+    if (localStorage.getItem(tokenKey)) showDash();
+  </script>
+</body>
+</html>

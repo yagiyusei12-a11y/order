@@ -28,7 +28,7 @@ if (Test-Path $envFile) {
 $hostName = $env:DAIKO_VPS_HOST
 $user = if ($env:DAIKO_VPS_USER) { $env:DAIKO_VPS_USER } else { "ubuntu" }
 $key = $env:DAIKO_VPS_KEY
-$remotePath = if ($env:DAIKO_VPS_PATH) { $env:DAIKO_VPS_PATH } else { "~/daiko" }
+$remotePath = if ($env:DAIKO_VPS_PATH) { $env:DAIKO_VPS_PATH } else { "~/order" }
 $service = if ($env:DAIKO_VPS_SERVICE) { $env:DAIKO_VPS_SERVICE } else { "daiko-app" }
 
 if (-not $hostName -or -not $key) {

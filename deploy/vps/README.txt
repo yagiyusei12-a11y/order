@@ -38,7 +38,17 @@ Daiko（代行 SaaS / daiko サブフォルダ）
 --------------------------------------
 - コード: リポジトリの daiko/（別 package.json・Prisma・ポート既定 3001）
 - Caddy: daiko.harunoyukoto.jp → host.docker.internal:3001（DNS を向けたあと有効）
-- systemd ユニット例: daiko/deploy/daiko-app.service（WorkingDirectory をサーバの ~/order/daiko に合わせる）
+- PostgreSQL: 初回のみスーパーユーザで DB 作成（例）
+    sudo -u postgres psql -f deploy/vps/create-daiko-db.sql
+  daiko/.env に DATABASE_URL（daiko DB を指す）、JWT_SECRET、PORT=3001 を設定
+- systemd: ビルド後に（リポジトリルートを引数に）
+    sudo bash deploy/vps/install-daiko-systemd.sh ~/order
+  手編集する場合は daiko/deploy/daiko-app.service の WorkingDirectory / EnvironmentFile をサーバパスに合わせる
+- ヘルス: curl -sS http://127.0.0.1:3001/health
 - PC からデプロイ: daiko/.env.deploy を用意し、リポジトリルートで
     powershell -NoProfile -ExecutionPolicy Bypass -File ./daiko/scripts/deploy-vps.ps1
-  （VPS では PostgreSQL に daiko 用 DB を作成し、daiko/.env に DATABASE_URL を設定）
+  または order と同じ VPS へまとめて反映する場合、ルートの .env.deploy に
+    ORDER_VPS_DAIKO_DEPLOY=1
+  を置き npm run deploy:vps（order の pull/build のあと daiko も migrate/build/restart）
+- PDF: 本番で Playwright を使う場合、初回のみ VPS で
+    cd ~/order/daiko && npx playwright install chromium

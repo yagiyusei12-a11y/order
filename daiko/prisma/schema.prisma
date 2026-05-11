@@ -42,18 +42,20 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  settings      TenantSettings?
-  subscriptions Subscription[]
-  users         User[]
-  roles         Role[]
-  employees     Employee[]
-  vehicles      Vehicle[]
-  tariffPlans   TariffPlan[]
-  dailyReports  DailyReport[]
-  timePunches   TimePunch[]
-  alcoholChecks AlcoholCheck[]
-  payrollRuns   PayrollRun[]
-  refreshTokens RefreshToken[]
+  settings            TenantSettings?
+  subscriptions       Subscription[]
+  users               User[]
+  roles               Role[]
+  employees           Employee[]
+  vehicles            Vehicle[]
+  tariffPlans         TariffPlan[]
+  dailyReports        DailyReport[]
+  timePunches         TimePunch[]
+  alcoholChecks       AlcoholCheck[]
+  payrollRuns         PayrollRun[]
+  refreshTokens       RefreshToken[]
+  auditEvents         AuditEvent[]
+  legalRegisterStubs  LegalRegisterStub[]
 }
 
 model TenantSettings {
@@ -258,6 +260,8 @@ model TripLeg {
   departedAt       DateTime
   arrivedAt        DateTime
   distanceM        Int
+  /// 待機時間（分）。待機運賃 = waitingMinutes * TariffPlanVersion.waitingFareYenPerMin
+  waitingMinutes   Int      @default(0)
   tariffVersionId  String?
   tariffVersion    TariffPlanVersion? @relation(fields: [tariffVersionId], references: [id], onDelete: SetNull)
   fareYen          Int      @default(0)
@@ -339,4 +343,31 @@ model DocumentTemplate {
   createdAt DateTime @default(now())
 
   @@unique([kind, version])
+}
+
+model AuditEvent {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actorUserId String?
+  action      String
+  entityType  String?
+  entityId    String?
+  payload     Json     @default("{}")
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+}
+
+/// 法定系スタブ（苦情・指導・従事者名簿）のプレースホルダ行
+model LegalRegisterStub {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// complaint | guidance | roster
+  kind      String
+  payload   Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, kind])
 }

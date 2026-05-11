@@ -623,12 +623,10 @@ function statusText(session) {
 }
 function tryOpenDrawer() {
   try {
-    if (document.documentElement.classList.contains("native-drawer-shell")) {
-      var ch = typeof HarunoyukotoPos !== "undefined" ? HarunoyukotoPos : null;
-      if (ch && typeof ch.postMessage === "function") {
-        ch.postMessage("openDrawer");
-        return;
-      }
+    var ch = typeof HarunoyukotoPos !== "undefined" ? HarunoyukotoPos : null;
+    if (ch && typeof ch.postMessage === "function") {
+      ch.postMessage("openDrawer");
+      return;
     }
   } catch (_) {}
   try {

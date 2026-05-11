@@ -128,21 +128,16 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
       .header("Cache-Control", "no-store")
       .send(assembleStaffPage(storeId, title, bodyFile, scriptFile, extraScriptFile));
 
-  app.get<{ Params: { storeId: string }; Querystring: { nativeDrawer?: string } }>(
-    "/staff-app/:storeId/ops",
-    async (req, reply) => {
-      if (!(await assertStaffStore(req, reply))) return;
-      const nativeDrawer = String(req.query?.nativeDrawer ?? "") === "1";
-      return staffHtml(
-        reply,
-        req.params.storeId,
-        "オペレーション",
-        "staff-body-ops.html",
-        "staff-script-ops.js",
-        nativeDrawer ? undefined : "staff-pos-hardware.js"
-      );
-    }
-  );
+  app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/ops", async (req, reply) => {
+    if (!(await assertStaffStore(req, reply))) return;
+    return staffHtml(
+      reply,
+      req.params.storeId,
+      "オペレーション",
+      "staff-body-ops.html",
+      "staff-script-ops.js"
+    );
+  });
 
   /** 旧スタッフ「テイクアウト一覧」はオペ（卓・会計）に統合したためリダイレクト */
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/takeout", async (req, reply) => {

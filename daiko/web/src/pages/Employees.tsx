@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
+import { REGISTER_EXTENSION_UI_FIELDS } from "../lib/registerExtensionFields";
 import { Card, Err } from "../ui";
 
 type RegisterExt = Record<string, string>;
@@ -25,35 +26,17 @@ function asExt(raw: unknown): RegisterExt {
   return out;
 }
 
-const EXT_FIELDS: { key: string; label: string }[] = [
-  { key: "gender", label: "性別" },
-  { key: "postalCode", label: "郵便番号" },
-  { key: "dateOfBirthYmd", label: "生年月日（YYYY-MM-DD）" },
-  { key: "phoneHome", label: "電話（自宅）" },
-  { key: "phoneMobile", label: "電話（携帯）" },
-  { key: "emergencyContactName", label: "緊急連絡先 氏名" },
-  { key: "emergencyPhone", label: "緊急連絡先 電話" },
-  { key: "emergencyAddress", label: "緊急連絡先 住所" },
-  { key: "emergencyRelation", label: "緊急連絡先 続柄" },
-  { key: "hiredOnYmd", label: "採用年月日" },
-  { key: "retiredOnYmd", label: "退職年月日（名簿記録）" },
-  { key: "employmentType", label: "採用区分" },
-  { key: "interviewerName", label: "面接担当者名" },
-  { key: "jobCategory", label: "職種" },
-  { key: "licenseTypes", label: "免許の種類" },
-  { key: "licenseNumber", label: "免許証の番号" },
-  { key: "licenseExpiresOnYmd", label: "免許有効期限" },
-  { key: "licenseConditionsNote", label: "免許の条件等" },
-  { key: "pledgeSignedOnYmd", label: "誓約日" },
-  { key: "educationNotes", label: "教育・講習の記録" },
-  { key: "rosterNotes", label: "名簿備考" },
-];
+function ext(e: Emp, key: string): string {
+  return asExt(e.registerExtension)[key] ?? "";
+}
 
 export default function Employees(): JSX.Element {
   const [rows, setRows] = useState<Emp[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [familyName, setFamilyName] = useState("");
   const [givenName, setGivenName] = useState("");
+  const [newFurigana, setNewFurigana] = useState("");
+  const [newAddress, setNewAddress] = useState("");
   const [editId, setEditId] = useState<string | null>(null);
   const [editFamily, setEditFamily] = useState("");
   const [editGiven, setEditGiven] = useState("");
@@ -108,11 +91,21 @@ export default function Employees(): JSX.Element {
   async function add(ev: React.FormEvent): Promise<void> {
     ev.preventDefault();
     setErr(null);
-    const r = await apiFetch<Emp>("/employees", { method: "POST", json: { familyName, givenName } });
+    const r = await apiFetch<Emp>("/employees", {
+      method: "POST",
+      json: {
+        familyName,
+        givenName,
+        furigana: newFurigana.trim() || undefined,
+        address: newAddress.trim() || undefined,
+      },
+    });
     if (!r.ok) setErr(r.error);
     else {
       setFamilyName("");
       setGivenName("");
+      setNewFurigana("");
+      setNewAddress("");
       await load();
     }
   }
@@ -127,73 +120,103 @@ export default function Employees(): JSX.Element {
   return (
     <Card title="従業員">
       <Err msg={err} />
+      <p style={{ fontSize: "0.82rem", marginTop: 0 }}>
+        一覧の免許・電話は参照のみです。編集は各行の「名簿・基本情報」から全項目を入力してください。
+      </p>
       <form onSubmit={(e) => void add(e)}>
         <label>姓</label>
-        <input value={familyName} onChange={(e) => setFamilyName(e.target.value)} />
+        <input value={familyName} onChange={(e) => setFamilyName(e.target.value)} required />
         <label>名</label>
-        <input value={givenName} onChange={(e) => setGivenName(e.target.value)} />
+        <input value={givenName} onChange={(e) => setGivenName(e.target.value)} required />
+        <label>ふりがな（任意）</label>
+        <input value={newFurigana} onChange={(e) => setNewFurigana(e.target.value)} />
+        <label>住所（任意）</label>
+        <textarea rows={2} value={newAddress} onChange={(e) => setNewAddress(e.target.value)} style={{ width: "100%", maxWidth: 480 }} />
         <button type="submit">追加</button>
       </form>
-      <table style={{ marginTop: "0.75rem", fontSize: "0.9rem" }}>
-        <thead>
-          <tr>
-            <th>氏名</th>
-            <th>状態</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((x) => (
-            <tr key={x.id}>
-              <td>
-                {x.familyName} {x.givenName}
-              </td>
-              <td>{x.status}</td>
-              <td>
-                <button type="button" onClick={() => openEdit(x)}>
-                  名簿・基本情報
-                </button>{" "}
-                {x.status === "ACTIVE" ? (
-                  <button type="button" onClick={() => void retire(x.id)}>
-                    退職
-                  </button>
-                ) : null}
-              </td>
+      <div style={{ marginTop: "0.75rem", overflowX: "auto" }}>
+        <table style={{ fontSize: "0.78rem", borderCollapse: "collapse", minWidth: 720 }}>
+          <thead>
+            <tr>
+              <th style={{ border: "1px solid #ccc", padding: "4px 6px", textAlign: "left" }}>氏名</th>
+              <th style={{ border: "1px solid #ccc", padding: "4px 6px", textAlign: "left" }}>ふりがな</th>
+              <th style={{ border: "1px solid #ccc", padding: "4px 6px", textAlign: "left" }}>携帯</th>
+              <th style={{ border: "1px solid #ccc", padding: "4px 6px", textAlign: "left" }}>免許種別</th>
+              <th style={{ border: "1px solid #ccc", padding: "4px 6px", textAlign: "left" }}>免許番号</th>
+              <th style={{ border: "1px solid #ccc", padding: "4px 6px", textAlign: "left" }}>有効期限</th>
+              <th style={{ border: "1px solid #ccc", padding: "4px 6px", textAlign: "left" }}>状態</th>
+              <th style={{ border: "1px solid #ccc", padding: "4px 6px" }} />
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((x) => (
+              <tr key={x.id}>
+                <td style={{ border: "1px solid #ccc", padding: "4px 6px", whiteSpace: "nowrap" }}>
+                  {x.familyName} {x.givenName}
+                </td>
+                <td style={{ border: "1px solid #ccc", padding: "4px 6px", maxWidth: 120 }}>{x.furigana ?? ""}</td>
+                <td style={{ border: "1px solid #ccc", padding: "4px 6px" }}>{ext(x, "phoneMobile")}</td>
+                <td style={{ border: "1px solid #ccc", padding: "4px 6px" }}>{ext(x, "licenseTypes")}</td>
+                <td style={{ border: "1px solid #ccc", padding: "4px 6px" }}>{ext(x, "licenseNumber")}</td>
+                <td style={{ border: "1px solid #ccc", padding: "4px 6px", whiteSpace: "nowrap" }}>{ext(x, "licenseExpiresOnYmd")}</td>
+                <td style={{ border: "1px solid #ccc", padding: "4px 6px" }}>{x.status}</td>
+                <td style={{ border: "1px solid #ccc", padding: "4px 6px", whiteSpace: "nowrap" }}>
+                  <button type="button" onClick={() => openEdit(x)}>
+                    名簿・基本情報
+                  </button>{" "}
+                  {x.status === "ACTIVE" ? (
+                    <button type="button" onClick={() => void retire(x.id)}>
+                      退職
+                    </button>
+                  ) : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       {editId ? (
-        <div style={{ marginTop: "1rem", padding: "0.75rem", border: "1px solid #ccc", borderRadius: 4 }}>
-          <h3 style={{ fontSize: "1rem", marginTop: 0 }}>従事者名簿用・基本情報</h3>
-          <form onSubmit={(e) => void saveEdit(e)}>
-            <label>姓</label>
-            <input value={editFamily} onChange={(e) => setEditFamily(e.target.value)} required />
-            <label>名</label>
-            <input value={editGiven} onChange={(e) => setEditGiven(e.target.value)} required />
-            <label>ふりがな</label>
-            <input value={editFurigana} onChange={(e) => setEditFurigana(e.target.value)} />
-            <label>住所</label>
-            <textarea rows={2} value={editAddress} onChange={(e) => setEditAddress(e.target.value)} style={{ width: "100%" }} />
-            {EXT_FIELDS.map((f) => (
-              <div key={f.key} style={{ marginTop: "0.35rem" }}>
-                <label>{f.label}</label>
-                <input
-                  value={editExt[f.key] ?? ""}
-                  onChange={(e) => setExtField(f.key, e.target.value)}
-                  style={{ width: "100%", maxWidth: 420 }}
-                />
+        <details open style={{ marginTop: "1rem" }}>
+          <summary style={{ cursor: "pointer", fontWeight: 600 }}>従事者名簿用・基本情報（編集中）</summary>
+          <div style={{ marginTop: "0.5rem", padding: "0.75rem", border: "1px solid #ccc", borderRadius: 4 }}>
+            <form onSubmit={(e) => void saveEdit(e)}>
+              <label>姓</label>
+              <input value={editFamily} onChange={(e) => setEditFamily(e.target.value)} required />
+              <label>名</label>
+              <input value={editGiven} onChange={(e) => setEditGiven(e.target.value)} required />
+              <label>ふりがな</label>
+              <input value={editFurigana} onChange={(e) => setEditFurigana(e.target.value)} />
+              <label>住所</label>
+              <textarea rows={2} value={editAddress} onChange={(e) => setEditAddress(e.target.value)} style={{ width: "100%" }} />
+              {REGISTER_EXTENSION_UI_FIELDS.map((f) => (
+                <div key={f.key} style={{ marginTop: "0.35rem" }}>
+                  <label>{f.label}</label>
+                  {f.key === "educationNotes" || f.key === "rosterNotes" || f.key === "licenseConditionsNote" ? (
+                    <textarea
+                      rows={2}
+                      value={editExt[f.key] ?? ""}
+                      onChange={(e) => setExtField(f.key, e.target.value)}
+                      style={{ width: "100%", maxWidth: 420 }}
+                    />
+                  ) : (
+                    <input
+                      value={editExt[f.key] ?? ""}
+                      onChange={(e) => setExtField(f.key, e.target.value)}
+                      style={{ width: "100%", maxWidth: 420 }}
+                    />
+                  )}
+                </div>
+              ))}
+              <div style={{ marginTop: "0.75rem" }}>
+                <button type="submit">保存</button>{" "}
+                <button type="button" onClick={() => setEditId(null)}>
+                  閉じる
+                </button>
               </div>
-            ))}
-            <div style={{ marginTop: "0.75rem" }}>
-              <button type="submit">保存</button>{" "}
-              <button type="button" onClick={() => setEditId(null)}>
-                閉じる
-              </button>
-            </div>
-          </form>
-        </div>
+            </form>
+          </div>
+        </details>
       ) : null}
     </Card>
   );

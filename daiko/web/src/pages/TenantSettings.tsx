@@ -122,7 +122,12 @@ export default function TenantSettings(): JSX.Element {
   const [hkMutualNew, setHkMutualNew] = useState("");
   const [hkEffective, setHkEffective] = useState("");
   const [hkReason, setHkReason] = useState("");
-  const [sgPeriod, setSgPeriod] = useState("");
+  const [legalCertDate, setLegalCertDate] = useState("");
+  const [legalMutualAidOrg, setLegalMutualAidOrg] = useState("");
+  const [sgContractFrom, setSgContractFrom] = useState("");
+  const [sgContractTo, setSgContractTo] = useState("");
+  const [legalBodilyCoverageText, setLegalBodilyCoverageText] = useState("");
+  const [legalPropertyCoverageText, setLegalPropertyCoverageText] = useState("");
   const [sgLimit, setSgLimit] = useState("");
   const [sgApprNo, setSgApprNo] = useState("");
   const [sgApprDate, setSgApprDate] = useState("");
@@ -163,11 +168,12 @@ export default function TenantSettings(): JSX.Element {
             : "無",
       );
       setDpInspectionDate(asYmd(r.data.legalAlcoholInspectionDate) || dp.inspectionDateYmd);
-      setSgPeriod(
-        [asYmd(r.data.legalMutualAidContractFrom), asYmd(r.data.legalMutualAidContractTo)]
-          .filter(Boolean)
-          .join(" ～ ") || "",
-      );
+      setLegalCertDate(asYmd(r.data.legalCertificationDate));
+      setLegalMutualAidOrg(r.data.legalMutualAidOrganizationName ?? "");
+      setSgContractFrom(asYmd(r.data.legalMutualAidContractFrom));
+      setSgContractTo(asYmd(r.data.legalMutualAidContractTo));
+      setLegalBodilyCoverageText(r.data.legalBodilyCoverage ?? "");
+      setLegalPropertyCoverageText(r.data.legalPropertyCoverage ?? "");
       setSgLimit(r.data.legalVehicleCoverageLimitManYen ?? "");
       const df = readDf(cj);
       setHkSubmitted(df.henko.submittedOnYmd ?? "");
@@ -175,7 +181,14 @@ export default function TenantSettings(): JSX.Element {
       setHkMutualNew(df.henko.mutualAidPeriodNew ?? "");
       setHkEffective(df.henko.changeEffectiveOnYmd ?? "");
       setHkReason(df.henko.changeReasonDetail ?? "");
-      setSgPeriod((prev) => prev || df.songai.mutualAidContractPeriod || "");
+      if (!asYmd(r.data.legalMutualAidContractFrom) && !asYmd(r.data.legalMutualAidContractTo) && df.songai.mutualAidContractPeriod) {
+        const raw = df.songai.mutualAidContractPeriod;
+        const parts = raw.split(/[～~]/).map((x) => x.trim());
+        if (parts.length >= 2) {
+          setSgContractFrom(parts[0].slice(0, 10));
+          setSgContractTo(parts[1].slice(0, 10));
+        }
+      }
       setSgLimit((prev) => prev || df.songai.vehicleKyousaiLimitManYen || "");
       setSgApprNo(df.songai.vehicleApprovalNumber ?? "");
       setSgApprDate(df.songai.vehicleApprovedOnYmd ?? "");
@@ -226,8 +239,9 @@ export default function TenantSettings(): JSX.Element {
       changeEffectiveOnYmd: hkEffective.trim(),
       changeReasonDetail: hkReason.trim(),
     };
+    const mutualAidPeriodStr = [sgContractFrom.trim(), sgContractTo.trim()].filter(Boolean).join(" ～ ");
     const songai: Record<string, string> = {
-      mutualAidContractPeriod: sgPeriod.trim(),
+      mutualAidContractPeriod: mutualAidPeriodStr,
       vehicleKyousaiLimitManYen: sgLimit.trim(),
       vehicleApprovalNumber: sgApprNo.trim(),
       vehicleApprovedOnYmd: sgApprDate.trim(),
@@ -274,11 +288,13 @@ export default function TenantSettings(): JSX.Element {
             ? null
             : dpInspectionYn.trim() === "有" || dpInspectionYn.trim().toLowerCase() === "yes",
         legalAlcoholInspectionDate: dpInspectionDate.trim() || null,
-        legalMutualAidContractFrom: sgPeriod.includes("～") ? sgPeriod.split("～")[0].trim() || null : null,
-        legalMutualAidContractTo: sgPeriod.includes("～") ? sgPeriod.split("～")[1].trim() || null : null,
+        legalCertificationDate: legalCertDate.trim() || null,
+        legalMutualAidOrganizationName: legalMutualAidOrg.trim() || null,
+        legalMutualAidContractFrom: sgContractFrom.trim() || null,
+        legalMutualAidContractTo: sgContractTo.trim() || null,
         legalVehicleCoverageLimitManYen: sgLimit.trim() || null,
-        legalBodilyCoverage: "無制限",
-        legalPropertyCoverage: "1億円",
+        legalBodilyCoverage: legalBodilyCoverageText.trim() || null,
+        legalPropertyCoverage: legalPropertyCoverageText.trim() || null,
       },
     });
     if (!r.ok) setErr(r.error);
@@ -315,11 +331,12 @@ export default function TenantSettings(): JSX.Element {
       setHkMutualNew(df.henko.mutualAidPeriodNew ?? "");
       setHkEffective(df.henko.changeEffectiveOnYmd ?? "");
       setHkReason(df.henko.changeReasonDetail ?? "");
-      setSgPeriod(
-        [asYmd(r.data.legalMutualAidContractFrom), asYmd(r.data.legalMutualAidContractTo)]
-          .filter(Boolean)
-          .join(" ～ ") || df.songai.mutualAidContractPeriod || "",
-      );
+      setLegalCertDate(asYmd(r.data.legalCertificationDate));
+      setLegalMutualAidOrg(r.data.legalMutualAidOrganizationName ?? "");
+      setSgContractFrom(asYmd(r.data.legalMutualAidContractFrom));
+      setSgContractTo(asYmd(r.data.legalMutualAidContractTo));
+      setLegalBodilyCoverageText(r.data.legalBodilyCoverage ?? "");
+      setLegalPropertyCoverageText(r.data.legalPropertyCoverage ?? "");
       setSgLimit(r.data.legalVehicleCoverageLimitManYen ?? df.songai.vehicleKyousaiLimitManYen ?? "");
       setSgApprNo(df.songai.vehicleApprovalNumber ?? "");
       setSgApprDate(df.songai.vehicleApprovedOnYmd ?? "");
@@ -360,6 +377,8 @@ export default function TenantSettings(): JSX.Element {
           <input value={dpRep} onChange={(e) => setDpRep(e.target.value)} />
           <label>届出・認定番号など</label>
           <input value={dpReg} onChange={(e) => setDpReg(e.target.value)} />
+          <label>認定年月日（DB: legalCertificationDate）</label>
+          <input type="date" value={legalCertDate} onChange={(e) => setLegalCertDate(e.target.value)} />
           <label>認定を受けた公安委員会（認定帳票用）</label>
           <input value={dpCertAuthority} onChange={(e) => setDpCertAuthority(e.target.value)} />
           <label>変更届の提出先（例: ○○県公安委員会 殿）</label>
@@ -390,9 +409,18 @@ export default function TenantSettings(): JSX.Element {
           <input value={hkMutualNew} onChange={(e) => setHkMutualNew(e.target.value)} />
           <label>変更の内容・理由</label>
           <textarea rows={4} value={hkReason} onChange={(e) => setHkReason(e.target.value)} style={{ width: "100%" }} />
-          <h4 style={{ fontSize: "0.95rem", margin: "0.75rem 0 0.35rem" }}>損害てん補届（songai）</h4>
-          <label>協定組合の契約期間</label>
-          <input value={sgPeriod} onChange={(e) => setSgPeriod(e.target.value)} />
+          <h4 style={{ fontSize: "0.95rem", margin: "0.75rem 0 0.35rem" }}>損害てん補・協定（テナントDB列）</h4>
+          <label>協定組合の名称（legalMutualAidOrganizationName）</label>
+          <input value={legalMutualAidOrg} onChange={(e) => setLegalMutualAidOrg(e.target.value)} style={{ width: "100%", maxWidth: 480 }} />
+          <label>協定組合の契約期間・開始日</label>
+          <input type="date" value={sgContractFrom} onChange={(e) => setSgContractFrom(e.target.value)} />
+          <label>協定組合の契約期間・終了日</label>
+          <input type="date" value={sgContractTo} onChange={(e) => setSgContractTo(e.target.value)} />
+          <label>対人賠償責任保険の補償限度額（例: 無制限）</label>
+          <input value={legalBodilyCoverageText} onChange={(e) => setLegalBodilyCoverageText(e.target.value)} style={{ width: "100%", maxWidth: 480 }} />
+          <label>対物賠償責任保険の補償限度額（例: 1億円）</label>
+          <input value={legalPropertyCoverageText} onChange={(e) => setLegalPropertyCoverageText(e.target.value)} style={{ width: "100%", maxWidth: 480 }} />
+          <h4 style={{ fontSize: "0.95rem", margin: "0.75rem 0 0.35rem" }}>損害てん補届（documentForms.songai）</h4>
           <label>車両共済の限度額（万円）</label>
           <input value={sgLimit} onChange={(e) => setSgLimit(e.target.value)} />
           <label>車両の認定番号</label>

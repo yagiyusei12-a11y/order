@@ -505,6 +505,26 @@ async function loadMenuAndOptions() {
   if ([...catSel.options].some((o) => o.value === cur)) catSel.value = cur;
 }
 
+function handyCartTotals() {
+  let count = 0;
+  let yenTotal = 0;
+  const flat = flatItems();
+  for (const [id, row] of cart) {
+    if (row.qty <= 0) continue;
+    count += row.qty;
+    const meta = flat.find((x) => x.id === id);
+    yenTotal += (Number(meta && meta.price) || 0) * row.qty;
+  }
+  return { count, yenTotal };
+}
+
+function syncHandyStickyFooter() {
+  const el = document.getElementById("handyStickySummary");
+  if (!el) return;
+  const { count, yenTotal } = handyCartTotals();
+  el.textContent = count + "点 · " + yenTotal.toLocaleString("ja-JP") + "円";
+}
+
 function renderItems() {
   const host = document.getElementById("handyItemList");
   const q = (document.getElementById("handySearch").value || "").trim().toLowerCase();
@@ -575,6 +595,7 @@ function renderCart() {
   if (cart.size === 0) {
     host.textContent = "商品をタップして追加";
     host.className = "muted handy-cart-empty";
+    syncHandyStickyFooter();
     return;
   }
   host.className = "";
@@ -614,6 +635,7 @@ function renderCart() {
     line.appendChild(ctl);
     host.appendChild(line);
   }
+  syncHandyStickyFooter();
 }
 
 async function submitOrder() {
@@ -642,7 +664,9 @@ async function submitOrder() {
 
   const note = document.getElementById("handyOrderNote").value.trim();
   const btn = document.getElementById("handySubmit");
+  const btnSticky = document.getElementById("handyStickySubmit");
   btn.disabled = true;
+  if (btnSticky) btnSticky.disabled = true;
   try {
     await api("/stores/" + encodeURIComponent(STORE) + "/sessions/" + encodeURIComponent(sid) + "/verbal-order", {
       method: "POST",
@@ -660,6 +684,7 @@ async function submitOrder() {
     log(String(e.message || e));
   } finally {
     btn.disabled = false;
+    if (btnSticky) btnSticky.disabled = false;
   }
 }
 
@@ -682,6 +707,8 @@ document.getElementById("handySearch").oninput = () => renderItems();
 document.getElementById("handyCustSearch").oninput = () => renderCustomerSelect();
 document.getElementById("handyCustomer").onchange = () => loadInsightsForSelection();
 document.getElementById("handySubmit").onclick = () => submitOrder();
+const handyStickySubmitEl = document.getElementById("handyStickySubmit");
+if (handyStickySubmitEl) handyStickySubmitEl.onclick = () => submitOrder();
 
 (function wireHandySeparateBillUi() {
   const bs = document.getElementById("handySepBackdrop");
@@ -708,6 +735,7 @@ document.getElementById("handySubmit").onclick = () => submitOrder();
     wireHandyEatModeRadios();
     await loadMenuAndOptions();
     renderItems();
+    renderCart();
     await Promise.all([loadSessions(), loadCustomers()]);
   } catch (e) {
     log(String(e.message || e));

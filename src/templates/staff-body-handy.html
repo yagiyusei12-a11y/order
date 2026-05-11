@@ -6,111 +6,125 @@
       オプション必須の商品・セットはここでは選べません。
     </p>
 
-    <section class="handy-card handy-section">
-      <div class="handy-section-head">
-        <span class="handy-section-title">お客様情報</span>
-        <span class="handy-section-hint">端末で登録した会員向け</span>
-      </div>
-      <label for="handyCustSearch">お客様を検索</label>
-      <input id="handyCustSearch" type="search" placeholder="名前・電話・端末IDの一部" autocomplete="off" />
-      <label for="handyCustomer">お客様を選択</label>
-      <select id="handyCustomer" style="margin-bottom:0.5rem">
-        <option value="">お客様を選ぶ（任意）</option>
-      </select>
-      <div class="row" style="margin-bottom:0">
-        <button type="button" class="btn-ghost" id="handyRefCust" style="width:auto">一覧を再読込</button>
+    <div class="handy-layout">
+      <div class="handy-headctx">
+        <section class="handy-card handy-section">
+          <div class="handy-section-head">
+            <span class="handy-section-title">注文先</span>
+          </div>
+          <label for="handySession">注文先の卓（開店中セッション）</label>
+          <select id="handySession" class="handy-field">
+            <option value="">読込中…</option>
+          </select>
+          <p class="muted handy-hint">
+            同一卓でもう一つの会計（別伝票）を増やすときは、先に<strong>その卓のセッション</strong>を選んでから次を押してください。
+          </p>
+          <button type="button" class="btn-ghost handy-btn-inline" id="handyOpenSeparateBill" disabled>
+            この卓でもう一会計を開始
+          </button>
+          <div class="row handy-row-actions">
+            <button type="button" class="btn-ghost handy-btn-inline" id="handyRefSess">セッション再読込</button>
+          </div>
+        </section>
+
+        <section class="handy-card handy-section handy-eat-section">
+          <div class="handy-section-head">
+            <span class="handy-section-title">提供区分</span>
+          </div>
+          <label class="handy-eat-label row">
+            <input type="radio" name="handyEatMode" id="handyEatDineIn" value="dine_in" checked />
+            <span>店内（標準税率で計上）</span>
+          </label>
+          <label class="handy-eat-label row handy-eat-label-takeout">
+            <input type="radio" name="handyEatMode" id="handyEatTakeout" value="takeout" />
+            <span>テイクアウト（軽減税率・メニューで「テイクアウト可」のみ）</span>
+          </label>
+        </section>
       </div>
 
-      <div id="handyProfile" class="handy-profile-wrap">
-        <p class="handy-placeholder">お客様を選ぶと、来店情報や注文傾向が表示されます。</p>
+      <div class="handy-shop">
+        <section class="handy-card handy-section">
+          <div class="handy-section-head">
+            <span class="handy-section-title">メニュー</span>
+          </div>
+          <label for="handyCat">カテゴリ</label>
+          <select id="handyCat" class="handy-field">
+            <option value="">すべて</option>
+          </select>
+          <label for="handySearch">商品を検索</label>
+          <input id="handySearch" type="search" placeholder="名前の一部" autocomplete="off" class="handy-field" />
+        </section>
+        <div id="handyItemList" class="handy-item-list handy-card handy-item-list-host"></div>
       </div>
 
-      <div id="handyRankingHost" class="handy-subblock" hidden>
-        <div class="handy-subtitle">累計 · よく注文する商品</div>
-        <div id="handyRanking" class="handy-ranking"></div>
-      </div>
+      <details class="handy-details handy-cust">
+        <summary class="handy-details-summary">お客様（任意）<span class="handy-details-hint">端末会員・検索</span></summary>
+        <div class="handy-details-body">
+          <label for="handyCustSearch">お客様を検索</label>
+          <input id="handyCustSearch" type="search" placeholder="名前・電話・端末IDの一部" autocomplete="off" class="handy-field" />
+          <label for="handyCustomer">お客様を選択</label>
+          <select id="handyCustomer" class="handy-field">
+            <option value="">お客様を選ぶ（任意）</option>
+          </select>
+          <div class="row handy-row-actions">
+            <button type="button" class="btn-ghost handy-btn-inline" id="handyRefCust">一覧を再読込</button>
+          </div>
 
-      <div id="handyHistoryHost" class="handy-subblock" hidden>
-        <div class="handy-subtitle">最近の注文履歴</div>
-        <div id="handyHistory" class="handy-history"></div>
-      </div>
-    </section>
+          <div id="handyProfile" class="handy-profile-wrap">
+            <p class="handy-placeholder">お客様を選ぶと、来店情報や注文傾向が表示されます。</p>
+          </div>
 
-    <section class="handy-card handy-section">
-      <div class="handy-section-head">
-        <span class="handy-section-title">注文先</span>
-      </div>
-      <label for="handySession">注文先の卓（開店中セッション）</label>
-      <select id="handySession" style="margin-bottom:0.5rem">
-        <option value="">読込中…</option>
-      </select>
-      <p class="muted" style="font-size:0.8rem;line-height:1.45;margin:0.35rem 0 0.5rem">
-        同一卓でもう一つの会計（別伝票）を増やすときは、先に<strong>その卓のセッション</strong>を選んでから次を押してください。
-      </p>
-      <button type="button" class="btn-ghost" id="handyOpenSeparateBill" style="width:auto;margin-bottom:0.5rem" disabled>
-        この卓でもう一会計を開始
-      </button>
-      <div class="row" style="margin-bottom:0">
-        <button type="button" class="btn-ghost" id="handyRefSess" style="width:auto">セッション再読込</button>
-      </div>
-    </section>
+          <div id="handyRankingHost" class="handy-subblock" hidden>
+            <div class="handy-subtitle">累計 · よく注文する商品</div>
+            <div id="handyRanking" class="handy-ranking"></div>
+          </div>
 
-    <section class="handy-card handy-section">
-      <div class="handy-section-head">
-        <span class="handy-section-title">メニュー</span>
-      </div>
-      <label for="handyCat">カテゴリ</label>
-      <select id="handyCat" style="margin-bottom:0.5rem">
-        <option value="">すべて</option>
-      </select>
-      <label for="handySearch">商品を検索</label>
-      <input id="handySearch" type="search" placeholder="名前の一部" autocomplete="off" />
-    </section>
+          <div id="handyHistoryHost" class="handy-subblock" hidden>
+            <div class="handy-subtitle">最近の注文履歴</div>
+            <div id="handyHistory" class="handy-history"></div>
+          </div>
+        </div>
+      </details>
 
-    <div id="handyItemList" class="handy-item-list handy-card" style="padding:0"></div>
-
-    <section class="handy-card handy-section">
-      <div class="handy-section-head">
-        <span class="handy-section-title">提供区分</span>
+      <div class="handy-cartblock">
+        <section class="handy-card handy-section handy-cart-section">
+          <div class="handy-section-head">
+            <span class="handy-section-title">カート</span>
+            <button type="button" class="btn-ghost handy-clear-cart" id="handyClearCart">空にする</button>
+          </div>
+          <div id="handyCart" class="muted handy-cart-empty">商品をタップして追加</div>
+          <label for="handyOrderNote">伝票メモ（任意）</label>
+          <input id="handyOrderNote" type="text" placeholder="例: 電話注文・テイクアウト希望 など" class="handy-field" />
+          <button type="button" class="btn-primary handy-submit-btn" id="handySubmit">キッチンへ送信</button>
+        </section>
       </div>
-      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.82rem;margin:0.25rem 0">
-        <input type="radio" name="handyEatMode" id="handyEatDineIn" value="dine_in" checked />
-        <span>店内（標準税率で計上）</span>
-      </label>
-      <label class="row" style="align-items:flex-start;gap:0.45rem;font-size:0.82rem;margin:0.25rem 0">
-        <input type="radio" name="handyEatMode" id="handyEatTakeout" value="takeout" style="margin-top:0.15rem;flex-shrink:0" />
-        <span>テイクアウト（軽減税率・メニューで「テイクアウト可」のみ）</span>
-      </label>
-    </section>
+    </div>
 
-    <section class="handy-card handy-section handy-cart-section">
-      <div class="handy-section-head">
-        <span class="handy-section-title">カート</span>
-        <button type="button" class="btn-ghost" id="handyClearCart" style="width:auto;padding:0.25rem 0.5rem;font-size:0.75rem">空にする</button>
-      </div>
-      <div id="handyCart" class="muted handy-cart-empty">商品をタップして追加</div>
-      <label for="handyOrderNote">伝票メモ（任意）</label>
-      <input id="handyOrderNote" type="text" placeholder="例: 電話注文・テイクアウト希望 など" />
-      <button type="button" class="btn-primary handy-submit-btn" id="handySubmit">キッチンへ送信</button>
-    </section>
-    <div id="log"></div>
+    <div id="log" class="handy-log" role="status"></div>
+  </div>
+
+  <div id="handyStickyBar" class="handy-sticky-bar">
+    <div class="handy-sticky-inner">
+      <div id="handyStickySummary" class="handy-sticky-summary">0点 · 0円</div>
+      <button type="button" class="btn-primary handy-sticky-submit" id="handyStickySubmit">キッチンへ送信</button>
+    </div>
   </div>
 
   <div id="handySepBackdrop" class="handy-modal-backdrop" style="display: none" aria-hidden="true">
     <div class="handy-modal" id="handySepDialog" role="dialog" aria-modal="true" aria-labelledby="handySepTitle">
-      <h3 id="handySepTitle" style="margin: 0 0 0.75rem; font-size: 1rem; color: #1e293b">別会計でセッションを追加</h3>
-      <p class="muted" style="font-size: 0.78rem; margin: 0 0 0.65rem; line-height: 1.45">
+      <h3 id="handySepTitle" class="handy-modal-title">別会計でセッションを追加</h3>
+      <p class="muted handy-modal-lead">
         卓QRの「別の会計で始める」と同様、この卓に新しい開店中セッションが増えます。
       </p>
       <label for="handySepGuestCount">人数（延べ）</label>
-      <input id="handySepGuestCount" type="number" min="1" max="99" step="1" value="2" inputmode="numeric" style="margin-bottom: 0.5rem" />
+      <input id="handySepGuestCount" type="number" min="1" max="99" step="1" value="2" inputmode="numeric" class="handy-field" />
       <label for="handySepChildCount">うち子供の人数（任意）</label>
-      <input id="handySepChildCount" type="number" min="0" max="99" step="1" value="0" inputmode="numeric" style="margin-bottom: 0.5rem" />
+      <input id="handySepChildCount" type="number" min="0" max="99" step="1" value="0" inputmode="numeric" class="handy-field" />
       <label class="handy-sep-course-lbl">メニューの種類</label>
       <div id="handySepCourseRadios" class="handy-sep-course-list"></div>
-      <div class="row" style="margin-top: 0.75rem; gap: 0.5rem; flex-wrap: wrap">
-        <button type="button" class="btn-primary" id="handySepConfirm" style="width: auto">開始</button>
-        <button type="button" class="btn-ghost" id="handySepCancel" style="width: auto">キャンセル</button>
+      <div class="row handy-modal-actions">
+        <button type="button" class="btn-primary handy-btn-inline" id="handySepConfirm">開始</button>
+        <button type="button" class="btn-ghost handy-btn-inline" id="handySepCancel">キャンセル</button>
       </div>
     </div>
   </div>
@@ -118,32 +132,141 @@
 <style>
   main.handy-bright {
     min-height: 100%;
-    background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 55%, #e8ecf3 100%);
+    background: var(--bg);
     margin: -1rem;
     padding: 1rem;
-    color: #1e293b;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+    color: var(--text);
   }
-  .handy-bright-inner { max-width: 560px; margin: 0 auto; }
+  @media (max-width: 959px) {
+    main.handy-bright {
+      padding-bottom: calc(5.25rem + env(safe-area-inset-bottom));
+    }
+  }
+
+  .handy-bright-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
   main.handy-bright .handy-page-title {
-    color: #ea580c;
+    color: var(--accent);
     margin-bottom: 0.35rem;
   }
-  .handy-lead { margin-top: 0; margin-bottom: 1rem; line-height: 1.45; }
+  .handy-lead {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    line-height: 1.45;
+  }
+
+  .handy-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  @media (min-width: 960px) {
+    .handy-layout {
+      display: grid;
+      grid-template-columns: minmax(280px, 320px) 1fr;
+      grid-template-rows: auto 1fr auto;
+      gap: 0.75rem;
+      align-items: stretch;
+      min-height: min(70dvh, 640px);
+    }
+    .handy-headctx {
+      grid-column: 1;
+      grid-row: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .handy-cartblock {
+      grid-column: 1;
+      grid-row: 2 / 4;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .handy-cartblock .handy-cart-section {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .handy-cartblock #handyCart {
+      flex: 1;
+      min-height: 4rem;
+      overflow-y: auto;
+    }
+    .handy-shop {
+      grid-column: 2;
+      grid-row: 1 / 3;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      min-height: 0;
+      max-height: calc(100dvh - var(--topbar-h, 52px) - 5.5rem);
+    }
+    .handy-shop .handy-item-list-host {
+      flex: 1;
+      min-height: 160px;
+      max-height: none;
+      overflow-y: auto;
+    }
+    .handy-cust {
+      grid-column: 2;
+      grid-row: 3;
+      margin: 0;
+    }
+  }
 
   .handy-card {
-    background: #ffffff;
-    border-radius: 16px;
-    border: 1px solid #e8ecf1;
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+    background: var(--surface);
+    border-radius: var(--radius, 12px);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
     padding: 1rem 1rem 0.95rem;
-    margin-bottom: 0.75rem;
+    margin-bottom: 0;
   }
-  main.handy-bright .handy-section label { color: #64748b; }
+
+  main.handy-bright .handy-section label,
+  main.handy-bright .handy-details-body label {
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 600;
+    display: block;
+    margin-bottom: 0.25rem;
+  }
+
+  .handy-field,
   main.handy-bright select,
   main.handy-bright input[type="text"],
-  main.handy-bright input[type="search"] {
-    background: #f8fafc;
-    border-color: #e2e8f0;
+  main.handy-bright input[type="search"],
+  main.handy-bright input[type="number"] {
+    width: 100%;
+    margin-bottom: 0.5rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.5rem 0.6rem;
+    color: var(--text);
+    font-size: 0.92rem;
+  }
+
+  .handy-hint {
+    font-size: 0.8rem;
+    line-height: 1.45;
+    margin: 0.35rem 0 0.5rem;
+  }
+
+  .handy-row-actions {
+    margin-bottom: 0;
+    margin-top: 0.15rem;
+  }
+
+  .handy-btn-inline {
+    width: auto;
   }
 
   .handy-section-head {
@@ -154,17 +277,91 @@
     margin-bottom: 0.65rem;
     flex-wrap: wrap;
   }
-  .handy-section-title { font-weight: 800; font-size: 0.92rem; color: #0f172a; }
-  .handy-section-hint { font-size: 0.72rem; color: #94a3b8; }
+  .handy-section-title {
+    font-weight: 800;
+    font-size: 0.92rem;
+    color: var(--text);
+  }
+  .handy-section-hint {
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+
+  .handy-clear-cart {
+    width: auto;
+    padding: 0.25rem 0.55rem;
+    font-size: 0.75rem;
+  }
+
+  .handy-eat-label {
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.82rem;
+    margin: 0.35rem 0;
+    cursor: pointer;
+  }
+  .handy-eat-label-takeout {
+    align-items: flex-start;
+  }
+  .handy-eat-label input {
+    margin-top: 0.1rem;
+    flex-shrink: 0;
+  }
+
+  .handy-details {
+    border: 1px solid var(--border);
+    border-radius: var(--radius, 12px);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    padding: 0;
+    overflow: hidden;
+    margin-bottom: 0;
+  }
+  .handy-details-summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 0.85rem 1rem;
+    font-weight: 800;
+    font-size: 0.92rem;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    user-select: none;
+  }
+  .handy-details-summary::-webkit-details-marker {
+    display: none;
+  }
+  .handy-details-summary::after {
+    content: "▾";
+    font-size: 0.75rem;
+    color: var(--muted);
+    transition: transform 0.15s;
+  }
+  .handy-details[open] .handy-details-summary::after {
+    transform: rotate(-180deg);
+  }
+  .handy-details-hint {
+    font-weight: 600;
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+  .handy-details-body {
+    padding: 0 1rem 1rem;
+    border-top: 1px dashed var(--border);
+  }
 
   .handy-placeholder {
     margin: 0.75rem 0 0;
     font-size: 0.85rem;
-    color: #94a3b8;
+    color: var(--muted);
     line-height: 1.45;
   }
 
-  .handy-profile-wrap { margin-top: 0.85rem; }
+  .handy-profile-wrap {
+    margin-top: 0.85rem;
+  }
   .handy-profile {
     display: flex;
     gap: 0.85rem;
@@ -175,18 +372,30 @@
     width: 56px;
     height: 56px;
     border-radius: 50%;
-    background: linear-gradient(145deg, #fb923c, #ea580c);
+    background: var(--accent);
     color: #fff;
     font-weight: 800;
     font-size: 1.15rem;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 4px 12px rgba(234, 88, 12, 0.28);
+    box-shadow: var(--shadow);
   }
-  .handy-profile-main { min-width: 0; flex: 1; }
-  .handy-profile-name { font-weight: 800; font-size: 1.05rem; color: #0f172a; margin: 0 0 0.15rem; }
-  .handy-profile-meta { font-size: 0.78rem; color: #64748b; margin: 0; }
+  .handy-profile-main {
+    min-width: 0;
+    flex: 1;
+  }
+  .handy-profile-name {
+    font-weight: 800;
+    font-size: 1.05rem;
+    color: var(--text);
+    margin: 0 0 0.15rem;
+  }
+  .handy-profile-meta {
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin: 0;
+  }
   .handy-stats {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -194,17 +403,37 @@
     margin-top: 0.85rem;
   }
   .handy-stat {
-    background: linear-gradient(180deg, #fff7ed 0%, #ffedd5 100%);
-    border: 1px solid #fed7aa;
-    border-radius: 12px;
+    background: var(--accent-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius, 12px);
     padding: 0.5rem 0.35rem;
     text-align: center;
   }
-  .handy-stat .lbl { display: block; font-size: 0.65rem; color: #9a3412; font-weight: 600; margin-bottom: 0.15rem; }
-  .handy-stat .val { font-size: 0.95rem; font-weight: 800; color: #c2410c; line-height: 1.2; }
+  .handy-stat .lbl {
+    display: block;
+    font-size: 0.65rem;
+    color: var(--muted);
+    font-weight: 600;
+    margin-bottom: 0.15rem;
+  }
+  .handy-stat .val {
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: var(--accent);
+    line-height: 1.2;
+  }
 
-  .handy-subblock { margin-top: 1rem; padding-top: 0.85rem; border-top: 1px dashed #e2e8f0; }
-  .handy-subtitle { font-size: 0.78rem; font-weight: 700; color: #475569; margin-bottom: 0.5rem; }
+  .handy-subblock {
+    margin-top: 1rem;
+    padding-top: 0.85rem;
+    border-top: 1px dashed var(--border);
+  }
+  .handy-subtitle {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--muted);
+    margin-bottom: 0.5rem;
+  }
 
   .handy-rank-row {
     display: flex;
@@ -212,10 +441,12 @@
     justify-content: space-between;
     gap: 0.5rem;
     padding: 0.45rem 0;
-    border-bottom: 1px solid #f1f5f9;
+    border-bottom: 1px solid var(--border);
     font-size: 0.88rem;
   }
-  .handy-rank-row:last-child { border-bottom: none; }
+  .handy-rank-row:last-child {
+    border-bottom: none;
+  }
   .handy-rank-badge {
     flex-shrink: 0;
     width: 1.75rem;
@@ -223,74 +454,188 @@
     font-weight: 800;
     font-size: 0.85rem;
   }
-  .handy-rank-badge.g1 { color: #ca8a04; }
-  .handy-rank-badge.g2 { color: #64748b; }
-  .handy-rank-badge.g3 { color: #b45309; }
-  .handy-rank-name { min-width: 0; flex: 1; font-weight: 600; color: #334155; }
-  .handy-rank-qty { font-weight: 700; color: #ea580c; font-variant-numeric: tabular-nums; }
+  .handy-rank-badge.g1 {
+    color: #ca8a04;
+  }
+  .handy-rank-badge.g2 {
+    color: var(--muted);
+  }
+  .handy-rank-badge.g3 {
+    color: #b45309;
+  }
+  .handy-rank-name {
+    min-width: 0;
+    flex: 1;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .handy-rank-qty {
+    font-weight: 700;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
 
-  .handy-history { max-height: min(38vh, 280px); overflow-y: auto; margin: 0 -0.25rem; padding: 0 0.25rem; }
+  .handy-history {
+    max-height: min(38vh, 280px);
+    overflow-y: auto;
+    margin: 0 -0.25rem;
+    padding: 0 0.25rem;
+  }
   .handy-order-card {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius, 12px);
     padding: 0.55rem 0.65rem;
     margin-bottom: 0.45rem;
   }
-  .handy-order-card:last-child { margin-bottom: 0; }
+  .handy-order-card:last-child {
+    margin-bottom: 0;
+  }
   .handy-order-when {
     font-size: 0.75rem;
     font-weight: 700;
-    color: #475569;
+    color: var(--muted);
     margin-bottom: 0.35rem;
   }
-  .handy-order-when small { font-weight: 500; color: #94a3b8; margin-left: 0.35rem; }
-  .handy-order-lines { margin: 0; padding-left: 1rem; font-size: 0.8rem; color: #334155; line-height: 1.45; }
+  .handy-order-when small {
+    font-weight: 500;
+    color: var(--muted);
+    margin-left: 0.35rem;
+  }
+  .handy-order-lines {
+    margin: 0;
+    padding-left: 1rem;
+    font-size: 0.8rem;
+    color: var(--text);
+    line-height: 1.45;
+  }
 
-  .handy-item-list { max-height: min(42vh, 320px); overflow-y: auto; }
+  .handy-item-list-host {
+    max-height: min(42vh, 320px);
+    overflow-y: auto;
+    padding: 0;
+  }
+
   .handy-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.65rem 0.85rem;
-    border-bottom: 1px solid #f1f5f9;
-    font-size: 0.88rem;
-    background: #fff;
+    gap: 0.65rem;
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.9rem;
+    background: var(--surface);
   }
-  .handy-row:last-child { border-bottom: none; }
-  .handy-row.dim { opacity: 0.45; pointer-events: none; }
-  .handy-row .meta { font-size: 0.72rem; color: #94a3b8; }
+  .handy-row:last-child {
+    border-bottom: none;
+  }
+  .handy-row.dim {
+    opacity: 0.45;
+    pointer-events: none;
+  }
+  .handy-row .meta {
+    font-size: 0.74rem;
+    color: var(--muted);
+  }
   .handy-row button.add {
     flex-shrink: 0;
-    padding: 0.35rem 0.65rem !important;
-    font-size: 0.8rem !important;
+    padding: 0.45rem 0.85rem !important;
+    font-size: 0.82rem !important;
     width: auto !important;
     font-weight: 800;
+    border-radius: 999px;
+    min-height: 2.5rem;
+    min-width: 2.75rem;
   }
+
   .handy-cart-line {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.35rem;
-    padding: 0.35rem 0;
-    border-bottom: 1px dashed #e2e8f0;
+    padding: 0.4rem 0;
+    border-bottom: 1px dashed var(--border);
     font-size: 0.85rem;
-    color: #334155;
+    color: var(--text);
   }
-  .handy-cart-line:last-child { border-bottom: none; }
-  .handy-cart-line .qtyctl { display: flex; align-items: center; gap: 0.25rem; }
+  .handy-cart-line:last-child {
+    border-bottom: none;
+  }
+  .handy-cart-line .qtyctl {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
   .handy-cart-line .qtyctl button {
     width: 2rem !important;
     min-width: 2rem;
     padding: 0.2rem !important;
     font-weight: 800;
   }
-  .handy-cart-empty { font-size: 0.85rem; min-height: 2rem; }
-  .handy-cart-section .handy-section-head { margin-bottom: 0.5rem; }
-  .handy-submit-btn { margin-top: 0.65rem; }
+  .handy-cart-empty {
+    font-size: 0.85rem;
+    min-height: 2rem;
+  }
+  .handy-cart-section .handy-section-head {
+    margin-bottom: 0.5rem;
+  }
+  .handy-submit-btn {
+    margin-top: 0.65rem;
+  }
 
-  main.handy-bright #log { color: #dc2626; }
+  @media (max-width: 959px) {
+    .handy-submit-btn {
+      display: none;
+    }
+  }
+
+  .handy-log {
+    margin-top: 0.75rem;
+    font-size: 0.86rem;
+    color: #dc2626;
+    min-height: 1.25rem;
+  }
+
+  .handy-sticky-bar {
+    display: none;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    padding: 0.55rem 0.75rem calc(0.55rem + env(safe-area-inset-bottom));
+    background: rgba(255, 255, 255, 0.94);
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.08);
+    backdrop-filter: blur(8px);
+  }
+  @media (max-width: 959px) {
+    .handy-sticky-bar {
+      display: block;
+    }
+  }
+  .handy-sticky-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .handy-sticky-summary {
+    font-size: 0.86rem;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    min-width: 0;
+    flex: 1;
+  }
+  .handy-sticky-submit {
+    flex-shrink: 0;
+    white-space: nowrap;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
 
   .handy-modal-backdrop {
     position: fixed;
@@ -309,16 +654,32 @@
     }
   }
   .handy-modal {
-    background: #fff;
-    border-radius: 16px;
+    background: var(--surface);
+    border-radius: var(--radius, 12px);
     padding: 1rem 1rem 1.1rem;
     max-width: 420px;
     width: 100%;
     max-height: 85vh;
     overflow-y: auto;
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
-    border: 1px solid #e2e8f0;
+    border: 1px solid var(--border);
   }
+  .handy-modal-title {
+    margin: 0 0 0.75rem;
+    font-size: 1rem;
+    color: var(--text);
+  }
+  .handy-modal-lead {
+    font-size: 0.78rem;
+    margin: 0 0 0.65rem;
+    line-height: 1.45;
+  }
+  .handy-modal-actions {
+    margin-top: 0.75rem;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
   .handy-sep-course-list {
     display: flex;
     flex-direction: column;
@@ -331,15 +692,15 @@
     align-items: flex-start;
     gap: 0.5rem;
     padding: 0.45rem 0.5rem;
-    border: 1px solid #e2e8f0;
+    border: 1px solid var(--border);
     border-radius: 10px;
     cursor: pointer;
     font-size: 0.86rem;
-    background: #f8fafc;
+    background: var(--bg);
   }
   .handy-sep-course-list label.row:has(input:checked) {
-    border-color: #ea580c;
-    background: #fff7ed;
+    border-color: var(--accent);
+    background: var(--accent-soft);
   }
   .handy-sep-course-list input {
     margin-top: 0.15rem;
@@ -347,7 +708,7 @@
   }
   .handy-sep-course-meta {
     font-size: 0.72rem;
-    color: #64748b;
+    color: var(--muted);
     margin-top: 0.15rem;
     line-height: 1.35;
   }

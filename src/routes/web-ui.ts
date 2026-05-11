@@ -17,17 +17,32 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/** 第5引数が文字列のときは従来どおりメインスクリプトの後に追記。オブジェクトのときは prepend / append を指定可能 */
+type StaffPageScriptBundle =
+  | string
+  | {
+      prependFile?: string;
+      appendFile?: string;
+    };
+
 function assembleStaffPage(
   storeId: string,
   pageTitle: string,
   bodyFile: string,
   scriptFile: string,
-  extraScriptFile?: string
+  scriptBundle?: StaffPageScriptBundle
 ): string {
   const pathEnc = encodeURIComponent(storeId);
   const body = loadTemplate(bodyFile).replace(/__STORE_PATH__/g, pathEnc);
+  let prependScript = "";
+  let appendScript = "";
+  if (typeof scriptBundle === "string") {
+    appendScript = scriptBundle ? loadTemplate(scriptBundle) : "";
+  } else if (scriptBundle && typeof scriptBundle === "object") {
+    if (scriptBundle.prependFile) prependScript = loadTemplate(scriptBundle.prependFile) + "\n";
+    if (scriptBundle.appendFile) appendScript = "\n" + loadTemplate(scriptBundle.appendFile);
+  }
   const script = loadTemplate(scriptFile);
-  const extraScript = extraScriptFile ? loadTemplate(extraScriptFile) : "";
   const tableDisplay = loadTemplate("staff-script-table-display.js");
   return loadTemplate("staff-frame.html")
     .replace(/__PAGE_TITLE__/g, escapeHtml(pageTitle))
@@ -36,7 +51,7 @@ function assembleStaffPage(
     .replace(/__STORE_PATH__/g, pathEnc)
     .replace("__TABLE_DISPLAY_CODE__", tableDisplay)
     .replace("__BODY__", body)
-    .replace("__PAGE_SCRIPT__", script + (extraScript ? "\n" + extraScript : ""));
+    .replace("__PAGE_SCRIPT__", prependScript + script + appendScript);
 }
 
 async function assertStaffStore(
@@ -121,22 +136,18 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
     title: string,
     bodyFile: string,
     scriptFile: string,
-    extraScriptFile?: string
+    scriptBundle?: StaffPageScriptBundle
   ) =>
     reply
       .type("text/html; charset=utf-8")
       .header("Cache-Control", "no-store")
-      .send(assembleStaffPage(storeId, title, bodyFile, scriptFile, extraScriptFile));
+      .send(assembleStaffPage(storeId, title, bodyFile, scriptFile, scriptBundle));
 
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/ops", async (req, reply) => {
     if (!(await assertStaffStore(req, reply))) return;
-    return staffHtml(
-      reply,
-      req.params.storeId,
-      "オペレーション",
-      "staff-body-ops.html",
-      "staff-script-ops.js"
-    );
+    return staffHtml(reply, req.params.storeId, "オペレーション", "staff-body-ops.html", "staff-script-ops.js", {
+      prependFile: "staff-script-bill-register-shared.js",
+    });
   });
 
   /** 旧スタッフ「テイクアウト一覧」はオペ（卓・会計）に統合したためリダイレクト */
@@ -247,7 +258,9 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
 
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/reports", async (req, reply) => {
     if (!(await assertStaffStore(req, reply))) return;
-    return staffHtml(reply, req.params.storeId, "レポート", "staff-body-reports.html", "staff-script-reports.js");
+    return staffHtml(reply, req.params.storeId, "レポート", "staff-body-reports.html", "staff-script-reports.js", {
+      prependFile: "staff-script-bill-register-shared.js",
+    });
   });
 
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/billing", async (req, reply) => {

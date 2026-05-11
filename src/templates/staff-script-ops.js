@@ -1665,23 +1665,6 @@ function renderGrid() {
           const moneyHtml = multi
             ? "<span class=\"meta money\" style=\"font-size:0.68rem;color:#64748b\">詳細で切替・合計は出しません</span>"
             : "<span class=\"meta money\">" + yen(floorSessionTotal(primary)) + "</span>";
-          // #region agent log
-          if (multi) {
-            fetch("http://127.0.0.1:7264/ingest/3e55ed64-37c0-42a5-a321-4645c4275acf", {
-              method: "POST",
-              headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "4aded8" },
-              body: JSON.stringify({
-                sessionId: "4aded8",
-                location: "staff-script-ops.js:renderGrid",
-                message: "multi-session cell meta",
-                data: { tableId: t.id, sessionCount: sessList.length },
-                timestamp: Date.now(),
-                hypothesisId: "D",
-                runId: "pre-fix",
-              }),
-            }).catch(() => {});
-          }
-          // #endregion
           return (
             multLab +
             "<span class=\"meta " +
@@ -1759,59 +1742,9 @@ function renderMiniSessions() {
 }
 
 async function ensurePaymentMethods() {
-  // #region agent log
-  const __preLen = paymentMethodsCache.length;
-  fetch("http://127.0.0.1:7264/ingest/3e55ed64-37c0-42a5-a321-4645c4275acf", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "161e6e" },
-    body: JSON.stringify({
-      sessionId: "161e6e",
-      hypothesisId: "A",
-      location: "staff-script-ops.js:ensurePaymentMethods:entry",
-      message: "ensurePaymentMethods entry",
-      data: { preCacheLen: __preLen, storeId: String(typeof STORE !== "undefined" ? STORE : "") },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
   if (paymentMethodsCache.length) return;
   const rows = await api("/stores/" + encodeURIComponent(STORE) + "/payment-methods");
-  // #region agent log
-  fetch("http://127.0.0.1:7264/ingest/3e55ed64-37c0-42a5-a321-4645c4275acf", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "161e6e" },
-    body: JSON.stringify({
-      sessionId: "161e6e",
-      hypothesisId: "B",
-      location: "staff-script-ops.js:ensurePaymentMethods:afterApi",
-      message: "payment-methods response shape",
-      data: {
-        isArray: Array.isArray(rows),
-        type: typeof rows,
-        rowLen: Array.isArray(rows) ? rows.length : null,
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
   paymentMethodsCache = Array.isArray(rows) ? rows : [];
-  // #region agent log
-  try {
-    window.__dbgPmGlobalLen = paymentMethodsCache.length;
-  } catch (_) {}
-  fetch("http://127.0.0.1:7264/ingest/3e55ed64-37c0-42a5-a321-4645c4275acf", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "161e6e" },
-    body: JSON.stringify({
-      sessionId: "161e6e",
-      hypothesisId: "C",
-      location: "staff-script-ops.js:ensurePaymentMethods:afterAssign",
-      message: "cache after assign",
-      data: { newCacheLen: paymentMethodsCache.length },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
 }
 
 async function ensureBillForSession(session, table) {

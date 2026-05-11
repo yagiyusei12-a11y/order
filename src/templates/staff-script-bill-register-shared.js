@@ -245,35 +245,6 @@ async function mountRegisterFlow(panel, ctx) {
   const readOnly = !!ctx.readOnly;
   const LFB = (d) => BillRegisterShared.linesForTaxBreakdown(d, ctx.storeSettings);
   await ctx.ensurePaymentMethods();
-  // #region agent log
-  let __ctxPmLen = -1;
-  try {
-    __ctxPmLen = Array.isArray(ctx.paymentMethods) ? ctx.paymentMethods.length : -1;
-  } catch (_) {
-    __ctxPmLen = -2;
-  }
-  let __gLen = null;
-  try {
-    __gLen = typeof window !== "undefined" && window.__dbgPmGlobalLen != null ? window.__dbgPmGlobalLen : null;
-  } catch (_) {}
-  fetch("http://127.0.0.1:7264/ingest/3e55ed64-37c0-42a5-a321-4645c4275acf", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "161e6e" },
-    body: JSON.stringify({
-      sessionId: "161e6e",
-      hypothesisId: "A",
-      location: "staff-script-bill-register-shared.js:mountRegisterFlow:afterEnsure",
-      message: "ctx.paymentMethods len vs global cache len marker (post-getter fix expect staleMismatch false)",
-      data: {
-        ctxPmLen: __ctxPmLen,
-        dbgGlobalLen: __gLen,
-        staleMismatch: __gLen != null && __ctxPmLen !== __gLen,
-        runId: "post-fix",
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
   const switchPre = sessionSwitchPrefixHtml || "";
   let detail;
   if (detailPreloaded) {

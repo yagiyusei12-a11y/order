@@ -259,6 +259,47 @@
       color: var(--muted);
       margin-top: 0.1rem;
     }
+    .go-time-disc {
+      display: block;
+      line-height: 1.45;
+    }
+    .go-time-disc-normal {
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-decoration: line-through;
+      text-decoration-thickness: 1px;
+    }
+    .go-time-disc-arrow {
+      display: none;
+    }
+    .go-time-disc-now {
+      display: block;
+      font-size: 0.92rem;
+      font-weight: 800;
+      color: #ea580c;
+      margin-top: 0.12rem;
+    }
+    .go-time-disc .incl {
+      display: block;
+      font-size: 0.65rem;
+      font-weight: 500;
+      color: var(--muted);
+      margin-top: 0.12rem;
+    }
+    .detail-time-disc {
+      margin: 0.35rem 0 0.65rem;
+      font-size: 0.88rem;
+    }
+    .badge-time-disc {
+      font-size: 0.58rem;
+      font-weight: 800;
+      color: #fff7ed;
+      background: rgba(234, 88, 12, 0.88);
+      padding: 0.12rem 0.4rem;
+      border-radius: 4px;
+    }
 
     .badge-low { font-size: 0.6rem; font-weight: 700; color: #fde68a; background: rgba(180, 83, 9, 0.5); padding: 0.1rem 0.35rem; border-radius: 4px; }
     .badge-sold { font-size: 0.6rem; font-weight: 700; color: #fecaca; background: rgba(127, 29, 29, 0.6); padding: 0.1rem 0.35rem; border-radius: 4px; }
@@ -1782,22 +1823,64 @@
       );
     }
 
+    function guestTimeDiscountActive(item) {
+      if (!item) return false;
+      const orig = Number(item.originalTaxIncludedPrice);
+      const cur = Number(item.taxIncludedPrice != null ? item.taxIncludedPrice : item.price);
+      return Number.isFinite(orig) && orig > 0 && Number.isFinite(cur) && orig > cur;
+    }
+
+    function fmtGuestTimeDiscountPriceHtml(item) {
+      const orig = Number(item.originalTaxIncludedPrice);
+      const cur = Number(item.taxIncludedPrice != null ? item.taxIncludedPrice : item.price);
+      const mode = item.priceTaxMode === "exclusive" ? "exclusive" : menuPriceTaxMode;
+      let html =
+        "<span class=\"go-time-disc\">" +
+        "<span class=\"go-time-disc-normal\">通常価格 ¥" +
+        orig.toLocaleString("ja-JP") +
+        "</span>" +
+        "<span class=\"go-time-disc-now\">今の時間は ¥" +
+        cur.toLocaleString("ja-JP") +
+        "</span>";
+      if (mode === "exclusive") {
+        const base = Number(item.basePrice || 0);
+        html +=
+          "<span class=\"incl\">税抜 ¥" +
+          base.toLocaleString("ja-JP") +
+          "（今の時間の税込は ¥" +
+          cur.toLocaleString("ja-JP") +
+          "）</span>";
+      } else {
+        html += "<span class=\"incl\">（税込）</span>";
+      }
+      html += "</span>";
+      return html;
+    }
+
     function fmtItemPrice(item) {
       if (item.courseTier === "included") {
         if (!guestShowMenuPrices) return "<span class=\"course-included-price\">コース内</span>";
         const optLine = guestCourseIncludedChargeOptionExtras
           ? "<span class=\"incl\">オプション差額は追加になる場合があります</span>"
           : "<span class=\"incl\">オプション差額もコース内（0円）</span>";
+        const refLine = guestTimeDiscountActive(item)
+          ? "<span class=\"incl\">参考・" + fmtGuestTimeDiscountPriceHtml(item) + "</span>"
+          : "<span class=\"incl\">参考・メニュー税込 ¥" + Number(item.price || 0).toLocaleString("ja-JP") + "</span>";
         return (
           "<span class=\"course-included-price\">コース料に含む（本体追加0円）</span>" +
           optLine +
-          "<span class=\"incl\">参考・メニュー税込 ¥" +
-          Number(item.price || 0).toLocaleString("ja-JP") +
-          "</span>"
+          refLine
         );
       }
       if (!guestShowMenuPrices) {
         return item.courseTier === "addon" ? "追加料金" : "—";
+      }
+      if (guestTimeDiscountActive(item)) {
+        let core = fmtGuestTimeDiscountPriceHtml(item);
+        if (item.courseTier === "addon") {
+          core += " <span class=\"badge-course-add\" style=\"font-size:0.55rem;vertical-align:middle\">追加料金</span>";
+        }
+        return core;
       }
       const mode = item.priceTaxMode === "exclusive" ? "exclusive" : menuPriceTaxMode;
       let core = "";
@@ -3487,6 +3570,9 @@
         "<h2 class=\"detail-title\">" +
         escapeHtml(item.name) +
         "</h2>" +
+        (guestShowMenuPrices && guestTimeDiscountActive(item)
+          ? "<div class=\"detail-time-disc go-card-price\">" + fmtGuestTimeDiscountPriceHtml(item) + "</div>"
+          : "") +
         (item.description
           ? "<p class=\"detail-desc\">" + escapeHtml(item.description) + "</p>"
           : "") +
@@ -4205,6 +4291,12 @@
             const b = document.createElement("span");
             b.className = "badge-course-add";
             b.textContent = "追加料金";
+            badgeStack.appendChild(b);
+          }
+          if (guestTimeDiscountActive(it)) {
+            const b = document.createElement("span");
+            b.className = "badge-time-disc";
+            b.textContent = "時間割";
             badgeStack.appendChild(b);
           }
           media.appendChild(badgeStack);

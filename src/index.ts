@@ -12,7 +12,9 @@ import { registerPublicApi } from "./routes/public-api.js";
 import { registerReception } from "./routes/reception.js";
 import { registerTakeoutNet } from "./routes/takeout-net.js";
 import { registerWebUi } from "./routes/web-ui.js";
+import { Server as SocketIOServer } from "socket.io";
 import { prisma } from "./db.js";
+import { registerOpsSeatSocket } from "./lib/ops-seat-socket.js";
 import { runStockDailyResetForAllStores } from "./lib/stock-daily-reset.js";
 
 async function main(): Promise<void> {
@@ -68,6 +70,12 @@ async function main(): Promise<void> {
   const port = Number(process.env.PORT ?? 3000);
   const host = process.env.HOST ?? "0.0.0.0";
   await app.listen({ port, host });
+  const io = new SocketIOServer(app.server, {
+    path: "/socket.io",
+    serveClient: true,
+    cors: { origin: true, credentials: true },
+  });
+  registerOpsSeatSocket(io, app);
   app.log.info({ port, https: false }, "listening (TLS should be terminated at proxy/platform)");
 
   setInterval(() => {

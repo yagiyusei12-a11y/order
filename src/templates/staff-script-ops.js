@@ -72,6 +72,156 @@ function managerOpsAllowed() {
   return typeof window !== "undefined" && window.STAFF_ROLE === "manager";
 }
 
+let opsSocket = null;
+let opsSocketInitPromise = null;
+
+function loadSocketIoClient() {
+  return new Promise((resolve, reject) => {
+    if (typeof io !== "undefined") return resolve(io);
+    const existing = document.querySelector('script[data-ops-socket-io="1"]');
+    if (existing) {
+      existing.addEventListener("load", () =>
+        typeof io !== "undefined" ? resolve(io) : reject(new Error("socket.io client missing"))
+      );
+      existing.addEventListener("error", () => reject(new Error("socket.io script failed")));
+      return;
+    }
+    const s = document.createElement("script");
+    s.src = "/socket.io/socket.io.js";
+    s.async = true;
+    s.dataset.opsSocketIo = "1";
+    s.onload = () => (typeof io !== "undefined" ? resolve(io) : reject(new Error("socket.io client missing")));
+    s.onerror = () => reject(new Error("socket.io script failed"));
+    document.head.appendChild(s);
+  });
+}
+
+async function ensureOpsSocket() {
+  if (opsSocket?.connected) return opsSocket;
+  if (!opsSocketInitPromise) {
+    opsSocketInitPromise = (async () => {
+      const ioFn = await loadSocketIoClient();
+      opsSocket = ioFn({
+        path: "/socket.io",
+        withCredentials: true,
+        transports: ["websocket", "polling"],
+      });
+      return opsSocket;
+    })();
+  }
+  return opsSocketInitPromise;
+}
+
+function pickSessionForTable(table) {
+  const atTable = sessionsAtTable(table.id);
+  const openSorted = atTable
+    .filter((x) => x.status === "open")
+    .sort((a, b) => new Date(b.openedAt || 0).getTime() - new Date(a.openedAt || 0).getTime());
+  if (openSorted.length > 1) {
+    return openSorted.find((x) => x.id === selectedSessionIdOverride) || openSorted[0];
+  }
+  if (openSorted.length === 1) return openSorted[0];
+  return (
+    atTable.find((x) => x.status === "merged") ||
+    atTable.find((x) => x.status === "bashing_waiting") ||
+    atTable[0] ||
+    null
+  );
+}
+
+function openOpsDetailModal() {
+  const modal = document.getElementById("opsDetailModal");
+  if (!modal) return;
+  modal.hidden = false;
+  modal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("ops-detail-modal-open");
+}
+
+function hideOpsDetailModal() {
+  const modal = document.getElementById("opsDetailModal");
+  if (!modal) return;
+  modal.hidden = true;
+  modal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("ops-detail-modal-open");
+}
+
+function dismissOpsDetailModal() {
+  selectedTableId = null;
+  selectedSessionIdOverride = null;
+  hideOpsDetailModal();
+  const panel = document.getElementById("detailPanel");
+  if (panel) {
+    panel.innerHTML =
+      "<div class=\"detail-placeholder\">卓一覧からテーブルを選ぶと、会計機能が表示されます</div>";
+  }
+  renderGrid();
+}
+
+async function emitOpsSeatSelection() {
+  if (!selectedTableId) return;
+  const table = tablesCache.find((t) => t.id === selectedTableId);
+  if (!table) return;
+  const session = pickSessionForTable(table);
+  try {
+    const sock = await ensureOpsSocket();
+    if (!sock.connected) {
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("socket connect timeout")), 10000);
+        const onOk = () => {
+          clearTimeout(timer);
+          sock.off("connect_error", onErr);
+          resolve();
+        };
+        const onErr = (e) => {
+          clearTimeout(timer);
+          sock.off("connect", onOk);
+          reject(e);
+        };
+        sock.once("connect", onOk);
+        sock.once("connect_error", onErr);
+      });
+    }
+    sock.emit(
+      "ops:seat-select",
+      {
+        tableId: table.id,
+        sessionId: session?.id ?? null,
+        sessionStatus: session?.status ?? null,
+      },
+      (ack) => {
+        if (ack && ack.ok === false) log("席選択の送信: " + (ack.error || "失敗"));
+      }
+    );
+  } catch (e) {
+    console.warn("ops seat socket", e);
+  }
+}
+
+function selectOpsTable(tableId, sessionOverride) {
+  selectedTableId = tableId;
+  if (arguments.length >= 2) selectedSessionIdOverride = sessionOverride;
+  else selectedSessionIdOverride = null;
+  renderGrid();
+  openOpsDetailModal();
+  void emitOpsSeatSelection();
+}
+
+async function openOpsTableDetail(tableId, sessionOverride) {
+  selectOpsTable(tableId, sessionOverride);
+  await renderDetail();
+}
+
+(function initOpsDetailModal() {
+  const closeBtn = document.getElementById("opsDetailModalClose");
+  const backdrop = document.getElementById("opsDetailModalBackdrop");
+  if (closeBtn) closeBtn.onclick = () => dismissOpsDetailModal();
+  if (backdrop) backdrop.onclick = () => dismissOpsDetailModal();
+  document.addEventListener("keydown", (e) => {
+    const modal = document.getElementById("opsDetailModal");
+    if (e.key === "Escape" && modal && !modal.hidden) dismissOpsDetailModal();
+  });
+})();
+
 /** テイクアウト卓（卓バッシング対象外）。publicCode は卓行または session.table と一致 */
 function isTakeoutTablePublicCodeForStore(pc) {
   try {
@@ -225,6 +375,8 @@ function buildOpsRegisterMountContext(session, table, detailPreloaded) {
       openOpsInvoicePrintModal,
       setSelectedTableId(id) {
         selectedTableId = id;
+        openOpsDetailModal();
+        void emitOpsSeatSelection();
       },
       setSelectedSessionOverride(id) {
         selectedSessionIdOverride = id;
@@ -1745,10 +1897,7 @@ function renderGrid() {
       "</span>" +
       meta;
     btn.onclick = () => {
-      selectedTableId = t.id;
-      selectedSessionIdOverride = null;
-      renderGrid();
-      renderDetail().catch((e) => log(String(e.message || e)));
+      openOpsTableDetail(t.id, null).catch((e) => log(String(e.message || e)));
     };
     grid.appendChild(btn);
   }
@@ -1860,24 +2009,15 @@ function applyBillDetailToCaches(detail) {
 async function renderDetail() {
   const panel = document.getElementById("detailPanel");
   if (!selectedTableId) {
-    panel.innerHTML = "<div class=\"detail-placeholder\">左の卓一覧からテーブルを選ぶと、ここに会計機能が表示されます</div>";
+    hideOpsDetailModal();
+    panel.innerHTML =
+      "<div class=\"detail-placeholder\">卓一覧からテーブルを選ぶと、会計機能が表示されます</div>";
     return;
   }
+  openOpsDetailModal();
   const table = tablesCache.find((t) => t.id === selectedTableId);
   if (!table) return;
-  const atTable = sessionsAtTable(table.id);
-  const openSorted = atTable
-    .filter((x) => x.status === "open")
-    .sort((a, b) => new Date(b.openedAt || 0).getTime() - new Date(a.openedAt || 0).getTime());
-  let session =
-    openSorted.length > 1
-      ? openSorted.find((x) => x.id === selectedSessionIdOverride) || openSorted[0]
-      : openSorted.length === 1
-        ? openSorted[0]
-        : atTable.find((x) => x.status === "merged") ||
-          atTable.find((x) => x.status === "bashing_waiting") ||
-          atTable[0] ||
-          null;
+  const session = pickSessionForTable(table);
   if (!session) {
     let opts = "<option value=\"\">なし</option>";
     for (const c of coursesCache) {
@@ -2073,6 +2213,7 @@ async function renderDetail() {
   if (sw) {
     sw.onchange = async () => {
       selectedSessionIdOverride = sw.value || null;
+      void emitOpsSeatSelection();
       await loadAll();
     };
   }
@@ -2154,6 +2295,7 @@ async function loadAll() {
   try {
     if (typeof window !== "undefined" && window.__staffMeLoaded) await window.__staffMeLoaded;
   } catch (_) {}
+  void ensureOpsSocket();
   try {
     const [tablesRes, sessionsRes, coursesRes, billsRes, settingsRes] = await Promise.all([
       api("/stores/" + encodeURIComponent(STORE) + "/tables"),

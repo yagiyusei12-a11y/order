@@ -19,10 +19,16 @@
         <div id="openSessionsMini" style="margin-top:0.5rem;font-size:0.85rem"></div>
       </div>
     </div>
-    <div>
-      <h2 class="page-title" style="font-size:0.95rem">詳細・レジ</h2>
-      <div id="detailPanel" class="detail-panel">
-        <div class="detail-placeholder">左の卓一覧からテーブルを選ぶと、ここに会計機能が表示されます</div>
+  </div>
+  <div id="opsDetailModal" class="ops-detail-modal" hidden aria-hidden="true">
+    <div id="opsDetailModalBackdrop" class="ops-detail-modal__backdrop" aria-hidden="true"></div>
+    <div class="ops-detail-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="opsDetailModalTitle">
+      <header class="ops-detail-modal__head">
+        <h2 id="opsDetailModalTitle" class="ops-detail-modal__title">卓・会計</h2>
+        <button type="button" class="btn-ghost ops-detail-modal__close" id="opsDetailModalClose" aria-label="閉じる">閉じる</button>
+      </header>
+      <div id="detailPanel" class="detail-panel ops-detail-modal__body">
+        <div class="detail-placeholder">卓一覧からテーブルを選ぶと、会計機能が表示されます</div>
       </div>
     </div>
   </div>

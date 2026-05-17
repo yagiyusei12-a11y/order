@@ -218,6 +218,7 @@ type MenuItemPatchData = {
   sellKind?: string;
   containsAlcohol?: boolean;
   kitchenServeFast?: boolean;
+  hallPrepCheck?: boolean;
 };
 
 type ValidatedTimeDiscountRow = {
@@ -380,6 +381,10 @@ async function buildMenuItemPatchData(
   if (body && "kitchenServeFast" in body) {
     if (typeof body.kitchenServeFast !== "boolean") return { error: "kitchenServeFast must be boolean" };
     data.kitchenServeFast = body.kitchenServeFast;
+  }
+  if (body && "hallPrepCheck" in body) {
+    if (typeof body.hallPrepCheck !== "boolean") return { error: "hallPrepCheck must be boolean" };
+    data.hallPrepCheck = body.hallPrepCheck;
   }
   return { data };
 }
@@ -810,6 +815,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       containsAlcohol?: boolean;
       allowTakeout?: boolean;
       kitchenServeFast?: boolean;
+      hallPrepCheck?: boolean;
     };
   }>("/stores/:storeId/menu/items", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
@@ -895,6 +901,12 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       if (typeof k !== "boolean") return reply.code(400).send({ error: "kitchenServeFast must be boolean" });
       kitchenServeFastFlag = k;
     }
+    let hallPrepCheckFlag = false;
+    if (req.body && typeof req.body === "object" && "hallPrepCheck" in req.body) {
+      const h = (req.body as { hallPrepCheck?: unknown }).hallPrepCheck;
+      if (typeof h !== "boolean") return reply.code(400).send({ error: "hallPrepCheck must be boolean" });
+      hallPrepCheckFlag = h;
+    }
     let recipe: string | null | undefined = undefined;
     if (req.body && "recipe" in req.body) {
       if (req.body.recipe === null) recipe = null;
@@ -919,6 +931,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
         containsAlcohol: containsAlcoholFlag,
         allowTakeout: allowTakeoutFlag,
         kitchenServeFast: kitchenServeFastFlag,
+        hallPrepCheck: hallPrepCheckFlag,
       },
     });
     return item;
@@ -1093,6 +1106,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
             cookTimerSec: item.cookTimerSec,
             cookTimerSec2: item.cookTimerSec2,
             kitchenServeFast: item.kitchenServeFast,
+            hallPrepCheck: item.hallPrepCheck,
             stockDailyResetQty: item.stockDailyResetQty,
           },
         });
@@ -1408,6 +1422,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       sellKind?: "single" | "set";
       containsAlcohol?: boolean;
       kitchenServeFast?: boolean;
+      hallPrepCheck?: boolean;
     };
   }>("/stores/:storeId/menu/items/:itemId", async (req, reply) => {
     const item = await prisma.menuItem.findFirst({
@@ -1773,6 +1788,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
           cookTimerSec2: src.cookTimerSec2,
           containsAlcohol: src.containsAlcohol,
           kitchenServeFast: src.kitchenServeFast,
+          hallPrepCheck: src.hallPrepCheck,
           stockDailyResetQty: src.stockDailyResetQty,
         },
       });

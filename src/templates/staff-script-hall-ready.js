@@ -107,12 +107,33 @@ function readyAtMs(ln) {
   return new Date(ln.orderCreatedAt || 0).getTime();
 }
 
+function orderCreatedAtMs(ln) {
+  const t = new Date(ln.orderCreatedAt || 0).getTime();
+  return Number.isNaN(t) ? 0 : t;
+}
+
+function isHallPrepEarlyLine(ln) {
+  return ln && ln.status !== "done" && ln.status !== "served";
+}
+
 function servedAtMs(ln) {
   if (ln.servedAt) {
     const t = new Date(ln.servedAt).getTime();
     if (!Number.isNaN(t)) return t;
   }
   return readyAtMs(ln);
+}
+
+function formatOrderCreatedLabel(ln) {
+  const d = new Date(ln.orderCreatedAt || 0);
+  if (Number.isNaN(d.getTime())) return "時刻未記録";
+  return d.toLocaleString("ja-JP", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 function formatReadyLabel(ln) {
@@ -300,8 +321,16 @@ function renderHallList() {
           return String(b.id).localeCompare(String(a.id));
         })
       : [...filtered].sort((a, b) => {
-          const d = readyAtMs(a) - readyAtMs(b);
-          if (d !== 0) return d;
+          const ae = isHallPrepEarlyLine(a);
+          const be = isHallPrepEarlyLine(b);
+          if (ae !== be) return ae ? -1 : 1;
+          if (ae) {
+            const d = orderCreatedAtMs(a) - orderCreatedAtMs(b);
+            if (d !== 0) return d;
+          } else {
+            const d = readyAtMs(a) - readyAtMs(b);
+            if (d !== 0) return d;
+          }
           return String(a.id).localeCompare(String(b.id));
         });
 
@@ -312,7 +341,7 @@ function renderHallList() {
           "<div class=\"hall-ready-empty\"><div class=\"ico\">✓</div><div>提供済みの行はありません</div><p class=\"muted\" style=\"margin:0.5rem 0 0;font-size:0.8rem\">提供待ちで「提供済み」にするとここに表示されます</p></div>";
       } else {
         root.innerHTML =
-          "<div class=\"hall-ready-empty\"><div class=\"ico\">✓</div><div>調理済みの行はありません</div><p class=\"muted\" style=\"margin:0.5rem 0 0;font-size:0.8rem\">キッチンで「調理済」にするとここに表示されます</p></div>";
+          "<div class=\"hall-ready-empty\"><div class=\"ico\">✓</div><div>提供待ちの行はありません</div><p class=\"muted\" style=\"margin:0.5rem 0 0;font-size:0.8rem\">キッチンで「調理済」になるか、商品マスタで「ホールでも準備」がオンの商品が注文されるとここに表示されます</p></div>";
       }
     } else {
       root.innerHTML =
@@ -344,7 +373,8 @@ function renderHallList() {
 
     for (const ln of g.lines) {
       const block = document.createElement("div");
-      block.className = "hall-ready-block";
+      const early = isHallPrepEarlyLine(ln);
+      block.className = early ? "hall-ready-block hall-ready-block-early" : "hall-ready-block";
 
       const title = document.createElement("div");
       title.className = "name";
@@ -369,12 +399,22 @@ function renderHallList() {
       qch.className = "hall-ready-chip";
       qch.textContent = "×" + (ln.qty != null ? ln.qty : 1);
       chips.appendChild(qch);
+      if (early) {
+        const ech = document.createElement("span");
+        ech.className = "hall-ready-chip hall-ready-chip-early";
+        ech.textContent = "調理前";
+        chips.appendChild(ech);
+      }
       if (chips.childNodes.length) block.appendChild(chips);
 
       const time = document.createElement("div");
       time.className = "hall-ready-time";
       time.textContent =
-        hallTab === "served" ? "提供済み " + formatServedLabel(ln) : "調理完了 " + formatReadyLabel(ln);
+        hallTab === "served"
+          ? "提供済み " + formatServedLabel(ln)
+          : early
+            ? "注文済み（キッチン調理中） " + formatOrderCreatedLabel(ln)
+            : "調理完了 " + formatReadyLabel(ln);
       block.appendChild(time);
 
       const extra = orderLineExtraSubtext(ln.lineExtra);
@@ -431,11 +471,11 @@ async function refreshHall() {
   try {
     await ensureMeta();
     const base = "/stores/" + encodeURIComponent(STORE) + "/kitchen/order-lines?lineStatus=";
-    const [doneRes, servedRes] = await Promise.all([
-      api(base + encodeURIComponent("done")),
+    const [waitRes, servedRes] = await Promise.all([
+      api(base + encodeURIComponent("hall_wait")),
       api(base + encodeURIComponent("served")),
     ]);
-    lastDoneLines = doneRes.lines || [];
+    lastDoneLines = waitRes.lines || [];
     lastServedLines = servedRes.lines || [];
     renderHallList();
   } catch (e) {

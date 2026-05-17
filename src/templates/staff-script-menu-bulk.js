@@ -315,6 +315,9 @@ async function applyBulk() {
   if ($("applyAlcohol").checked) {
     patch.containsAlcohol = $("bulkAlcohol").value === "true";
   }
+  if ($("applyHallPrep").checked) {
+    patch.hallPrepCheck = $("bulkHallPrep").value === "true";
+  }
   if ($("applyTimeDisc").checked) {
     try {
       patch.timeDiscounts = collectBulkTimeDiscountsForPatch();

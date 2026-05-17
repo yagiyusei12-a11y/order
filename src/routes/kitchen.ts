@@ -17,6 +17,17 @@ import { tableDisplayLabel } from "../lib/table-display-code.js";
 
 const LINE_STATUSES = ["queued", "cooking", "done", "served"] as const;
 
+/** ホール提供待ち API（lineStatus=hall_wait）で明細行を出すか */
+function includeLineInHallWait(
+  dbStatus: string,
+  parentHallPrep: boolean,
+  rowHallPrep: boolean,
+): boolean {
+  if (dbStatus === "done") return true;
+  if (dbStatus !== "queued" && dbStatus !== "cooking") return false;
+  return parentHallPrep || rowHallPrep;
+}
+
 function kitchenOrderLineTableLabel(
   sessionTable: { name: string; publicCode: string | null },
   sourceTable: { name: string; publicCode: string | null } | null,
@@ -75,13 +86,37 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
     if (!store) return reply.code(404).send({ error: "store not found" });
 
     const lineStatus = req.query.lineStatus;
-    const whereLine =
-      lineStatus && LINE_STATUSES.includes(lineStatus as (typeof LINE_STATUSES)[number])
+    const hallWaitMode = lineStatus === "hall_wait";
+    const whereLine: Prisma.OrderLineWhereInput = hallWaitMode
+      ? {
+          OR: [
+            { status: "done" },
+            {
+              status: { in: ["queued", "cooking"] },
+              OR: [
+                { menuItem: { hallPrepCheck: true } },
+                {
+                  menuItem: {
+                    sellKind: "set",
+                    setSteps: {
+                      some: {
+                        choices: {
+                          some: { componentMenuItem: { hallPrepCheck: true } },
+                        },
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        }
+      : lineStatus && LINE_STATUSES.includes(lineStatus as (typeof LINE_STATUSES)[number])
         ? { status: lineStatus }
         : { status: { in: ["queued", "cooking", "done"] } };
 
     const orderBy =
-      lineStatus === "done"
+      lineStatus === "done" || hallWaitMode
         ? ([{ readyAt: { sort: "asc" as const, nulls: "last" as const } }, { id: "asc" as const }] as const)
         : lineStatus === "served"
           ? ([{ servedAt: { sort: "desc" as const, nulls: "last" as const } }, { id: "desc" as const }] as const)
@@ -158,7 +193,12 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
       const course =
         l.order.session.course && l.order.session.courseId ? l.order.session.course : null;
 
+      const parentHallPrep = Boolean(l.menuItem?.hallPrepCheck);
+
       if (picks.length === 0 || resolved.length === 0) {
+        if (hallWaitMode && !includeLineInHallWait(l.status, parentHallPrep, parentHallPrep)) {
+          continue;
+        }
         outLines.push({
           id: l.id,
           kitchenPatchLineId: l.id,
@@ -211,6 +251,7 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
           readyAt: l.readyAt,
           servedAt: l.servedAt,
           kitchenServeFast: Boolean(l.menuItem?.kitchenServeFast),
+          hallPrepCheck: parentHallPrep,
         });
         continue;
       }
@@ -231,6 +272,10 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
       });
       for (const p of resolved) {
         const mi = compMenuById.get(p.menuItemId)!;
+        const rowHallPrep = Boolean(mi.hallPrepCheck);
+        if (hallWaitMode && !includeLineInHallWait(l.status, parentHallPrep, rowHallPrep)) {
+          continue;
+        }
         outLines.push({
           id: `${l.id}::${p.menuItemId}`,
           kitchenPatchLineId: l.id,
@@ -269,11 +314,12 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
           readyAt: l.readyAt,
           servedAt: l.servedAt,
           kitchenServeFast: Boolean(mi.kitchenServeFast),
+          hallPrepCheck: rowHallPrep || parentHallPrep,
         });
       }
     }
 
-    if (lineStatus !== "done" && lineStatus !== "served") {
+    if (lineStatus !== "done" && lineStatus !== "served" && !hallWaitMode) {
       const tagged = outLines.map((line, i) => ({ line, i }));
       tagged.sort((a, b) => {
         const fa = a.line.kitchenServeFast ? 1 : 0;

@@ -379,6 +379,8 @@ model MenuItem {
   allowTakeout      Boolean         @default(false)
   /// キッチンで優先表示（早く出す）。注文明細行はこのフラグで並び替え
   kitchenServeFast  Boolean         @default(false)
+  /// ホール提供待ち：調理済み前でも hall-ready に表示
+  hallPrepCheck     Boolean         @default(false)
   /// メニュー保存の楽観ロック（PATCH 時 ifMasterVersion と照合）
   masterVersion     Int             @default(1)
   category          MenuCategory    @relation(fields: [categoryId], references: [id], onDelete: Cascade)

@@ -24,8 +24,15 @@ import {
 } from "../lib/store-wall-time.js";
 import { displayTableCode, tableDisplayLabel } from "../lib/table-display-code.js";
 import { sendMailSafe } from "../lib/mail.js";
+import {
+  buildTodayReceptionShiftKey,
+  computeDefaultSeatsForShift,
+  mergeShiftSeatsWithLiveDerived,
+  syncReceptionShiftSeatsForTable,
+  type ReceptionSeatStatus,
+} from "../lib/reception-seat-state.js";
 
-type SeatStatus = "vacant" | "reserved" | "occupied" | "cleaning" | "closed";
+type SeatStatus = ReceptionSeatStatus;
 
 /**
  * If-None-Match 用 ETag。Node の OutgoingMessage はヘッダ値を Latin-1 扱いのため、
@@ -45,9 +52,7 @@ function receptionLunchEndHour(configData: Record<string, unknown>): number {
 }
 
 function buildTodayShiftKey(timeZone: string, lunchEndHour: number): string {
-  const { dateYmd, timeHHMM } = storeNowWallClock(timeZone);
-  const shift = shiftFromTimeHHMM(timeHHMM, lunchEndHour) ?? "dinner";
-  return `${dateYmd}_${shift}`;
+  return buildTodayReceptionShiftKey(timeZone, lunchEndHour);
 }
 
 function parseShiftKey(shiftKey: string): { date: string; shift: "lunch" | "dinner" } | null {
@@ -437,161 +442,6 @@ async function ensureShift(storeId: string, shiftKey: string): Promise<void> {
   }
 }
 
-async function computeDefaultSeatsForShift(storeId: string): Promise<
-  {
-    id: string;
-    status: SeatStatus;
-    current: number;
-    cleanStart: number | null;
-    entryTime: number | null;
-    capacity: number;
-    mergeWith: string[];
-    seatType: string;
-  }[]
-> {
-  const tables = await prisma.table.findMany({
-    where: { storeId, active: true },
-    orderBy: { sortOrder: "asc" },
-    select: { id: true, publicCode: true, capacity: true, mergeWith: true, seatType: true },
-  });
-  const sessions = await prisma.diningSession.findMany({
-    where: { storeId, status: { in: ["open", "bashing_waiting", "merged"] } },
-    select: { id: true, tableId: true, status: true, guestCount: true, openedAt: true },
-  });
-  const sessByTableId = new Map(sessions.map((s) => [s.tableId, s]));
-  const out: {
-    id: string;
-    status: SeatStatus;
-    current: number;
-    cleanStart: number | null;
-    entryTime: number | null;
-    capacity: number;
-    mergeWith: string[];
-    seatType: string;
-  }[] = [];
-  for (const t of tables) {
-    const pc = String(t.publicCode ?? "").trim();
-    if (!pc) continue;
-    const seatType = String(t.seatType ?? "").trim();
-    // 受付マップは有効な publicCode を持つ全卓を載せる（ネット予約の卓コード規則は isNetReserveTableRow 側）。
-    const s = sessByTableId.get(t.id);
-    const mergeWith = Array.isArray(t.mergeWith)
-      ? (t.mergeWith as unknown[]).filter((x) => typeof x === "string") as string[]
-      : [];
-    const capacity = Math.max(1, Number.isFinite(Number(t.capacity)) ? Number(t.capacity) : 2);
-    if (!s) {
-      out.push({
-        id: pc,
-        status: "vacant",
-        current: 0,
-        cleanStart: null,
-        entryTime: null,
-        capacity,
-        mergeWith,
-        seatType,
-      });
-      continue;
-    }
-    if (s.status === "bashing_waiting") {
-      out.push({
-        id: pc,
-        status: "cleaning",
-        current: Number(s.guestCount || 0),
-        cleanStart: Date.now(),
-        entryTime: s.openedAt ? s.openedAt.getTime() : null,
-        capacity,
-        mergeWith,
-        seatType,
-      });
-    } else {
-      // merged（他卓に合算中）も卓は占有のまま
-      out.push({
-        id: pc,
-        status: "occupied",
-        current: Number(s.guestCount || 0),
-        cleanStart: null,
-        entryTime: s.openedAt ? s.openedAt.getTime() : null,
-        capacity,
-        mergeWith,
-        seatType,
-      });
-    }
-  }
-  return out;
-}
-
-type DerivedSeatRow = Awaited<ReturnType<typeof computeDefaultSeatsForShift>>[number];
-
-/**
- * オペ・卓QR等で DiningSession が変わっても、保存済み receptionShift.seats が古いままになる。
- * DB のライブ状態（derived）で席の占有・清掃を上書きし、予約ブロック処理の前に合わせる。
- * reserved は derived が vacant のとき維持（applyReservationBlocksToSeats が後段で再適用）。
- */
-function seatRowFromDerived(d: DerivedSeatRow): Record<string, unknown> {
-  return {
-    id: d.id,
-    status: d.status,
-    current: d.current,
-    cleanStart: d.cleanStart,
-    entryTime: d.entryTime,
-    capacity: d.capacity,
-    mergeWith: d.mergeWith,
-    seatType: d.seatType,
-  };
-}
-
-function mergeShiftSeatsWithLiveDerived(seats: unknown[], derived: DerivedSeatRow[]): unknown[] {
-  const byId = new Map(derived.map((d) => [d.id, d]));
-  const merged = seats.map((row) => {
-    if (!row || typeof row !== "object" || Array.isArray(row)) return row;
-    const o = { ...(row as Record<string, unknown>) };
-    const id = typeof o.id === "string" ? o.id : "";
-    const d = id ? byId.get(id) : undefined;
-    if (!d) return row;
-    if (o.status === "reserved" && d.status === "vacant") {
-      o.capacity = d.capacity;
-      o.mergeWith = d.mergeWith;
-      o.seatType = d.seatType;
-      return o;
-    }
-    if (d.status === "occupied" || d.status === "cleaning") {
-      o.status = d.status;
-      o.current = d.current;
-      o.cleanStart = d.cleanStart;
-      o.entryTime = d.entryTime;
-      o.capacity = d.capacity;
-      o.mergeWith = d.mergeWith;
-      o.seatType = d.seatType;
-      return o;
-    }
-    if (o.status === "occupied" || o.status === "cleaning") {
-      o.status = d.status;
-      o.current = d.current;
-      o.cleanStart = d.cleanStart;
-      o.entryTime = d.entryTime;
-      o.capacity = d.capacity;
-      o.mergeWith = d.mergeWith;
-      o.seatType = d.seatType;
-    } else {
-      o.capacity = d.capacity;
-      o.mergeWith = d.mergeWith;
-      o.seatType = d.seatType;
-    }
-    return o;
-  });
-  const seen = new Set<string>();
-  for (const row of merged) {
-    if (!row || typeof row !== "object" || Array.isArray(row)) continue;
-    const id = typeof (row as Record<string, unknown>).id === "string" ? String((row as Record<string, unknown>).id) : "";
-    if (id) seen.add(id);
-  }
-  const extra: unknown[] = [];
-  for (const d of derived) {
-    if (!seen.has(d.id)) extra.push(seatRowFromDerived(d));
-  }
-  return extra.length ? [...merged, ...extra] : merged;
-}
-
 async function syncSeatToSessions(storeId: string, seatId: string, next: SeatStatus, current: number): Promise<void> {
   const table = await prisma.table.findFirst({
     where: { storeId, active: true, publicCode: seatId },
@@ -645,6 +495,7 @@ async function syncSeatToSessions(storeId: string, seatId: string, next: SeatSta
       await prisma.diningSession.update({ where: { id: bash.id }, data: { status: "closed", closedAt: new Date() } });
     }
   }
+  await syncReceptionShiftSeatsForTable(storeId, table.id).catch(() => {});
 }
 
 export async function registerReception(app: FastifyInstance): Promise<void> {

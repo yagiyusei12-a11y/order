@@ -23,6 +23,7 @@ import { assertManagerRole } from "../lib/staff-role.js";
 import { isTakeoutTablePublicCode } from "../lib/takeout-table-code.js";
 import { firstSalesOrderByTime } from "../lib/first-sales-order.js";
 import { orderLineNetAfterLineDiscount, sumOrderLineNetsByTaxRate } from "../lib/report-line-tax.js";
+import { syncReceptionShiftSeatsForTable } from "../lib/reception-seat-state.js";
 
 type SessionForPreview = {
   guestCount: number;
@@ -1773,6 +1774,13 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       where: { id: bill.id },
       include: { payments: true },
     });
+    if (updated?.status === "settled" && updated.sessionId) {
+      const sess = await prisma.diningSession.findFirst({
+        where: { id: updated.sessionId, storeId: bill.storeId },
+        select: { tableId: true },
+      });
+      if (sess) await syncReceptionShiftSeatsForTable(bill.storeId, sess.tableId).catch(() => {});
+    }
     const paidTotal = updated!.payments.reduce((s, p) => s + (p.voidedAt ? 0 : p.amount), 0);
     return { payments: created, bill: { ...updated, paidTotal, remainder: updated!.totalAmount - paidTotal } };
   });

@@ -3,6 +3,7 @@ import { prisma } from "../db.js";
 import { computeCourseSessionTotal } from "../lib/course-pricing.js";
 import { computeSessionSuggestedTotal, parseBillDiscount } from "../lib/ops-discount.js";
 import { openSessionForTable } from "../lib/open-table-session.js";
+import { syncReceptionShiftSeatsForTable } from "../lib/reception-seat-state.js";
 import {
   isBillCorrectionAllowed,
   mergeStoreSettings,
@@ -480,6 +481,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
         where: { id: session.id },
         data: { status: "closed", closedAt: new Date() },
       });
+      await syncReceptionShiftSeatsForTable(session.storeId, session.tableId).catch(() => {});
       return updated;
     }
   );
@@ -497,6 +499,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
         where: { id: session.id },
         data: { status: "bashing_waiting" },
       });
+      await syncReceptionShiftSeatsForTable(session.storeId, session.tableId).catch(() => {});
       return updated;
     }
   );

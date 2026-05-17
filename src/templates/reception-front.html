@@ -529,7 +529,13 @@
         return { ...s, status: "reserved", current: perSeatNum };
       });
       const updatedWaiting = shiftData.waiting || [];
-      if (isReserved) updatedWaiting.push({ seat: ids.join(","), name: "案内済み", num: num, startTime: time, alerted: false });
+      updatedWaiting.push({
+        seat: ids.join(","),
+        name: "案内済み",
+        num: num,
+        startTime: time || "",
+        alerted: false,
+      });
 
       try {
         await apiEvent({ type: "updateAll", shiftKey, ifShiftUpdatedAt, seats: updatedSeats, waiting: updatedWaiting, newEntry: { seat: ids.join("、"), num: num } });

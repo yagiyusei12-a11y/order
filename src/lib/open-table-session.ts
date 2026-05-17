@@ -1,6 +1,7 @@
 import type { Course, CoursePriceTier, DiningSession } from "@prisma/client";
 import { prisma } from "../db.js";
 import { resolveCourseAndTierForSession } from "./course-tier-resolve.js";
+import { syncReceptionShiftSeatsForTable } from "./reception-seat-state.js";
 import { newGuestToken } from "./token.js";
 
 export type OpenSessionResult =
@@ -75,6 +76,7 @@ export async function openSessionForTable(options: {
   });
   if (openOnTable) {
     if (mode === "reuseIfOpen" && !options.skipReuse) {
+      await syncReceptionShiftSeatsForTable(storeId, table.id).catch(() => {});
       return { ok: true, session: openOnTable, reused: true };
     }
     if (mode === "failIfOpen") {
@@ -143,6 +145,7 @@ export async function openSessionForTable(options: {
     include: { course: true, coursePriceTier: true },
   });
 
+  await syncReceptionShiftSeatsForTable(storeId, table.id).catch(() => {});
   return { ok: true, session, reused: false };
 }
 

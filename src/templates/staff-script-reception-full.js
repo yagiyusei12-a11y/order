@@ -359,7 +359,7 @@ function applyWalkInReservedHighlights(waiting) {
     if (!id) return;
     const st = seatStates[id];
     if (!st) return;
-    if (st.status === "vacant" || st.status === "reserved") {
+    if (st.status === "vacant") {
       seatStates[id] = { ...st, status: "reserved" };
     }
   };
@@ -734,7 +734,7 @@ async function loadData() {
       .filter((r) => r.date === d && r.shift === s && r.status !== "キャンセル")
       .sort((a, b) => String(a.time || "").localeCompare(String(b.time || "")));
     resList.forEach((r) => {
-      if (r.status !== "予約確定" && r.status !== "来店済み") return;
+      if (r.status !== "予約確定") return;
       (r.seats || []).forEach((seatId) => {
         const id = resolveSeatStateId(seatId);
         const st = seatStates[id];

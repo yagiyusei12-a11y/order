@@ -117,7 +117,7 @@ function validateHandyOptionSelections(groups, selections) {
     incoming.set(row.optionGroupId, ids);
   }
   for (const g of groups) {
-    const picked = incoming.has(g.id) ? incoming.get(g.id)! : [];
+    const picked = incoming.has(g.id) ? incoming.get(g.id) || [] : [];
     const allowed = new Set(g.items.map((i) => i.id));
     for (const id of picked) {
       if (!allowed.has(id)) {
@@ -990,12 +990,18 @@ if (handyStickySubmitEl) handyStickySubmitEl.onclick = () => submitOrder();
 })();
 
 (async () => {
+  wireHandyEatModeRadios();
+  const sessionsPromise = loadSessions().catch((e) => log(String(e.message || e)));
   try {
-    wireHandyEatModeRadios();
     await loadMenuAndOptions();
     renderItems();
     renderCart();
-    await Promise.all([loadSessions(), loadCustomers()]);
+  } catch (e) {
+    log(String(e.message || e));
+  }
+  await sessionsPromise;
+  try {
+    await loadCustomers();
   } catch (e) {
     log(String(e.message || e));
   }

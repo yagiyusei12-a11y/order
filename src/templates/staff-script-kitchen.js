@@ -1533,20 +1533,6 @@ function renderKitList() {
   finishCookTimerUi();
 }
 
-async function refreshChips() {
-  const bar = document.getElementById("chipBar");
-  if (!bar) return;
-  try {
-    const data = await api("/stores/" + encodeURIComponent(STORE) + "/tables");
-    const tables = (data.tables || []).filter((t) => t.active);
-    bar.innerHTML = tables
-      .map((t) => "<span class=\"chip\">" + escapeHtml(displayTableCode(t.publicCode)) + "</span>")
-      .join("");
-  } catch {
-    bar.innerHTML = "";
-  }
-}
-
 async function refreshKitIntervalFromServer() {
   try {
     const d = await api("/stores/" + encodeURIComponent(STORE) + "/settings");
@@ -1862,7 +1848,6 @@ document.getElementById("btnRefKit").onclick = () => {
       });
     })
     .catch((e) => log(String(e.message || e)));
-  refreshChips().catch(() => {});
 };
 
 document.getElementById("btnKitSummary").onclick = () => toggleSummaryMode();
@@ -1939,4 +1924,3 @@ refreshKitIntervalFromServer()
     return refreshKitchen();
   })
   .catch((e) => log(String(e.message || e)));
-refreshChips().catch(() => {});

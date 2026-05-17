@@ -27,6 +27,45 @@ function kitchenOrderLineTableLabel(
   return tableDisplayLabel(sessionTable.name, sessionTable.publicCode);
 }
 
+/** soldout=残数0のみ（ゲストに売り切れ表示） / zero=残数0＋販売停止 */
+type KitchenCancelStockMode = "soldout" | "zero";
+
+function parseKitchenCancelStockMode(body: unknown): KitchenCancelStockMode {
+  const m = (body as { stockMode?: string } | null | undefined)?.stockMode;
+  return m === "soldout" ? "soldout" : "zero";
+}
+
+async function applyMenuItemStockAfterKitchenCancel(
+  tx: Prisma.TransactionClient,
+  storeId: string,
+  menuItemId: string,
+  qtyRestore: number,
+  stockMode: KitchenCancelStockMode,
+): Promise<void> {
+  const item = await tx.menuItem.findFirst({
+    where: { id: menuItemId, category: { storeId } },
+  });
+  if (!item) return;
+
+  if (item.stockQty !== null && qtyRestore > 0) {
+    await tx.menuItem.update({
+      where: { id: item.id },
+      data: { stockQty: { increment: qtyRestore } },
+    });
+  }
+  if (stockMode === "soldout") {
+    await tx.menuItem.update({
+      where: { id: item.id },
+      data: { stockQty: 0 },
+    });
+    return;
+  }
+  await tx.menuItem.update({
+    where: { id: item.id },
+    data: { stockQty: 0, isAvailable: false },
+  });
+}
+
 export async function registerKitchen(app: FastifyInstance): Promise<void> {
   app.get<{
     Params: { storeId: string };
@@ -371,10 +410,12 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
     return updated;
   });
 
-  /** 在庫なし等: 明細キャンセル＋商品を在庫0・販売停止（ゲスト等から注文不可） */
+  /** 在庫なし等: 明細キャンセル＋商品の在庫処理（stockMode: soldout | zero） */
   app.post<{
     Params: { storeId: string; lineId: string };
+    Body: { stockMode?: string };
   }>("/stores/:storeId/kitchen/order-lines/:lineId/cancel-stockout", async (req, reply) => {
+    const stockMode = parseKitchenCancelStockMode(req.body);
     const line = await prisma.orderLine.findFirst({
       where: {
         id: req.params.lineId,
@@ -438,15 +479,13 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
             });
           }
         }
-        const setItem = await tx.menuItem.findFirst({
-          where: { id: parent.menuItemId!, category: { storeId: req.params.storeId } },
-        });
-        if (setItem) {
-          await tx.menuItem.update({
-            where: { id: setItem.id },
-            data: { stockQty: 0, isAvailable: false },
-          });
-        }
+        await applyMenuItemStockAfterKitchenCancel(
+          tx,
+          req.params.storeId,
+          parent.menuItemId!,
+          parent.qty,
+          stockMode,
+        );
         return tx.orderLine.findFirstOrThrow({ where: { id: parent.id } });
       }
 
@@ -462,21 +501,13 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
       });
 
       if (line.menuItemId) {
-        const item = await tx.menuItem.findFirst({
-          where: { id: line.menuItemId, category: { storeId: req.params.storeId } },
-        });
-        if (item) {
-          if (item.stockQty !== null) {
-            await tx.menuItem.update({
-              where: { id: item.id },
-              data: { stockQty: { increment: line.qty } },
-            });
-          }
-          await tx.menuItem.update({
-            where: { id: item.id },
-            data: { stockQty: 0, isAvailable: false },
-          });
-        }
+        await applyMenuItemStockAfterKitchenCancel(
+          tx,
+          req.params.storeId,
+          line.menuItemId,
+          line.qty,
+          stockMode,
+        );
       }
 
       return next;

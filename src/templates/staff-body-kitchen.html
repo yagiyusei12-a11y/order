@@ -367,6 +367,63 @@
       color: #b91c1c;
       font-weight: 900;
     }
+    /* キッチン：キャンセル時の在庫選択 */
+    .kit-cancel-stock-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 10060;
+      background: rgba(15, 23, 42, 0.52);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.85rem;
+      box-sizing: border-box;
+    }
+    .kit-cancel-stock-modal-card {
+      width: 100%;
+      max-width: 22rem;
+      background: var(--surface);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      box-shadow: 0 12px 40px rgba(15, 23, 42, 0.22);
+      padding: 1rem 1rem 0.85rem;
+    }
+    .kit-cancel-stock-modal-title {
+      margin: 0 0 0.5rem;
+      font-size: 1rem;
+      font-weight: 800;
+      color: var(--accent);
+    }
+    .kit-cancel-stock-modal-detail {
+      margin: 0 0 0.55rem;
+      font-size: 0.88rem;
+      line-height: 1.5;
+      white-space: pre-line;
+    }
+    .kit-cancel-stock-modal-hint {
+      margin: 0 0 0.35rem;
+      font-size: 0.82rem;
+    }
+    .kit-cancel-stock-modal-opt {
+      margin: 0 0 0.2rem;
+      font-size: 0.78rem;
+      line-height: 1.4;
+    }
+    .kit-cancel-stock-modal-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      margin-top: 0.75rem;
+    }
+    .kit-cancel-stock-modal-primary,
+    .kit-cancel-stock-modal-secondary,
+    .kit-cancel-stock-modal-back {
+      width: 100%;
+    }
+    .kit-cancel-stock-modal-back {
+      margin-top: 0.15rem;
+    }
+
     /* キッチン：商品画像・レシピモーダル */
     #kitRecipeModal {
       position: fixed;

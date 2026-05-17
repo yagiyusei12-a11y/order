@@ -62,11 +62,11 @@
         <label class="lbl">メニューの種類</label>
         <div class="course-list" id="courseRadios"></div>
         <button type="button" class="primary" id="btnStart">注文を始める</button>
-        <p id="err" role="alert"></p>
         <p class="hint" id="hintText">
-          すでに同伴の方が開始している場合は、同じ注文画面に入ります。コースは事前にスタッフへご確認ください。
+          初めての方は人数とメニュー種類を選んでから始めてください。
         </p>
       </div>
+      <p id="err" role="alert"></p>
     </div>
   </div>
   <script>
@@ -167,7 +167,6 @@
       const loading = document.getElementById("loading");
       const main = document.getElementById("main");
       const err = document.getElementById("err");
-      let separateBillNext = false;
       try {
         const r = await fetch("/public/tables/" + encodeURIComponent(code));
         const j = await r.json().catch(() => ({}));
@@ -180,14 +179,44 @@
               ? [j.session]
               : [];
 
-        /** 卓QRでコース（時間パターン付き）を選んで開始済みか。先客がコース済みなら同伴は確認なしで同一セッションへ */
-        function sessionHasChosenCourse(s) {
-          return !!(s && s.course && typeof s.course === "object" && s.course.id);
+        function sessionMenuSummary(s) {
+          if (s && s.course && s.course.id) {
+            return "「" + String(s.course.name || "コース") + "」コース";
+          }
+          return "単品メニュー";
         }
 
-        if (openList.length > 0 && sessionHasChosenCourse(openList[0]) && openList[0].guestToken) {
-          goGuest(openList[0].guestToken);
-          return;
+        function pickedOpenSession() {
+          if (openList.length === 0) return null;
+          if (openList.length === 1) return openList[0];
+          const sel = document.querySelector("input[name=\"sessionPick\"]:checked");
+          if (sel && sel.value) {
+            return openList.find((s) => s.guestToken === sel.value) || openList[0];
+          }
+          return openList[0];
+        }
+
+        async function startSeparateSessionFrom(ref) {
+          const gc = Math.max(1, Math.min(99, Math.floor(Number(ref.guestCount) || 2)));
+          const childN = Math.max(0, Math.min(gc, Math.floor(Number(ref.childCount) || 0)));
+          const body = {
+            guestCount: gc,
+            childCount: childN,
+            courseId: ref.course && ref.course.id ? ref.course.id : null,
+            separateBill: true,
+          };
+          if (ref.coursePriceTier && ref.coursePriceTier.id) {
+            body.coursePriceTierId = ref.coursePriceTier.id;
+          }
+          const r2 = await fetch("/public/tables/" + encodeURIComponent(code) + "/session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          const j2 = await r2.json().catch(() => ({}));
+          if (!r2.ok) throw new Error(j2.error || r2.statusText);
+          if (j2.guestToken) goGuest(j2.guestToken);
+          else throw new Error("トークンを取得できませんでした");
         }
 
         loading.style.display = "none";
@@ -196,27 +225,34 @@
           (j.table && (j.table.displayName || j.table.name)) || (j.table && j.table.displayCode) || code;
         const dispCode = (j.table && j.table.displayCode) || code;
         document.getElementById("title").textContent = dispName;
-        document.getElementById("deskLine").textContent =
-          "卓コード " + dispCode + " · 人数とメニュー種類を選んでください。";
         renderCourseRadios(j.courses || [], j.store || {});
 
         const choiceCard = document.getElementById("choiceCard");
         const formCard = document.getElementById("formCard");
         const sessionPickWrap = document.getElementById("sessionPickWrap");
         const choiceIntro = document.getElementById("choiceIntro");
+        const btnJoin = document.getElementById("btnJoinShared");
+        const btnSep = document.getElementById("btnSeparate");
 
         if (openList.length > 0) {
           choiceCard.style.display = "block";
           formCard.style.display = "none";
+          const ref0 = openList[0];
+          document.getElementById("deskLine").textContent =
+            "卓コード " + dispCode + " · すでに" + sessionMenuSummary(ref0) + "で注文中です。";
           choiceIntro.innerHTML =
-            "この卓では<strong>すでに注文が始まっています</strong>。<br />同伴と<strong>同じ会計（お支払いをまとめる）</strong>ですか？それとも<strong>別々の会計</strong>ですか？";
+            "この卓では<strong>すでに注文が始まっています</strong>（" +
+            esc(sessionMenuSummary(ref0)) +
+            "）。<br />同伴と<strong>同じ会計（お支払いをまとめる）</strong>ですか？それとも<strong>別々の会計</strong>ですか？";
           if (openList.length > 1) {
             sessionPickWrap.style.display = "block";
             sessionPickWrap.innerHTML = openList
               .map(function (s, i) {
                 const when = s.openedAt ? fmtSessionWhen(s.openedAt) : "";
                 const lab =
-                  (when ? when + " · " : "") +
+                  sessionMenuSummary(s) +
+                  (when ? " · " + when : "") +
+                  " · " +
                   Number(s.guestCount || 0) +
                   "名" +
                   (Number(s.childCount || 0) > 0 ? "（子" + s.childCount + "）" : "");
@@ -236,34 +272,48 @@
                 );
               })
               .join("");
+            sessionPickWrap.querySelectorAll("input[name=\"sessionPick\"]").forEach((inp) => {
+              inp.addEventListener("change", () => {
+                const ref = pickedOpenSession();
+                if (!ref) return;
+                choiceIntro.innerHTML =
+                  "この卓では<strong>すでに注文が始まっています</strong>（" +
+                  esc(sessionMenuSummary(ref)) +
+                  "）。<br />同伴と<strong>同じ会計（お支払いをまとめる）</strong>ですか？それとも<strong>別々の会計</strong>ですか？";
+              });
+            });
           } else {
             sessionPickWrap.style.display = "none";
             sessionPickWrap.innerHTML = "";
           }
 
-          document.getElementById("btnJoinShared").onclick = function () {
-            let tok = openList[0].guestToken;
-            if (openList.length > 1) {
-              const sel = document.querySelector("input[name=\"sessionPick\"]:checked");
-              tok = sel && sel.value ? sel.value : tok;
-            }
-            goGuest(tok);
+          btnJoin.onclick = function () {
+            const ref = pickedOpenSession();
+            if (!ref || !ref.guestToken) return;
+            goGuest(ref.guestToken);
           };
-          document.getElementById("btnSeparate").onclick = function () {
-            separateBillNext = true;
-            choiceCard.style.display = "none";
-            formCard.style.display = "block";
-            document.getElementById("deskLine").textContent =
-              "卓コード " + dispCode + " · <strong>別会計</strong>で始めます。人数とメニュー種類を選んでください。";
-            const ht = document.getElementById("hintText");
-            if (ht) {
-              ht.textContent =
-                "別会計を選んだ場合、レジではこの卓で会計が分かれて表示されます。コースは事前にスタッフへご確認ください。";
+          btnSep.onclick = async function () {
+            err.style.display = "none";
+            const ref = pickedOpenSession();
+            if (!ref) return;
+            btnJoin.disabled = true;
+            btnSep.disabled = true;
+            btnSep.textContent = "準備中…";
+            try {
+              await startSeparateSessionFrom(ref);
+            } catch (e) {
+              err.textContent = String(e.message || e);
+              err.style.display = "block";
+              btnJoin.disabled = false;
+              btnSep.disabled = false;
+              btnSep.textContent = "別の会計で始める";
             }
           };
         } else {
           choiceCard.style.display = "none";
           formCard.style.display = "block";
+          document.getElementById("deskLine").textContent =
+            "卓コード " + dispCode + " · 人数とメニュー種類を選んでください。";
         }
 
         document.getElementById("btnStart").onclick = async () => {
@@ -294,7 +344,6 @@
           try {
             const body = { guestCount: gc, childCount: childN, courseId: courseId };
             if (coursePriceTierId) body.coursePriceTierId = coursePriceTierId;
-            if (separateBillNext) body.separateBill = true;
             const r2 = await fetch("/public/tables/" + encodeURIComponent(code) + "/session", {
               method: "POST",
               headers: { "Content-Type": "application/json" },

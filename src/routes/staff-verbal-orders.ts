@@ -3,9 +3,17 @@ import type { Prisma } from "@prisma/client";
 import { minutesSinceMidnightInTimeZone } from "../lib/guest-category-hours.js";
 import { applyGuestItemTimeDiscounts } from "../lib/guest-time-pricing.js";
 import {
+  buildSingleNameSnapshotWithOptions,
+  buildSingleOptionsLineExtra,
+  sumInclusiveOptionPriceDelta,
+  validateGuestOptionSelections,
+  type GuestOptionGroupSelection,
+} from "../lib/guest-order-options.js";
+import {
   baseNetFromStoredPrice,
   eatModeTaxRatePercent,
   normalizeEatMode,
+  retaxInclusiveYen,
   taxIncludedFromNet,
   type EatMode,
 } from "../lib/order-line-tax.js";
@@ -21,13 +29,19 @@ function parsePurchasedCourseOptionPackIds(raw: unknown): string[] {
 
 /**
  * 口頭・電話などスタッフが代行する注文。ゲスト向け表示制限（visibleToGuest / 時間帯）を通さない。
- * オプション必須の商品・セット商品は非対応（会計/ゲスト画面で注文）。
+ * セット商品は非対応。オプション付き単品は optionSelections で受け付ける。
  */
 export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<void> {
   app.post<{
     Params: { storeId: string; sessionId: string };
     Body: {
-      lines: { menuItemId: string; qty: number; note?: string; eatMode?: unknown }[];
+      lines: {
+        menuItemId: string;
+        qty: number;
+        note?: string;
+        eatMode?: unknown;
+        optionSelections?: GuestOptionGroupSelection[];
+      }[];
       note?: string;
     };
   }>("/stores/:storeId/sessions/:sessionId/verbal-order", async (req, reply) => {
@@ -144,6 +158,7 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
           nameSnapshot: string;
           eatMode: EatMode;
           taxRatePercent: number;
+          lineExtra: Prisma.InputJsonValue | null;
         };
         const resolved: Resolved[] = [];
         const needStock = new Map<string, number>();
@@ -194,15 +209,25 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
             }
           }
 
-          const activeGroups = item.optionLinks
+          const linkedGroups = item.optionLinks
             .map((ol) => ol.optionGroup)
-            .filter((g): g is NonNullable<typeof g> => Boolean(g && g.active));
-          for (const g of activeGroups) {
-            const n = g.items.length;
-            if (g.minSelect > 0 && n > 0) {
-              throw new Error("STAFF_OPTIONS_REQUIRED");
-            }
-          }
+            .filter((g): g is NonNullable<typeof g> => Boolean(g && g.active))
+            .map((g) => ({
+              id: g.id,
+              name: g.name,
+              minSelect: g.minSelect,
+              maxSelect: g.maxSelect,
+              items: g.items
+                .filter((i) => i.active)
+                .map((i) => ({ id: i.id, name: i.name, priceDelta: i.priceDelta })),
+            }))
+            .filter((g) => g.items.length > 0);
+
+          const vOpt = validateGuestOptionSelections(
+            linkedGroups,
+            (l as { optionSelections?: unknown }).optionSelections,
+          );
+          if (!vOpt.ok) throw new Error("BAD_OPTIONS");
 
           const priceTaxMode = item.priceTaxMode === "exclusive" ? "exclusive" : st.menuPriceTaxMode;
           const baseNet = baseNetFromStoredPrice(item.price, priceTaxMode, st.taxRatePercent);
@@ -212,7 +237,20 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
             value: d.value,
             timeWindow: d.timeWindow,
           }));
-          const { price: unitPrice } = applyGuestItemTimeDiscounts(baseTaxIncluded, discRows, nowMin);
+          const { price: discountedBase } = applyGuestItemTimeDiscounts(baseTaxIncluded, discRows, nowMin);
+
+          const linkedGroupsTaxed = linkedGroups.map((g) => ({
+            ...g,
+            items: g.items.map((it) => ({
+              ...it,
+              priceDelta: retaxInclusiveYen(it.priceDelta, st.taxRatePercent, lineTaxPct),
+            })),
+          }));
+          const optSum = sumInclusiveOptionPriceDelta(linkedGroupsTaxed, vOpt.byGroup);
+          const unitPrice = discountedBase + optSum;
+          const lineExtraOpts = buildSingleOptionsLineExtra(linkedGroupsTaxed, vOpt.byGroup);
+          const optArr = lineExtraOpts.options;
+          const hasOptDetail = Array.isArray(optArr) && optArr.length > 0;
 
           needStock.set(l.menuItemId, (needStock.get(l.menuItemId) ?? 0) + l.qty);
           resolved.push({
@@ -220,9 +258,12 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
             qty: l.qty,
             note: l.note?.trim() || null,
             unitPrice,
-            nameSnapshot: item.name,
+            nameSnapshot: hasOptDetail
+              ? buildSingleNameSnapshotWithOptions(item.name, lineExtraOpts)
+              : item.name,
             eatMode,
             taxRatePercent: lineTaxPct,
+            lineExtra: hasOptDetail ? (lineExtraOpts as Prisma.InputJsonValue) : null,
           });
         }
 
@@ -278,6 +319,7 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
               status: "queued",
               eatMode: r.eatMode,
               taxRatePercent: r.taxRatePercent,
+              lineExtra: r.lineExtra ?? undefined,
             },
           });
         }
@@ -340,10 +382,8 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
       if (msg === "BAD_ITEM") return reply.code(400).send({ error: "invalid or unavailable menu item" });
       if (msg === "BAD_STOCK") return reply.code(400).send({ error: "insufficient stock" });
       if (msg === "SESSION_GONE") return reply.code(409).send({ error: "session closed or missing" });
-      if (msg === "STAFF_OPTIONS_REQUIRED") {
-        return reply
-          .code(400)
-          .send({ error: "オプション必須の商品はハンディでは選べません（卓・会計またはゲストから注文してください）" });
+      if (msg === "BAD_OPTIONS") {
+        return reply.code(400).send({ error: "オプションの選択が不正です（必須・最大数を確認してください）" });
       }
       if (msg === "BAD_TAKEOUT") {
         return reply.code(400).send({ error: "テイクアウトにできない商品が含まれています（商品マスタのテイクアウト可を確認）" });

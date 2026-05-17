@@ -367,7 +367,7 @@
       color: #b91c1c;
       font-weight: 900;
     }
-    /* キッチン：キャンセル時の在庫選択 */
+    /* キッチン：キャンセル確認（在庫そのまま / 売り切れ） */
     .kit-cancel-stock-modal-backdrop {
       position: fixed;
       inset: 0;
@@ -416,9 +416,18 @@
       margin-top: 0.75rem;
     }
     .kit-cancel-stock-modal-primary,
-    .kit-cancel-stock-modal-secondary,
+    .kit-cancel-stock-modal-warn,
     .kit-cancel-stock-modal-back {
       width: 100%;
+    }
+    .kit-cancel-stock-modal-warn {
+      border-color: #f97316;
+      color: #c2410c;
+      background: #fff7ed;
+      font-weight: 700;
+    }
+    .kit-cancel-stock-modal-warn:hover {
+      background: #ffedd5;
     }
     .kit-cancel-stock-modal-back {
       margin-top: 0.15rem;

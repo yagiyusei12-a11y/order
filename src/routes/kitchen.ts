@@ -38,12 +38,15 @@ function kitchenOrderLineTableLabel(
   return tableDisplayLabel(sessionTable.name, sessionTable.publicCode);
 }
 
-/** soldout=残数0のみ（ゲストに売り切れ表示） / zero=残数0＋販売停止 */
-type KitchenCancelStockMode = "soldout" | "zero";
+/** none=明細キャンセルのみ / soldout=残数0（ゲストに売り切れ表示） / zero=残数0＋販売停止（後方互換） */
+type KitchenCancelStockMode = "none" | "soldout" | "zero";
 
 function parseKitchenCancelStockMode(body: unknown): KitchenCancelStockMode {
   const m = (body as { stockMode?: string } | null | undefined)?.stockMode;
-  return m === "soldout" ? "soldout" : "zero";
+  if (m === "none") return "none";
+  if (m === "soldout") return "soldout";
+  if (m === "zero") return "zero";
+  return "none";
 }
 
 async function applyMenuItemStockAfterKitchenCancel(
@@ -456,7 +459,7 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
     return updated;
   });
 
-  /** 在庫なし等: 明細キャンセル＋商品の在庫処理（stockMode: soldout | zero） */
+  /** キッチンからの明細キャンセル（stockMode: none | soldout | zero） */
   app.post<{
     Params: { storeId: string; lineId: string };
     Body: { stockMode?: string };
@@ -473,7 +476,8 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
     if (line.status === "cancelled") return reply.code(400).send({ error: "order line already cancelled" });
     if (line.status === "served") return reply.code(400).send({ error: "cannot cancel served line" });
 
-    const noteSuffix = "在庫切れキャンセル（キッチン）";
+    const noteSuffix =
+      stockMode === "none" ? "キャンセル（キッチン）" : "在庫切れキャンセル（キッチン）";
     const bundleId = readBundleId(line.lineExtra);
     const orderLinesAll = await prisma.orderLine.findMany({
       where: { orderId: line.orderId },
@@ -514,24 +518,26 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
             },
           });
         }
-        for (const [mid, q] of stockMap) {
-          const item = await tx.menuItem.findFirst({
-            where: { id: mid, category: { storeId: req.params.storeId } },
-          });
-          if (item && item.stockQty !== null) {
-            await tx.menuItem.update({
-              where: { id: item.id },
-              data: { stockQty: { increment: q } },
+        if (stockMode !== "none") {
+          for (const [mid, q] of stockMap) {
+            const item = await tx.menuItem.findFirst({
+              where: { id: mid, category: { storeId: req.params.storeId } },
             });
+            if (item && item.stockQty !== null) {
+              await tx.menuItem.update({
+                where: { id: item.id },
+                data: { stockQty: { increment: q } },
+              });
+            }
           }
+          await applyMenuItemStockAfterKitchenCancel(
+            tx,
+            req.params.storeId,
+            parent.menuItemId!,
+            parent.qty,
+            stockMode,
+          );
         }
-        await applyMenuItemStockAfterKitchenCancel(
-          tx,
-          req.params.storeId,
-          parent.menuItemId!,
-          parent.qty,
-          stockMode,
-        );
         return tx.orderLine.findFirstOrThrow({ where: { id: parent.id } });
       }
 
@@ -546,7 +552,7 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
         },
       });
 
-      if (line.menuItemId) {
+      if (stockMode !== "none" && line.menuItemId) {
         await applyMenuItemStockAfterKitchenCancel(
           tx,
           req.params.storeId,

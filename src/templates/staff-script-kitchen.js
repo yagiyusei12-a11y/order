@@ -1258,7 +1258,7 @@ function renderKitList() {
         bs.type = "button";
         bs.className = "kit-cancel-text-btn";
         bs.textContent = "キャンセル";
-        bs.title = "在庫切れなどで取り消す（キャンセル後に在庫0か売り切れを選択）";
+        bs.title = "注文を取り消す（在庫はそのまま／売り切れは任意）";
         bs.onclick = async () => {
           const msg =
             "対象：「" +
@@ -1270,8 +1270,8 @@ function renderKitList() {
             "件\n\n" +
             (hasMenuItem
               ? stockoutTargetsSet
-                ? "・注文明細がキャンセルされます\n・セット商品のマスタを更新します（画面上は構成単品ですが、取り消しはセット単位です）"
-                : "・注文明細がキャンセルされます\n・続けて商品マスタの在庫の扱いを選びます"
+                ? "・注文明細がキャンセルされます\n・セット単位で取り消します（画面上は構成単品です）\n・通常は「キャンセルのみ」で在庫はそのままです"
+                : "・注文明細がキャンセルされます\n・通常は在庫・販売状態はそのままです"
               : "・注文明細がキャンセルされます（メニューに紐づかないため商品マスタは変わりません）");
           await cancelKitchenLinesStockout(info.lineIds, msg, bs, hasMenuItem);
         };
@@ -1427,7 +1427,7 @@ function renderKitList() {
         cancelTxt.type = "button";
         cancelTxt.className = "kit-cancel-text-btn";
         cancelTxt.textContent = "キャンセル";
-        cancelTxt.title = "在庫切れなどで取り消す（キャンセル後に在庫0か売り切れを選択）";
+        cancelTxt.title = "注文を取り消す（在庫はそのまま／売り切れは任意）";
         cancelTxt.onclick = async () => {
           const patchId = kitchenPatchLineId(ln);
           const hasM = Boolean(ln.menuItemId);
@@ -1442,7 +1442,7 @@ function renderKitList() {
               qty +
               "（セット注文の明細全体がキャンセルされます）\n\n" +
               (hasM
-                ? "・1 件の注文明細がキャンセルされます\n・セット商品のマスタを更新します（表示は構成単品です）"
+                ? "・1 件の注文明細がキャンセルされます\n・セット単位で取り消します（表示は構成単品です）\n・通常は「キャンセルのみ」で在庫はそのままです"
                 : "・注文明細がキャンセルされます（メニューに紐づかないため商品マスタは変わりません）");
           } else {
             msg =
@@ -1452,7 +1452,7 @@ function renderKitList() {
               qty +
               "\n\n" +
               (hasM
-                ? "・注文明細がキャンセルされます\n・続けて商品マスタの在庫の扱いを選びます"
+                ? "・注文明細がキャンセルされます\n・通常は在庫・販売状態はそのままです"
                 : "・注文明細がキャンセルされます（メニューに紐づかないため商品マスタは変わりません）");
           }
           await cancelKitchenLinesStockout([patchId], msg, cancelTxt, hasM);
@@ -1609,7 +1609,7 @@ async function refreshKitchen() {
 /**
  * @param {string} headline
  * @param {string} detail
- * @returns {Promise<"soldout" | "zero" | null>}
+ * @returns {Promise<"none" | "soldout" | null>}
  */
 function promptKitchenCancelStockMode(headline, detail) {
   return new Promise((resolve) => {
@@ -1633,15 +1633,12 @@ function promptKitchenCancelStockMode(headline, detail) {
 
     const hint = document.createElement("p");
     hint.className = "kit-cancel-stock-modal-hint muted";
-    hint.textContent = "商品マスタへの反映方法を選んでください。";
+    hint.textContent = "通常は「キャンセルのみ」で在庫・販売状態は変わりません。";
 
     const soldDesc = document.createElement("p");
     soldDesc.className = "kit-cancel-stock-modal-opt muted";
-    soldDesc.textContent = "売り切れ … 残数0（ゲスト画面では売り切れ表示・メニューに残る）";
-
-    const zeroDesc = document.createElement("p");
-    zeroDesc.className = "kit-cancel-stock-modal-opt muted";
-    zeroDesc.textContent = "在庫0 … 残数0かつ販売停止（ゲスト・ハンディから注文不可）";
+    soldDesc.textContent =
+      "売り切れにする … 注文を取り消したうえで残数0（ゲスト画面では売り切れ表示）";
 
     const actions = document.createElement("div");
     actions.className = "kit-cancel-stock-modal-actions";
@@ -1656,19 +1653,19 @@ function promptKitchenCancelStockMode(headline, detail) {
       if (ev.key === "Escape") close(null);
     }
 
+    const bOnly = document.createElement("button");
+    bOnly.type = "button";
+    bOnly.className = "btn-primary kit-cancel-stock-modal-primary";
+    bOnly.textContent = "キャンセルのみ（在庫そのまま）";
+    bOnly.title = "注文明細だけ取り消す（商品マスタの在庫・販売状態は変更しません）";
+    bOnly.onclick = () => close("none");
+
     const bSold = document.createElement("button");
     bSold.type = "button";
-    bSold.className = "btn-primary kit-cancel-stock-modal-primary";
-    bSold.textContent = "売り切れにする";
-    bSold.title = "残数を0にする（ゲスト画面では売り切れ表示・メニューに残る）";
+    bSold.className = "btn-ghost kit-cancel-stock-modal-warn";
+    bSold.textContent = "キャンセルして売り切れにする";
+    bSold.title = "注文を取り消し、商品を売り切れ（残数0）にする";
     bSold.onclick = () => close("soldout");
-
-    const bZero = document.createElement("button");
-    bZero.type = "button";
-    bZero.className = "btn-ghost kit-cancel-stock-modal-secondary";
-    bZero.textContent = "在庫を0にする";
-    bZero.title = "残数0かつ販売停止（ゲスト・ハンディから注文不可）";
-    bZero.onclick = () => close("zero");
 
     const bBack = document.createElement("button");
     bBack.type = "button";
@@ -1680,10 +1677,9 @@ function promptKitchenCancelStockMode(headline, detail) {
     cardEl.appendChild(body);
     cardEl.appendChild(hint);
     cardEl.appendChild(soldDesc);
-    cardEl.appendChild(zeroDesc);
     cardEl.appendChild(actions);
+    actions.appendChild(bOnly);
     actions.appendChild(bSold);
-    actions.appendChild(bZero);
     actions.appendChild(bBack);
     bdEl.appendChild(cardEl);
     bdEl.addEventListener("click", (ev) => {
@@ -1691,7 +1687,7 @@ function promptKitchenCancelStockMode(headline, detail) {
     });
     document.body.appendChild(bdEl);
     document.addEventListener("keydown", onKey);
-    bSold.focus();
+    bOnly.focus();
   });
 }
 
@@ -1704,11 +1700,11 @@ function promptKitchenCancelStockMode(headline, detail) {
 async function cancelKitchenLinesStockout(lineIds, confirmMessage, busyBtn, hasMenuItem) {
   const uniq = [...new Set((lineIds || []).map((id) => String(id)).filter(Boolean))];
   if (uniq.length === 0) return;
-  /** @type {"soldout" | "zero"} */
-  let stockMode = "zero";
+  /** @type {"none" | "soldout"} */
+  let stockMode = "none";
   if (hasMenuItem) {
     const picked = await promptKitchenCancelStockMode(
-      "キャンセル — 在庫の扱い",
+      "注文のキャンセル",
       confirmMessage.replace(/\n\n※[\s\S]*$/, "").trim(),
     );
     if (!picked) return;

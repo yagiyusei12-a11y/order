@@ -12,6 +12,24 @@
       <div class="row" style="margin-bottom:0.5rem;flex-wrap:wrap;align-items:center;gap:0.4rem">
         <button type="button" class="btn-ghost" id="btnRefFloor">一覧を更新</button>
         <button type="button" class="btn-ghost" id="btnOpenDrawer" style="font-weight:600">ドロアを開く</button>
+        <a
+          class="ops-guest-display-qr"
+          href="__GUEST_DISPLAY_URL__"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="客面ディスプレイ（タブレットでQRを読み取るかタップで開く）"
+        >
+          <img
+            class="ops-guest-display-qr__img"
+            src="/staff-app/__STORE_PATH__/guest-display-qr.svg"
+            alt="客面ディスプレイのQRコード"
+            width="72"
+            height="72"
+            loading="lazy"
+            decoding="async"
+          />
+          <span class="ops-guest-display-qr__label">客面</span>
+        </a>
         <a class="btn-ghost" href="/staff-app/__STORE_PATH__/settings" style="text-decoration:none;display:inline-block;width:auto;margin-left:auto">設定</a>
       </div>
       <div id="tableGrid" class="table-grid"></div>

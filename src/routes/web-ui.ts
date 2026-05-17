@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { templatePath } from "../lib/paths.js";
 import { displayTableCode } from "../lib/table-display-code.js";
 import { verifyGuestDisplayKey } from "../lib/guest-display-auth.js";
+import { guestDisplayPublicUrl, staffRequestOrigin } from "../lib/guest-display-url.js";
 import { prisma } from "../db.js";
 import QRCode from "qrcode";
 
@@ -44,14 +45,22 @@ function assembleStaffPage(
   pageTitle: string,
   bodyFile: string,
   scriptFile: string,
-  scriptBundle?: StaffPageScriptBundle
+  scriptBundle?: StaffPageScriptBundle,
+  bodyReplacements?: Record<string, string>,
 ): string {
   const pathEnc = encodeURIComponent(storeId);
   let body = loadTemplate(bodyFile).replace(/__STORE_PATH__/g, pathEnc);
   if (bodyFile === "staff-body-ops.html") {
     body = body.replace("__OPS_STYLE__", loadTemplate("staff-style-ops.css"));
+    body = body.replace("__GUEST_DISPLAY_URL__", bodyReplacements?.["__GUEST_DISPLAY_URL__"] ?? "#");
   } else {
     body = body.replace("__OPS_STYLE__", "");
+  }
+  if (bodyReplacements) {
+    for (const [key, val] of Object.entries(bodyReplacements)) {
+      if (key === "__GUEST_DISPLAY_URL__" && bodyFile === "staff-body-ops.html") continue;
+      body = body.split(key).join(val);
+    }
   }
   let prependScript = "";
   let appendScript = "";
@@ -203,18 +212,27 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
     title: string,
     bodyFile: string,
     scriptFile: string,
-    scriptBundle?: StaffPageScriptBundle
+    scriptBundle?: StaffPageScriptBundle,
+    bodyReplacements?: Record<string, string>,
   ) =>
     reply
       .type("text/html; charset=utf-8")
       .header("Cache-Control", "no-store")
-      .send(assembleStaffPage(storeId, title, bodyFile, scriptFile, scriptBundle));
+      .send(assembleStaffPage(storeId, title, bodyFile, scriptFile, scriptBundle, bodyReplacements));
 
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/ops", async (req, reply) => {
     if (!(await assertStaffStore(req, reply))) return;
-    return staffHtml(reply, req.params.storeId, "オペレーション", "staff-body-ops.html", "staff-script-ops.js", {
-      prependFile: "staff-script-bill-register-shared.js",
-    });
+    const storeId = req.params.storeId;
+    const guestUrl = guestDisplayPublicUrl(staffRequestOrigin(req), storeId);
+    return staffHtml(
+      reply,
+      storeId,
+      "オペレーション",
+      "staff-body-ops.html",
+      "staff-script-ops.js",
+      { prependFile: "staff-script-bill-register-shared.js" },
+      { __GUEST_DISPLAY_URL__: escapeHtml(guestUrl) },
+    );
   });
 
   /** 旧スタッフ「テイクアウト一覧」はオペ（卓・会計）に統合したためリダイレクト */
@@ -344,6 +362,30 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
     if (!(await assertStaffStore(req, reply))) return;
     return staffHtml(reply, req.params.storeId, "設定", "staff-body-settings.html", "staff-script-settings.js");
   });
+
+  /** 客面ディスプレイ URL の QR（SVG）。スタッフ Cookie 認証必須。 */
+  app.get<{ Params: { storeId: string } }>(
+    "/staff-app/:storeId/guest-display-qr.svg",
+    async (req, reply) => {
+      if (!(await assertStaffStore(req, reply))) return;
+      const url = guestDisplayPublicUrl(staffRequestOrigin(req), req.params.storeId);
+      try {
+        const svg = await QRCode.toString(url, {
+          type: "svg",
+          margin: 1,
+          width: 128,
+          errorCorrectionLevel: "M",
+          color: { dark: "#1a1d24ff", light: "#ffffffff" },
+        });
+        return reply
+          .type("image/svg+xml; charset=utf-8")
+          .header("Cache-Control", "private, max-age=300")
+          .send(svg);
+      } catch {
+        return reply.code(500).type("text/plain; charset=utf-8").send("qr failed");
+      }
+    },
+  );
 
   /** 席マスタなど: 卓の table-app URL を QR（SVG）で返す。スタッフ Cookie 認証必須。 */
   app.get<{ Params: { storeId: string }; Querystring: { d?: string } }>(

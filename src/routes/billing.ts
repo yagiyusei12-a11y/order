@@ -18,6 +18,7 @@ import {
 } from "../lib/cash-drawer-from-payments.js";
 import { startOfWallCalendarDayUtc, wallDateYmdInZone } from "../lib/store-wall-time.js";
 import { prisma } from "../db.js";
+import { broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
 import { appendStaffAuditFromRequest } from "../lib/staff-audit.js";
 import { assertManagerRole } from "../lib/staff-role.js";
 import { isTakeoutTablePublicCode } from "../lib/takeout-table-code.js";
@@ -1235,6 +1236,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     await appendStaffAuditFromRequest(req, bill.storeId, staffUserId, "bill_discount_set", {
       billId: bill.id,
     }).catch(() => {});
+    broadcastOpsSessionUpdated(bill.storeId, bill.sessionId);
     const payload = await buildBillDetailPayload(req.params.storeId, bill.id);
     return { ok: true, bill: payload };
   });
@@ -1342,6 +1344,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       billId: bill.id,
       lineIds,
     }).catch(() => {});
+    broadcastOpsSessionUpdated(bill.storeId, bill.sessionId);
     const payload = await buildBillDetailPayload(req.params.storeId, bill.id);
     return { ok: true, bill: payload };
   });
@@ -1413,6 +1416,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
 
       return next;
     });
+    broadcastOpsSessionUpdated(bill.storeId, bill.sessionId);
     const billPayload = await buildBillDetailPayload(req.params.storeId, bill.id);
     return { ok: true, line: updated, bill: billPayload };
   });
@@ -1485,6 +1489,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       throw e;
     });
     if (!updated) return reply.code(400).send({ error: "insufficient stock" });
+    broadcastOpsSessionUpdated(bill.storeId, bill.sessionId);
     const billPayload = await buildBillDetailPayload(req.params.storeId, bill.id);
     return { ok: true, line: updated, bill: billPayload };
   });

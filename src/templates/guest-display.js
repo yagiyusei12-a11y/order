@@ -54,6 +54,13 @@
     if (tableHint) tableHint.textContent = name;
   }
 
+  function applySummaryToUi(data) {
+    if (data.storeName && storeNameIdle) storeNameIdle.textContent = data.storeName;
+    setFadeText(amountYen, formatYen(data.suggestedTotal));
+    setFadeText(itemCount, String(data.itemCount ?? 0) + " 点");
+    if (statusLine) statusLine.textContent = "";
+  }
+
   async function fetchSummary(sessionId) {
     const q = new URLSearchParams({ key: displayKey, sessionId });
     const res = await fetch(
@@ -62,6 +69,19 @@
     );
     if (!res.ok) throw new Error("summary " + res.status);
     return res.json();
+  }
+
+  async function refreshDisplayedSummary(sessionId) {
+    const sid = sessionId && String(sessionId).trim() ? String(sessionId).trim() : "";
+    if (!sid || activeSessionId !== sid) return;
+    try {
+      const data = await fetchSummary(sid);
+      if (activeSessionId !== sid) return;
+      applySummaryToUi(data);
+    } catch (e) {
+      console.warn("guest display summary", e);
+      if (statusLine) statusLine.textContent = "データ取得に失敗しました";
+    }
   }
 
   async function applySelection(payload) {
@@ -75,17 +95,7 @@
     }
     showActive(payload || {});
     activeSessionId = sessionId;
-    try {
-      const data = await fetchSummary(sessionId);
-      if (activeSessionId !== sessionId) return;
-      if (data.storeName && storeNameIdle) storeNameIdle.textContent = data.storeName;
-      setFadeText(amountYen, formatYen(data.suggestedTotal));
-      setFadeText(itemCount, String(data.itemCount ?? 0) + " 点");
-      if (statusLine) statusLine.textContent = "";
-    } catch (e) {
-      console.warn("guest display summary", e);
-      if (statusLine) statusLine.textContent = "データ取得に失敗しました";
-    }
+    await refreshDisplayedSummary(sessionId);
   }
 
   async function loadMeta() {
@@ -116,6 +126,13 @@
     });
     sock.on("ops:seat-selected", (payload) => {
       void applySelection(payload || {});
+    });
+    sock.on("ops:session-updated", (payload) => {
+      const sid =
+        payload && payload.sessionId && String(payload.sessionId).trim()
+          ? String(payload.sessionId).trim()
+          : "";
+      if (sid) void refreshDisplayedSummary(sid);
     });
     sock.on("connect", () => {
       if (statusLine && statusLine.textContent === "接続エラー") statusLine.textContent = "";

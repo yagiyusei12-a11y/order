@@ -12,6 +12,7 @@ import { resolveCourseAndTierForSession } from "../lib/course-tier-resolve.js";
 import { recomputeOpenBillTotalForSession } from "../lib/recompute-session-bill.js";
 import { mergeTwoOpenSessionsTx } from "../lib/session-merge.js";
 import { moveOrderLinesBetweenSessionsTx, type LineMoveSpec } from "../lib/move-session-order-lines.js";
+import { broadcastOpsSessionUpdatedMany } from "../lib/ops-seat-socket.js";
 import { firstSalesOrderByTime } from "../lib/first-sales-order.js";
 
 function normalizeUiCustomerLabel(
@@ -573,6 +574,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       });
 
       if (!targetSession) return reply.code(404).send({ error: "session not found" });
+      broadcastOpsSessionUpdatedMany(store.id, [fromId, toId]);
       return { ok: true, session: targetSession };
     } catch (e) {
       const code = e instanceof Error ? e.message : "";
@@ -631,6 +633,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       });
 
       if (!targetSession) return reply.code(404).send({ error: "session not found" });
+      broadcastOpsSessionUpdatedMany(store.id, [fromId, toId]);
       return { ok: true, session: targetSession };
     } catch (e) {
       const code = e instanceof Error ? e.message : "";
@@ -820,6 +823,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       include: { table: true, course: true, coursePriceTier: true, bill: true },
     });
 
+    broadcastOpsSessionUpdatedMany(store.id, [sourceSessionId, targetSessionId]);
     return { ok: true, targetSessionId, session: targetFull };
   });
 
@@ -909,6 +913,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
         return { parent: parentFull, child: childFull, movedOrders: moved.count };
       });
 
+      broadcastOpsSessionUpdatedMany(store.id, [out.parent?.id, out.child?.id]);
       return { ok: true, ...out };
     } catch (e) {
       const code = e instanceof Error ? e.message : "";

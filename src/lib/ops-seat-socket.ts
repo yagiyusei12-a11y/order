@@ -17,6 +17,39 @@ export type OpsSeatSelectionPayload = {
 
 const lastSelectionByStore = new Map<string, OpsSeatSelectionPayload>();
 
+let opsSocketServer: Server | null = null;
+
+export type OpsSessionUpdatedPayload = {
+  sessionId: string;
+};
+
+/** `registerOpsSeatSocket` 内で Socket.IO サーバーを登録する */
+export function bindOpsSocketServer(io: Server): void {
+  opsSocketServer = io;
+}
+
+/** セッションの注文・割引が変わったとき、客面ディスプレイ等へ通知 */
+export function broadcastOpsSessionUpdated(storeId: string, sessionId: string): void {
+  const sid = sessionId.trim();
+  const sidStore = storeId.trim();
+  if (!opsSocketServer || !sidStore || !sid) return;
+  const payload: OpsSessionUpdatedPayload = { sessionId: sid };
+  opsSocketServer.to(storeRoom(sidStore)).emit("ops:session-updated", payload);
+}
+
+export function broadcastOpsSessionUpdatedMany(
+  storeId: string,
+  sessionIds: Iterable<string | null | undefined>,
+): void {
+  const seen = new Set<string>();
+  for (const raw of sessionIds) {
+    const sid = typeof raw === "string" ? raw.trim() : "";
+    if (!sid || seen.has(sid)) continue;
+    seen.add(sid);
+    broadcastOpsSessionUpdated(storeId, sid);
+  }
+}
+
 function parseCookies(header: string | undefined): Record<string, string> {
   const out: Record<string, string> = {};
   if (!header) return out;
@@ -90,6 +123,7 @@ function clearedSelection(storeId: string): OpsSeatSelectionPayload {
 }
 
 export function registerOpsSeatSocket(io: Server, app: FastifyInstance): void {
+  bindOpsSocketServer(io);
   io.use(async (socket, next) => {
     const staff = await authenticateStaffSocket(socket, app);
     if (staff?.storeId && staff.sub) {

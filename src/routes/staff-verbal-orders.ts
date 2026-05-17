@@ -11,6 +11,7 @@ import {
 } from "../lib/order-line-tax.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
 import { prisma } from "../db.js";
+import { broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
 
 function parsePurchasedCourseOptionPackIds(raw: unknown): string[] {
   if (raw == null) return [];
@@ -331,6 +332,7 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
         });
       });
 
+      broadcastOpsSessionUpdated(store.id, session.id);
       return order;
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";

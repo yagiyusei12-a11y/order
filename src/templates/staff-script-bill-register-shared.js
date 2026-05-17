@@ -505,8 +505,9 @@ async function mountRegisterFlow(panel, ctx) {
     "<button type=\"button\" class=\"btn-ghost\" id=\"btnMergeSession\" data-ops-action=\"merge-session\" style=\"font-weight:700;border-color:#cbd5e1\">他卓と合算</button>" +
     "<button type=\"button\" class=\"btn-ghost\" id=\"btnEndSession\" style=\"color:#b91c1c;border-color:#fecaca;font-weight:700\">セッションを切る</button>" +
     "</div>" +
-    "<div class=\"card\" style=\"padding:0.65rem 0.75rem;margin:0 0 0.65rem\">" +
-    "<strong style=\"font-size:0.85rem\">人数・コース</strong>" +
+    "<details class=\"ops-admin-accordion\">" +
+    "<summary class=\"ops-admin-accordion__summary\">⚙️ 人数・コース設定</summary>" +
+    "<div class=\"ops-admin-accordion__body\">" +
     "<p class=\"muted\" style=\"font-size:0.72rem;margin:0.35rem 0 0.45rem;line-height:1.45\">コース料は人数と下のパターンから自動計算されます。単品の過去の注文単価は変わりません。</p>" +
     "<div class=\"row\" style=\"margin-top:0.35rem;gap:0.65rem;flex-wrap:wrap;align-items:flex-end\">" +
     "<div><label for=\"opsSessGuestCount\" style=\"font-size:0.72rem;display:block\">来店人数（延べ）</label>" +
@@ -527,17 +528,19 @@ async function mountRegisterFlow(panel, ctx) {
     "</select></div>" +
     "<button type=\"button\" class=\"btn-primary\" id=\"btnOpsSessCourseApply\" style=\"width:auto;padding:0.45rem 0.75rem\">コースを適用</button>" +
     "<button type=\"button\" class=\"btn-ghost\" id=\"btnOpsSessCourseClear\" style=\"width:auto;padding:0.45rem 0.75rem;border-color:#fecaca;color:#b91c1c;font-weight:700\">コース解除</button>" +
-    "</div></div>" +
-    "<div class=\"card\" style=\"padding:0.55rem 0.75rem;margin:0 0 0.65rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.35rem\">" +
-    "<span style=\"font-size:0.82rem\"><strong>卓割引</strong> · <span class=\"muted\">" +
+    "</div></details>" +
+    "<details class=\"ops-admin-accordion\">" +
+    "<summary class=\"ops-admin-accordion__summary\">⚙️ 卓割引 · <span class=\"ops-admin-accordion__hint\">" +
     ctx.escapeHtml(billDiscLabel) +
-    "</span></span>" +
+    "</span></summary>" +
+    "<div class=\"ops-admin-accordion__body\">" +
+    "<div class=\"row\" style=\"justify-content:flex-end;gap:0.35rem;flex-wrap:wrap\">" +
     "<button type=\"button\" class=\"btn-ghost\" id=\"btnBillDiscount\" style=\"font-weight:700;border-color:#86efac\"" +
     (readOnly || !bcDisc || !ctx.managerOpsAllowed() ? " disabled title=\"" +
         (!bcDisc ? "店舗設定により割引の変更は無効です" : "店長のみ変更できます") +
         "\""
       : "") +
-    ">設定</button></div>" +
+    ">設定</button></div></details>" +
     (bcOl
       ? "<div class=\"card\" style=\"padding:0.5rem 0.65rem;margin:0 0 0.5rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;font-size:0.82rem\">" +
         "<div class=\"row\" style=\"gap:0.5rem;flex-wrap:wrap;align-items:center\">" +

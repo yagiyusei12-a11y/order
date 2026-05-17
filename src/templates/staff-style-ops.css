@@ -33,7 +33,8 @@
 }
 
 .ops-register-layout__orders-scroll {
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  flex-grow: 1;
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -59,6 +60,58 @@
 
 .ops-register-layout__admin .ops-register-head {
   margin-bottom: 0.25rem;
+}
+
+.ops-admin-accordion {
+  margin: 0 0 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.ops-admin-accordion:last-child {
+  margin-bottom: 0;
+}
+
+.ops-admin-accordion__summary {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.42rem 0.55rem;
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #0f172a;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.ops-admin-accordion__summary::-webkit-details-marker {
+  display: none;
+}
+
+.ops-admin-accordion__summary::before {
+  content: "▸";
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  color: #64748b;
+  width: 0.85rem;
+}
+
+.ops-admin-accordion[open] > .ops-admin-accordion__summary::before {
+  content: "▾";
+}
+
+.ops-admin-accordion__hint {
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.ops-admin-accordion__body {
+  padding: 0.35rem 0.55rem 0.5rem;
+  border-top: 1px solid #e2e8f0;
 }
 
 .ops-register-layout__admin .card {
@@ -186,8 +239,5 @@
   }
   .ops-register-layout__right {
     max-height: 45vh;
-  }
-  .ops-register-layout__admin {
-    max-height: 32vh;
   }
 }

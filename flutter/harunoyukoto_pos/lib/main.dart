@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:charset_converter/charset_converter.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -225,16 +226,47 @@ class _OpsShellPageState extends State<OpsShellPage> {
     }
   }
 
-  /// staff-pos-hardware.js の escPosFromTextLines と同等（UTF-8 行・部分カット）
-  Uint8List _escPosFromTextLines(List<String> lines) {
+  /// プリンター向け Shift-JIS（CP932）エンコード。機種により別名の charset を試す。
+  Future<Uint8List> _encodePrinterSjis(String text) async {
+    const charsetCandidates = [
+      'SHIFT_JIS',
+      'Shift_JIS',
+      'windows-31j',
+      'MS932',
+      'SJIS',
+      'Cp932',
+    ];
+    Object? lastError;
+    for (final charset in charsetCandidates) {
+      try {
+        if (!await CharsetConverter.checkAvailability(charset)) continue;
+        return await CharsetConverter.encode(charset, text);
+      } catch (e) {
+        lastError = e;
+      }
+    }
+    try {
+      return await CharsetConverter.encode('SHIFT_JIS', text);
+    } catch (e) {
+      debugPrint('Shift-JIS encode failed ($lastError), UTF-8 fallback: $e');
+      return Uint8List.fromList(utf8.encode(text));
+    }
+  }
+
+  /// ESC/POS: 行ごとに Shift-JIS + LF（0x0A）で送信
+  Future<Uint8List> _escPosFromTextLines(List<String> lines) async {
     final b = BytesBuilder(copy: false);
     b.addByte(0x1b);
     b.addByte(0x40);
+    // 漢字モード（Epson 互換・Shift-JIS 2バイト文字用）
+    b.addByte(0x1c);
+    b.addByte(0x26);
     b.addByte(0x1b);
     b.addByte(0x61);
     b.addByte(0x00);
     for (final line in lines) {
-      b.add(utf8.encode('$line\n'));
+      final encoded = await _encodePrinterSjis('$line\n');
+      b.add(encoded);
     }
     b.addByte(0x0a);
     b.addByte(0x0a);
@@ -270,7 +302,7 @@ class _OpsShellPageState extends State<OpsShellPage> {
         _printerPort,
         timeout: _connectTimeout,
       );
-      socket.add(_escPosFromTextLines(lines));
+      socket.add(await _escPosFromTextLines(lines));
       await socket.flush();
       if (mounted) {
         _showPosSnack('プリンターへデータを送信しました');

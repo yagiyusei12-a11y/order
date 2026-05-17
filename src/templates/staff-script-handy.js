@@ -1,15 +1,17 @@
-/** @typedef {{ id: string; name: string; sellKind?: string; isAvailable?: boolean; allowTakeout?: boolean; price?: number; optionLinks?: { optionGroupId: string }[] }} HandyItem */
+/** @typedef {{ id: string; name: string; sellKind?: string; isAvailable?: boolean; allowTakeout?: boolean; price?: number; optionLinks?: { optionGroupId: string }[]; setSteps?: { id: string; label: string; minPick: number; maxPick: number; choices: { componentMenuItemId: string; extraPrice: number; isFixed: boolean; componentMenuItem?: { id: string; name: string } }[] }[] }} HandyItem */
 
 let sessionsCache = [];
 /** @type {{ categories: { id: string; name: string; items: HandyItem[] }[] }} */
 let menuCache = { categories: [] };
 /** @type {Map<string, { minSelect: number; active: boolean; items: { active: boolean }[] }>} */
 let optionGroupMap = new Map();
-/** @type {Map<string, { cartKey: string; id: string; name: string; qty: number; lineNote: string; optionSelections?: { optionGroupId: string; optionItemIds: string[] }[]; optionLabel?: string }>} */
+/** @type {Map<string, { cartKey: string; id: string; name: string; qty: number; lineNote: string; optionSelections?: { optionGroupId: string; optionItemIds: string[] }[]; setSelections?: { stepId: string; menuItemIds: string[] }[]; optionLabel?: string; setLabel?: string }>} */
 let cart = new Map();
 
 /** @type {HandyItem | null} */
 let handyOptPendingItem = null;
+/** @type {"option" | "set" | null} */
+let handyPickKind = null;
 
 /** @type {{ id: string; name: string | null; phone: string | null; deviceIdMasked: string; visitCount: number; lastSeenAt: string | null; createdAt: string }[]} */
 let customersCache = [];
@@ -69,9 +71,112 @@ function formatOrderWhen(iso) {
 }
 
 function itemHandyOk(it) {
-  if (!it || (it.sellKind || "single") === "set") return { ok: false, reason: "set" };
+  if (!it) return { ok: false, reason: "off" };
   if (!it.isAvailable) return { ok: false, reason: "off" };
+  if ((it.sellKind || "single") === "set") {
+    if (!it.setSteps || !it.setSteps.length) return { ok: false, reason: "セット未設定" };
+    return { ok: true };
+  }
   return { ok: true };
+}
+
+function itemIsSet(it) {
+  return (it.sellKind || "single") === "set" && Array.isArray(it.setSteps) && it.setSteps.length > 0;
+}
+
+/** @param {HandyItem} it */
+function itemSetSteps(it) {
+  return (it.setSteps || []).map((st) => ({
+    id: st.id,
+    label: st.label,
+    minPick: Number(st.minPick) || 0,
+    maxPick: Number(st.maxPick) || 0,
+    choices: (st.choices || []).map((ch) => ({
+      menuItemId: ch.componentMenuItemId,
+      name: (ch.componentMenuItem && ch.componentMenuItem.name) || "?",
+      extraPrice: Number(ch.extraPrice) || 0,
+      isFixed: ch.isFixed === true,
+    })),
+  }));
+}
+
+/**
+ * @param {ReturnType<typeof itemSetSteps>} steps
+ * @param {{ stepId: string; menuItemIds: string[] }[]} selections
+ */
+function validateHandySetSelections(steps, selections) {
+  const byStepInput = new Map();
+  for (const row of selections || []) {
+    if (!row || typeof row.stepId !== "string") continue;
+    const ids = Array.isArray(row.menuItemIds)
+      ? row.menuItemIds.filter((x) => typeof x === "string" && x)
+      : [];
+    byStepInput.set(row.stepId, [...new Set(ids)]);
+  }
+  if (byStepInput.size !== steps.length) {
+    return { ok: false, error: "すべてのステップを選んでください" };
+  }
+  for (const st of steps) {
+    const userIds = byStepInput.get(st.id) || [];
+    const pickable = new Set(st.choices.filter((c) => !c.isFixed).map((c) => c.menuItemId));
+    const n = userIds.length;
+    if (n < st.minPick || n > st.maxPick) {
+      return {
+        ok: false,
+        error: "「" + st.label + "」は" + st.minPick + "〜" + st.maxPick + "個選んでください",
+      };
+    }
+    for (const mid of userIds) {
+      if (!pickable.has(mid)) {
+        return { ok: false, error: "「" + st.label + "」の選択が不正です" };
+      }
+    }
+    const uniq = new Set(userIds);
+    if (uniq.size !== userIds.length) {
+      return { ok: false, error: "「" + st.label + "」で同じ品を重複して選べません" };
+    }
+  }
+  return { ok: true };
+}
+
+function handyLineTaxPercent() {
+  return handyEatModeSelected() === "takeout" ? 8 : 10;
+}
+
+/**
+ * @param {HandyItem} item
+ * @param {{ stepId: string; menuItemIds: string[] }[]} setSelections
+ */
+function handySetSurchargeInclusive(item, setSelections) {
+  const taxPct = handyLineTaxPercent();
+  let sum = 0;
+  for (const st of itemSetSteps(item)) {
+    const sel = (setSelections || []).find((x) => x.stepId === st.id);
+    const picked = sel ? sel.menuItemIds : [];
+    for (const mid of picked) {
+      const ch = st.choices.find((c) => c.menuItemId === mid);
+      if (ch) sum += Math.round(ch.extraPrice * (1 + taxPct / 100));
+    }
+  }
+  return sum;
+}
+
+/**
+ * @param {HandyItem} item
+ * @param {{ stepId: string; menuItemIds: string[] }[]} setSelections
+ */
+function handySetLabel(item, setSelections) {
+  const parts = [];
+  for (const st of itemSetSteps(item)) {
+    const sel = (setSelections || []).find((x) => x.stepId === st.id);
+    const picked = new Set(sel ? sel.menuItemIds : []);
+    const names = [];
+    for (const ch of st.choices) {
+      if (ch.isFixed || picked.has(ch.menuItemId)) names.push(ch.name);
+    }
+    if (names.length) parts.push(names.join("・"));
+  }
+  return parts.join(" / ");
 }
 
 /** @returns {{ id: string; name: string; minSelect: number; maxSelect: number; items: { id: string; name: string; priceDelta: number }[] }[]} */
@@ -137,14 +242,24 @@ function validateHandyOptionSelections(groups, selections) {
 
 /**
  * @param {string} menuItemId
- * @param {{ optionGroupId: string; optionItemIds: string[] }[]} selections
+ * @param {{ optionGroupId: string; optionItemIds: string[] }[]} optionSelections
+ * @param {{ stepId: string; menuItemIds: string[] }[]} setSelections
  */
-function handyCartKey(menuItemId, selections) {
-  if (!selections || !selections.length) return menuItemId;
-  const parts = selections
-    .map((s) => s.optionGroupId + ":" + [...s.optionItemIds].sort().join(","))
-    .sort();
-  return menuItemId + "::" + parts.join("|");
+function handyCartKey(menuItemId, optionSelections, setSelections) {
+  let key = menuItemId;
+  if (setSelections && setSelections.length) {
+    const parts = setSelections
+      .map((s) => s.stepId + ":" + [...s.menuItemIds].sort().join(","))
+      .sort();
+    key += "::set:" + parts.join("|");
+  }
+  if (optionSelections && optionSelections.length) {
+    const parts = optionSelections
+      .map((s) => s.optionGroupId + ":" + [...s.optionItemIds].sort().join(","))
+      .sort();
+    key += "::opt:" + parts.join("|");
+  }
+  return key;
 }
 
 /**
@@ -165,11 +280,14 @@ function handyOptionLabel(selections) {
 
 /**
  * @param {HandyItem | undefined} meta
- * @param {{ optionGroupId: string; optionItemIds: string[] }[] | undefined} selections
+ * @param {{ optionSelections?: { optionGroupId: string; optionItemIds: string[] }[]; setSelections?: { stepId: string; menuItemIds: string[] }[] }} row
  */
-function handyRowUnitPrice(meta, selections) {
+function handyRowUnitPrice(meta, row) {
   let p = Number(meta && meta.price) || 0;
-  for (const sel of selections || []) {
+  if (meta && itemIsSet(meta)) {
+    return p + handySetSurchargeInclusive(meta, row && row.setSelections);
+  }
+  for (const sel of (row && row.optionSelections) || []) {
     const g = optionGroupMap.get(sel.optionGroupId);
     if (!g) continue;
     for (const oid of sel.optionItemIds || []) {
@@ -183,55 +301,89 @@ function handyRowUnitPrice(meta, selections) {
 /**
  * @param {HandyItem} it
  * @param {{ optionGroupId: string; optionItemIds: string[] }[]} optionSelections
+ * @param {{ stepId: string; menuItemIds: string[] }[]} setSelections
  */
-function addHandyCartLine(it, optionSelections) {
-  const groups = itemLinkedOptionGroups(it);
-  const v = validateHandyOptionSelections(groups, optionSelections);
-  if (!v.ok) {
-    log(v.error);
-    return;
+function addHandyCartLine(it, optionSelections, setSelections) {
+  if (itemIsSet(it)) {
+    const steps = itemSetSteps(it);
+    const v = validateHandySetSelections(steps, setSelections);
+    if (!v.ok) {
+      log(v.error);
+      return;
+    }
+    const key = handyCartKey(it.id, [], setSelections);
+    const label = handySetLabel(it, setSelections);
+    const cur = cart.get(key) || {
+      cartKey: key,
+      id: it.id,
+      name: it.name,
+      qty: 0,
+      lineNote: "",
+      setSelections,
+      setLabel: label || undefined,
+    };
+    cur.qty += 1;
+    cart.set(key, cur);
+  } else {
+    const groups = itemLinkedOptionGroups(it);
+    const v = validateHandyOptionSelections(groups, optionSelections);
+    if (!v.ok) {
+      log(v.error);
+      return;
+    }
+    const key = handyCartKey(it.id, optionSelections, []);
+    const label = handyOptionLabel(optionSelections);
+    const cur = cart.get(key) || {
+      cartKey: key,
+      id: it.id,
+      name: it.name,
+      qty: 0,
+      lineNote: "",
+      optionSelections: optionSelections.length ? optionSelections : undefined,
+      optionLabel: label || undefined,
+    };
+    cur.qty += 1;
+    cart.set(key, cur);
   }
-  const key = handyCartKey(it.id, optionSelections);
-  const label = handyOptionLabel(optionSelections);
-  const cur = cart.get(key) || {
-    cartKey: key,
-    id: it.id,
-    name: it.name,
-    qty: 0,
-    lineNote: "",
-    optionSelections: optionSelections.length ? optionSelections : undefined,
-    optionLabel: label || undefined,
-  };
-  cur.qty += 1;
-  cart.set(key, cur);
   renderCart();
   log("");
 }
 
-function closeHandyOptionModal() {
+function closeHandyPickModal() {
   const bd = document.getElementById("handyOptBackdrop");
   if (bd) {
     bd.style.display = "none";
     bd.setAttribute("aria-hidden", "true");
   }
   handyOptPendingItem = null;
+  handyPickKind = null;
   const err = document.getElementById("handyOptError");
   if (err) err.hidden = true;
+}
+
+/** @param {HandyItem} it */
+function handyAddItem(it) {
+  if (itemIsSet(it)) openHandySetModal(it);
+  else if (itemHasSelectableOptions(it)) openHandyOptionModal(it);
+  else addHandyCartLine(it, [], []);
 }
 
 /** @param {HandyItem} it */
 function openHandyOptionModal(it) {
   const groups = itemLinkedOptionGroups(it);
   if (!groups.length) {
-    addHandyCartLine(it, []);
+    addHandyCartLine(it, [], []);
     return;
   }
   handyOptPendingItem = it;
+  handyPickKind = "option";
   const bd = document.getElementById("handyOptBackdrop");
+  const titleEl = document.getElementById("handyOptTitle");
   const nameEl = document.getElementById("handyOptItemName");
   const host = document.getElementById("handyOptChoices");
   const err = document.getElementById("handyOptError");
   if (!bd || !host) return;
+  if (titleEl) titleEl.textContent = "オプションを選ぶ";
   if (nameEl) nameEl.textContent = it.name || "";
   if (err) err.hidden = true;
   host.innerHTML = "";
@@ -273,7 +425,7 @@ function openHandyOptionModal(it) {
   if (first) first.focus();
 }
 
-function collectHandyModalSelections() {
+function collectHandyOptionModalSelections() {
   /** @type {{ optionGroupId: string; optionItemIds: string[] }[]} */
   const out = [];
   const host = document.getElementById("handyOptChoices");
@@ -290,13 +442,109 @@ function collectHandyModalSelections() {
   return out;
 }
 
-function confirmHandyOptionModal() {
-  if (!handyOptPendingItem) return;
-  const it = handyOptPendingItem;
-  const groups = itemLinkedOptionGroups(it);
-  const selections = collectHandyModalSelections();
-  const v = validateHandyOptionSelections(groups, selections);
+function collectHandySetModalSelections() {
+  /** @type {{ stepId: string; menuItemIds: string[] }[]} */
+  const out = [];
+  const host = document.getElementById("handyOptChoices");
+  if (!host || !handyOptPendingItem) return out;
+  for (const block of host.querySelectorAll(".handy-set-step")) {
+    const sid = block.dataset.stepId;
+    if (!sid) continue;
+    const ids = [];
+    for (const inp of block.querySelectorAll('input[type="checkbox"]:checked')) {
+      if (inp.value) ids.push(inp.value);
+    }
+    out.push({ stepId: sid, menuItemIds: ids });
+  }
+  return out;
+}
+
+/** @param {HandyItem} it */
+function openHandySetModal(it) {
+  const steps = itemSetSteps(it);
+  if (!steps.length) {
+    addHandyCartLine(it, [], []);
+    return;
+  }
+  handyOptPendingItem = it;
+  handyPickKind = "set";
+  const bd = document.getElementById("handyOptBackdrop");
+  const titleEl = document.getElementById("handyOptTitle");
+  const nameEl = document.getElementById("handyOptItemName");
+  const host = document.getElementById("handyOptChoices");
   const err = document.getElementById("handyOptError");
+  if (!bd || !host) return;
+  if (titleEl) titleEl.textContent = "セットの内容を選ぶ";
+  if (nameEl) nameEl.textContent = it.name || "";
+  if (err) err.hidden = true;
+  host.innerHTML = "";
+  for (const st of steps) {
+    const block = document.createElement("div");
+    block.className = "handy-opt-group handy-set-step";
+    block.dataset.stepId = st.id;
+    const title = document.createElement("p");
+    title.className = "handy-opt-group-title";
+    title.textContent = st.label;
+    const hint = document.createElement("p");
+    hint.className = "handy-opt-group-hint";
+    hint.textContent = st.minPick + "〜" + st.maxPick + "個選ぶ";
+    block.appendChild(title);
+    block.appendChild(hint);
+    for (const ch of st.choices) {
+      if (ch.isFixed) {
+        const fixed = document.createElement("p");
+        fixed.className = "handy-opt-fixed";
+        fixed.textContent = "含む: " + ch.name;
+        block.appendChild(fixed);
+        continue;
+      }
+      const lbl = document.createElement("label");
+      lbl.className = "handy-opt-pick";
+      const inp = document.createElement("input");
+      inp.type = "checkbox";
+      inp.value = ch.menuItemId;
+      inp.dataset.stepId = st.id;
+      const ex = ch.extraPrice;
+      const taxPct = handyLineTaxPercent();
+      const inc = Math.round(ex * (1 + taxPct / 100));
+      lbl.appendChild(inp);
+      lbl.appendChild(
+        document.createTextNode(
+          ch.name + (inc > 0 ? " (+" + inc.toLocaleString("ja-JP") + "円)" : ""),
+        ),
+      );
+      block.appendChild(lbl);
+    }
+    host.appendChild(block);
+  }
+  bd.style.display = "flex";
+  bd.setAttribute("aria-hidden", "false");
+  const first = host.querySelector("input");
+  if (first) first.focus();
+}
+
+function confirmHandyPickModal() {
+  if (!handyOptPendingItem || !handyPickKind) return;
+  const it = handyOptPendingItem;
+  const err = document.getElementById("handyOptError");
+  if (handyPickKind === "set") {
+    const steps = itemSetSteps(it);
+    const selections = collectHandySetModalSelections();
+    const v = validateHandySetSelections(steps, selections);
+    if (!v.ok) {
+      if (err) {
+        err.textContent = v.error;
+        err.hidden = false;
+      }
+      return;
+    }
+    addHandyCartLine(it, [], selections);
+    closeHandyPickModal();
+    return;
+  }
+  const groups = itemLinkedOptionGroups(it);
+  const selections = collectHandyOptionModalSelections();
+  const v = validateHandyOptionSelections(groups, selections);
   if (!v.ok) {
     if (err) {
       err.textContent = v.error;
@@ -304,8 +552,8 @@ function confirmHandyOptionModal() {
     }
     return;
   }
-  addHandyCartLine(it, selections);
-  closeHandyOptionModal();
+  addHandyCartLine(it, selections, []);
+  closeHandyPickModal();
 }
 
 /** @returns {"dine_in" | "takeout"} */
@@ -743,7 +991,7 @@ function handyCartTotals() {
     if (row.qty <= 0) continue;
     count += row.qty;
     const meta = flat.find((x) => x.id === row.id);
-    yenTotal += handyRowUnitPrice(meta, row.optionSelections) * row.qty;
+    yenTotal += handyRowUnitPrice(meta, row) * row.qty;
   }
   return { count, yenTotal };
 }
@@ -781,13 +1029,16 @@ function renderItems() {
     const left = document.createElement("div");
     left.style.minWidth = "0";
     const hasOpts = itemHasSelectableOptions(it);
+    const isSet = itemIsSet(it);
     const rLabel =
-      hi.reason === "set"
-        ? "セット"
-        : hi.reason === "off"
+      hi.reason === "off" || hi.reason === "セット未設定"
+        ? hi.reason === "off"
           ? "販売停止"
-          : takeoutBlocked
-            ? "テイクアウト不可"
+          : "セット未設定"
+        : takeoutBlocked
+          ? "テイクアウト不可"
+          : isSet
+            ? "セット"
             : hasOpts
               ? "オプションあり"
               : "";
@@ -808,11 +1059,7 @@ function renderItems() {
     btn.disabled = !hi.ok || takeoutBlocked;
     btn.onclick = () => {
       if (!hi.ok || takeoutBlocked) return;
-      if (itemHasSelectableOptions(it)) {
-        openHandyOptionModal(it);
-        return;
-      }
-      addHandyCartLine(it, []);
+      handyAddItem(it);
     };
     row.appendChild(left);
     row.appendChild(btn);
@@ -839,6 +1086,12 @@ function renderCart() {
     const nameEl = document.createElement("span");
     nameEl.textContent = row.name + " × " + row.qty;
     left.appendChild(nameEl);
+    if (row.setLabel) {
+      const setEl = document.createElement("span");
+      setEl.className = "handy-cart-opt";
+      setEl.textContent = "（" + row.setLabel + "）";
+      left.appendChild(setEl);
+    }
     if (row.optionLabel) {
       const optEl = document.createElement("span");
       optEl.className = "handy-cart-opt";
@@ -895,6 +1148,9 @@ async function submitOrder() {
         note: row.lineNote || undefined,
         eatMode,
       };
+      if (row.setSelections && row.setSelections.length) {
+        line.setSelections = row.setSelections;
+      }
       if (row.optionSelections && row.optionSelections.length) {
         line.optionSelections = row.optionSelections;
       }
@@ -955,17 +1211,17 @@ if (handyStickySubmitEl) handyStickySubmitEl.onclick = () => submitOrder();
   const bd = document.getElementById("handyOptBackdrop");
   if (bd) {
     bd.addEventListener("click", (ev) => {
-      if (ev.target === bd) closeHandyOptionModal();
+      if (ev.target === bd) closeHandyPickModal();
     });
   }
   const cancelB = document.getElementById("handyOptCancel");
-  if (cancelB) cancelB.onclick = () => closeHandyOptionModal();
+  if (cancelB) cancelB.onclick = () => closeHandyPickModal();
   const okB = document.getElementById("handyOptConfirm");
-  if (okB) okB.onclick = () => confirmHandyOptionModal();
+  if (okB) okB.onclick = () => confirmHandyPickModal();
   document.addEventListener("keydown", (ev) => {
     if (ev.key !== "Escape") return;
     const backdrop = document.getElementById("handyOptBackdrop");
-    if (backdrop && backdrop.style.display !== "none") closeHandyOptionModal();
+    if (backdrop && backdrop.style.display !== "none") closeHandyPickModal();
   });
 })();
 

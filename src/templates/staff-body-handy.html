@@ -3,7 +3,7 @@
     <h2 class="page-title handy-page-title">口頭注文（ハンディ）</h2>
     <p class="muted handy-lead">
       電話・カウンター受付の代行注文です。先に<strong>卓・会計</strong>でセッションを開いてから、卓を選んで商品を追加してください。
-      セット商品は選べません。オプション付き商品は「＋」で選択してからカートに入れます。
+      オプション付き・セット商品は「＋」で内容を選んでからカートに入れます。
     </p>
 
     <div class="handy-layout">
@@ -112,7 +112,7 @@
 
   <div id="handyOptBackdrop" class="handy-modal-backdrop" style="display: none" aria-hidden="true">
     <div class="handy-modal handy-opt-modal" id="handyOptDialog" role="dialog" aria-modal="true" aria-labelledby="handyOptTitle">
-      <h3 id="handyOptTitle" class="handy-modal-title">オプションを選ぶ</h3>
+      <h3 id="handyOptTitle" class="handy-modal-title">内容を選ぶ</h3>
       <p id="handyOptItemName" class="handy-opt-item-name"></p>
       <div id="handyOptChoices" class="handy-opt-choices"></div>
       <p id="handyOptError" class="handy-opt-error muted" hidden></p>
@@ -778,5 +778,11 @@
     color: var(--muted);
     margin-top: 0.1rem;
     line-height: 1.35;
+  }
+  .handy-opt-fixed {
+    margin: 0.15rem 0 0.35rem;
+    font-size: 0.78rem;
+    color: var(--muted);
+    line-height: 1.4;
   }
 </style>

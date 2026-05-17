@@ -10,6 +10,14 @@ import {
   type GuestOptionGroupSelection,
 } from "../lib/guest-order-options.js";
 import {
+  buildSetLineExtra,
+  buildSetNameSnapshot,
+  surchargeExclusiveStepSumInclusive,
+  validateSetSelections,
+  type GuestSetStepSelection,
+  type SetStepForValidation,
+} from "../lib/menu-set-order.js";
+import {
   baseNetFromStoredPrice,
   eatModeTaxRatePercent,
   normalizeEatMode,
@@ -29,7 +37,7 @@ function parsePurchasedCourseOptionPackIds(raw: unknown): string[] {
 
 /**
  * 口頭・電話などスタッフが代行する注文。ゲスト向け表示制限（visibleToGuest / 時間帯）を通さない。
- * セット商品は非対応。オプション付き単品は optionSelections で受け付ける。
+ * オプション付き単品は optionSelections、セットは setSelections で受け付ける。
  */
 export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<void> {
   app.post<{
@@ -41,6 +49,7 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
         note?: string;
         eatMode?: unknown;
         optionSelections?: GuestOptionGroupSelection[];
+        setSelections?: GuestSetStepSelection[];
       }[];
       note?: string;
     };
@@ -178,7 +187,7 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
             where: {
               id: l.menuItemId,
               isAvailable: true,
-              sellKind: "single",
+              sellKind: { in: ["single", "set"] },
               category: { storeId: session.storeId },
             },
             include: {
@@ -194,12 +203,26 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
                   },
                 },
               },
+              setSteps: {
+                orderBy: { sortOrder: "asc" },
+                include: {
+                  choices: {
+                    orderBy: { sortOrder: "asc" },
+                    include: {
+                      componentMenuItem: { select: { id: true, name: true } },
+                    },
+                  },
+                },
+              },
             },
           });
           if (!item) throw new Error("BAD_ITEM");
 
           const eatMode = normalizeEatMode((l as { eatMode?: unknown }).eatMode);
           const lineTaxPct = eatModeTaxRatePercent(eatMode, st.taxRatePercent);
+          if (allowedIds && !allowedIds.has(item.id)) {
+            throw new Error("BAD_ITEM");
+          }
           if (eatMode === "takeout") {
             if (item.allowTakeout !== true) throw new Error("BAD_TAKEOUT");
             if (sess.courseId) {
@@ -207,6 +230,66 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
               if (inc && !st.guestCourseIncludedAllowTakeout) throw new Error("BAD_TAKEOUT_COURSE");
               if (!inc && !st.guestCourseAddonAllowTakeout) throw new Error("BAD_TAKEOUT_COURSE");
             }
+          }
+
+          if (item.sellKind === "set") {
+            const sel = Array.isArray((l as { setSelections?: unknown }).setSelections)
+              ? ((l as { setSelections: GuestSetStepSelection[] }).setSelections)
+              : [];
+            const stepsVal: SetStepForValidation[] = item.setSteps.map((stp) => ({
+              id: stp.id,
+              label: stp.label,
+              minPick: stp.minPick,
+              maxPick: stp.maxPick,
+              choices: stp.choices.map((c) => ({
+                componentMenuItemId: c.componentMenuItemId,
+                extraPrice: c.extraPrice,
+                isFixed: c.isFixed,
+              })),
+            }));
+            const vSet = validateSetSelections(stepsVal, sel);
+            if (!vSet.ok) throw new Error("BAD_SET");
+            const byStep = vSet.byStep;
+
+            const priceTaxMode = item.priceTaxMode === "exclusive" ? "exclusive" : st.menuPriceTaxMode;
+            const baseNet = baseNetFromStoredPrice(item.price, priceTaxMode, st.taxRatePercent);
+            const baseTaxIncluded = taxIncludedFromNet(baseNet, lineTaxPct);
+            let surcharge = 0;
+            for (const stp of item.setSteps) {
+              const picked = byStep.get(stp.id) ?? [];
+              const def = stepsVal.find((x) => x.id === stp.id);
+              if (def) surcharge += surchargeExclusiveStepSumInclusive(def, picked, lineTaxPct);
+            }
+            const discRows = item.timeDiscounts.map((d) => ({
+              discountKind: d.discountKind,
+              value: d.value,
+              timeWindow: d.timeWindow,
+            }));
+            const { price: discountedBase } = applyGuestItemTimeDiscounts(baseTaxIncluded, discRows, nowMin);
+            const unitPrice = discountedBase + surcharge;
+
+            const nameById = new Map<string, string>();
+            for (const stp of item.setSteps) {
+              for (const ch of stp.choices) {
+                nameById.set(ch.componentMenuItemId, ch.componentMenuItem.name);
+              }
+            }
+            const stepsLite = item.setSteps.map((s) => ({ id: s.id, label: s.label }));
+            const lineExtraObj = buildSetLineExtra(stepsLite, byStep, nameById, stepsVal, lineTaxPct);
+            const nameSnapshot = buildSetNameSnapshot(item.name, lineExtraObj);
+
+            needStock.set(l.menuItemId, (needStock.get(l.menuItemId) ?? 0) + l.qty);
+            resolved.push({
+              menuItemId: item.id,
+              qty: l.qty,
+              note: l.note?.trim() || null,
+              unitPrice,
+              nameSnapshot,
+              eatMode,
+              taxRatePercent: lineTaxPct,
+              lineExtra: lineExtraObj as Prisma.InputJsonValue,
+            });
+            continue;
           }
 
           const linkedGroups = item.optionLinks
@@ -384,6 +467,9 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
       if (msg === "SESSION_GONE") return reply.code(409).send({ error: "session closed or missing" });
       if (msg === "BAD_OPTIONS") {
         return reply.code(400).send({ error: "オプションの選択が不正です（必須・最大数を確認してください）" });
+      }
+      if (msg === "BAD_SET") {
+        return reply.code(400).send({ error: "セットの選択が不正です（各ステップの選択数を確認してください）" });
       }
       if (msg === "BAD_TAKEOUT") {
         return reply.code(400).send({ error: "テイクアウトにできない商品が含まれています（商品マスタのテイクアウト可を確認）" });

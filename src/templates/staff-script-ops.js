@@ -1362,7 +1362,28 @@ function buildInvoicePlainLines(detail, opts) {
     lines.push.apply(lines, buildPaymentBreakdownPlainLines(detail));
   }
   appendLegalFooterPlain(lines);
+  appendInvoiceStampBoxesPlain(lines);
   return lines;
+}
+
+/** 領収書末尾: 収入印紙・担当印（半角枠＋全角ラベル・32桁幅想定） */
+function appendInvoiceStampBoxesPlain(lines) {
+  lines.push("+----------+ +----------+");
+  lines.push("| 収入印紙 | |  担当印  |");
+  lines.push("|          | |          |");
+  lines.push("|          | |          |");
+  lines.push("+----------+ +----------+");
+}
+
+/** カット前の紙送り（印字ヘッド〜カッター間の余白） */
+var POS_PRINTER_FEED_BLANK_LINE_COUNT = 5;
+
+function appendPrinterFeedBlankLines(plainLines) {
+  var out = Array.isArray(plainLines) ? plainLines.slice() : [];
+  for (var i = 0; i < POS_PRINTER_FEED_BLANK_LINE_COUNT; i++) {
+    out.push("");
+  }
+  return out;
 }
 
 /** レジアプリ（WebView）送信用: 1行1要素・改行除去・JSON安全化 */
@@ -1387,10 +1408,11 @@ function buildPosPrintLinesPayload(plainLines) {
 }
 
 async function printReceiptOrBrowser(html, plainLines) {
+  var linesToPrint = appendPrinterFeedBlankLines(plainLines);
   try {
     var ch = typeof HarunoyukotoPos !== "undefined" ? HarunoyukotoPos : null;
     if (ch && typeof ch.postMessage === "function") {
-      var payload = buildPosPrintLinesPayload(plainLines);
+      var payload = buildPosPrintLinesPayload(linesToPrint);
       if (!payload || payload.length < 2) {
         log("レジアプリへの印刷データを作成できませんでした");
       } else {
@@ -1403,7 +1425,7 @@ async function printReceiptOrBrowser(html, plainLines) {
   }
   if (typeof window.posThermalPrintLines === "function" && window.posPrinterConnected && window.posPrinterConnected()) {
     try {
-      await window.posThermalPrintLines(plainLines);
+      await window.posThermalPrintLines(linesToPrint);
       return;
     } catch (e) {
       log(String(e.message || e));

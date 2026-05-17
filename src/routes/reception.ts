@@ -548,6 +548,12 @@ function mergeShiftSeatsWithLiveDerived(seats: unknown[], derived: DerivedSeatRo
     const id = typeof o.id === "string" ? o.id : "";
     const d = id ? byId.get(id) : undefined;
     if (!d) return row;
+    if (o.status === "reserved" && d.status === "vacant") {
+      o.capacity = d.capacity;
+      o.mergeWith = d.mergeWith;
+      o.seatType = d.seatType;
+      return o;
+    }
     if (d.status === "occupied" || d.status === "cleaning") {
       o.status = d.status;
       o.current = d.current;

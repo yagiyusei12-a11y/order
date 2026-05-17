@@ -525,8 +525,8 @@
       const perSeatNum = Math.ceil(num / ids.length);
       const updatedSeats = (shiftData.seats || []).map((s) => {
         if (!ids.includes(s.id)) return s;
-        if (isReserved) return { ...s, status: "reserved" };
-        return { ...s, status: "occupied", current: perSeatNum, entryTime: Date.now() };
+        // スタッフ受付マップは黄色（reserved）。occupied は DiningSession があるときだけサーバーが付与する。
+        return { ...s, status: "reserved", current: perSeatNum };
       });
       const updatedWaiting = shiftData.waiting || [];
       if (isReserved) updatedWaiting.push({ seat: ids.join(","), name: "案内済み", num: num, startTime: time, alerted: false });

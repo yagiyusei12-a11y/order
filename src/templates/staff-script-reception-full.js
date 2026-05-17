@@ -335,6 +335,43 @@ function findSeatEl(map, id) {
   return null;
 }
 
+/** 待ちリスト・受付端末の席表記（C1, store-c01 等）を seatStates のキーに合わせる */
+function resolveSeatStateId(raw) {
+  const t = String(raw || "").trim();
+  if (!t) return "";
+  if (seatStates[t]) return t;
+  const want = seatLabel(t);
+  for (const id of Object.keys(seatStates)) {
+    if (id === t || seatLabel(id) === want) return id;
+  }
+  for (const row of tableMaster || []) {
+    const code = row && typeof row.code === "string" ? row.code.trim() : "";
+    if (!code) continue;
+    if (code === t || seatLabel(code) === want) return code;
+  }
+  return t;
+}
+
+/** 受付端末・待ちリストで案内済みの席をマップ上で黄色（reserved）にする */
+function applyWalkInReservedHighlights(waiting) {
+  const mark = (rawId) => {
+    const id = resolveSeatStateId(rawId);
+    if (!id) return;
+    const st = seatStates[id];
+    if (!st) return;
+    if (st.status === "vacant" || st.status === "reserved") {
+      seatStates[id] = { ...st, status: "reserved" };
+    }
+  };
+  for (const w of waiting || []) {
+    String(w.seat || "")
+      .split(/[,、]/)
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .forEach(mark);
+  }
+}
+
 function ensureGlobalSeatDrag() {
   if (window.__rcSeatDragBound) return;
   window.__rcSeatDragBound = true;
@@ -685,6 +722,7 @@ async function loadData() {
     seatStates = {};
     shiftData.seats.forEach((s) => seatStates[s.id] = { ...s });
     seatOrder = (shiftData.seats || []).map((s) => s && s.id).filter(Boolean);
+    applyWalkInReservedHighlights(shiftData.waiting || []);
 
     const d = document.getElementById("viewDate").value, s = document.getElementById("viewShift").value;
     const resList = existingReservations

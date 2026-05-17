@@ -20,6 +20,7 @@
   width: 100%;
 }
 
+/* —— 左：注文（上・スクロール）＋管理（下・固定） —— */
 .ops-register-layout__left {
   display: flex;
   flex-direction: column;
@@ -27,58 +28,150 @@
   min-width: 0;
   border-right: 1px solid var(--border);
   background: var(--surface, #fff);
-  padding: 0.65rem 0.85rem 0.75rem;
-}
-
-.ops-register-layout__left .ops-sec-title {
-  margin: 0 0 0.45rem;
-  flex-shrink: 0;
+  padding: 0;
+  overflow: hidden;
 }
 
 .ops-register-layout__orders-scroll {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  padding: 0.5rem 0.75rem 0.35rem;
+}
+
+.ops-register-layout__orders-scroll .ops-sec-title {
+  margin: 0 0 0.35rem;
 }
 
 .ops-register-layout__orders-scroll .ops-order-card {
   margin-bottom: 0;
 }
 
+.ops-register-layout__admin {
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: #f8fafc;
+  padding: 0.45rem 0.75rem 0.55rem;
+  overflow: visible;
+}
+
+.ops-register-layout__admin .ops-register-head {
+  margin-bottom: 0.25rem;
+}
+
+.ops-register-layout__admin .card {
+  padding: 0.45rem 0.55rem !important;
+  margin: 0 0 0.4rem !important;
+}
+
+.ops-register-layout__admin .card:last-child {
+  margin-bottom: 0 !important;
+}
+
+.ops-register-layout__admin .muted {
+  font-size: 0.68rem !important;
+  margin-top: 0.2rem !important;
+  margin-bottom: 0.3rem !important;
+  line-height: 1.35 !important;
+}
+
+.ops-register-layout__admin .row {
+  margin-top: 0.25rem !important;
+  gap: 0.35rem !important;
+}
+
+.ops-register-layout__admin label {
+  font-size: 0.68rem !important;
+}
+
+.ops-register-layout__admin input,
+.ops-register-layout__admin select {
+  padding: 0.28rem 0.38rem !important;
+  font-size: 0.82rem;
+}
+
+.ops-register-layout__admin .btn-primary,
+.ops-register-layout__admin .btn-ghost {
+  padding: 0.32rem 0.55rem !important;
+  font-size: 0.78rem !important;
+}
+
+/* —— 右：決済のみ（スクロールなし） —— */
 .ops-register-layout__right {
   display: flex;
   flex-direction: column;
   min-height: 0;
   min-width: 0;
+  overflow: hidden;
   background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
 }
 
-.ops-register-layout__controls {
-  flex: 1;
+.ops-register-layout__register {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
   min-height: 0;
-  overflow-y: auto;
-  padding: 0.65rem 0.85rem;
-  -webkit-overflow-scrolling: touch;
+  overflow: hidden;
+  padding: 0.5rem 0.75rem 0.6rem;
+  background: var(--surface, #fff);
+  box-shadow: -4px 0 16px rgba(15, 23, 42, 0.04);
 }
 
-.ops-register-layout__register {
-  flex-shrink: 0;
-  padding: 0.65rem 0.85rem 0.85rem;
-  border-top: 1px solid var(--border);
-  background: var(--surface, #fff);
-  box-shadow: 0 -6px 20px rgba(15, 23, 42, 0.07);
+.ops-register-layout__register .ops-total-row {
+  margin: 0.12rem 0 !important;
+  font-size: 0.82rem;
 }
 
 .ops-register-layout__register .ops-total-main {
-  font-size: 1.05rem;
+  font-size: 1.08rem;
+  margin: 0.2rem 0 0.35rem !important;
+}
+
+.ops-register-layout__register label {
+  font-size: 0.72rem;
+  margin: 0.25rem 0 0.12rem;
+  display: block;
+}
+
+.ops-register-layout__register select,
+.ops-register-layout__register input[type="text"] {
+  width: 100%;
+  padding: 0.35rem 0.45rem;
+  margin-bottom: 0.2rem;
+  font-size: 0.88rem;
+}
+
+.ops-register-layout__register #cashArea {
+  margin-top: 0.15rem;
+}
+
+.ops-register-layout__register #cashKeypad {
+  margin: 0.15rem 0;
+}
+
+.ops-register-layout__register #cashKeypad .btn-ghost {
+  padding: 0.35rem 0.25rem !important;
+  font-size: 0.85rem !important;
 }
 
 .ops-register-layout__register #btnConfirmPayment {
   width: 100%;
-  padding: 0.65rem 1rem;
+  padding: 0.6rem 1rem;
+  margin-top: 0.35rem !important;
   font-size: 1rem;
   font-weight: 800;
+  flex-shrink: 0;
+}
+
+.ops-register-layout__register #afterPayment {
+  margin-top: 0.35rem !important;
+  font-size: 0.82rem;
+  flex-shrink: 0;
+  max-height: 28vh;
+  overflow-y: auto;
 }
 
 @media (max-width: 720px) {
@@ -89,6 +182,12 @@
   .ops-register-layout__left {
     border-right: none;
     border-bottom: 1px solid var(--border);
-    max-height: 42vh;
+    max-height: 55vh;
+  }
+  .ops-register-layout__right {
+    max-height: 45vh;
+  }
+  .ops-register-layout__admin {
+    max-height: 32vh;
   }
 }

@@ -488,7 +488,7 @@ async function mountRegisterFlow(panel, ctx) {
     "<div class=\"card ops-order-card\"><table class=\"ops-order-table\">" +
     orderTableFallback +
     "</table></div>";
-  const controlsHtml =
+  const leftAdminHtml =
     switchPre +
     "<div class=\"ops-register-head\"><span class=\"badge\">" +
     ctx.escapeHtml(table.name) +
@@ -583,21 +583,22 @@ async function mountRegisterFlow(panel, ctx) {
     panel.innerHTML =
       "<div class=\"ops-register-layout\">" +
       "<div class=\"ops-register-layout__left\">" +
-      "<h3 class=\"ops-sec-title\">コース・注文</h3>" +
       "<div class=\"ops-register-layout__orders-scroll\">" +
+      "<h3 class=\"ops-sec-title\">コース・注文</h3>" +
       "<div class=\"card ops-order-card\"><table class=\"ops-order-table\">" +
       orderTableFallback +
       "</table></div>" +
-      "</div></div>" +
-      "<div class=\"ops-register-layout__right\">" +
-      "<div class=\"ops-register-layout__controls\">" +
-      controlsHtml +
       "</div>" +
+      "<div class=\"ops-register-layout__admin\">" +
+      leftAdminHtml +
+      "</div>" +
+      "</div>" +
+      "<div class=\"ops-register-layout__right\">" +
       "<div class=\"ops-register-layout__register\">" +
       registerHtml +
       "</div></div></div>";
   } else {
-    panel.innerHTML = controlsHtml + ordersTableHtml + registerHtml;
+    panel.innerHTML = leftAdminHtml + ordersTableHtml + registerHtml;
   }
   panel.dataset.opsSessionId = session.id;
   panel.dataset.opsTableId = table.id;

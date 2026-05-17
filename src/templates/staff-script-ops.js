@@ -149,6 +149,34 @@ function hideOpsDetailModal() {
   document.body.classList.remove("ops-detail-modal-open");
 }
 
+async function emitOpsSeatClear() {
+  try {
+    const sock = await ensureOpsSocket();
+    if (!sock.connected) {
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("socket connect timeout")), 10000);
+        const onOk = () => {
+          clearTimeout(timer);
+          sock.off("connect_error", onErr);
+          resolve();
+        };
+        const onErr = (e) => {
+          clearTimeout(timer);
+          sock.off("connect", onOk);
+          reject(e);
+        };
+        sock.once("connect", onOk);
+        sock.once("connect_error", onErr);
+      });
+    }
+    sock.emit("ops:seat-clear", {}, (ack) => {
+      if (ack && ack.ok === false) log("席選択解除: " + (ack.error || "失敗"));
+    });
+  } catch (e) {
+    console.warn("ops seat clear socket", e);
+  }
+}
+
 function dismissOpsDetailModal() {
   selectedTableId = null;
   selectedSessionIdOverride = null;
@@ -156,6 +184,7 @@ function dismissOpsDetailModal() {
   const panel = document.getElementById("detailPanel");
   if (panel) panel.innerHTML = "";
   renderGrid();
+  void emitOpsSeatClear();
 }
 
 async function emitOpsSeatSelection() {

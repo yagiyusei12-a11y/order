@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { join } from "node:path";
 import { templatePath } from "../lib/paths.js";
 import { displayTableCode } from "../lib/table-display-code.js";
+import { verifyGuestDisplayKey } from "../lib/guest-display-auth.js";
 import { prisma } from "../db.js";
 import QRCode from "qrcode";
 
@@ -25,6 +26,18 @@ type StaffPageScriptBundle =
       prependFile?: string;
       appendFile?: string;
     };
+
+function assembleGuestDisplayPage(storeId: string, storeName: string, displayKey: string): string {
+  return loadTemplate("guest-display.html")
+    .replace("__GUEST_DISPLAY_CSS__", loadTemplate("guest-display.css"))
+    .replace("__GUEST_DISPLAY_JS__", loadTemplate("guest-display.js"))
+    .replace("__STORE_ID_JS__", JSON.stringify(storeId))
+    .replace("__DISPLAY_KEY_JS__", JSON.stringify(displayKey))
+    .replace(
+      /<p id="storeNameIdle"[^>]*>[\s\S]*?<\/p>/,
+      `<p id="storeNameIdle" class="guest-display__store-name">${escapeHtml(storeName)}</p>`,
+    );
+}
 
 function assembleStaffPage(
   storeId: string,
@@ -156,6 +169,26 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
     const body = html("guest.html").replace("__TOKEN_JS__", jsToken);
     return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(body);
   });
+
+  app.get<{ Params: { storeId: string }; Querystring: { key?: string } }>(
+    "/guest-display/:storeId",
+    async (req, reply) => {
+      const storeId = req.params.storeId;
+      const key = typeof req.query.key === "string" ? req.query.key.trim() : "";
+      if (!verifyGuestDisplayKey(storeId, key)) {
+        return reply.code(403).type("text/plain; charset=utf-8").send("invalid display key");
+      }
+      const store = await prisma.store.findUnique({
+        where: { id: storeId },
+        select: { name: true },
+      });
+      if (!store) return reply.code(404).type("text/plain; charset=utf-8").send("store not found");
+      return reply
+        .type("text/html; charset=utf-8")
+        .header("Cache-Control", "no-store")
+        .send(assembleGuestDisplayPage(storeId, store.name, key));
+    },
+  );
 
   app.get<{ Params: { storeId: string } }>("/takeout/:storeId", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId }, select: { id: true, name: true } });

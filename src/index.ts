@@ -11,6 +11,7 @@ import { isDbDiagEnabled, registerDbDiag } from "./routes/db-diag.js";
 import { registerPublicApi } from "./routes/public-api.js";
 import { registerReception } from "./routes/reception.js";
 import { registerTakeoutNet } from "./routes/takeout-net.js";
+import { registerGuestDisplayApi } from "./routes/guest-display.js";
 import { registerWebUi } from "./routes/web-ui.js";
 import { Server as SocketIOServer } from "socket.io";
 import { prisma } from "./db.js";
@@ -49,7 +50,8 @@ async function main(): Promise<void> {
       req.url.startsWith("/stores/") ||
       req.url.startsWith("/auth/") ||
       req.url.startsWith("/public/") ||
-      req.url.startsWith("/guest/");
+      req.url.startsWith("/guest/") ||
+      req.url.startsWith("/guest-display/");
     if (isJsonApi) {
       return reply.code(status).send({ error: msg });
     }
@@ -61,6 +63,7 @@ async function main(): Promise<void> {
   await app.register(registerReception);
   await app.register(registerGuest);
   await app.register(registerTakeoutNet);
+  await app.register(registerGuestDisplayApi);
   /** 子スコープに限定し、ゲストAPIに JWT を要求しない */
   await app.register(async (scope) => {
     await registerProtectedStaffRoutes(scope);

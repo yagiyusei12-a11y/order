@@ -1,0 +1,135 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #111;
+  color: #fff;
+  font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.guest-display {
+  min-height: 100%;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: max(24px, env(safe-area-inset-top)) max(32px, env(safe-area-inset-right))
+    max(24px, env(safe-area-inset-bottom)) max(32px, env(safe-area-inset-left));
+}
+
+.guest-display__idle {
+  text-align: center;
+}
+
+.guest-display__store-name {
+  margin: 0 0 0.35em;
+  font-size: clamp(2rem, 6vw, 3.25rem);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.guest-display__welcome {
+  margin: 0;
+  font-size: clamp(1.1rem, 3vw, 1.5rem);
+  font-weight: 400;
+  opacity: 0.85;
+}
+
+.guest-display__active {
+  width: min(92vw, 960px);
+}
+
+.guest-display__active-inner {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(1.5rem, 5vw, 3.5rem);
+}
+
+.guest-display__label-col,
+.guest-display__amount-col {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.guest-display__label-col {
+  text-align: right;
+}
+
+.guest-display__amount-col {
+  text-align: left;
+}
+
+.guest-display__label {
+  margin: 0;
+  font-size: clamp(2.5rem, 8vw, 4.5rem);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.guest-display__table-hint {
+  margin: 0.35em 0 0;
+  font-size: clamp(0.95rem, 2.5vw, 1.25rem);
+  opacity: 0.65;
+}
+
+.guest-display__divider {
+  flex: 0 0 auto;
+  width: 3px;
+  height: clamp(5rem, 18vh, 9rem);
+  margin: 0;
+  border: none;
+  background: #fff;
+  opacity: 0.9;
+}
+
+.guest-display__amount {
+  margin: 0;
+  font-size: clamp(2.75rem, 9vw, 5rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.guest-display__items {
+  margin: 0.25em 0 0;
+  font-size: clamp(1.5rem, 4.5vw, 2.5rem);
+  font-weight: 500;
+  opacity: 0.9;
+  font-variant-numeric: tabular-nums;
+}
+
+.guest-display__fade-in {
+  animation: guest-display-fade 0.45s ease-out;
+}
+
+@keyframes guest-display-fade {
+  from {
+    opacity: 0.25;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.guest-display__status {
+  position: fixed;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  left: 0;
+  right: 0;
+  margin: 0;
+  text-align: center;
+  font-size: 0.85rem;
+  opacity: 0.5;
+}

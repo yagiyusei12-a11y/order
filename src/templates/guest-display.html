@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>客面ディスプレイ</title>
+  <style>
+    __GUEST_DISPLAY_CSS__
+  </style>
+</head>
+<body>
+  <div id="app" class="guest-display" data-mode="idle">
+    <section id="idleView" class="guest-display__idle" aria-hidden="false">
+      <p id="storeNameIdle" class="guest-display__store-name">はるのゆこと</p>
+      <p class="guest-display__welcome">いらっしゃいませ</p>
+    </section>
+    <section id="activeView" class="guest-display__active" hidden aria-hidden="true">
+      <div class="guest-display__active-inner">
+        <div class="guest-display__label-col">
+          <p class="guest-display__label">合計</p>
+          <p id="tableHint" class="guest-display__table-hint"></p>
+        </div>
+        <hr class="guest-display__divider" />
+        <div class="guest-display__amount-col">
+          <p id="amountYen" class="guest-display__amount">¥ -</p>
+          <p id="itemCount" class="guest-display__items">0 点</p>
+        </div>
+      </div>
+    </section>
+    <p id="statusLine" class="guest-display__status" aria-live="polite"></p>
+  </div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const GUEST_DISPLAY_STORE_ID = __STORE_ID_JS__;
+    const GUEST_DISPLAY_KEY = __DISPLAY_KEY_JS__;
+  </script>
+  <script>
+    __GUEST_DISPLAY_JS__
+  </script>
+</body>
+</html>

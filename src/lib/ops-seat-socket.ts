@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { Server, Socket } from "socket.io";
 import { STAFF_JWT_COOKIE_NAME } from "../config.js";
+import { verifyGuestDisplayKey } from "./guest-display-auth.js";
 import { prisma } from "../db.js";
 
 export type OpsSeatSelectionPayload = {
@@ -41,7 +42,7 @@ function storeRoom(storeId: string): string {
 
 type StaffJwt = { sub?: string; storeId?: string };
 
-async function authenticateSocket(socket: Socket, app: FastifyInstance): Promise<StaffJwt | null> {
+async function authenticateStaffSocket(socket: Socket, app: FastifyInstance): Promise<StaffJwt | null> {
   const cookies = parseCookies(socket.handshake.headers.cookie);
   const token = cookies[STAFF_JWT_COOKIE_NAME];
   if (!token) return null;
@@ -54,6 +55,15 @@ async function authenticateSocket(socket: Socket, app: FastifyInstance): Promise
   }
 }
 
+function authenticateGuestDisplaySocket(socket: Socket): string | null {
+  const auth = socket.handshake.auth;
+  if (!isRecord(auth)) return null;
+  const storeId = typeof auth.storeId === "string" ? auth.storeId.trim() : "";
+  const displayKey = typeof auth.displayKey === "string" ? auth.displayKey.trim() : "";
+  if (!storeId || !verifyGuestDisplayKey(storeId, displayKey)) return null;
+  return storeId;
+}
+
 function isRecord(v: unknown): v is Record<string, unknown> {
   return v != null && typeof v === "object" && !Array.isArray(v);
 }
@@ -62,28 +72,74 @@ export function getLastOpsSeatSelection(storeId: string): OpsSeatSelectionPayloa
   return lastSelectionByStore.get(storeId) ?? null;
 }
 
+function broadcastSeatSelection(io: Server, event: OpsSeatSelectionPayload): void {
+  io.to(storeRoom(event.storeId)).emit("ops:seat-selected", event);
+}
+
+function clearedSelection(storeId: string): OpsSeatSelectionPayload {
+  return {
+    storeId,
+    tableId: "",
+    tableName: "",
+    publicCode: "",
+    sessionId: null,
+    sessionStatus: null,
+    staffUserId: "",
+    selectedAt: new Date().toISOString(),
+  };
+}
+
 export function registerOpsSeatSocket(io: Server, app: FastifyInstance): void {
   io.use(async (socket, next) => {
-    const payload = await authenticateSocket(socket, app);
-    if (!payload?.storeId || !payload?.sub) {
-      next(new Error("unauthorized"));
+    const staff = await authenticateStaffSocket(socket, app);
+    if (staff?.storeId && staff.sub) {
+      socket.data.storeId = staff.storeId;
+      socket.data.staffUserId = staff.sub;
+      socket.data.clientRole = "staff";
+      next();
       return;
     }
-    socket.data.storeId = payload.storeId;
-    socket.data.staffUserId = payload.sub;
-    next();
+    const displayStoreId = authenticateGuestDisplaySocket(socket);
+    if (displayStoreId) {
+      socket.data.storeId = displayStoreId;
+      socket.data.staffUserId = "";
+      socket.data.clientRole = "guest-display";
+      next();
+      return;
+    }
+    next(new Error("unauthorized"));
   });
 
   io.on("connection", (socket) => {
     const storeId = String(socket.data.storeId || "");
-    const staffUserId = String(socket.data.staffUserId || "");
     if (!storeId) {
       socket.disconnect(true);
       return;
     }
+    const staffUserId = String(socket.data.staffUserId || "");
     void socket.join(storeRoom(storeId));
 
+    const last = getLastOpsSeatSelection(storeId);
+    if (last && socket.data.clientRole === "guest-display") {
+      socket.emit("ops:seat-selected", last);
+    }
+
+    socket.on("ops:seat-clear", (_raw, ack) => {
+      if (socket.data.clientRole !== "staff") {
+        if (typeof ack === "function") ack({ ok: false, error: "staff only" });
+        return;
+      }
+      const event = clearedSelection(storeId);
+      lastSelectionByStore.delete(storeId);
+      broadcastSeatSelection(io, event);
+      if (typeof ack === "function") ack({ ok: true, selection: event });
+    });
+
     socket.on("ops:seat-select", async (raw, ack) => {
+      if (socket.data.clientRole !== "staff") {
+        if (typeof ack === "function") ack({ ok: false, error: "staff only" });
+        return;
+      }
       try {
         if (!isRecord(raw)) {
           if (typeof ack === "function") ack({ ok: false, error: "invalid payload" });
@@ -119,7 +175,7 @@ export function registerOpsSeatSocket(io: Server, app: FastifyInstance): void {
           selectedAt: new Date().toISOString(),
         };
         lastSelectionByStore.set(storeId, event);
-        socket.to(storeRoom(storeId)).emit("ops:seat-selected", event);
+        broadcastSeatSelection(io, event);
         if (typeof ack === "function") ack({ ok: true, selection: event });
       } catch (e) {
         app.log.error({ err: e }, "ops:seat-select failed");

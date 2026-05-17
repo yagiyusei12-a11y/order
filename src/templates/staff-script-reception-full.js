@@ -619,7 +619,12 @@ async function markArrived(resId) {
   const perSeatNum = Math.ceil(targetRes.num / (targetRes.seats.length || 1));
   targetRes.seats.forEach((seatId) => {
     const s = shiftData.seats.find((x) => x.id === seatId);
-    if (s) { s.status = "occupied"; s.current = perSeatNum; s.entryTime = Date.now(); s.cleanStart = null; }
+    if (s) {
+      s.status = "reserved";
+      s.current = perSeatNum;
+      s.entryTime = null;
+      s.cleanStart = null;
+    }
   });
   await fetch(API_URL + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "addReservation", reservation: targetRes }) });
   await fetch(API_URL + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "updateSeats", shiftKey: currentShiftKey, payload: shiftData.seats }) });
@@ -729,13 +734,14 @@ async function loadData() {
       .filter((r) => r.date === d && r.shift === s && r.status !== "キャンセル")
       .sort((a, b) => String(a.time || "").localeCompare(String(b.time || "")));
     resList.forEach((r) => {
-      if (r.status === "予約確定") {
-        r.seats.forEach((seatId) => {
-          if (seatStates[seatId] && seatStates[seatId].status === "vacant") {
-            seatStates[seatId].status = "reserved";
-          }
-        });
-      }
+      if (r.status !== "予約確定" && r.status !== "来店済み") return;
+      (r.seats || []).forEach((seatId) => {
+        const id = resolveSeatStateId(seatId);
+        const st = seatStates[id];
+        if (!st) return;
+        if (st.status === "occupied" || st.status === "cleaning") return;
+        seatStates[id] = { ...st, status: "reserved" };
+      });
     });
     const staffCount = parseInt(data.config ? data.config.staff : 6, 10) || 6;
     lastWaiting = shiftData.waiting || [];

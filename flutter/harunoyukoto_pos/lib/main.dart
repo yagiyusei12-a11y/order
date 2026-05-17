@@ -84,6 +84,56 @@ class _OpsShellPageState extends State<OpsShellPage> {
     return u.replace(queryParameters: q);
   }
 
+  void _showPosSnack(String text, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text),
+        backgroundColor: isError ? Colors.red.shade800 : null,
+      ),
+    );
+  }
+
+  void _onHarunoyukotoPosMessage(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed == 'openDrawer') {
+      _openDrawerTcp();
+      return;
+    }
+    if (!trimmed.startsWith('{')) {
+      return;
+    }
+    try {
+      final decoded = jsonDecode(trimmed);
+      if (decoded is! Map) {
+        _showPosSnack('エラー: 印刷データの形式が不正です', isError: true);
+        return;
+      }
+      final map = Map<String, dynamic>.from(decoded);
+      final cmd = map['cmd'];
+      if (cmd != 'printLines') {
+        return;
+      }
+      final linesRaw = map['lines'];
+      if (linesRaw is! List) {
+        _showPosSnack('エラー: 印刷データの形式が不正です', isError: true);
+        return;
+      }
+      final strs = linesRaw.map((e) {
+        if (e == null) return '';
+        return e.toString().replaceAll('\r\n', ' ').replaceAll('\n', ' ').replaceAll('\r', ' ');
+      }).toList();
+      if (strs.isEmpty) {
+        _showPosSnack('エラー: 印刷データの形式が不正です', isError: true);
+        return;
+      }
+      _printThermalLines(strs);
+    } catch (e, st) {
+      debugPrint('HarunoyukotoPos message parse failed: $e\n$st');
+      _showPosSnack('データの解析に失敗しました: $e', isError: true);
+    }
+  }
+
   void _initWebView(String opsUrlRaw) {
     final uri = _withNativeDrawer(opsUrlRaw);
     final c = WebViewController()
@@ -91,23 +141,7 @@ class _OpsShellPageState extends State<OpsShellPage> {
       ..addJavaScriptChannel(
         'HarunoyukotoPos',
         onMessageReceived: (JavaScriptMessage message) {
-          final raw = message.message;
-          if (raw == 'openDrawer') {
-            _openDrawerTcp();
-            return;
-          }
-          try {
-            final decoded = jsonDecode(raw);
-            if (decoded is Map<String, dynamic> && decoded['cmd'] == 'printLines') {
-              final lines = decoded['lines'];
-              if (lines is List) {
-                final strs = lines.map((e) => e?.toString() ?? '').toList();
-                _printThermalLines(strs);
-              }
-            }
-          } catch (_) {
-            // 非 JSON メッセージは無視
-          }
+          _onHarunoyukotoPosMessage(message.message);
         },
       )
       ..loadRequest(uri);
@@ -239,9 +273,7 @@ class _OpsShellPageState extends State<OpsShellPage> {
       socket.add(_escPosFromTextLines(lines));
       await socket.flush();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('印刷を送信しました')),
-        );
+        _showPosSnack('プリンターへデータを送信しました');
       }
     } catch (e, st) {
       debugPrint('Thermal print failed: $e\n$st');

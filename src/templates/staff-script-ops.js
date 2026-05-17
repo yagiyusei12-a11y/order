@@ -1365,11 +1365,37 @@ function buildInvoicePlainLines(detail, opts) {
   return lines;
 }
 
+/** レジアプリ（WebView）送信用: 1行1要素・改行除去・JSON安全化 */
+function sanitizePlainLinesForPos(lines) {
+  if (!Array.isArray(lines)) return [];
+  return lines.map(function (line) {
+    if (line == null) return "";
+    return String(line)
+      .replace(/\u2028/g, " ")
+      .replace(/\u2029/g, " ")
+      .replace(/\r\n/g, " ")
+      .replace(/\n/g, " ")
+      .replace(/\r/g, " ");
+  });
+}
+
+function buildPosPrintLinesPayload(plainLines) {
+  return JSON.stringify({
+    cmd: "printLines",
+    lines: sanitizePlainLinesForPos(plainLines),
+  });
+}
+
 async function printReceiptOrBrowser(html, plainLines) {
   try {
     var ch = typeof HarunoyukotoPos !== "undefined" ? HarunoyukotoPos : null;
     if (ch && typeof ch.postMessage === "function") {
-      ch.postMessage(JSON.stringify({ cmd: "printLines", lines: plainLines }));
+      var payload = buildPosPrintLinesPayload(plainLines);
+      if (!payload || payload.length < 2) {
+        log("レジアプリへの印刷データを作成できませんでした");
+      } else {
+        ch.postMessage(payload);
+      }
       return;
     }
   } catch (e) {

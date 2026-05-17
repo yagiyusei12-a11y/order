@@ -237,6 +237,73 @@
     st.pendingGroupedTimer.set(key, timer);
   }
 
+function runMergeSessionDialog(ctx, session, table) {
+  const others = ctx.sessions.filter((s) => s.status === "open" && s.id !== session.id);
+  if (!others.length) {
+    ctx.log("合算できる他卓（利用中）がありません");
+    return;
+  }
+  const box = document.createElement("div");
+  box.style.cssText =
+    "position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:13000;padding:1rem";
+  box.innerHTML =
+    "<div class=\"card\" style=\"max-width:400px;padding:1.1rem;background:#fff;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.12)\">" +
+    "<p style=\"margin:0 0 0.45rem;font-weight:900\">「" +
+    ctx.escapeHtml(table.name) +
+    "」に注文を集約</p>" +
+    "<p style=\"margin:0 0 0.85rem;font-size:0.86rem;color:var(--muted);line-height:1.45\">選んだ卓の注文・未払い伝票をこの卓に集約します。元の卓は空席にならず「合算中」として占有が続き、あとから分割できます。精算済みの卓は合算できません。</p>" +
+    "<label style=\"display:block;font-size:0.78rem;font-weight:800;margin-bottom:0.25rem\">合算元の卓</label>" +
+    "<select id=\"mergeFromSel\" style=\"width:100%;padding:0.5rem;margin-bottom:1rem;border-radius:8px;border:1px solid var(--border)\">" +
+    others
+      .map((s) => {
+        const nm = (s.table && s.table.name) || "—";
+        const gc = Number(s.guestCount || 0);
+        const cc = Number(s.childCount || 0);
+        const ppl = cc > 0 ? gc + "人（子" + cc + "）" : gc + "人";
+        return (
+          "<option value=\"" +
+          ctx.escapeHtml(s.id) +
+          "\">" +
+          ctx.escapeHtml(nm) +
+          " · " +
+          ppl +
+          " · " +
+          BillRegisterShared.yen(ctx.currentTotal(s)) +
+          "</option>"
+        );
+      })
+      .join("") +
+    "</select>" +
+    "<div class=\"row\" style=\"gap:0.5rem;justify-content:flex-end\">" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"mergeCancel\">キャンセル</button>" +
+    "<button type=\"button\" class=\"btn-primary\" id=\"mergeOk\" style=\"width:auto;padding:0.45rem 0.85rem\">合算する</button>" +
+    "</div></div>";
+  document.body.appendChild(box);
+  const close = () => box.remove();
+  box.querySelector("#mergeCancel").onclick = close;
+  box.querySelector("#mergeOk").onclick = async () => {
+    const sel = box.querySelector("#mergeFromSel");
+    const fromId = sel && sel.value ? String(sel.value) : "";
+    if (!fromId) return;
+    if (!confirm("本当に合算しますか？元の卓は「合算中」のまま占有が続き、オペ画面の「分割」でいつでも戻せます。")) return;
+    try {
+      await ctx.api("/stores/" + encodeURIComponent(ctx.storeId) + "/sessions/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fromSessionId: fromId, toSessionId: session.id }),
+      });
+      close();
+      ctx.log("合算しました");
+      await ctx.hooks.loadAll();
+      ctx.hooks.setSelectedTableId(table.id);
+      ctx.hooks.renderGrid();
+      await ctx.hooks.renderDetail();
+    } catch (e) {
+      ctx.log(String(e.message || e));
+    }
+  };
+}
+
 async function mountRegisterFlow(panel, ctx) {
   const session = ctx.session;
   const table = ctx.table;
@@ -415,7 +482,13 @@ async function mountRegisterFlow(panel, ctx) {
     }
   }
 
-  panel.innerHTML =
+  const OPS_OVERLAY_Z = "13000";
+  const ordersTableHtml =
+    "<h3 class=\"ops-sec-title\">コース・注文</h3>" +
+    "<div class=\"card ops-order-card\"><table class=\"ops-order-table\">" +
+    orderTableFallback +
+    "</table></div>";
+  const controlsHtml =
     switchPre +
     "<div class=\"ops-register-head\"><span class=\"badge\">" +
     ctx.escapeHtml(table.name) +
@@ -428,8 +501,8 @@ async function mountRegisterFlow(panel, ctx) {
     })() +
     "</span></div>" +
     "<div class=\"row\" style=\"margin:0.35rem 0 0.5rem;justify-content:flex-end;flex-wrap:wrap;gap:0.35rem\">" +
-    "<button type=\"button\" class=\"btn-ghost\" id=\"btnMoveTable\" style=\"font-weight:700;border-color:#93c5fd\">席移動</button>" +
-    "<button type=\"button\" class=\"btn-ghost\" id=\"btnMergeSession\" style=\"font-weight:700;border-color:#cbd5e1\">他卓と合算</button>" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"btnMoveTable\" data-ops-action=\"move-table\" style=\"font-weight:700;border-color:#93c5fd\">席移動</button>" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"btnMergeSession\" data-ops-action=\"merge-session\" style=\"font-weight:700;border-color:#cbd5e1\">他卓と合算</button>" +
     "<button type=\"button\" class=\"btn-ghost\" id=\"btnEndSession\" style=\"color:#b91c1c;border-color:#fecaca;font-weight:700\">セッションを切る</button>" +
     "</div>" +
     "<div class=\"card\" style=\"padding:0.65rem 0.75rem;margin:0 0 0.65rem\">" +
@@ -471,11 +544,8 @@ async function mountRegisterFlow(panel, ctx) {
         "<button type=\"button\" class=\"btn-ghost\" id=\"btnMoveLinesSeparateBill\" style=\"font-weight:700;border-color:#93c5fd\">選択を別会計へ</button>" +
         "<span class=\"muted\" style=\"font-size:0.72rem;line-height:1.35\">商品行にチェックしてから実行します（新しい伝票、または同卓の別セッションへ）。</span>" +
         "</div></div>"
-      : "") +
-    "<h3 class=\"ops-sec-title\">コース・注文</h3>" +
-    "<div class=\"card ops-order-card\"><table class=\"ops-order-table\">" +
-    orderTableFallback +
-    "</table></div>" +
+      : "");
+  const registerHtml =
     (ordersDiscAmt > 0
       ? "<div class=\"row ops-total-row\"><span class=\"muted\">注文値引（商品行）</span><strong style=\"color:#059669\">−" +
         BillRegisterShared.yen(ordersDiscAmt) +
@@ -508,6 +578,29 @@ async function mountRegisterFlow(panel, ctx) {
     ((readOnly || !bcPay) ? " disabled title=\"店舗設定により入金の追加は無効です\"" : "") +
     ">確定</button>" +
     "<div id=\"afterPayment\" style=\"margin-top:0.7rem\"></div>";
+
+  if (ctx.opsTwoColumn) {
+    panel.innerHTML =
+      "<div class=\"ops-register-layout\">" +
+      "<div class=\"ops-register-layout__left\">" +
+      "<h3 class=\"ops-sec-title\">コース・注文</h3>" +
+      "<div class=\"ops-register-layout__orders-scroll\">" +
+      "<div class=\"card ops-order-card\"><table class=\"ops-order-table\">" +
+      orderTableFallback +
+      "</table></div>" +
+      "</div></div>" +
+      "<div class=\"ops-register-layout__right\">" +
+      "<div class=\"ops-register-layout__controls\">" +
+      controlsHtml +
+      "</div>" +
+      "<div class=\"ops-register-layout__register\">" +
+      registerHtml +
+      "</div></div></div>";
+  } else {
+    panel.innerHTML = controlsHtml + ordersTableHtml + registerHtml;
+  }
+  panel.dataset.opsSessionId = session.id;
+  panel.dataset.opsTableId = table.id;
 
   const $ = (id) => panel.querySelector("#" + id);
   const methodEl = $("payMethod");
@@ -548,7 +641,7 @@ async function mountRegisterFlow(panel, ctx) {
 
   const btnMoveTable = $("btnMoveTable");
   if (btnMoveTable) {
-    btnMoveTable.onclick = () => ctx.hooks.openMoveTableDiactx.log(session, table);
+    btnMoveTable.onclick = () => ctx.hooks.openMoveTableDialog(session, table);
   }
 
   const btnOpsSessCounts = $("btnOpsSessCounts");
@@ -659,72 +752,7 @@ async function mountRegisterFlow(panel, ctx) {
 
   const btnMergeSession = $("btnMergeSession");
   if (btnMergeSession) {
-    btnMergeSession.onclick = () => {
-      const others = ctx.sessions.filter((s) => s.status === "open" && s.id !== session.id);
-      if (!others.length) {
-        ctx.log("合算できる他卓（利用中）がありません");
-        return;
-      }
-      const box = document.createElement("div");
-      box.style.cssText =
-        "position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem";
-      box.innerHTML =
-        "<div class=\"card\" style=\"max-width:400px;padding:1.1rem;background:#fff;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.12)\">" +
-        "<p style=\"margin:0 0 0.45rem;font-weight:900\">「" +
-        ctx.escapeHtml(table.name) +
-        "」に注文を集約</p>" +
-        "<p style=\"margin:0 0 0.85rem;font-size:0.86rem;color:var(--muted);line-height:1.45\">選んだ卓の注文・未払い伝票をこの卓に集約します。元の卓は空席にならず「合算中」として占有が続き、あとから分割できます。精算済みの卓は合算できません。</p>" +
-        "<label style=\"display:block;font-size:0.78rem;font-weight:800;margin-bottom:0.25rem\">合算元の卓</label>" +
-        "<select id=\"mergeFromSel\" style=\"width:100%;padding:0.5rem;margin-bottom:1rem;border-radius:8px;border:1px solid var(--border)\">" +
-        others
-          .map((s) => {
-            const nm = (s.table && s.table.name) || "—";
-            const gc = Number(s.guestCount || 0);
-            const cc = Number(s.childCount || 0);
-            const ppl = cc > 0 ? gc + "人（子" + cc + "）" : gc + "人";
-            return (
-              "<option value=\"" +
-              ctx.escapeHtml(s.id) +
-              "\">" +
-              ctx.escapeHtml(nm) +
-              " · " +
-              ppl +
-              " · " +
-              BillRegisterShared.yen(ctx.currentTotal(s)) +
-              "</option>"
-            );
-          })
-          .join("") +
-        "</select>" +
-        "<div class=\"row\" style=\"gap:0.5rem;justify-content:flex-end\">" +
-        "<button type=\"button\" class=\"btn-ghost\" id=\"mergeCancel\">キャンセル</button>" +
-        "<button type=\"button\" class=\"btn-primary\" id=\"mergeOk\" style=\"width:auto;padding:0.45rem 0.85rem\">合算する</button>" +
-        "</div></div>";
-      document.body.appendChild(box);
-      const close = () => box.remove();
-      box.querySelector("#mergeCancel").onclick = close;
-      box.querySelector("#mergeOk").onclick = async () => {
-        const sel = box.querySelector("#mergeFromSel");
-        const fromId = sel && sel.value ? String(sel.value) : "";
-        if (!fromId) return;
-        if (!confirm("本当に合算しますか？元の卓は「合算中」のまま占有が続き、オペ画面の「分割」でいつでも戻せます。")) return;
-        try {
-          await ctx.api("/stores/" + encodeURIComponent(ctx.storeId) + "/sessions/merge", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ fromSessionId: fromId, toSessionId: session.id }),
-          });
-          close();
-          ctx.log("合算しました");
-          await ctx.hooks.loadAll();
-          ctx.hooks.setSelectedTableId(table.id);
-          ctx.hooks.renderGrid();
-          await ctx.hooks.renderDetail();
-        } catch (e) {
-          ctx.log(String(e.message || e));
-        }
-      };
-    };
+    btnMergeSession.onclick = () => runMergeSessionDialog(ctx, session, table);
   }
 
   const btnMoveLinesSeparateBill = $("btnMoveLinesSeparateBill");
@@ -748,7 +776,7 @@ async function mountRegisterFlow(panel, ctx) {
       const others = ctx.sessionsAtTable(table.id).filter((s) => s.status === "open" && s.id !== session.id);
       const box = document.createElement("div");
       box.style.cssText =
-        "position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem";
+        "position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:13000;padding:1rem";
       const destOpts =
         "<option value=\"\">新しい別会計（伝票を追加）</option>" +
         others
@@ -1016,6 +1044,7 @@ async function mountRegisterFlow(panel, ctx) {
     applyGroupedQtyTarget,
     queueGroupedQtyCommit,
     mountRegisterFlow,
+    runMergeSessionDialog,
     renderCashKeypad,
     bindCashKeypad,
   };

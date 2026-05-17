@@ -34,7 +34,12 @@ function assembleStaffPage(
   scriptBundle?: StaffPageScriptBundle
 ): string {
   const pathEnc = encodeURIComponent(storeId);
-  const body = loadTemplate(bodyFile).replace(/__STORE_PATH__/g, pathEnc);
+  let body = loadTemplate(bodyFile).replace(/__STORE_PATH__/g, pathEnc);
+  if (bodyFile === "staff-body-ops.html") {
+    body = body.replace("__OPS_STYLE__", loadTemplate("staff-style-ops.css"));
+  } else {
+    body = body.replace("__OPS_STYLE__", "");
+  }
   let prependScript = "";
   let appendScript = "";
   if (typeof scriptBundle === "string") {

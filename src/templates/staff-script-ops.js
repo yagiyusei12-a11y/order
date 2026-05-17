@@ -223,6 +223,31 @@ async function openOpsTableDetail(tableId, sessionOverride) {
   });
 })();
 
+(function initOpsDetailPanelDelegation() {
+  const panel = document.getElementById("detailPanel");
+  if (!panel) return;
+  panel.addEventListener("click", (ev) => {
+    const btn = ev.target instanceof Element ? ev.target.closest("button[data-ops-action]") : null;
+    if (!btn || !panel.contains(btn)) return;
+    const sid = panel.dataset.opsSessionId;
+    const tid = panel.dataset.opsTableId;
+    if (!sid || !tid) return;
+    const session = sessionsCache.find((s) => s.id === sid);
+    const table = tablesCache.find((t) => t.id === tid);
+    if (!session || !table) return;
+    const action = btn.getAttribute("data-ops-action");
+    if (action === "move-table") {
+      ev.preventDefault();
+      openMoveTableDialog(session, table);
+      return;
+    }
+    if (action === "merge-session" && typeof BillRegisterShared !== "undefined" && BillRegisterShared.runMergeSessionDialog) {
+      ev.preventDefault();
+      BillRegisterShared.runMergeSessionDialog(buildOpsRegisterMountContext(session, table, null), session, table);
+    }
+  });
+})();
+
 /** テイクアウト卓（卓バッシング対象外）。publicCode は卓行または session.table と一致 */
 function isTakeoutTablePublicCodeForStore(pc) {
   try {
@@ -333,6 +358,7 @@ function buildOpsRegisterMountContext(session, table, detailPreloaded) {
     detailPreloaded,
     sessionSwitchPrefixHtml: lastRegisterSwitchPrefix,
     readOnly: false,
+    opsTwoColumn: true,
     storeId: STORE,
     storeSettings: storeSettingsCache,
     /** 常に最新のキャッシュを参照（ensurePaymentMethods が配列を差し替えても古い参照を掴まない） */
@@ -533,7 +559,7 @@ function openMoveTableDialog(session, table) {
   vacant.sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
   const box = document.createElement("div");
   box.style.cssText =
-    "position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem";
+    "position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:13000;padding:1rem";
   box.innerHTML =
     "<div class=\"card\" style=\"max-width:420px;padding:1.1rem;background:#fff;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.12)\">" +
     "<p style=\"margin:0 0 0.45rem;font-weight:900\">席移動: 「" +
@@ -611,7 +637,7 @@ function openBillDiscountModal(detail, session, table, afterDiscountChange) {
   const cur = detail.billDiscountJson || null;
   const box = document.createElement("div");
   box.style.cssText =
-    "position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem";
+    "position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:13000;padding:1rem";
   let presetOpts =
     "<option value=\"\">— プリセットから入力 —</option>" +
     presets
@@ -773,7 +799,7 @@ function openLineDiscountModal(detail, group, session, table, afterLineDiscountC
       .join("");
   const box = document.createElement("div");
   box.style.cssText =
-    "position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem";
+    "position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:13000;padding:1rem";
   box.innerHTML =
     "<div class=\"card\" style=\"max-width:460px;padding:1.1rem;background:#fff;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.12)\">" +
     "<p style=\"margin:0 0 0.45rem;font-weight:900\">商品行の割引（このまとまりの全明細に適用）</p>" +
@@ -2229,7 +2255,7 @@ async function renderDetail() {
       }
       const box = document.createElement("div");
       box.style.cssText =
-        "position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem";
+        "position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:13000;padding:1rem";
       const targetOpts = openOnTable
         .map((s) => {
           const sel = s.id === session.id ? " selected" : "";

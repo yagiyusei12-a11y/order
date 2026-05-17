@@ -112,11 +112,15 @@ async function ensureOpsSocket() {
   return opsSocketInitPromise;
 }
 
-function pickSessionForTable(table) {
-  const atTable = sessionsAtTable(table.id);
-  const openSorted = atTable
+function openSessionsAtTable(tableId) {
+  return sessionsAtTable(tableId)
     .filter((x) => x.status === "open")
     .sort((a, b) => new Date(b.openedAt || 0).getTime() - new Date(a.openedAt || 0).getTime());
+}
+
+function pickSessionForTable(table) {
+  const atTable = sessionsAtTable(table.id);
+  const openSorted = openSessionsAtTable(table.id);
   if (openSorted.length > 1) {
     return openSorted.find((x) => x.id === selectedSessionIdOverride) || openSorted[0];
   }
@@ -150,10 +154,7 @@ function dismissOpsDetailModal() {
   selectedSessionIdOverride = null;
   hideOpsDetailModal();
   const panel = document.getElementById("detailPanel");
-  if (panel) {
-    panel.innerHTML =
-      "<div class=\"detail-placeholder\">卓一覧からテーブルを選ぶと、会計機能が表示されます</div>";
-  }
+  if (panel) panel.innerHTML = "";
   renderGrid();
 }
 
@@ -2008,15 +2009,16 @@ function applyBillDetailToCaches(detail) {
 
 async function renderDetail() {
   const panel = document.getElementById("detailPanel");
+  if (!panel) return;
   if (!selectedTableId) {
     hideOpsDetailModal();
-    panel.innerHTML =
-      "<div class=\"detail-placeholder\">卓一覧からテーブルを選ぶと、会計機能が表示されます</div>";
+    panel.innerHTML = "";
     return;
   }
   openOpsDetailModal();
   const table = tablesCache.find((t) => t.id === selectedTableId);
   if (!table) return;
+  const openSorted = openSessionsAtTable(table.id);
   const session = pickSessionForTable(table);
   if (!session) {
     let opts = "<option value=\"\">なし</option>";

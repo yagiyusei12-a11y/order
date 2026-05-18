@@ -25,12 +25,19 @@ import {
 import { displayTableCode, tableDisplayLabel } from "../lib/table-display-code.js";
 import { sendMailSafe } from "../lib/mail.js";
 import {
+  applyStaffCountHorigotatsuBlocks,
   buildTodayReceptionShiftKey,
   computeDefaultSeatsForShift,
   mergeShiftSeatsWithLiveDerived,
   syncReceptionShiftSeatsForTable,
   type ReceptionSeatStatus,
 } from "../lib/reception-seat-state.js";
+import {
+  isHorigotatsuSeatType,
+  isSeatBlockedForBooking,
+  normalizeReceptionSeatStatus,
+  staffCountBlocksHorigotatsu,
+} from "../lib/reception-seat-status.js";
 import { broadcastReceptionUpdated } from "../lib/ops-seat-socket.js";
 
 function receptionMutationNotify(storeId: string): { status: "success" } {
@@ -150,7 +157,8 @@ function applyReservationBlocksToSeats(input: {
       if (!seat) continue;
       if (hasFuture) seat.hasFutureRes = true;
       if (blockSeat) {
-        if (seat.status === "vacant") seat.status = "reserved";
+        const st = normalizeReceptionSeatStatus(seat.status);
+        if (st === "empty") seat.status = "reserved";
       }
     }
   }
@@ -347,9 +355,52 @@ async function collectUsedSeatsForNetReservation(
     const id = typeof o.id === "string" ? o.id : "";
     const st = typeof o.status === "string" ? o.status : "";
     if (!id) continue;
-    if (st === "occupied" || st === "cleaning" || st === "closed") used.add(id);
+    if (isSeatBlockedForBooking(st)) used.add(id);
   }
   return used;
+}
+
+function receptionStaffCountFromConfig(c: Record<string, unknown>): number {
+  const n = Number(c.staff);
+  return Number.isFinite(n) ? Math.floor(n) : 6;
+}
+
+/** 本日の未来予約（未キャンセル・来店前）が席に紐づくか */
+async function seatHasFutureReservation(
+  storeId: string,
+  seatId: string,
+  storeTimeZone: string,
+): Promise<boolean> {
+  const now = storeNowWallClock(storeTimeZone);
+  const today = now.dateYmd;
+  const rows = await prisma.receptionReservation.findMany({
+    where: { storeId, status: "予約確定", date: { gte: today } },
+    select: { data: true, date: true, status: true },
+  });
+  for (const row of rows) {
+    const d = (row.data && typeof row.data === "object" && !Array.isArray(row.data)
+      ? row.data
+      : {}) as Record<string, unknown>;
+    const date = typeof d.date === "string" ? d.date : row.date;
+    const status = typeof d.status === "string" ? d.status : row.status;
+    if (status !== "予約確定") continue;
+    const seatsArr = Array.isArray(d.seats) ? (d.seats as unknown[]) : [];
+    if (!seatsArr.some((x) => typeof x === "string" && x === seatId)) continue;
+    if (date > today) return true;
+    if (date < today) continue;
+    const timeStr = typeof d.time === "string" ? d.time : "";
+    if (!timeStr.trim()) return true;
+    const m = /^(\d{1,2}):(\d{2})$/.exec(timeStr.trim());
+    if (!m) return true;
+    try {
+      const base = startOfWallCalendarDayUtc(today, storeTimeZone).getTime();
+      const resMs = base + (Number(m[1]) * 60 + Number(m[2])) * 60 * 1000;
+      if (resMs > now.nowMs) return true;
+    } catch {
+      return true;
+    }
+  }
+  return false;
 }
 
 function netReserveSlotStepMinutes(c: Record<string, unknown>): number {
@@ -393,9 +444,13 @@ async function distinctSeatTypesForNetReserve(storeId: string): Promise<string[]
 }
 
 /** ネット予約の卓候補: 従来の C/T 形式または席種別が設定されている卓 */
-function isNetReserveTableRow(t: { publicCode: string; seatType?: string | null }): boolean {
+function isNetReserveTableRow(
+  t: { publicCode: string; seatType?: string | null },
+  staffCount: number,
+): boolean {
   const pc = String(t.publicCode ?? "").trim();
   if (!pc) return false;
+  if (staffCountBlocksHorigotatsu(staffCount) && isHorigotatsuSeatType(t.seatType)) return false;
   const st = normalizeSeatTypeLabel(t.seatType);
   return rxNetBookableTableCode.test(pc) || Boolean(st);
 }
@@ -480,6 +535,9 @@ async function syncSeatToSessions(storeId: string, seatId: string, next: SeatSta
     select: { id: true },
   });
 
+  if (next === "guiding") {
+    return;
+  }
   if (next === "occupied") {
     const nextCount = Math.max(1, Number.isFinite(current) ? Math.floor(current) : 1);
     // If bashing_waiting exists, reuse it (avoid creating 2 sessions per table)
@@ -505,7 +563,7 @@ async function syncSeatToSessions(storeId: string, seatId: string, next: SeatSta
     }
     return;
   }
-  if (next === "vacant") {
+  if (next === "empty" || next === "vacant") {
     if (open) {
       await prisma.diningSession.update({ where: { id: open.id }, data: { status: "closed", closedAt: new Date() } });
     }
@@ -596,12 +654,14 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         seats = mergeShiftSeatsWithLiveDerived(seats, derivedLive) as unknown[];
       }
 
-      const seatsWithBlocks = applyReservationBlocksToSeats({
+      let seatsWithBlocks = applyReservationBlocksToSeats({
         shiftKey,
         seats: seats as unknown[],
         reservations: reservations.map((r) => r.data) as unknown[],
         storeTimeZone: stSet.timezone,
       });
+      const staffCount = receptionStaffCountFromConfig(cData);
+      seatsWithBlocks = applyStaffCountHorigotatsuBlocks(seatsWithBlocks, staffCount) as unknown[];
 
       const fallbackMaster = seatsWithBlocks
         .map((x) => {
@@ -690,6 +750,24 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           where: { storeId: store.id },
           data: { data: next as never },
         });
+        const staffCount = receptionStaffCountFromConfig(next);
+        const todayKey = buildTodayShiftKey(stSetEv.timezone, lunchEndEv);
+        await ensureShift(store.id, todayKey);
+        const shToday = await prisma.receptionShift.findUnique({
+          where: { storeId_shiftKey: { storeId: store.id, shiftKey: todayKey } },
+          select: { seats: true },
+        });
+        let todaySeats = Array.isArray((shToday?.seats as unknown) as unknown[])
+          ? ((shToday?.seats as unknown[]) ?? [])
+          : [];
+        if (!todaySeats.length) {
+          todaySeats = (await computeDefaultSeatsForShift(store.id)) as unknown[];
+        }
+        const blocked = applyStaffCountHorigotatsuBlocks(todaySeats, staffCount) as unknown[];
+        await prisma.receptionShift.update({
+          where: { storeId_shiftKey: { storeId: store.id, shiftKey: todayKey } },
+          data: { seats: blocked as never },
+        });
         return receptionMutationNotify(store.id);
       }
       if (type === "callReserved") {
@@ -755,17 +833,44 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
 
       if (type === "updateAll" || type === "updateSeats") {
         // 旧 api.php / index.html 互換: updateSeats は payload に seats が入る
-        const seats = Array.isArray(b.seats) ? (b.seats as unknown[]) : (Array.isArray(b.payload) ? (b.payload as unknown[]) : null);
+        let seats = Array.isArray(b.seats) ? (b.seats as unknown[]) : (Array.isArray(b.payload) ? (b.payload as unknown[]) : null);
         const waiting = Array.isArray(b.waiting) ? (b.waiting as unknown[]) : null;
         const ifShiftUpdatedAt = typeof b.ifShiftUpdatedAt === "number" ? b.ifShiftUpdatedAt : null;
+        const prevShift = await prisma.receptionShift.findUnique({
+          where: { storeId_shiftKey: { storeId: store.id, shiftKey } },
+          select: { seats: true, updatedAt: true },
+        });
         if (ifShiftUpdatedAt !== null) {
-          const cur = await prisma.receptionShift.findUnique({
-            where: { storeId_shiftKey: { storeId: store.id, shiftKey } },
-            select: { updatedAt: true },
-          });
-          const curMs = cur?.updatedAt ? cur.updatedAt.getTime() : 0;
+          const curMs = prevShift?.updatedAt ? prevShift.updatedAt.getTime() : 0;
           if (curMs && curMs !== ifShiftUpdatedAt) {
             return reply.code(409).send({ error: "STALE_SHIFT", currentUpdatedAt: curMs });
+          }
+        }
+        const prevById = new Map<string, ReceptionSeatStatus>();
+        const prevArr = Array.isArray((prevShift?.seats as unknown) as unknown[])
+          ? ((prevShift?.seats as unknown[]) ?? [])
+          : [];
+        for (const row of prevArr) {
+          if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+          const o = row as Record<string, unknown>;
+          const id = typeof o.id === "string" ? o.id : "";
+          if (!id) continue;
+          prevById.set(id, normalizeReceptionSeatStatus(o.status));
+        }
+        if (seats && seats.length > 0) {
+          const staffCount = receptionStaffCountFromConfig(cEv);
+          seats = applyStaffCountHorigotatsuBlocks(seats, staffCount) as unknown[];
+          for (const row of seats) {
+            if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+            const r = row as Record<string, unknown>;
+            const id = typeof r.id === "string" ? r.id : "";
+            if (!id) continue;
+            const prev = prevById.get(id);
+            const next = normalizeReceptionSeatStatus(r.status);
+            if (prev === "cleaning" && (next === "empty" || next === "vacant")) {
+              const hasFuture = await seatHasFutureReservation(store.id, id, stSetEv.timezone);
+              r.status = hasFuture ? "reserved" : "empty";
+            }
           }
         }
         if (type === "updateAll") {
@@ -801,7 +906,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           const st = typeof r.status === "string" ? r.status : "";
           const cur = typeof r.current === "number" ? r.current : 0;
           if (!id) continue;
-          if (st === "occupied" || st === "cleaning" || st === "vacant") {
+          if (st === "occupied" || st === "cleaning" || st === "vacant" || st === "empty" || st === "guiding") {
             await syncSeatToSessions(store.id, id, st as SeatStatus, cur);
           }
         }
@@ -906,7 +1011,8 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         select: { publicCode: true, capacity: true, mergeWith: true, seatType: true },
         orderBy: { sortOrder: "asc" },
       });
-      const bookable = tables.filter((t) => isNetReserveTableRow(t));
+      const staffCount = receptionStaffCountFromConfig(c as Record<string, unknown>);
+      const bookable = tables.filter((t) => isNetReserveTableRow(t, staffCount));
       const filtered =
         seatTypeMode === "require_select"
           ? bookable.filter((t) => normalizeSeatTypeLabel(t.seatType) === seatTypeNorm)
@@ -1037,7 +1143,8 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
 
           const used = await collectUsedSeatsForNetReservation(tx, store.id, date, time, lunchHr);
 
-          const bookable = tables.filter((t) => isNetReserveTableRow(t));
+          const staffCount = receptionStaffCountFromConfig(c as Record<string, unknown>);
+          const bookable = tables.filter((t) => isNetReserveTableRow(t, staffCount));
           const filtered =
             seatTypeMode === "require_select"
               ? bookable.filter((t) => normalizeSeatTypeLabel(t.seatType) === seatTypeBody)

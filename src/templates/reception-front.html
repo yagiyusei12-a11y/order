@@ -316,8 +316,7 @@
       );
       receptionConf = data.config && typeof data.config === "object" ? data.config : {};
       const staff = parseInt(receptionConf.staff) || 6;
-      const isOverride = receptionConf.override === true || receptionConf.override === "true";
-      const manualWait = parseInt(receptionConf.manualWait) || 30;
+      const manualWait = parseInt(receptionConf.manualWait, 10) || 0;
 
       const shiftData = (data.shifts || {})[activeShiftKey] || { seats: [], waiting: [] };
       seatStates = {};
@@ -328,8 +327,7 @@
         seatStates[id] = { ...s };
       });
 
-      const waitCount = (shiftData.waiting || []).length;
-      const finalWait = isOverride ? manualWait : waitCount * 10;
+      const finalWait = manualWait;
       const waitEl = document.getElementById("viewWaitTime");
       const waitContainer = document.getElementById("waitContainer");
       if (waitEl) waitEl.textContent = String(finalWait);
@@ -378,8 +376,10 @@
         const by = new Map(tables.map((t) => [t.code, t]));
         const used = new Set();
         for (const [id, s] of Object.entries(seatStates || {})) {
-          if (!s || s.status !== "vacant") used.add(id);
-          if (requirePure && s && s.hasFutureRes) used.add(id);
+          if (!s) continue;
+          const st = s.status === "vacant" ? "empty" : s.status;
+          if (st !== "empty" && st !== "reserved") used.add(id);
+          if (requirePure && s.hasFutureRes) used.add(id);
         }
         const freeCodes = tables.map((t) => t.code).filter((c) => c && !used.has(c));
         const freeSet = new Set(freeCodes);
@@ -525,8 +525,8 @@
       const perSeatNum = Math.ceil(num / ids.length);
       const updatedSeats = (shiftData.seats || []).map((s) => {
         if (!ids.includes(s.id)) return s;
-        // スタッフ受付マップは黄色（reserved）。occupied は DiningSession があるときだけサーバーが付与する。
-        return { ...s, status: "reserved", current: perSeatNum };
+        // 案内直後はオレンジ（guiding）。QR読込で occupied はサーバーが付与する。
+        return { ...s, status: "guiding", current: perSeatNum, entryTime: Date.now() };
       });
       const updatedWaiting = shiftData.waiting || [];
       updatedWaiting.push({

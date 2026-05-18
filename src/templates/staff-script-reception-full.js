@@ -400,15 +400,21 @@ function resolveSeatStateId(raw) {
   return t;
 }
 
-/** 受付端末・待ちリストで案内済みの席をマップ上で黄色（reserved）にする */
+function seatStatusCss(st) {
+  const s = String(st || "empty");
+  return s === "vacant" ? "empty" : s;
+}
+
+/** 待ちリストで案内済みの席をオレンジ（guiding）にする */
 function applyWalkInReservedHighlights(waiting) {
   const mark = (rawId) => {
     const id = resolveSeatStateId(rawId);
     if (!id) return;
     const st = seatStates[id];
     if (!st) return;
-    if (st.status === "vacant") {
-      seatStates[id] = { ...st, status: "reserved" };
+    const stNorm = st.status === "vacant" ? "empty" : st.status;
+    if (stNorm === "empty" || stNorm === "reserved") {
+      seatStates[id] = { ...st, status: "guiding" };
     }
   };
   for (const w of waiting || []) {
@@ -691,9 +697,9 @@ async function markArrived(resId) {
   targetRes.seats.forEach((seatId) => {
     const s = shiftData.seats.find((x) => x.id === seatId);
     if (s) {
-      s.status = "reserved";
+      s.status = "guiding";
       s.current = perSeatNum;
-      s.entryTime = null;
+      s.entryTime = Date.now();
       s.cleanStart = null;
     }
   });
@@ -873,7 +879,7 @@ async function loadData() {
         const id = resolveSeatStateId(seatId);
         const st = seatStates[id];
         if (!st) return;
-        if (st.status === "occupied" || st.status === "cleaning") return;
+        if (st.status === "occupied" || st.status === "cleaning" || st.status === "guiding") return;
         seatStates[id] = { ...st, status: "reserved" };
       });
     });
@@ -886,7 +892,9 @@ async function loadData() {
       renderSidePanels(lastWaiting, staffCount, resList);
       document.getElementById("totalGuestCount").innerText = String(
         Object.values(seatStates).reduce(
-          (acc, s) => acc + (s.status === "occupied" || s.status === "reserved" ? (s.current || 0) : 0),
+          (acc, s) =>
+            acc +
+            (s.status === "occupied" || s.status === "reserved" || s.status === "guiding" ? s.current || 0 : 0),
           0,
         ),
       );
@@ -1057,12 +1065,9 @@ function syncMapSeatVisuals(staffCount) {
       render(lastWaiting, staffCount, lastResList);
       return;
     }
-    const st = seatStates[id] || { status: "vacant" };
-    let status = st.status;
+    const st = seatStates[id] || { status: "empty" };
+    const status = seatStatusCss(st.status);
     const labelKey = seatLabel(id);
-    if (["T52", "T53", "T54", "T61", "T62", "T63", "T64"].includes(labelKey) && staffCount <= 5 && status === "vacant") {
-      status = "closed";
-    }
     el.className = `seat ${status}`;
     const lab = el.querySelector(".seat-label");
     if (lab) lab.textContent = labelKey;
@@ -1105,12 +1110,9 @@ function render(waiting, staffCount, resList) {
   }
 
   for (const id of ids) {
-    const st = seatStates[id] || { status: "vacant" };
-    let status = st.status;
+    const st = seatStates[id] || { status: "empty" };
+    const status = seatStatusCss(st.status);
     const labelKey = seatLabel(id);
-    if (["T52", "T53", "T54", "T61", "T62", "T63", "T64"].includes(labelKey) && staffCount <= 5 && status === "vacant") {
-      status = "closed";
-    }
     const div = document.createElement("div");
     div.className = `seat ${status}`;
     div.dataset.seatId = id;
@@ -1167,7 +1169,8 @@ function render(waiting, staffCount, resList) {
 
   document.getElementById("totalGuestCount").innerText = String(
     Object.values(seatStates).reduce(
-      (acc, s) => acc + (s.status === "occupied" || s.status === "reserved" ? (s.current || 0) : 0),
+      (acc, s) =>
+        acc + (s.status === "occupied" || s.status === "reserved" || s.status === "guiding" ? s.current || 0 : 0),
       0,
     ),
   );
@@ -1180,10 +1183,33 @@ async function toggleSeat(id) {
   const shiftData = getSafeShiftData(data, currentShiftKey);
   const ifShiftUpdatedAt = Number(shiftData?.updatedAt || 0) || 0;
   let realSeat = shiftData.seats.find((x) => x.id === id) || seatStates[id];
-  if (realSeat.status === "vacant") { realSeat.status = "reserved"; }
-  else if (realSeat.status === "reserved") { realSeat.status = "occupied"; realSeat.current = 2; realSeat.entryTime = Date.now(); }
-  else if (realSeat.status === "occupied") { realSeat.status = "cleaning"; realSeat.cleanStart = Date.now(); realSeat.current = 0; playChime("low"); }
-  else { realSeat.status = "vacant"; realSeat.current = 0; }
+  const st0 = realSeat.status === "vacant" ? "empty" : realSeat.status;
+  if (st0 === "empty") {
+    realSeat.status = "guiding";
+    realSeat.current = realSeat.current || 2;
+    realSeat.entryTime = Date.now();
+  } else if (st0 === "reserved") {
+    realSeat.status = "guiding";
+    realSeat.current = realSeat.current || 2;
+    realSeat.entryTime = Date.now();
+  } else if (st0 === "guiding") {
+    realSeat.status = "occupied";
+    if (!realSeat.current) realSeat.current = 2;
+    realSeat.entryTime = realSeat.entryTime || Date.now();
+  } else if (st0 === "occupied") {
+    realSeat.status = "cleaning";
+    realSeat.cleanStart = Date.now();
+    realSeat.current = 0;
+    playChime("low");
+  } else if (st0 === "cleaning") {
+    realSeat.status = "empty";
+    realSeat.current = 0;
+    realSeat.cleanStart = null;
+    realSeat.entryTime = null;
+  } else {
+    realSeat.status = "empty";
+    realSeat.current = 0;
+  }
   const wr = await fetch(API_URL + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "updateSeats", shiftKey: currentShiftKey, ifShiftUpdatedAt, payload: shiftData.seats }) });
   if (wr.status === 409) { alert("他の端末で更新がありました。再読込します。"); }
   loadData();
@@ -1194,7 +1220,11 @@ async function startOrder(i, sid) {
   const shiftData = getSafeShiftData(data, currentShiftKey);
   const ifShiftUpdatedAt = Number(shiftData?.updatedAt || 0) || 0;
   const updatedW = shiftData.waiting || []; const waitInfo = updatedW.splice(i, 1)[0];
-  const updatedS = shiftData.seats.map((s) => sid.split(",").includes(s.id) ? { ...s, status: "occupied", current: Math.ceil(waitInfo.num / sid.split(",").length), entryTime: Date.now() } : s);
+  const updatedS = shiftData.seats.map((s) =>
+    sid.split(",").includes(s.id)
+      ? { ...s, status: "guiding", current: Math.ceil(waitInfo.num / sid.split(",").length), entryTime: Date.now() }
+      : s,
+  );
   const wr = await fetch(API_URL + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "updateAll", shiftKey: currentShiftKey, ifShiftUpdatedAt, seats: updatedS, waiting: updatedW }) });
   if (wr.status === 409) { alert("他の端末で更新がありました。再読込します。"); }
   loadData();

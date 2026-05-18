@@ -4,6 +4,15 @@ import { shiftFromTimeHHMM } from "./net-reserve-slots.js";
 import { mergeStoreSettings } from "./store-settings.js";
 import { storeNowWallClock } from "./store-wall-time.js";
 import { broadcastReceptionUpdated } from "./ops-seat-socket.js";
+import {
+  canonicalSeatStatusForWrite,
+  isHorigotatsuSeatType,
+  normalizeReceptionSeatStatus,
+  staffCountBlocksHorigotatsu,
+  type ReceptionSeatStatus,
+} from "./reception-seat-status.js";
+
+export type { ReceptionSeatStatus } from "./reception-seat-status.js";
 
 const receptionBroadcastTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -21,8 +30,6 @@ export function scheduleReceptionBroadcast(storeId: string): void {
     }, 350),
   );
 }
-
-export type ReceptionSeatStatus = "vacant" | "reserved" | "occupied" | "cleaning" | "closed";
 
 export type DerivedSeatRow = {
   id: string;
@@ -87,7 +94,7 @@ export async function computeDefaultSeatsForShift(storeId: string): Promise<Deri
     if (!s) {
       out.push({
         id: pc,
-        status: "vacant",
+        status: "empty",
         current: 0,
         cleanStart: null,
         entryTime: null,
@@ -139,7 +146,7 @@ function seatRowFromDerived(d: DerivedSeatRow): Record<string, unknown> {
 
 /**
  * 保存済み receptionShift.seats を DiningSession のライブ状態で上書きする。
- * reserved はセッション未開始の案内用のみ。open / bashing は常に derived が優先。
+ * reserved / guiding はセッション未開始の案内用。open / bashing は常に derived が優先。
  */
 export function mergeShiftSeatsWithLiveDerived(seats: unknown[], derived: DerivedSeatRow[]): unknown[] {
   const byId = new Map(derived.map((d) => [d.id, d]));
@@ -149,8 +156,9 @@ export function mergeShiftSeatsWithLiveDerived(seats: unknown[], derived: Derive
     const id = typeof o.id === "string" ? o.id : "";
     const d = id ? byId.get(id) : undefined;
     if (!d) return row;
+    const stored = normalizeReceptionSeatStatus(o.status);
     if (d.status === "occupied" || d.status === "cleaning") {
-      o.status = d.status;
+      o.status = canonicalSeatStatusForWrite(d.status);
       o.current = d.current;
       o.cleanStart = d.cleanStart;
       o.entryTime = d.entryTime;
@@ -159,14 +167,14 @@ export function mergeShiftSeatsWithLiveDerived(seats: unknown[], derived: Derive
       o.seatType = d.seatType;
       return o;
     }
-    if (o.status === "reserved" && d.status === "vacant") {
+    if ((stored === "reserved" || stored === "guiding") && d.status === "empty") {
       o.capacity = d.capacity;
       o.mergeWith = d.mergeWith;
       o.seatType = d.seatType;
       return o;
     }
-    if (o.status === "occupied" || o.status === "cleaning") {
-      o.status = d.status;
+    if (stored === "occupied" || stored === "cleaning") {
+      o.status = canonicalSeatStatusForWrite(d.status);
       o.current = d.current;
       o.cleanStart = d.cleanStart;
       o.entryTime = d.entryTime;
@@ -226,4 +234,35 @@ export async function syncReceptionShiftSeatsForTable(storeId: string, tableId: 
     data: { seats: seats as never },
   });
   scheduleReceptionBroadcast(storeId);
+}
+
+/** スタッフ人数に応じて掘りごたつ席を closed（受付・予約不可）にする */
+export function applyStaffCountHorigotatsuBlocks(
+  seats: unknown[],
+  staffCount: number,
+): unknown[] {
+  const block = staffCountBlocksHorigotatsu(staffCount);
+  return seats.map((row) => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return row;
+    const o = { ...(row as Record<string, unknown>) };
+    const seatType = String(o.seatType ?? "").trim();
+    if (!isHorigotatsuSeatType(seatType)) return o;
+    if (block) {
+      const st = normalizeReceptionSeatStatus(o.status);
+      if (st === "empty" || st === "reserved") {
+        o.status = "closed";
+        o.blockedByStaffCount = true;
+      }
+      return o;
+    }
+    if (o.blockedByStaffCount === true) {
+      const st = normalizeReceptionSeatStatus(o.status);
+      if (st === "closed") {
+        o.status = "empty";
+        o.current = 0;
+      }
+      delete o.blockedByStaffCount;
+    }
+    return o;
+  });
 }

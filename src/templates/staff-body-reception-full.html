@@ -1,6 +1,6 @@
 <main onclick="initAudio()">
   <style>
-    :root { --wood-dark: #5d4037; --accent: #d4a373; --bg: #fdfaf5; --staff-bg: #2c2c2c; --vacant-green: #8fa382; --reserved-yellow: #f1c40f; --occupied-blue: #4a90e2; --cleaning-red: #ff4d4f; --error-alert: #d90429; }
+    :root { --wood-dark: #5d4037; --accent: #d4a373; --bg: #fdfaf5; --staff-bg: #2c2c2c; --empty-white: #ffffff; --reserved-yellow: #f1c40f; --guiding-orange: #e67e22; --occupied-blue: #4a90e2; --cleaning-red: #ff4d4f; --error-alert: #d90429; }
     html, body { height: 100vh; overflow: hidden; }
     /* Kiosk (fullscreen) mode: hide staff frame chrome */
     body.rc-kiosk .sidebar,
@@ -28,8 +28,9 @@
     .map-editing .seat { cursor: grab; }
     .map-editing .seat.seat-dragging { cursor: grabbing; z-index: 50; opacity: 0.95; }
     .seat:active { transform: scale(0.95); }
-    .seat.vacant { background-color: var(--vacant-green) !important; }
+    .seat.empty, .seat.vacant { background-color: var(--empty-white) !important; color: #333 !important; border: 1px solid #bbb !important; }
     .seat.reserved { background-color: var(--reserved-yellow) !important; color: #333 !important; }
+    .seat.guiding { background-color: var(--guiding-orange) !important; color: #fff !important; }
     .seat.occupied { background-color: var(--occupied-blue) !important; }
     .seat.cleaning { background-color: var(--cleaning-red) !important; animation: blink 1.2s infinite; border: 2px solid white; }
     .seat.closed { background-color: #111 !important; color: #444 !important; }

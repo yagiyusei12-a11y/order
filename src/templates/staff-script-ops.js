@@ -273,7 +273,7 @@ function selectOpsTable(tableId, sessionOverride) {
 
 async function openOpsTableDetail(tableId, sessionOverride) {
   selectOpsTable(tableId, sessionOverride);
-  await renderDetail();
+  await loadAll();
 }
 
 (function initOpsDetailModal() {

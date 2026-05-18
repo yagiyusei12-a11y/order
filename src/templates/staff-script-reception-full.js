@@ -654,9 +654,13 @@ async function submitReservation() {
     phone = (document.getElementById("resPhone") && document.getElementById("resPhone").value) || "",
     num = document.getElementById("resNum").value,
     note = document.getElementById("resNote").value;
-  const phoneDigits = String(phone).replace(/\D/g, "");
-  if (!date || !time || !name || !phone.trim() || phoneDigits.length < 10 || !num || selectedResSeats.length === 0) {
-    return alert("日付・時間・お名前・電話番号（10桁以上）・人数・席を入力してください。");
+  const phoneTrimmed = String(phone).trim();
+  const phoneDigits = phoneTrimmed.replace(/\D/g, "");
+  if (!date || !time || !name || !num || selectedResSeats.length === 0) {
+    return alert("日付・時間・お名前・人数・席を入力してください。");
+  }
+  if (phoneTrimmed && (phoneDigits.length < 10 || phoneDigits.length > 15)) {
+    return alert("電話番号は10〜15桁で入力するか、空欄のままにしてください。");
   }
   const statusEl = document.getElementById("resStatus");
   const status = statusEl ? statusEl.value : "予約確定";
@@ -666,7 +670,7 @@ async function submitReservation() {
     shift,
     time,
     name,
-    phone: phone.trim(),
+    phone: phoneTrimmed,
     num: parseInt(num, 10),
     status,
     seats: selectedResSeats,

@@ -35,6 +35,8 @@ let kitForceApplyLatest = false;
 const kitCookDeadlines = new Map();
 let kitCookTick = null;
 let kitAudioCtx = null;
+let kitAudioUnlockDone = false;
+let kitAudioUnlockListenersInstalled = false;
 /** @type {((ev: KeyboardEvent) => void) | null} */
 let kitRecipeModalEscHandler = null;
 
@@ -167,13 +169,42 @@ function cookRemainingSec(endAt) {
   return Math.max(0, Math.ceil((endAt - Date.now()) / 1000));
 }
 
+/** iPad/iOS Safari: ユーザー操作で AudioContext を解除（自動更新からの再生に必要） */
 function primeKitAudioFromUserGesture() {
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
+    if (!Ctx) return Promise.resolve();
     if (!kitAudioCtx) kitAudioCtx = new Ctx();
-    if (kitAudioCtx.state === "suspended") kitAudioCtx.resume();
-  } catch (_) {}
+    const resumeP =
+      kitAudioCtx.state === "suspended" ? kitAudioCtx.resume() : Promise.resolve();
+    return Promise.resolve(resumeP).then(() => {
+      if (!kitAudioUnlockDone && kitAudioCtx) {
+        const buf = kitAudioCtx.createBuffer(1, 1, kitAudioCtx.sampleRate);
+        const src = kitAudioCtx.createBufferSource();
+        src.buffer = buf;
+        src.connect(kitAudioCtx.destination);
+        src.start(0);
+        kitAudioUnlockDone = true;
+      }
+    });
+  } catch (_) {
+    return Promise.resolve();
+  }
+}
+
+function installKitAudioUnlockListeners() {
+  if (kitAudioUnlockListenersInstalled) return;
+  kitAudioUnlockListenersInstalled = true;
+  const unlock = () => {
+    void primeKitAudioFromUserGesture();
+  };
+  for (const ev of ["pointerdown", "touchstart", "touchend", "click", "keydown"]) {
+    window.addEventListener(ev, unlock, { capture: true, passive: true });
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") void primeKitAudioFromUserGesture();
+  });
+  window.__primeStaffPageAudio = () => void primeKitAudioFromUserGesture();
 }
 
 function playCookTimerCompleteSound() {
@@ -182,7 +213,7 @@ function playCookTimerCompleteSound() {
     if (!Ctx) return;
     if (!kitAudioCtx) kitAudioCtx = new Ctx();
     const ctx = kitAudioCtx;
-    if (ctx.state === "suspended") ctx.resume();
+    if (ctx.state === "suspended") void ctx.resume();
     const now = ctx.currentTime;
     const beep = (freq, t0, len, vol) => {
       const o = ctx.createOscillator();
@@ -204,13 +235,15 @@ function playCookTimerCompleteSound() {
 }
 
 /** 新規注文（キッチン絞り込みに合う queued 行が増えたとき）— 低め・長め・繰り返しで遠くでも聞き取りやすく */
-function playNewKitchenOrderSound() {
+async function playNewKitchenOrderSound() {
   try {
+    await primeKitAudioFromUserGesture();
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
     if (!kitAudioCtx) kitAudioCtx = new Ctx();
     const ctx = kitAudioCtx;
-    if (ctx.state === "suspended") ctx.resume();
+    if (ctx.state === "suspended") await ctx.resume();
+    if (ctx.state !== "running") return;
     const now = ctx.currentTime;
     const atk = 0.025;
     /** 基音（三角）＋弱い倍音（矩形）で中低音域でも抜けを出す */
@@ -1819,8 +1852,7 @@ async function refreshKitchen() {
     } else {
       for (const id of nextIds) {
         if (!kitPrevFilteredQueuedIds.has(id)) {
-          primeKitAudioFromUserGesture();
-          playNewKitchenOrderSound();
+          void playNewKitchenOrderSound();
           break;
         }
       }
@@ -2194,6 +2226,8 @@ try {
     };
   }
 }
+
+installKitAudioUnlockListeners();
 
 refreshKitIntervalFromServer()
   .then(() => {

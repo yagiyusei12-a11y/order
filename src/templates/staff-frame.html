@@ -855,9 +855,16 @@
         if (chimeTimer) { clearInterval(chimeTimer); chimeTimer = null; }
       }
 
-      // Enable audio on first user gesture anywhere
-      window.addEventListener("pointerdown", () => { try { __initCallAudio(); } catch (_) {} }, { once: true });
-      window.addEventListener("keydown", () => { try { __initCallAudio(); } catch (_) {} }, { once: true });
+      // Enable audio on user gesture (iPad Safari needs touchstart; kitchen registers __primeStaffPageAudio)
+      function __unlockStaffAudio() {
+        try { __initCallAudio(); } catch (_) {}
+        try {
+          if (typeof window.__primeStaffPageAudio === "function") window.__primeStaffPageAudio();
+        } catch (_) {}
+      }
+      window.addEventListener("pointerdown", __unlockStaffAudio, { capture: true, passive: true });
+      window.addEventListener("touchstart", __unlockStaffAudio, { capture: true, passive: true });
+      window.addEventListener("keydown", __unlockStaffAudio, { once: true, passive: true });
 
       async function poll() {
         try {

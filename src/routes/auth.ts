@@ -1,7 +1,12 @@
 import rateLimit from "@fastify/rate-limit";
 import bcrypt from "bcryptjs";
 import type { FastifyInstance } from "fastify";
-import { STAFF_JWT_COOKIE_NAME, cookieSecureDefault } from "../config.js";
+import {
+  STAFF_JWT_COOKIE_NAME,
+  cookieSecureDefault,
+  staffJwtCookieMaxAgeSeconds,
+  staffJwtExpiresIn,
+} from "../config.js";
 import { prisma } from "../db.js";
 import { appendStaffAuditFromRequest, maskEmailForAudit } from "../lib/staff-audit.js";
 import { normalizeStaffEmail, parseStoreId, validatePasswordPlain } from "../lib/staff-credentials.js";
@@ -124,9 +129,10 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
       }
 
       const roleJwt = user.role === "manager" ? "manager" : "staff";
+      const expiresIn = staffJwtExpiresIn();
       const token = await reply.jwtSign(
         { sub: user.id, storeId: user.storeId, email: user.email, role: roleJwt },
-        { expiresIn: process.env.JWT_EXPIRES_IN ?? "12h" }
+        { expiresIn },
       );
 
       reply.setCookie(STAFF_JWT_COOKIE_NAME, token, {
@@ -134,7 +140,7 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
         httpOnly: true,
         secure: cookieSecureDefault(),
         sameSite: "strict",
-        maxAge: 60 * 60 * 12,
+        maxAge: staffJwtCookieMaxAgeSeconds(),
       });
 
       return { ok: true, storeId: user.storeId, email: user.email };

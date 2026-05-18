@@ -100,6 +100,20 @@
     const presetStore = params.get("storeId");
     if (presetStore) document.getElementById("storeId").value = presetStore;
 
+    (async function redirectIfAlreadyLoggedIn() {
+      try {
+        const r = await fetch("/auth/me", { credentials: "include" });
+        if (!r.ok) return;
+        const j = await r.json();
+        const sid = j.user && j.user.storeId;
+        if (!sid) return;
+        const enc = encodeURIComponent(sid);
+        let dest = "/staff-app/" + enc;
+        if (next && next.startsWith("/staff-app/" + sid)) dest = next;
+        location.replace(dest);
+      } catch (_) {}
+    })();
+
     document.getElementById("go").onclick = async () => {
       const err = document.getElementById("err");
       err.style.display = "none";

@@ -37,6 +37,8 @@ let kitCookTick = null;
 let kitAudioCtx = null;
 let kitAudioUnlockDone = false;
 let kitAudioUnlockListenersInstalled = false;
+const KIT_TIMER_COMPLETE_SOUND_URL = "/staff-assets/post-match-bell-1.mp3";
+let kitTimerCompleteAudio = null;
 /** @type {((ev: KeyboardEvent) => void) | null} */
 let kitRecipeModalEscHandler = null;
 
@@ -186,6 +188,11 @@ function primeKitAudioFromUserGesture() {
         src.start(0);
         kitAudioUnlockDone = true;
       }
+      if (!kitTimerCompleteAudio) {
+        kitTimerCompleteAudio = new Audio(KIT_TIMER_COMPLETE_SOUND_URL);
+        kitTimerCompleteAudio.preload = "auto";
+        kitTimerCompleteAudio.load();
+      }
     });
   } catch (_) {
     return Promise.resolve();
@@ -207,39 +214,21 @@ function installKitAudioUnlockListeners() {
   window.__primeStaffPageAudio = () => void primeKitAudioFromUserGesture();
 }
 
-/** 調理タイマー完了 — 大きめ・迫力あるアラーム（厨房向け） */
+/** 調理タイマー完了 — post-match-bell-1.mp3 */
 async function playCookTimerCompleteSound() {
   try {
     await primeKitAudioFromUserGesture();
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
-    if (!kitAudioCtx) kitAudioCtx = new Ctx();
-    const ctx = kitAudioCtx;
-    if (ctx.state === "suspended") await ctx.resume();
-    if (ctx.state !== "running") return;
-    const now = ctx.currentTime;
-    const master = ctx.createGain();
-    master.gain.value = 0.92;
-    master.connect(ctx.destination);
-    const blast = (freq, t0, len, peak, type) => {
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.type = type;
-      o.frequency.setValueAtTime(freq, t0);
-      o.frequency.exponentialRampToValueAtTime(freq * 1.08, t0 + len * 0.85);
-      g.gain.setValueAtTime(0.0001, t0);
-      g.gain.exponentialRampToValueAtTime(Math.max(peak, 0.0002), t0 + 0.012);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + len);
-      o.connect(g);
-      g.connect(master);
-      o.start(t0);
-      o.stop(t0 + len + 0.04);
-    };
-    blast(740, now, 0.22, 0.62, "square");
-    blast(988, now + 0.26, 0.22, 0.68, "square");
-    blast(1240, now + 0.52, 0.32, 0.72, "sawtooth");
-    blast(880, now + 1.05, 0.2, 0.58, "square");
-    blast(1175, now + 1.28, 0.28, 0.65, "sawtooth");
+    const base =
+      kitTimerCompleteAudio ||
+      (() => {
+        kitTimerCompleteAudio = new Audio(KIT_TIMER_COMPLETE_SOUND_URL);
+        kitTimerCompleteAudio.preload = "auto";
+        return kitTimerCompleteAudio;
+      })();
+    const audio = !base.paused && base.currentTime > 0 ? new Audio(KIT_TIMER_COMPLETE_SOUND_URL) : base;
+    audio.volume = 1;
+    audio.currentTime = 0;
+    await audio.play();
   } catch (_) {}
 }
 

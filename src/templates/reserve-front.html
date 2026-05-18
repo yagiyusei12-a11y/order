@@ -77,6 +77,32 @@
 
   <script>
     const STORE_ID = __STORE_ID_JS__;
+    const RECENT_RESERVE_KEY = "netReserveRecent_v1_" + STORE_ID;
+    const RECENT_RESERVE_WINDOW_MS = 5 * 60 * 1000;
+
+    function loadRecentReserveAt() {
+      try {
+        const raw = localStorage.getItem(RECENT_RESERVE_KEY);
+        if (!raw) return null;
+        const p = JSON.parse(raw);
+        const at = p && typeof p.at === "number" ? p.at : null;
+        return at != null && Number.isFinite(at) ? at : null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function saveRecentReserveAt() {
+      try {
+        localStorage.setItem(RECENT_RESERVE_KEY, JSON.stringify({ at: Date.now() }));
+      } catch (_) {}
+    }
+
+    function shouldConfirmDuplicateReserve() {
+      const at = loadRecentReserveAt();
+      if (at == null) return false;
+      return Date.now() - at < RECENT_RESERVE_WINDOW_MS;
+    }
 
     function syncFullscreenButton() {
       const btn = document.getElementById("btnFullscreen");
@@ -273,6 +299,12 @@
           showMsg("err", "日付・時間・お名前・電話番号（10桁以上）・人数を確認してください。満席の時間は選べません。");
           return;
         }
+        if (shouldConfirmDuplicateReserve()) {
+          const ok = window.confirm(
+            "既にご予約を頂いておりますが、追加のご予約でしょうか？",
+          );
+          if (!ok) return;
+        }
         try {
           const out = await apiReserve({
             date,
@@ -287,6 +319,7 @@
           const typeLine = (out.seatType || seatType)
             ? `\n席種別: ${String(out.seatType || seatType || "")}`
             : "";
+          saveRecentReserveAt();
           showMsg(
             "ok",
             `予約を受け付けました。\n予約番号: ${out.resId || "—"}${typeLine}`,

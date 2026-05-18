@@ -1895,7 +1895,13 @@ function renderGrid() {
     });
   for (const t of rows) {
     const sessList = sessionsAtTable(t.id);
-    const s = sessList.length ? sessList[0] : null;
+    const openOnTable = openSessionsAtTable(t.id);
+    const s =
+      openOnTable[0] ||
+      sessList.find((x) => x.status === "bashing_waiting") ||
+      sessList.find((x) => x.status === "merged") ||
+      sessList[0] ||
+      null;
     const takeoutBashingLegacy =
       s && s.status === "bashing_waiting" && isTakeoutTablePublicCodeForStore(t.publicCode);
     const cls =
@@ -1910,13 +1916,13 @@ function renderGrid() {
       (selectedTableId === t.id ? " selected" : "");
     const meta = sessList.length
       ? (() => {
-          const primary = sessList[0];
-          const multi = sessList.length > 1;
+          const primary = s;
+          const multi = openOnTable.length > 1;
           const gc = Number(primary.guestCount || 0);
           const cc = Number(primary.childCount || 0);
           const ppl = cc > 0 ? gc + "人·子" + cc : gc + "人";
           const multLab = multi
-            ? "<span class=\"meta\" style=\"font-weight:800\">" + sessList.length + "会計（別伝票）· </span>"
+            ? "<span class=\"meta\" style=\"font-weight:800\">" + openOnTable.length + "会計（別伝票）· </span>"
             : "";
           const moneyHtml = multi
             ? "<span class=\"meta money\" style=\"font-size:0.68rem;color:#64748b\">詳細で切替・合計は出しません</span>"
@@ -2295,7 +2301,7 @@ async function renderDetail() {
       box.innerHTML =
         "<div class=\"card\" style=\"max-width:420px;padding:1.1rem;background:#fff;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.12)\">" +
         "<p style=\"margin:0 0 0.65rem;font-weight:900;font-size:0.95rem\">別会計を同一会計にまとめる</p>" +
-        "<p class=\"muted\" style=\"margin:0 0 0.75rem;font-size:0.82rem;line-height:1.45\">統合<strong>先</strong>（この会計に残す）を選んでください。他の別会計はすべて merged になり、注文・伝票が統合先に移ります。</p>" +
+        "<p class=\"muted\" style=\"margin:0 0 0.75rem;font-size:0.82rem;line-height:1.45\">統合<strong>先</strong>（この会計に残す）を選んでください。他の別会計の注文・伝票はすべて統合先へ移り、元の別会計は終了します。</p>" +
         "<label style=\"display:block;font-size:0.78rem;font-weight:800;margin-bottom:0.25rem\">統合先</label>" +
         "<select id=\"mergeSameTargetSel\" style=\"width:100%;padding:0.5rem;margin-bottom:1rem;border-radius:8px;border:1px solid var(--border)\">" +
         targetOpts +

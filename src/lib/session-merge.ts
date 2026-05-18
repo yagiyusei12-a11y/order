@@ -18,7 +18,9 @@ function mergeGuestAlcoholAllowed(
 export type MergeTableConstraint = "different_tables" | "same_table_only";
 
 /**
- * 卓間合算・同一卓別会計の統合で共通。from の注文・未精算伝票を to に寄せ、from を merged にする。
+ * 卓間合算・同一卓別会計の統合で共通。from の注文・未精算伝票を to に寄せる。
+ * - different_tables: from は merged（分割で戻せる卓間合算）
+ * - same_table_only: from は closed（同一卓の別伝票統合。人数は加算しない）
  */
 export async function mergeTwoOpenSessionsTx(
   tx: Prisma.TransactionClient,
@@ -61,13 +63,14 @@ export async function mergeTwoOpenSessionsTx(
   if (from.bill && from.bill.status !== "open") throw new Error("MERGE_BILL_NOT_OPEN");
   if (to.bill && to.bill.status !== "open") throw new Error("MERGE_BILL_NOT_OPEN");
 
-  const nextGuest = to.guestCount + from.guestCount;
-  const nextChild = to.childCount + from.childCount;
+  const absorbSameTable = tableConstraint === "same_table_only";
+  const nextGuest = absorbSameTable ? to.guestCount : to.guestCount + from.guestCount;
+  const nextChild = absorbSameTable ? to.childCount : to.childCount + from.childCount;
   if (nextChild > nextGuest) throw new Error("MERGE_CHILD_COUNT");
 
   const ordersFrom = await tx.salesOrder.findMany({ where: { sessionId: from.id } });
   for (const o of ordersFrom) {
-    const src = o.sourceTableId ?? from.tableId;
+    const src = absorbSameTable ? null : (o.sourceTableId ?? from.tableId);
     await tx.salesOrder.update({
       where: { id: o.id },
       data: { sessionId: to.id, sourceTableId: src },
@@ -105,11 +108,22 @@ export async function mergeTwoOpenSessionsTx(
 
   await recomputeOpenBillTotalForSession(tx, storeId, to.id);
 
-  await tx.diningSession.update({
-    where: { id: from.id },
-    data: {
-      status: "merged",
-      mergedIntoSessionId: to.id,
-    },
-  });
+  if (absorbSameTable) {
+    await tx.diningSession.update({
+      where: { id: from.id },
+      data: {
+        status: "closed",
+        closedAt: new Date(),
+        mergedIntoSessionId: null,
+      },
+    });
+  } else {
+    await tx.diningSession.update({
+      where: { id: from.id },
+      data: {
+        status: "merged",
+        mergedIntoSessionId: to.id,
+      },
+    });
+  }
 }

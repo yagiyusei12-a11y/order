@@ -2216,7 +2216,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
   );
 
   /**
-   * 同一卓の別会計（別ゲスト URL）を、この URL のセッションへ統合する（相手側を merged にする）。
+   * 同一卓の別会計（別ゲスト URL）を、この URL のセッションへ統合する（相手側セッションは終了）。
    * Body: { peerGuestToken: string }
    */
   app.post<{ Params: { token: string }; Body: { peerGuestToken?: unknown } }>(

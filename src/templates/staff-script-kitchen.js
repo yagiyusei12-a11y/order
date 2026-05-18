@@ -12,8 +12,20 @@ let metaLoaded = false;
 let allCategories = [];
 let allStations = [];
 let summaryMode = false;
-/** @type {"active" | "history"} */
+/** @type {"active" | "history" | "reserve"} */
 let kitMainTab = "active";
+/** @type {Array<Record<string, unknown>>} */
+let kitTakeoutOrders = [];
+let kitTakeoutShowClosed = false;
+const KIT_TAKEOUT_CLOSED_KEY = "orderKitchenTakeoutShowClosed:v1:" + STORE;
+const TAKEOUT_NET_STATUS_LABELS = {
+  new: "新規",
+  preparing: "調理中",
+  ready: "受取可",
+  picked_up: "受取済",
+  cancelled: "キャンセル",
+};
+const TAKEOUT_NET_STATUS_FLOW = ["new", "preparing", "ready", "picked_up"];
 /** まとめ表示: 自動更新で合算が変わらないよう凍結する */
 let kitSummaryFrozenLines = null;
 let kitSummaryPendingLines = null;
@@ -807,9 +819,94 @@ async function ensureMeta() {
   renderFilterControls();
 }
 
+function formatTakeoutPickupAt(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("ja-JP", {
+    month: "numeric",
+    day: "numeric",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function lineTakeoutMeta(ln) {
+  if (!ln || !ln.takeoutPickupAt) return null;
+  return {
+    pickupAt: ln.takeoutPickupAt,
+    customerName: ln.takeoutCustomerName || "",
+    phone: ln.takeoutPhone || "",
+    email: ln.takeoutEmail || "",
+    note: ln.takeoutNote || "",
+    status: ln.takeoutStatus || "",
+    netOrderId: ln.takeoutNetOrderId || "",
+  };
+}
+
+function takeoutStatusLabel(status) {
+  const s = String(status || "");
+  return TAKEOUT_NET_STATUS_LABELS[s] || s || "—";
+}
+
+function kitOrderGroupHeadText(og, opts) {
+  const history = Boolean(opts && opts.history);
+  const ln0 = og.lines && og.lines[0];
+  const meta = lineTakeoutMeta(ln0);
+  const hm = new Date(og.orderCreatedAt || 0).toLocaleTimeString("ja-JP", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  if (meta) {
+    const name = meta.customerName || "（名前なし）";
+    return "受取 " + formatTakeoutPickupAt(meta.pickupAt) + " · " + name + " · 注文 " + hm;
+  }
+  return (og.tableName || "卓未設定") + " · " + (history ? "注文 " : "") + hm;
+}
+
+function kitOrderGroupHeadIsTakeout(og) {
+  return Boolean(og.lines && og.lines[0] && og.lines[0].takeoutPickupAt);
+}
+
+function kitOrderGroupPickupMs(og) {
+  const ln0 = og.lines && og.lines[0];
+  if (!ln0 || !ln0.takeoutPickupAt) return null;
+  const t = new Date(ln0.takeoutPickupAt).getTime();
+  return Number.isNaN(t) ? null : t;
+}
+
+function parseTakeoutOrderLines(lines) {
+  if (!Array.isArray(lines)) return [];
+  return lines.map((l) => {
+    if (!l || typeof l !== "object") return { name: "（品目）", qty: 1, note: "" };
+    const row = /** @type {{ nameSnapshot?: string; qty?: number; note?: string | null }} */ (l);
+    return {
+      name: String(row.nameSnapshot || "（品目）"),
+      qty: Number(row.qty) > 0 ? Number(row.qty) : 1,
+      note: row.note ? String(row.note) : "",
+    };
+  });
+}
+
+async function patchTakeoutNetStatus(orderId, status) {
+  await api(
+    "/stores/" +
+      encodeURIComponent(STORE) +
+      "/takeout/net-orders/" +
+      encodeURIComponent(orderId),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    },
+  );
+}
+
 function syncKitTabChrome() {
   const h = document.getElementById("kitTabHistory");
   const a = document.getElementById("kitTabActive");
+  const r = document.getElementById("kitTabReserve");
   if (h) {
     h.classList.toggle("is-on", kitMainTab === "history");
     h.setAttribute("aria-selected", kitMainTab === "history" ? "true" : "false");
@@ -818,13 +915,22 @@ function syncKitTabChrome() {
     a.classList.toggle("is-on", kitMainTab === "active");
     a.setAttribute("aria-selected", kitMainTab === "active" ? "true" : "false");
   }
+  if (r) {
+    r.classList.toggle("is-on", kitMainTab === "reserve");
+    r.setAttribute("aria-selected", kitMainTab === "reserve" ? "true" : "false");
+  }
   const showActive = kitMainTab === "active";
+  const reserve = kitMainTab === "reserve";
   const sum = document.getElementById("btnKitSummary");
   const fsSum = document.getElementById("btnKitFsSummary");
   const strip = document.getElementById("kitTimerStrip");
+  const filterCard = document.getElementById("kitFilterCard");
+  const closedWrap = document.getElementById("kitTakeoutShowClosedWrap");
   if (sum) sum.style.display = showActive ? "" : "none";
   if (fsSum) fsSum.style.display = showActive ? "" : "none";
   if (strip) strip.style.display = showActive ? "" : "none";
+  if (filterCard) filterCard.style.display = reserve ? "none" : "";
+  if (closedWrap) closedWrap.style.display = reserve ? "" : "none";
 }
 
 function summaryViewSignature(lines, st) {
@@ -905,6 +1011,137 @@ function formatKitLineReadyAt(ln) {
   return "—";
 }
 
+/** テイクアウト予約タブ: ネット注文一覧（受取日時・連絡先・明細） */
+function renderKitTakeoutReserveList(box) {
+  syncKitTabChrome();
+  if (!box) return;
+  const rows = (kitTakeoutOrders || []).filter((o) => {
+    if (!o) return false;
+    if (kitTakeoutShowClosed) return true;
+    const st = String(o.status || "");
+    return st !== "picked_up" && st !== "cancelled";
+  });
+  if (rows.length === 0) {
+    box.className = "card";
+    box.innerHTML =
+      "<div class=\"kit-empty\"><div class=\"ico\">📦</div><div>表示するテイクアウト予約がありません</div><p class=\"muted\" style=\"margin:0.5rem 0 0;font-size:0.8rem\">" +
+      (kitTakeoutShowClosed
+        ? "直近の注文はありません。"
+        : "受取済・キャンセルは下のチェックで表示できます。") +
+      "</p></div>";
+    return;
+  }
+  box.className = "card kit-layout-takeout-reserve";
+  box.innerHTML = "";
+  for (const o of rows) {
+    const card = document.createElement("article");
+    card.className = "kit-takeout-card";
+
+    const head = document.createElement("div");
+    head.className = "kit-takeout-card-head";
+    const pickup = document.createElement("div");
+    pickup.className = "kit-takeout-pickup";
+    pickup.textContent = "受取 " + formatTakeoutPickupAt(o.pickupAt);
+    const badge = document.createElement("span");
+    badge.className = "kit-takeout-status";
+    badge.textContent = takeoutStatusLabel(o.status);
+    head.appendChild(pickup);
+    head.appendChild(badge);
+    card.appendChild(head);
+
+    const body = document.createElement("div");
+    body.className = "kit-takeout-card-body";
+
+    const meta = document.createElement("dl");
+    meta.className = "kit-takeout-meta";
+    const fields = [
+      ["お名前", o.customerName],
+      ["電話", o.phone],
+      ["メール", o.email],
+      ["備考", o.note],
+      [
+        "注文日時",
+        o.createdAt ? formatTakeoutPickupAt(o.createdAt) : "—",
+      ],
+      ["注文ID", o.id],
+    ];
+    for (const [label, val] of fields) {
+      const v = val != null && String(val).trim() ? String(val).trim() : "";
+      if (!v && label === "備考") continue;
+      const dt = document.createElement("dt");
+      dt.textContent = label + "：";
+      const dd = document.createElement("dd");
+      dd.textContent = v || "—";
+      meta.appendChild(dt);
+      meta.appendChild(dd);
+    }
+    body.appendChild(meta);
+
+    const items = parseTakeoutOrderLines(o.lines);
+    if (items.length) {
+      const ul = document.createElement("ul");
+      ul.className = "kit-takeout-lines";
+      for (const it of items) {
+        const li = document.createElement("li");
+        li.textContent = it.name + " ×" + it.qty + (it.note ? "（" + it.note + "）" : "");
+        ul.appendChild(li);
+      }
+      body.appendChild(ul);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "kit-takeout-actions";
+    const cur = String(o.status || "");
+    for (const st of TAKEOUT_NET_STATUS_FLOW) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn-ghost" + (cur === st ? " is-on" : "");
+      btn.textContent = takeoutStatusLabel(st);
+      btn.disabled = cur === st;
+      btn.onclick = () => {
+        patchTakeoutNetStatus(String(o.id), st)
+          .then(() => refreshKitTakeoutOrders())
+          .then(() => refreshKitchen())
+          .catch((e) => alert(String(e.message || e)));
+      };
+      actions.appendChild(btn);
+    }
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "btn-ghost";
+    cancelBtn.textContent = "キャンセル";
+    cancelBtn.disabled = cur === "cancelled";
+    cancelBtn.onclick = () => {
+      if (!confirm("このテイクアウト注文をキャンセルにしますか？")) return;
+      patchTakeoutNetStatus(String(o.id), "cancelled")
+        .then(() => refreshKitTakeoutOrders())
+        .catch((e) => alert(String(e.message || e)));
+    };
+    actions.appendChild(cancelBtn);
+    body.appendChild(actions);
+
+    card.appendChild(body);
+    box.appendChild(card);
+  }
+}
+
+async function refreshKitTakeoutOrders() {
+  const box = document.getElementById("kit");
+  try {
+    const data = await api(
+      "/stores/" + encodeURIComponent(STORE) + "/takeout/net-orders?limit=120&sort=pickupAt",
+    );
+    kitTakeoutOrders = data.orders || [];
+    if (kitMainTab === "reserve") renderKitList();
+  } catch (e) {
+    if (kitMainTab === "reserve" && box) {
+      box.className = "card";
+      box.textContent = String(e.message || e);
+    }
+    throw e;
+  }
+}
+
 /** 注文履歴タブ: 調理済（done）のみ。戻すで待ちに戻す。 */
 function renderKitHistoryList(box, lines) {
   syncKitTabChrome();
@@ -956,10 +1193,10 @@ function renderKitHistoryList(box, lines) {
 
     const head = document.createElement("div");
     head.className = "kit-order-box-head kit-history-head";
-    const hm = new Date(og.orderCreatedAt || 0).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-    const headText = (og.tableName || "卓未設定") + " · 注文 " + hm;
+    const headText = kitOrderGroupHeadText(og, { history: true });
     head.textContent = headText;
     head.title = headText;
+    if (kitOrderGroupHeadIsTakeout(og)) head.classList.add("kit-order-box-head-takeout");
     d.appendChild(head);
 
     const body = document.createElement("div");
@@ -1018,6 +1255,11 @@ function renderKitList() {
   const lines = filterLines(baseLines);
   if (kitMainTab === "history") {
     renderKitHistoryList(box, lines);
+    finishCookTimerUi();
+    return;
+  }
+  if (kitMainTab === "reserve") {
+    renderKitTakeoutReserveList(box);
     finishCookTimerUi();
     return;
   }
@@ -1373,6 +1615,11 @@ function renderKitList() {
     const pa = orderGroupHasKitchenServeFast(a) ? 1 : 0;
     const pb = orderGroupHasKitchenServeFast(b) ? 1 : 0;
     if (pb !== pa) return pb - pa;
+    const pickA = kitOrderGroupPickupMs(a);
+    const pickB = kitOrderGroupPickupMs(b);
+    if (pickA != null && pickB != null && pickA !== pickB) return pickA - pickB;
+    if (pickA != null && pickB == null) return -1;
+    if (pickA == null && pickB != null) return 1;
     const ta = new Date(a.orderCreatedAt || 0).getTime();
     const tb = new Date(b.orderCreatedAt || 0).getTime();
     if (ta !== tb) return ta - tb;
@@ -1392,10 +1639,10 @@ function renderKitList() {
 
     const head = document.createElement("div");
     head.className = "kit-order-box-head";
-    const hm = new Date(og.orderCreatedAt || 0).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-    const headText = (og.tableName || "卓未設定") + " · " + hm;
+    const headText = kitOrderGroupHeadText(og);
     head.textContent = headText;
     head.title = headText;
+    if (kitOrderGroupHeadIsTakeout(og)) head.classList.add("kit-order-box-head-takeout");
     d.appendChild(head);
 
     const body = document.createElement("div");
@@ -1839,7 +2086,11 @@ document.getElementById("btnRefKit").onclick = () => {
     .then(() => {
       scheduleKit();
       kitForceApplyLatest = true;
-      return refreshKitchen().finally(() => {
+      const p =
+        kitMainTab === "reserve"
+          ? refreshKitTakeoutOrders()
+          : refreshKitchen().then(() => refreshKitTakeoutOrders().catch(() => {}));
+      return p.finally(() => {
         kitForceApplyLatest = false;
       });
     })
@@ -1853,18 +2104,25 @@ document.getElementById("btnKitFullList").onclick = () => applyKitListFullscreen
 {
   const th = document.getElementById("kitTabHistory");
   const ta = document.getElementById("kitTabActive");
+  const tr = document.getElementById("kitTabReserve");
   if (th)
     th.onclick = () => {
       kitMainTab = "history";
-      // 履歴は常に最新を表示（凍結は進行中まとめ表示のみ）
+      scheduleKit();
       renderKitList();
     };
   if (ta)
     ta.onclick = () => {
       kitMainTab = "active";
-      // タブ復帰時に pending 表示を同期
+      scheduleKit();
       syncKitPendingUi();
       renderKitList();
+    };
+  if (tr)
+    tr.onclick = () => {
+      kitMainTab = "reserve";
+      scheduleKit();
+      refreshKitTakeoutOrders().catch((e) => log(String(e.message || e)));
     };
 }
 document.getElementById("btnKitFullExit").onclick = () => applyKitListFullscreen(false);
@@ -1895,7 +2153,13 @@ function scheduleKit() {
   const auto = document.getElementById("auto");
   if (auto && auto.checked) {
     kitTimer = setInterval(() => {
-      refreshKitchen().catch(() => {});
+      if (kitMainTab === "reserve") {
+        refreshKitTakeoutOrders().catch(() => {});
+      } else {
+        refreshKitchen()
+          .then(() => refreshKitTakeoutOrders().catch(() => {}))
+          .catch(() => {});
+      }
     }, kitRefreshMs);
   }
 }
@@ -1914,9 +2178,26 @@ try {
   if (sessionStorage.getItem(KIT_LIST_FS_KEY) === "1") applyKitListFullscreen(true);
 } catch (_) {}
 
+try {
+  kitTakeoutShowClosed = sessionStorage.getItem(KIT_TAKEOUT_CLOSED_KEY) === "1";
+} catch (_) {}
+{
+  const closedCb = document.getElementById("kitTakeoutShowClosed");
+  if (closedCb) {
+    closedCb.checked = kitTakeoutShowClosed;
+    closedCb.onchange = () => {
+      kitTakeoutShowClosed = Boolean(closedCb.checked);
+      try {
+        sessionStorage.setItem(KIT_TAKEOUT_CLOSED_KEY, kitTakeoutShowClosed ? "1" : "0");
+      } catch (_) {}
+      if (kitMainTab === "reserve") renderKitList();
+    };
+  }
+}
+
 refreshKitIntervalFromServer()
   .then(() => {
     scheduleKit();
-    return refreshKitchen();
+    return refreshKitchen().then(() => refreshKitTakeoutOrders().catch(() => {}));
   })
   .catch((e) => log(String(e.message || e)));

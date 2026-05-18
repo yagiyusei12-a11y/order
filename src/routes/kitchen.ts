@@ -38,6 +38,51 @@ function kitchenOrderLineTableLabel(
   return tableDisplayLabel(sessionTable.name, sessionTable.publicCode);
 }
 
+async function enrichKitchenLinesWithTakeoutNet(
+  storeId: string,
+  lines: Array<Record<string, unknown>>,
+): Promise<void> {
+  const orderIds = [
+    ...new Set(
+      lines
+        .map((l) => l.orderId)
+        .filter((id): id is string => typeof id === "string" && id.length > 0),
+    ),
+  ];
+  if (orderIds.length === 0) return;
+
+  const rows = await prisma.takeoutNetOrder.findMany({
+    where: { storeId, salesOrderId: { in: orderIds } },
+    select: {
+      id: true,
+      salesOrderId: true,
+      status: true,
+      pickupAt: true,
+      customerName: true,
+      phone: true,
+      email: true,
+      note: true,
+    },
+  });
+  const byOrderId = new Map(
+    rows.filter((r) => r.salesOrderId).map((r) => [r.salesOrderId as string, r] as const),
+  );
+
+  for (const line of lines) {
+    const oid = line.orderId;
+    if (typeof oid !== "string") continue;
+    const t = byOrderId.get(oid);
+    if (!t) continue;
+    line.takeoutNetOrderId = t.id;
+    line.takeoutStatus = t.status;
+    line.takeoutPickupAt = t.pickupAt.toISOString();
+    line.takeoutCustomerName = t.customerName;
+    line.takeoutPhone = t.phone;
+    line.takeoutEmail = t.email;
+    line.takeoutNote = t.note ?? null;
+  }
+}
+
 /** none=明細キャンセルのみ / soldout=残数0（ゲストに売り切れ表示） / zero=残数0＋販売停止（後方互換） */
 type KitchenCancelStockMode = "none" | "soldout" | "zero";
 
@@ -333,6 +378,8 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
       outLines.length = 0;
       for (const t of tagged) outLines.push(t.line);
     }
+
+    await enrichKitchenLinesWithTakeoutNet(store.id, outLines);
 
     return { storeId: store.id, lines: outLines };
   });

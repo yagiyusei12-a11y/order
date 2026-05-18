@@ -42,10 +42,14 @@ function baseNetFromStoredPrice(
 function taxIncludedFromNet(netExclusiveYen: number, taxRatePercent: number): number {
   return Math.round(netExclusiveYen * (1 + taxRatePercent / 100));
 }
-function parseStatus(raw: unknown): string | null {
+const TAKEOUT_NET_ORDER_STATUSES = ["new", "preparing", "ready", "picked_up", "cancelled"] as const;
+
+function parseStatus(raw: unknown): (typeof TAKEOUT_NET_ORDER_STATUSES)[number] | null {
   const s = typeof raw === "string" ? raw.trim() : "";
   if (!s) return null;
-  return s;
+  return (TAKEOUT_NET_ORDER_STATUSES as readonly string[]).includes(s)
+    ? (s as (typeof TAKEOUT_NET_ORDER_STATUSES)[number])
+    : null;
 }
 
 function parsePickupAt(raw: unknown, timezone: string): Date {
@@ -61,7 +65,7 @@ function parsePickupAt(raw: unknown, timezone: string): Date {
 export async function registerTakeoutStaff(app: FastifyInstance): Promise<void> {
   app.get<{
     Params: { storeId: string };
-    Querystring: { status?: string; limit?: string };
+    Querystring: { status?: string; limit?: string; sort?: string };
   }>("/stores/:storeId/takeout/net-orders", async (req, reply) => {
     const storeId = req.params.storeId;
     const limitRaw = req.query.limit ? Number(req.query.limit) : 120;
@@ -69,9 +73,12 @@ export async function registerTakeoutStaff(app: FastifyInstance): Promise<void> 
     const status = req.query.status?.trim();
     const where: { storeId: string; status?: string } = { storeId };
     if (status) where.status = status;
+    const sortPickup = req.query.sort === "pickupAt";
     const rows = await prisma.takeoutNetOrder.findMany({
       where,
-      orderBy: [{ createdAt: "desc" }, { pickupAt: "asc" }],
+      orderBy: sortPickup
+        ? [{ pickupAt: "asc" }, { createdAt: "desc" }]
+        : [{ createdAt: "desc" }, { pickupAt: "asc" }],
       take: limit,
     });
     return {
@@ -97,7 +104,12 @@ export async function registerTakeoutStaff(app: FastifyInstance): Promise<void> 
     Body: { status?: string };
   }>("/stores/:storeId/takeout/net-orders/:id", async (req, reply) => {
     const status = parseStatus(req.body?.status);
-    if (!status) return reply.code(400).send({ error: "status required" });
+    if (!status) {
+      return reply.code(400).send({
+        error: "status required",
+        allowed: [...TAKEOUT_NET_ORDER_STATUSES],
+      });
+    }
     const updated = await prisma.takeoutNetOrder.updateMany({
       where: { id: req.params.id, storeId: req.params.storeId },
       data: { status },

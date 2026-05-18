@@ -43,6 +43,13 @@ import {
 } from "../lib/store-settings.js";
 import { displayTableCode } from "../lib/table-display-code.js";
 import { mergeTwoOpenSessionsTx } from "../lib/session-merge.js";
+import {
+  buildCourseOptionPacksDisplay,
+  packChargeScopeFromDb,
+  parsePurchasedCourseOptionPackIds,
+  purchaseCourseOptionPackErrorToHttp,
+  purchaseCourseOptionPackInTx,
+} from "../lib/course-option-pack.js";
 import { prisma } from "../db.js";
 
 type GuestBillingContext = {
@@ -481,31 +488,6 @@ function mapGuestSetMenuItemForReorder(
 
 const DEVICE_ID_RE = /^[a-zA-Z0-9_-]{8,128}$/;
 
-function parsePurchasedCourseOptionPackIds(raw: unknown): string[] {
-  if (raw == null) return [];
-  if (Array.isArray(raw)) return raw.filter((x): x is string => typeof x === "string" && x.length > 0);
-  return [];
-}
-
-/** コース＋オプションの表示・注文行は税込円に統一（税抜入力時は店舗税率で換算） */
-function courseOptionPackChargeTaxIncluded(
-  extraPrice: number,
-  extraPriceTaxMode: string,
-  taxRatePercent: number,
-): number {
-  if (extraPriceTaxMode === "exclusive") {
-    return Math.round(extraPrice * (1 + taxRatePercent / 100));
-  }
-  return extraPrice;
-}
-
-function packChargeScopeFromDb(
-  raw: string | null | undefined,
-): "table_once" | "per_person_pick" | "per_person_all" {
-  if (raw === "per_person_pick" || raw === "per_person_all") return raw;
-  return "table_once";
-}
-
 function normalizeOptionalProfile(
   name: unknown,
   phone: unknown,
@@ -590,26 +572,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     const gatePreview = evaluatePublicOrderGate(st, new Date());
     const nowMin = minutesSinceMidnightInTimeZone(new Date(), st.timezone);
 
-    const purchasedSet = new Set(parsePurchasedCourseOptionPackIds(session.purchasedCourseOptionPackIds));
-    const gcMenu = Math.max(1, session.guestCount);
-    let courseOptionPacksOut:
-      | {
-          id: string;
-          name: string;
-          chargeScope: "table_once" | "per_person_pick" | "per_person_all";
-          extraPrice: number;
-          extraPriceTaxMode: "inclusive" | "exclusive";
-          /** table_once: 卓一括の税込額。per_person_* では未使用でよい */
-          chargeTaxIncluded: number;
-          /** 一人あたりの税込額（per_person_*） */
-          unitChargeTaxIncluded: number;
-          /** per_person_all: 延べ人数ぶんの税込合計 */
-          totalIfAllGuestsTaxIncluded?: number;
-          /** per_person_pick: 選択できる人数の上限 */
-          maxSelectablePeople?: number;
-          purchased: boolean;
-        }[]
-      | undefined;
+    let courseOptionPacksOut: ReturnType<typeof buildCourseOptionPacksDisplay> | undefined;
     if (session.courseId) {
       const packRows = await prisma.courseOptionPack.findMany({
         where: { courseId: session.courseId },
@@ -623,48 +586,12 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         },
       });
       if (packRows.length > 0) {
-        courseOptionPacksOut = packRows.map((p) => {
-          const tm = p.extraPriceTaxMode === "exclusive" ? "exclusive" : "inclusive";
-          const unitTi = courseOptionPackChargeTaxIncluded(p.extraPrice, tm, st.taxRatePercent);
-          const scope = packChargeScopeFromDb(p.chargeScope);
-          if (scope === "table_once") {
-            return {
-              id: p.id,
-              name: p.name,
-              chargeScope: scope,
-              extraPrice: p.extraPrice,
-              extraPriceTaxMode: tm,
-              chargeTaxIncluded: unitTi,
-              unitChargeTaxIncluded: unitTi,
-              purchased: purchasedSet.has(p.id),
-            };
-          }
-          if (scope === "per_person_all") {
-            const totalAll = unitTi * gcMenu;
-            return {
-              id: p.id,
-              name: p.name,
-              chargeScope: scope,
-              extraPrice: p.extraPrice,
-              extraPriceTaxMode: tm,
-              chargeTaxIncluded: totalAll,
-              unitChargeTaxIncluded: unitTi,
-              totalIfAllGuestsTaxIncluded: totalAll,
-              purchased: purchasedSet.has(p.id),
-            };
-          }
-          return {
-            id: p.id,
-            name: p.name,
-            chargeScope: scope,
-            extraPrice: p.extraPrice,
-            extraPriceTaxMode: tm,
-            chargeTaxIncluded: unitTi,
-            unitChargeTaxIncluded: unitTi,
-            maxSelectablePeople: gcMenu,
-            purchased: purchasedSet.has(p.id),
-          };
-        });
+        courseOptionPacksOut = buildCourseOptionPacksDisplay(
+          packRows,
+          session.guestCount,
+          parsePurchasedCourseOptionPackIds(session.purchasedCourseOptionPackIds),
+          st.taxRatePercent,
+        );
       }
     }
 
@@ -1892,97 +1819,24 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     const packBillingId = packBilling.ctx.billingSessionId;
     const packOrderSourceTableId = packBilling.ctx.orderSourceTableId;
 
-    try {
-      const order = await prisma.$transaction(async (tx) => {
-        const sess = await tx.diningSession.findUnique({ where: { id: packBillingId } });
-        if (!sess || sess.status !== "open") throw new Error("SESSION_GONE");
-        const cur = parsePurchasedCourseOptionPackIds(sess.purchasedCourseOptionPackIds);
-        if (cur.includes(pack.id)) throw new Error("ALREADY");
-        if (!sess.courseId) throw new Error("NO_COURSE");
-        const packRow = await tx.courseOptionPack.findFirst({
-          where: { id: pack.id, courseId: sess.courseId },
-        });
-        if (!packRow) throw new Error("PACK_GONE");
-        const storeRowTx = await tx.store.findUnique({
-          where: { id: sess.storeId },
-          select: { settings: true },
-        });
-        const stTx = mergeStoreSettings(storeRowTx?.settings);
-        const tm = packRow.extraPriceTaxMode === "exclusive" ? "exclusive" : "inclusive";
-        const unitPriceTaxInc = courseOptionPackChargeTaxIncluded(
-          packRow.extraPrice,
-          tm,
-          stTx.taxRatePercent,
-        );
-        const scope = packChargeScopeFromDb(packRow.chargeScope);
-        const gc = Math.max(1, sess.guestCount);
-        let qty = 1;
-        let unitPrice = unitPriceTaxInc;
-        if (scope === "table_once") {
-          qty = 1;
-          unitPrice = unitPriceTaxInc;
-        } else if (scope === "per_person_pick") {
-          qty = peopleCountPurchase ?? 1;
-          if (qty < 1 || qty > gc) throw new Error("BAD_PEOPLE");
-          unitPrice = unitPriceTaxInc;
-        } else {
-          qty = gc;
-          unitPrice = unitPriceTaxInc;
-        }
-        const nameSnap =
-          scope === "table_once"
-            ? `[コース＋オプション] ${packRow.name}`
-            : `[コース＋オプション] ${packRow.name}（×${qty}名）`;
-        const so = await tx.salesOrder.create({
-          data: {
-            sessionId: packBillingId,
-            ...(packOrderSourceTableId ? { sourceTableId: packOrderSourceTableId } : {}),
-            status: "submitted",
-            note: null,
-          },
-        });
-        const lineExtra = {
-          kind: "courseOptionPack",
-          courseOptionPackId: packRow.id,
-          chargeScope: scope,
-          peopleCount: qty,
-        };
-        await tx.orderLine.create({
-          data: {
-            orderId: so.id,
-            menuItemId: null,
-            nameSnapshot: nameSnap,
-            unitPrice,
-            qty,
-            note: null,
-            lineExtra: lineExtra as Prisma.InputJsonValue,
-            status: "queued",
-          },
-        });
-        await tx.diningSession.update({
-          where: { id: sess.id },
-          data: {
-            purchasedCourseOptionPackIds: [...cur, pack.id],
-          },
-        });
-        return tx.salesOrder.findUnique({
-          where: { id: so.id },
-          include: { lines: true },
-        });
-      });
-      return order;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "";
-      if (msg === "SESSION_GONE") return reply.code(404).send({ error: "session not found or closed" });
-      if (msg === "ALREADY") return reply.code(409).send({ error: "すでに追加済みです" });
-      if (msg === "PACK_GONE" || msg === "NO_COURSE") {
-        return reply.code(404).send({ error: "オプションが見つかりません" });
-      }
-      if (msg === "BAD_PEOPLE") {
-        return reply.code(400).send({ error: "人数が無効です" });
-      }
-      throw e;
+    const purchaseResult = await prisma.$transaction(async (tx) =>
+      purchaseCourseOptionPackInTx(tx, {
+        billingSessionId: packBillingId,
+        packId: pack.id,
+        peopleCount: peopleCountPurchase,
+        orderSourceTableId: packOrderSourceTableId,
+      }),
+    );
+    if (!purchaseResult.ok) {
+      const http = purchaseCourseOptionPackErrorToHttp(purchaseResult.code);
+      return reply.code(http.status).send({ error: http.error });
     }
+    const order = await prisma.salesOrder.findUnique({
+      where: { id: purchaseResult.orderId },
+      include: { lines: true },
+    });
+    broadcastOpsSessionUpdated(billSession.storeId, packBillingId);
+    return order;
   });
 
   app.get<{ Params: { token: string } }>("/guest/:token/orders", async (req, reply) => {

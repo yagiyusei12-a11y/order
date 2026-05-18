@@ -12,7 +12,12 @@ import { resolveCourseAndTierForSession } from "../lib/course-tier-resolve.js";
 import { recomputeOpenBillTotalForSession } from "../lib/recompute-session-bill.js";
 import { mergeTwoOpenSessionsTx } from "../lib/session-merge.js";
 import { moveOrderLinesBetweenSessionsTx, type LineMoveSpec } from "../lib/move-session-order-lines.js";
-import { broadcastOpsSessionUpdatedMany } from "../lib/ops-seat-socket.js";
+import { broadcastOpsSessionUpdatedMany, broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
+import {
+  packChargeScopeFromDb,
+  purchaseCourseOptionPackErrorToHttp,
+  purchaseCourseOptionPackInTx,
+} from "../lib/course-option-pack.js";
 import { firstSalesOrderByTime } from "../lib/first-sales-order.js";
 
 function normalizeUiCustomerLabel(
@@ -358,6 +363,61 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       }
       throw e;
     }
+  });
+
+  app.post<{
+    Params: { storeId: string; sessionId: string };
+    Body: { packId?: string; peopleCount?: number };
+  }>("/stores/:storeId/sessions/:sessionId/course-option-packs/purchase", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    const bodyObj = req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
+    const packId = typeof bodyObj.packId === "string" ? bodyObj.packId.trim() : "";
+    if (!packId) return reply.code(400).send({ error: "packId required" });
+
+    const session = await prisma.diningSession.findFirst({
+      where: { id: req.params.sessionId, storeId: store.id },
+      include: { course: true },
+    });
+    if (!session || session.status !== "open") {
+      return reply.code(404).send({ error: "session not found or closed" });
+    }
+    if (!session.courseId) {
+      return reply.code(400).send({ error: "no course on this session" });
+    }
+    const pack = await prisma.courseOptionPack.findFirst({
+      where: { id: packId, courseId: session.courseId },
+    });
+    if (!pack) return reply.code(404).send({ error: "option pack not found" });
+
+    let peopleCountPurchase: number | null = null;
+    if (packChargeScopeFromDb(pack.chargeScope) === "per_person_pick") {
+      const gc = Math.max(1, session.guestCount);
+      const pc = bodyObj.peopleCount;
+      if (typeof pc !== "number" || !Number.isInteger(pc) || pc < 1 || pc > gc) {
+        return reply.code(400).send({ error: `人数は1〜${gc}の整数で指定してください` });
+      }
+      peopleCountPurchase = pc;
+    }
+
+    const purchaseResult = await prisma.$transaction(async (tx) =>
+      purchaseCourseOptionPackInTx(tx, {
+        billingSessionId: session.id,
+        packId: pack.id,
+        peopleCount: peopleCountPurchase,
+        orderSourceTableId: session.tableId,
+      }),
+    );
+    if (!purchaseResult.ok) {
+      const http = purchaseCourseOptionPackErrorToHttp(purchaseResult.code);
+      return reply.code(http.status).send({ error: http.error });
+    }
+    broadcastOpsSessionUpdated(store.id, session.id);
+    const order = await prisma.salesOrder.findUnique({
+      where: { id: purchaseResult.orderId },
+      include: { lines: true },
+    });
+    return order;
   });
 
   /**

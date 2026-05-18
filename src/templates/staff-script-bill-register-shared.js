@@ -304,6 +304,138 @@ function runMergeSessionDialog(ctx, session, table) {
   };
 }
 
+function parsePurchasedCourseOptionPackIds(session) {
+  const raw = session && session.purchasedCourseOptionPackIds;
+  if (raw == null) return [];
+  if (Array.isArray(raw)) return raw.filter((x) => typeof x === "string" && x.length > 0);
+  return [];
+}
+
+function coursePackChargeTaxIncluded(extraPrice, extraPriceTaxMode, taxRatePercent) {
+  if (extraPriceTaxMode === "exclusive") {
+    return Math.round(Number(extraPrice || 0) * (1 + Number(taxRatePercent || 0) / 100));
+  }
+  return Number(extraPrice || 0);
+}
+
+function buildOpsCourseOptionPacksSection(ctx, session, readOnly) {
+  if (readOnly || !session || session.status !== "open" || !session.courseId) return "";
+  const course = (ctx.courses || []).find((c) => c.id === session.courseId);
+  if (!course || !Array.isArray(course.optionPacks) || !course.optionPacks.length) return "";
+  const purchased = new Set(parsePurchasedCourseOptionPackIds(session));
+  const unw = course.optionPacks.filter((p) => p && p.id && !purchased.has(p.id));
+  if (!unw.length) return "";
+  const taxRate = Number((ctx.storeSettings && ctx.storeSettings.taxRatePercent) || 10);
+  const gCount = Math.max(1, Number(session.guestCount || 1));
+  let inner = "";
+  for (const p of unw) {
+    const scope = p.chargeScope || "table_once";
+    const tm = p.extraPriceTaxMode === "exclusive" ? "exclusive" : "inclusive";
+    const unitTi = coursePackChargeTaxIncluded(p.extraPrice, tm, taxRate);
+    const taxNote =
+      tm === "exclusive"
+        ? "<span class=\"muted\" style=\"font-size:0.68rem;display:block;margin-top:0.15rem\">（税抜設定のため会計は税込額）</span>"
+        : "";
+    if (scope === "per_person_pick") {
+      const maxP = gCount;
+      inner +=
+        "<div class=\"ops-course-pack-row\">" +
+        "<div style=\"font-size:0.82rem;font-weight:700;margin-bottom:0.25rem\">" +
+        ctx.escapeHtml(p.name) +
+        " · 一人 " +
+        BillRegisterShared.yen(unitTi) +
+        "（税込）</div>" +
+        "<div class=\"row\" style=\"gap:0.35rem;align-items:center;flex-wrap:wrap\">" +
+        "<label style=\"font-size:0.72rem\">人数</label>" +
+        "<input type=\"number\" min=\"1\" max=\"" +
+        maxP +
+        "\" value=\"1\" data-ops-pack-people=\"" +
+        ctx.escapeHtml(p.id) +
+        "\" style=\"width:3.25rem;padding:0.35rem;border-radius:8px;border:1px solid var(--border)\" />" +
+        "<span class=\"muted\" style=\"font-size:0.72rem\">1〜" +
+        maxP +
+        "名</span>" +
+        "<button type=\"button\" class=\"btn-primary ops-course-pack-btn\" data-ops-pack-buy data-pack-id=\"" +
+        ctx.escapeHtml(p.id) +
+        "\" data-pack-scope=\"per_person_pick\" style=\"width:auto;padding:0.4rem 0.7rem\">追加</button>" +
+        "</div>" +
+        taxNote +
+        "</div>";
+      continue;
+    }
+    let payTotal = unitTi;
+    let labelExtra = "（税込・卓1回）";
+    if (scope === "per_person_all") {
+      payTotal = unitTi * gCount;
+      labelExtra = "（税込・延べ" + gCount + "名分）";
+    }
+    inner +=
+      "<button type=\"button\" class=\"btn-ghost ops-course-pack-btn\" data-ops-pack-buy data-pack-id=\"" +
+      ctx.escapeHtml(p.id) +
+      "\" data-pack-scope=\"" +
+      ctx.escapeHtml(scope) +
+      "\" style=\"width:100%;text-align:left;font-weight:700;border-color:#fdba74;margin-bottom:0.35rem\">" +
+      ctx.escapeHtml(p.name) +
+      " <span style=\"color:#c2410c\">+" +
+      BillRegisterShared.yen(payTotal) +
+      "</span> <span class=\"muted\" style=\"font-size:0.72rem;font-weight:600\">" +
+      labelExtra +
+      "</span>" +
+      taxNote +
+      "<span class=\"muted\" style=\"font-size:0.68rem;display:block;margin-top:0.2rem;font-weight:500\">対象メニューが広がります</span>" +
+      "</button>";
+  }
+  return (
+    "<div class=\"ops-course-pack-section\">" +
+    "<h3 class=\"ops-sec-title\" style=\"margin-top:0\">＋オプション（コース対象を広げる）</h3>" +
+    "<p class=\"muted\" style=\"font-size:0.72rem;margin:0 0 0.45rem;line-height:1.4\">未追加のオプションのみ表示。追加すると伝票に計上され、ゲストの注文対象メニューが増えます。</p>" +
+    inner +
+    "</div>"
+  );
+}
+
+function bindOpsCourseOptionPackButtons(panel, ctx, session, table) {
+  panel.querySelectorAll("[data-ops-pack-buy]").forEach((btn) => {
+    btn.onclick = async () => {
+      const packId = btn.getAttribute("data-pack-id") || "";
+      if (!packId) return;
+      const scope = btn.getAttribute("data-pack-scope") || "table_once";
+      const body = { packId };
+      if (scope === "per_person_pick") {
+        const inp = panel.querySelector('[data-ops-pack-people="' + packId + '"]');
+        const n = inp ? parseInt(String(inp.value || ""), 10) : NaN;
+        const maxP = Math.max(1, Number(session.guestCount || 1));
+        if (!Number.isInteger(n) || n < 1 || n > maxP) {
+          ctx.log("人数は1〜" + maxP + "の整数で");
+          return;
+        }
+        body.peopleCount = n;
+      }
+      try {
+        await ctx.api(
+          "/stores/" +
+            encodeURIComponent(ctx.storeId) +
+            "/sessions/" +
+            encodeURIComponent(session.id) +
+            "/course-option-packs/purchase",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          },
+        );
+        ctx.log("＋オプションを追加しました");
+        await ctx.hooks.loadAll();
+        ctx.hooks.setSelectedTableId(table.id);
+        ctx.hooks.renderGrid();
+        await ctx.hooks.renderDetail();
+      } catch (e) {
+        ctx.log(String(e.message || e));
+      }
+    };
+  });
+}
+
 async function mountRegisterFlow(panel, ctx) {
   const session = ctx.session;
   const table = ctx.table;
@@ -482,8 +614,10 @@ async function mountRegisterFlow(panel, ctx) {
     }
   }
 
+  const coursePacksHtml = buildOpsCourseOptionPacksSection(ctx, session, readOnly);
   const OPS_OVERLAY_Z = "13000";
   const ordersTableHtml =
+    coursePacksHtml +
     "<h3 class=\"ops-sec-title\">コース・注文</h3>" +
     "<div class=\"card ops-order-card\"><table class=\"ops-order-table\">" +
     orderTableFallback +
@@ -587,6 +721,7 @@ async function mountRegisterFlow(panel, ctx) {
       "<div class=\"ops-register-layout\">" +
       "<div class=\"ops-register-layout__left\">" +
       "<div class=\"ops-register-layout__orders-scroll\">" +
+      coursePacksHtml +
       "<h3 class=\"ops-sec-title\">コース・注文</h3>" +
       "<div class=\"card ops-order-card\"><table class=\"ops-order-table\">" +
       orderTableFallback +
@@ -605,6 +740,8 @@ async function mountRegisterFlow(panel, ctx) {
   }
   panel.dataset.opsSessionId = session.id;
   panel.dataset.opsTableId = table.id;
+
+  bindOpsCourseOptionPackButtons(panel, ctx, session, table);
 
   const $ = (id) => panel.querySelector("#" + id);
   const methodEl = $("payMethod");

@@ -79,6 +79,20 @@
   margin: 0 0 0.35rem;
 }
 
+.ops-course-pack-section {
+  margin-bottom: 0.65rem;
+  padding: 0.55rem 0.65rem;
+  background: linear-gradient(180deg, rgba(249, 115, 22, 0.1), transparent);
+  border: 1px solid #fed7aa;
+  border-radius: 10px;
+}
+.ops-course-pack-row {
+  margin-bottom: 0.45rem;
+}
+.ops-course-pack-btn {
+  font-family: inherit;
+}
+
 .ops-register-layout__orders-scroll .ops-order-card {
   margin-bottom: 0;
 }

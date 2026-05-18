@@ -21,14 +21,39 @@
     .ok { background:#ecfdf5; border:1px solid #bbf7d0; color:#065f46; padding: 12px; border-radius: 12px; margin-top: 12px; font-weight: 900; }
     .err { background:#fff1f2; border:1px solid #fecdd3; color:#9f1239; padding: 12px; border-radius: 12px; margin-top: 12px; font-weight: 900; }
     .ok, .err { white-space: pre-line; }
+    .btn-history { position:absolute; left:0; top:0; background:#fff; color:var(--wood-dark); border:2px solid var(--wood-dark); border-radius:10px; padding:8px 12px; font-weight:900; cursor:pointer; font-size:0.9em; }
+    .history-panel { margin: 0 0 16px; padding: 14px; border-radius: 14px; border: 1px solid #e8dfd6; background: #faf6f0; }
+    .history-panel[hidden] { display: none !important; }
+    .history-panel-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
+    .history-panel-head strong { color: var(--wood-dark); font-size: 0.95em; }
+    .history-close { background:transparent; border:1px solid #ccc; border-radius:8px; padding:4px 10px; font-weight:700; cursor:pointer; font-size:0.82em; }
+    .history-list { display:flex; flex-direction:column; gap:10px; }
+    .history-item { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:12px 14px; line-height:1.5; }
+    .history-item.is-past { opacity: 0.72; }
+    .history-item-title { font-weight:900; color:var(--wood-dark); margin:0 0 4px; font-size:0.95em; }
+    .history-item-meta { margin:0; font-size:0.88em; color:#444; }
+    .history-item-id { margin:6px 0 0; font-size:0.8em; color:#666; }
+    .history-empty { margin:0; font-size:0.88em; color:#666; }
   </style>
 </head>
 <body>
   <div class="card">
     <div class="head-row">
+      <button id="btnHistory" class="btn-history" type="button">予約履歴</button>
       <h1>ネット予約</h1>
       <button id="btnFullscreen" class="btn-full" type="button">全画面</button>
     </div>
+
+    <section id="historyPanel" class="history-panel" hidden>
+      <div class="history-panel-head">
+        <strong>この端末の予約履歴</strong>
+        <button type="button" class="history-close" id="btnHistoryClose">閉じる</button>
+      </div>
+      <p class="muted" style="margin:0 0 10px;font-size:0.82rem">
+        このスマホ・パソコンで予約した内容だけ表示します。別の端末やブラウザでは見えません。
+      </p>
+      <div id="historyList" class="history-list"></div>
+    </section>
 
     <div class="row">
       <div>
@@ -77,31 +102,132 @@
 
   <script>
     const STORE_ID = __STORE_ID_JS__;
-    const RECENT_RESERVE_KEY = "netReserveRecent_v1_" + STORE_ID;
+    const RESERVE_DEVICE_KEY = "netReserveDevice_v1_" + STORE_ID;
+    const LEGACY_RECENT_KEY = "netReserveRecent_v1_" + STORE_ID;
     const RECENT_RESERVE_WINDOW_MS = 5 * 60 * 1000;
+    const RESERVE_HISTORY_MAX = 20;
 
-    function loadRecentReserveAt() {
+    function loadDeviceStore() {
       try {
-        const raw = localStorage.getItem(RECENT_RESERVE_KEY);
-        if (!raw) return null;
-        const p = JSON.parse(raw);
-        const at = p && typeof p.at === "number" ? p.at : null;
-        return at != null && Number.isFinite(at) ? at : null;
-      } catch (_) {
-        return null;
-      }
+        const raw = localStorage.getItem(RESERVE_DEVICE_KEY);
+        if (raw) {
+          const p = JSON.parse(raw);
+          if (p && p.v === 1 && Array.isArray(p.items)) {
+            return { v: 1, items: p.items.filter((x) => x && typeof x === "object") };
+          }
+        }
+        const legacy = localStorage.getItem(LEGACY_RECENT_KEY);
+        if (legacy) {
+          localStorage.removeItem(LEGACY_RECENT_KEY);
+        }
+      } catch (_) {}
+      return { v: 1, items: [] };
     }
 
-    function saveRecentReserveAt() {
+    function saveDeviceStore(store) {
       try {
-        localStorage.setItem(RECENT_RESERVE_KEY, JSON.stringify({ at: Date.now() }));
+        localStorage.setItem(RESERVE_DEVICE_KEY, JSON.stringify(store));
       } catch (_) {}
+    }
+
+    function loadRecentReserveAt() {
+      const store = loadDeviceStore();
+      const first = store.items[0];
+      const at = first && typeof first.bookedAt === "number" ? first.bookedAt : null;
+      return at != null && Number.isFinite(at) ? at : null;
+    }
+
+    function appendReserveHistory(entry) {
+      const store = loadDeviceStore();
+      const item = {
+        resId: String(entry.resId || ""),
+        date: String(entry.date || ""),
+        time: String(entry.time || ""),
+        name: String(entry.name || ""),
+        num: Number(entry.num) || 0,
+        phone: String(entry.phone || ""),
+        note: String(entry.note || ""),
+        seatType: entry.seatType ? String(entry.seatType) : "",
+        seatLabels: Array.isArray(entry.seatLabels)
+          ? entry.seatLabels.map((x) => String(x))
+          : [],
+        bookedAt: Date.now(),
+      };
+      const withoutDup = store.items.filter((x) => x && x.resId !== item.resId);
+      withoutDup.unshift(item);
+      saveDeviceStore({ v: 1, items: withoutDup.slice(0, RESERVE_HISTORY_MAX) });
     }
 
     function shouldConfirmDuplicateReserve() {
       const at = loadRecentReserveAt();
       if (at == null) return false;
       return Date.now() - at < RECENT_RESERVE_WINDOW_MS;
+    }
+
+    function fmtReserveDateLabel(ymd) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return ymd;
+      const [y, m, d] = ymd.split("-").map(Number);
+      const dt = new Date(y, m - 1, d);
+      if (!Number.isFinite(dt.getTime())) return ymd;
+      const wd = ["日", "月", "火", "水", "木", "金", "土"][dt.getDay()];
+      return `${m}月${d}日（${wd}）`;
+    }
+
+    function reserveHistoryIsPast(ymd, timeHm) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd) || !/^\d{2}:\d{2}$/.test(timeHm)) return false;
+      const [y, mo, d] = ymd.split("-").map(Number);
+      const [h, mi] = timeHm.split(":").map(Number);
+      const end = new Date(y, mo - 1, d, h, mi + 1, 0, 0);
+      return end.getTime() < Date.now();
+    }
+
+    function renderReserveHistory() {
+      const list = document.getElementById("historyList");
+      const btn = document.getElementById("btnHistory");
+      if (!list) return;
+      const store = loadDeviceStore();
+      const items = store.items.filter((x) => x && x.resId);
+      if (btn) {
+        const n = items.length;
+        btn.textContent = n > 0 ? `予約履歴（${n}）` : "予約履歴";
+      }
+      list.innerHTML = "";
+      if (!items.length) {
+        const p = document.createElement("p");
+        p.className = "history-empty";
+        p.textContent = "この端末からの予約はまだありません。";
+        list.appendChild(p);
+        return;
+      }
+      for (const it of items) {
+        const card = document.createElement("article");
+        card.className = "history-item" + (reserveHistoryIsPast(it.date, it.time) ? " is-past" : "");
+        const title = document.createElement("p");
+        title.className = "history-item-title";
+        title.textContent =
+          fmtReserveDateLabel(it.date) + " " + it.time + " · " + (it.num || "?") + "名";
+        const meta = document.createElement("p");
+        meta.className = "history-item-meta";
+        const lines = [`お名前: ${it.name || "—"}`, `電話: ${it.phone || "—"}`];
+        if (it.seatType) lines.push(`席種別: ${it.seatType}`);
+        if (it.seatLabels && it.seatLabels.length) lines.push(`席: ${it.seatLabels.join("、")}`);
+        if (it.note) lines.push(`備考: ${it.note}`);
+        meta.textContent = lines.join("\n");
+        const idEl = document.createElement("p");
+        idEl.className = "history-item-id";
+        idEl.textContent = "予約番号: " + it.resId;
+        card.appendChild(title);
+        card.appendChild(meta);
+        card.appendChild(idEl);
+        list.appendChild(card);
+      }
+    }
+
+    function setHistoryPanelOpen(open) {
+      const panel = document.getElementById("historyPanel");
+      if (!panel) return;
+      panel.hidden = !open;
+      if (open) renderReserveHistory();
     }
 
     function syncFullscreenButton() {
@@ -242,6 +368,16 @@
       document.getElementById("btnFullscreen").onclick = () => toggleFullscreen();
       document.addEventListener("fullscreenchange", () => syncFullscreenButton());
       syncFullscreenButton();
+      renderReserveHistory();
+      const btnHistory = document.getElementById("btnHistory");
+      const btnHistoryClose = document.getElementById("btnHistoryClose");
+      if (btnHistory) {
+        btnHistory.onclick = () => {
+          const panel = document.getElementById("historyPanel");
+          setHistoryPanelOpen(Boolean(panel && panel.hidden));
+        };
+      }
+      if (btnHistoryClose) btnHistoryClose.onclick = () => setHistoryPanelOpen(false);
 
       cfg = await apiGetConfig();
       cfg.seatTypeMode = cfg.seatTypeMode === "require_select" ? "require_select" : "any";
@@ -319,7 +455,18 @@
           const typeLine = (out.seatType || seatType)
             ? `\n席種別: ${String(out.seatType || seatType || "")}`
             : "";
-          saveRecentReserveAt();
+          appendReserveHistory({
+            resId: out.resId,
+            date,
+            time,
+            name,
+            phone,
+            num,
+            note,
+            seatType: out.seatType || seatType,
+            seatLabels: out.seatLabels,
+          });
+          renderReserveHistory();
           showMsg(
             "ok",
             `予約を受け付けました。\n予約番号: ${out.resId || "—"}${typeLine}`,

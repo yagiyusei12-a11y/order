@@ -41,3 +41,11 @@ export function isSeatBlockedForBooking(status: unknown): boolean {
   const st = normalizeReceptionSeatStatus(status);
   return st === "occupied" || st === "cleaning" || st === "closed" || st === "guiding";
 }
+
+/** 受付端末の手動操作で禁止する遷移（青→赤は会計・セッション終了のみ） */
+export function isForbiddenManualReceptionSeatTransition(
+  prev: ReceptionSeatStatus,
+  next: ReceptionSeatStatus,
+): boolean {
+  return prev === "occupied" && next === "cleaning";
+}

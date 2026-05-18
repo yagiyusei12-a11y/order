@@ -1341,10 +1341,8 @@ async function toggleSeat(id) {
     if (!realSeat.current) realSeat.current = 2;
     realSeat.entryTime = realSeat.entryTime || Date.now();
   } else if (st0 === "occupied") {
-    realSeat.status = "cleaning";
-    realSeat.cleanStart = Date.now();
-    realSeat.current = 0;
-    playChime("low");
+    alert("利用中（青）からバッシング（赤）へは、レジでの会計またはセッション終了でのみ変更できます。");
+    return;
   } else if (st0 === "cleaning") {
     realSeat.status = "empty";
     realSeat.current = 0;
@@ -1356,6 +1354,14 @@ async function toggleSeat(id) {
   }
   const wr = await fetch(API_URL + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "updateSeats", shiftKey: currentShiftKey, ifShiftUpdatedAt, payload: shiftData.seats }) });
   if (wr.status === 409) { alert("他の端末で更新がありました。再読込します。"); }
+  else if (wr.status === 400) {
+    let msg = "席の状態を更新できませんでした。";
+    try {
+      const err = await wr.json();
+      if (err && err.message) msg = String(err.message);
+    } catch (_) { /* ignore */ }
+    alert(msg);
+  }
   loadData();
 }
 

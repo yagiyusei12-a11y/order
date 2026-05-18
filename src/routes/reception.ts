@@ -32,7 +32,11 @@ import {
   syncReceptionShiftSeatsForTable,
   type ReceptionSeatStatus,
 } from "../lib/reception-seat-state.js";
-import { isSeatBlockedForBooking, normalizeReceptionSeatStatus } from "../lib/reception-seat-status.js";
+import {
+  isForbiddenManualReceptionSeatTransition,
+  isSeatBlockedForBooking,
+  normalizeReceptionSeatStatus,
+} from "../lib/reception-seat-status.js";
 import { broadcastReceptionUpdated } from "../lib/ops-seat-socket.js";
 
 function receptionMutationNotify(storeId: string): { status: "success" } {
@@ -866,8 +870,15 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
             const r = row as Record<string, unknown>;
             const id = typeof r.id === "string" ? r.id : "";
             if (!id) continue;
-            const prev = prevById.get(id);
+            const prev = prevById.get(id) ?? "empty";
             const next = normalizeReceptionSeatStatus(r.status);
+            if (isForbiddenManualReceptionSeatTransition(prev, next)) {
+              return reply.code(400).send({
+                error: "OCCUPIED_TO_CLEANING_FORBIDDEN",
+                message: "利用中（青）からバッシング（赤）へは、レジ会計またはセッション終了でのみ変更できます。",
+                seatId: id,
+              });
+            }
             if (prev === "cleaning" && (next === "empty" || next === "vacant")) {
               const hasFuture = await seatHasFutureReservation(store.id, id, stSetEv.timezone);
               r.status = hasFuture ? "reserved" : "empty";

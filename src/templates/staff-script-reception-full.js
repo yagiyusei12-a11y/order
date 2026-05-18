@@ -537,11 +537,11 @@ function seatStatusForManualReservationPick(id) {
   return st.status === "vacant" ? "empty" : st.status;
 }
 
-/** 手動予約の席選択: 予約済み（黄）・利用中（青）は出さない（編集中の自席は除く） */
+/** 手動予約の席選択: 予約済（黄）・案内中（橙）・利用中（青）は出さない（編集中の自席は除く） */
 function isSeatHiddenForManualReservation(id, allowSeatIds) {
   if (allowSeatIds && allowSeatIds.has(id)) return false;
   const st = seatStatusForManualReservationPick(id);
-  return st === "reserved" || st === "occupied";
+  return st === "reserved" || st === "guiding" || st === "occupied";
 }
 
 function updateReserveSeatSelector() {

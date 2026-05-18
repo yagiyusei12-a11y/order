@@ -8,8 +8,6 @@ export type ReceptionSeatStatus =
   | "cleaning"
   | "closed";
 
-export const RECEPTION_STAFF_COUNT_HORIGOTATSU_BLOCK_MAX = 5;
-
 export function normalizeReceptionSeatStatus(raw: unknown): ReceptionSeatStatus {
   const s = typeof raw === "string" ? raw.trim() : "";
   switch (s) {
@@ -32,15 +30,6 @@ export function canonicalSeatStatusForWrite(status: ReceptionSeatStatus): Recept
   return status === "vacant" ? "empty" : status;
 }
 
-export function isHorigotatsuSeatType(seatType: unknown): boolean {
-  const st = String(seatType ?? "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .normalize("NFKC");
-  if (!st) return false;
-  return st.includes("掘りごたつ") || /ほりごたつ/i.test(st);
-}
-
 /** ウォークイン案内に使える席（黄 reserved は先回り可） */
 export function isSeatAssignableForWalkIn(status: unknown): boolean {
   const st = normalizeReceptionSeatStatus(status);
@@ -51,9 +40,4 @@ export function isSeatAssignableForWalkIn(status: unknown): boolean {
 export function isSeatBlockedForBooking(status: unknown): boolean {
   const st = normalizeReceptionSeatStatus(status);
   return st === "occupied" || st === "cleaning" || st === "closed" || st === "guiding";
-}
-
-export function staffCountBlocksHorigotatsu(staffCount: number): boolean {
-  const n = Number.isFinite(staffCount) ? Math.floor(staffCount) : 6;
-  return n <= RECEPTION_STAFF_COUNT_HORIGOTATSU_BLOCK_MAX;
 }

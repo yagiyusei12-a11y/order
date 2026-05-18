@@ -25,19 +25,14 @@ import {
 import { displayTableCode, tableDisplayLabel } from "../lib/table-display-code.js";
 import { sendMailSafe } from "../lib/mail.js";
 import {
-  applyStaffCountHorigotatsuBlocks,
   buildTodayReceptionShiftKey,
+  clearLegacyStaffCountBlocks,
   computeDefaultSeatsForShift,
   mergeShiftSeatsWithLiveDerived,
   syncReceptionShiftSeatsForTable,
   type ReceptionSeatStatus,
 } from "../lib/reception-seat-state.js";
-import {
-  isHorigotatsuSeatType,
-  isSeatBlockedForBooking,
-  normalizeReceptionSeatStatus,
-  staffCountBlocksHorigotatsu,
-} from "../lib/reception-seat-status.js";
+import { isSeatBlockedForBooking, normalizeReceptionSeatStatus } from "../lib/reception-seat-status.js";
 import { broadcastReceptionUpdated } from "../lib/ops-seat-socket.js";
 
 function receptionMutationNotify(storeId: string): { status: "success" } {
@@ -360,11 +355,6 @@ async function collectUsedSeatsForNetReservation(
   return used;
 }
 
-function receptionStaffCountFromConfig(c: Record<string, unknown>): number {
-  const n = Number(c.staff);
-  return Number.isFinite(n) ? Math.floor(n) : 6;
-}
-
 /** 本日の未来予約（未キャンセル・来店前）が席に紐づくか */
 async function seatHasFutureReservation(
   storeId: string,
@@ -444,13 +434,9 @@ async function distinctSeatTypesForNetReserve(storeId: string): Promise<string[]
 }
 
 /** ネット予約の卓候補: 従来の C/T 形式または席種別が設定されている卓 */
-function isNetReserveTableRow(
-  t: { publicCode: string; seatType?: string | null },
-  staffCount: number,
-): boolean {
+function isNetReserveTableRow(t: { publicCode: string; seatType?: string | null }): boolean {
   const pc = String(t.publicCode ?? "").trim();
   if (!pc) return false;
-  if (staffCountBlocksHorigotatsu(staffCount) && isHorigotatsuSeatType(t.seatType)) return false;
   const st = normalizeSeatTypeLabel(t.seatType);
   return rxNetBookableTableCode.test(pc) || Boolean(st);
 }
@@ -660,8 +646,14 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         reservations: reservations.map((r) => r.data) as unknown[],
         storeTimeZone: stSet.timezone,
       });
-      const staffCount = receptionStaffCountFromConfig(cData);
-      seatsWithBlocks = applyStaffCountHorigotatsuBlocks(seatsWithBlocks, staffCount) as unknown[];
+      const legacyClear = clearLegacyStaffCountBlocks(seatsWithBlocks);
+      seatsWithBlocks = legacyClear.seats;
+      if (legacyClear.changed) {
+        await prisma.receptionShift.update({
+          where: { storeId_shiftKey: { storeId: store.id, shiftKey } },
+          data: { seats: seatsWithBlocks as never },
+        });
+      }
 
       const fallbackMaster = seatsWithBlocks
         .map((x) => {
@@ -684,7 +676,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         .filter((row): row is { code: string; name: string; capacity: number; mergeWith: string[]; seatType: string } => row !== null);
 
       return {
-        config: conf ? conf.data : { staff: 6, override: false, manualWait: 30 },
+        config: conf ? conf.data : { override: false, manualWait: 30 },
         callReserved: Boolean(st?.callReserved),
         callType: st?.callType ?? "",
         entryQueue: (st?.entryQueue ?? []) as unknown,
@@ -746,11 +738,11 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           if (v === null || v === undefined) delete next[k];
           else next[k] = v;
         }
+        delete next.staff;
         await prisma.receptionConfig.update({
           where: { storeId: store.id },
           data: { data: next as never },
         });
-        const staffCount = receptionStaffCountFromConfig(next);
         const todayKey = buildTodayShiftKey(stSetEv.timezone, lunchEndEv);
         await ensureShift(store.id, todayKey);
         const shToday = await prisma.receptionShift.findUnique({
@@ -763,11 +755,13 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         if (!todaySeats.length) {
           todaySeats = (await computeDefaultSeatsForShift(store.id)) as unknown[];
         }
-        const blocked = applyStaffCountHorigotatsuBlocks(todaySeats, staffCount) as unknown[];
-        await prisma.receptionShift.update({
-          where: { storeId_shiftKey: { storeId: store.id, shiftKey: todayKey } },
-          data: { seats: blocked as never },
-        });
+        const legacyClear = clearLegacyStaffCountBlocks(todaySeats);
+        if (legacyClear.changed) {
+          await prisma.receptionShift.update({
+            where: { storeId_shiftKey: { storeId: store.id, shiftKey: todayKey } },
+            data: { seats: legacyClear.seats as never },
+          });
+        }
         return receptionMutationNotify(store.id);
       }
       if (type === "callReserved") {
@@ -858,8 +852,8 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           prevById.set(id, normalizeReceptionSeatStatus(o.status));
         }
         if (seats && seats.length > 0) {
-          const staffCount = receptionStaffCountFromConfig(cEv);
-          seats = applyStaffCountHorigotatsuBlocks(seats, staffCount) as unknown[];
+          const legacyClear = clearLegacyStaffCountBlocks(seats);
+          seats = legacyClear.seats;
           for (const row of seats) {
             if (!row || typeof row !== "object" || Array.isArray(row)) continue;
             const r = row as Record<string, unknown>;
@@ -1011,8 +1005,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         select: { publicCode: true, capacity: true, mergeWith: true, seatType: true },
         orderBy: { sortOrder: "asc" },
       });
-      const staffCount = receptionStaffCountFromConfig(c as Record<string, unknown>);
-      const bookable = tables.filter((t) => isNetReserveTableRow(t, staffCount));
+      const bookable = tables.filter((t) => isNetReserveTableRow(t));
       const filtered =
         seatTypeMode === "require_select"
           ? bookable.filter((t) => normalizeSeatTypeLabel(t.seatType) === seatTypeNorm)
@@ -1143,8 +1136,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
 
           const used = await collectUsedSeatsForNetReservation(tx, store.id, date, time, lunchHr);
 
-          const staffCount = receptionStaffCountFromConfig(c as Record<string, unknown>);
-          const bookable = tables.filter((t) => isNetReserveTableRow(t, staffCount));
+          const bookable = tables.filter((t) => isNetReserveTableRow(t));
           const filtered =
             seatTypeMode === "require_select"
               ? bookable.filter((t) => normalizeSeatTypeLabel(t.seatType) === seatTypeBody)

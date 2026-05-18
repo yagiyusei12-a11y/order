@@ -6,9 +6,7 @@ import { storeNowWallClock } from "./store-wall-time.js";
 import { broadcastReceptionUpdated } from "./ops-seat-socket.js";
 import {
   canonicalSeatStatusForWrite,
-  isHorigotatsuSeatType,
   normalizeReceptionSeatStatus,
-  staffCountBlocksHorigotatsu,
   type ReceptionSeatStatus,
 } from "./reception-seat-status.js";
 
@@ -236,33 +234,20 @@ export async function syncReceptionShiftSeatsForTable(storeId: string, tableId: 
   scheduleReceptionBroadcast(storeId);
 }
 
-/** スタッフ人数に応じて掘りごたつ席を closed（受付・予約不可）にする */
-export function applyStaffCountHorigotatsuBlocks(
-  seats: unknown[],
-  staffCount: number,
-): unknown[] {
-  const block = staffCountBlocksHorigotatsu(staffCount);
-  return seats.map((row) => {
+/** 旧「スタッフ人数」連動で closed になった席を解除する */
+export function clearLegacyStaffCountBlocks(seats: unknown[]): { seats: unknown[]; changed: boolean } {
+  let changed = false;
+  const out = seats.map((row) => {
     if (!row || typeof row !== "object" || Array.isArray(row)) return row;
     const o = { ...(row as Record<string, unknown>) };
-    const seatType = String(o.seatType ?? "").trim();
-    if (!isHorigotatsuSeatType(seatType)) return o;
-    if (block) {
-      const st = normalizeReceptionSeatStatus(o.status);
-      if (st === "empty" || st === "reserved") {
-        o.status = "closed";
-        o.blockedByStaffCount = true;
-      }
-      return o;
-    }
-    if (o.blockedByStaffCount === true) {
-      const st = normalizeReceptionSeatStatus(o.status);
-      if (st === "closed") {
-        o.status = "empty";
-        o.current = 0;
-      }
-      delete o.blockedByStaffCount;
+    if (o.blockedByStaffCount !== true) return o;
+    changed = true;
+    delete o.blockedByStaffCount;
+    if (normalizeReceptionSeatStatus(o.status) === "closed") {
+      o.status = "empty";
+      o.current = 0;
     }
     return o;
   });
+  return { seats: out, changed };
 }

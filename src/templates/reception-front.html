@@ -315,7 +315,6 @@
         Array.isArray(data.seatTypeOptions) ? data.seatTypeOptions : [],
       );
       receptionConf = data.config && typeof data.config === "object" ? data.config : {};
-      const staff = parseInt(receptionConf.staff) || 6;
       const isForcedWait =
         receptionConf.override === true || receptionConf.override === "true";
       const manualWait = parseInt(receptionConf.manualWait, 10) || 0;

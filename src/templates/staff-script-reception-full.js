@@ -12,7 +12,6 @@ let configCache = {};
 /** 席マップ配置編集モード */
 let mapEditMode = false;
 let lastWaiting = [];
-let lastStaffCount = 6;
 let lastResList = [];
 let mapDrag = null;
 let receptionLoadSeq = 0;
@@ -229,11 +228,11 @@ async function saveConfig() {
   const walkInPartySizeMax = Number.isFinite(walkRaw) ? Math.max(1, Math.min(20, walkRaw)) : 6;
   const p = {
     ...configCache,
-    staff: parseInt(document.getElementById("staffCount").value, 10),
     override: document.getElementById("waitOverride").checked,
     manualWait: parseInt(document.getElementById("manualWaitValue").value, 10),
     receptionWalkInPartySizeMax: walkInPartySizeMax,
   };
+  delete p.staff;
   syncWalkInPartyOverLabel();
   await fetch(API_URL + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "updateConfig", payload: p }) });
   configCache = p;
@@ -331,7 +330,7 @@ function toggleMapEditMode() {
   if (map) map.classList.toggle("map-editing", mapEditMode);
   if (hint) hint.style.display = mapEditMode ? "block" : "none";
   if (mapEditMode) {
-    render(lastWaiting, lastStaffCount, lastResList);
+    render(lastWaiting, lastResList);
   } else {
     loadData();
   }
@@ -796,7 +795,6 @@ async function loadData() {
     tableMaster = Array.isArray(data.tableMaster) ? data.tableMaster : [];
     configCache = data.config && typeof data.config === "object" ? { ...data.config } : {};
     if (data.config) {
-      document.getElementById("staffCount").value = data.config.staff || 6;
       document.getElementById("waitOverride").checked = data.config.override || false;
       document.getElementById("manualWaitValue").value = data.config.manualWait || 30;
       const wMax = parseInt(data.config.receptionWalkInPartySizeMax, 10);
@@ -883,13 +881,11 @@ async function loadData() {
         seatStates[id] = { ...st, status: "reserved" };
       });
     });
-    const staffCount = parseInt(data.config ? data.config.staff : 6, 10) || 6;
     lastWaiting = shiftData.waiting || [];
-    lastStaffCount = staffCount;
     lastResList = resList;
     if (mapEditMode) {
-      syncMapSeatVisuals(staffCount);
-      renderSidePanels(lastWaiting, staffCount, resList);
+      syncMapSeatVisuals();
+      renderSidePanels(lastWaiting, resList);
       document.getElementById("totalGuestCount").innerText = String(
         Object.values(seatStates).reduce(
           (acc, s) =>
@@ -899,7 +895,7 @@ async function loadData() {
         ),
       );
     } else {
-      render(shiftData.waiting || [], staffCount, resList);
+      render(shiftData.waiting || [], resList);
     }
     refreshReservationListModalIfOpen();
   } catch (e) {
@@ -927,7 +923,7 @@ function renderNetworkErrorMap(hint) {
   map.appendChild(empty);
 }
 
-function renderSidePanels(waiting, staffCount, resList) {
+function renderSidePanels(waiting, resList) {
   const resBody = document.getElementById("reservationListBody");
   resBody.innerHTML = "";
   if (!resList || resList.length === 0) {
@@ -1050,19 +1046,19 @@ function renderSidePanels(waiting, staffCount, resList) {
   });
 }
 
-function syncMapSeatVisuals(staffCount) {
+function syncMapSeatVisuals() {
   const map = document.getElementById("map");
   if (!map) return;
   const ids = getMasterIds();
   const domEls = map.querySelectorAll(".seat");
   if (domEls.length !== ids.length) {
-    render(lastWaiting, staffCount, lastResList);
+    render(lastWaiting, lastResList);
     return;
   }
   for (const id of ids) {
     const el = findSeatEl(map, id);
     if (!el) {
-      render(lastWaiting, staffCount, lastResList);
+      render(lastWaiting, lastResList);
       return;
     }
     const st = seatStates[id] || { status: "empty" };
@@ -1080,7 +1076,7 @@ function syncMapSeatVisuals(staffCount) {
   }
 }
 
-function render(waiting, staffCount, resList) {
+function render(waiting, resList) {
   ensureGlobalSeatDrag();
   const map = document.getElementById("map");
   map.innerHTML = "";
@@ -1105,7 +1101,7 @@ function render(waiting, staffCount, resList) {
       '/settings#tab=tables" style="color:var(--accent)">席マスタ</a>で確認してください。</span></div>';
     map.appendChild(empty);
     document.getElementById("totalGuestCount").innerText = "0";
-    renderSidePanels(waiting, staffCount, resList);
+    renderSidePanels(waiting, resList);
     return;
   }
 
@@ -1174,7 +1170,7 @@ function render(waiting, staffCount, resList) {
       0,
     ),
   );
-  renderSidePanels(waiting, staffCount, resList);
+  renderSidePanels(waiting, resList);
 }
 
 async function toggleSeat(id) {

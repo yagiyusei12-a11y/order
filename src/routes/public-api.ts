@@ -52,7 +52,7 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
     const openSessions = openSessionsRows.map(sessionPayload);
     const session = openSessionsRows.length > 0 ? sessionPayload(openSessionsRows[0]) : null;
     const courses = await prisma.course.findMany({
-      where: { storeId: table.storeId, active: true },
+      where: { storeId: table.storeId, active: true, visibleToGuest: true },
       orderBy: { name: "asc" },
       include: {
         priceTiers: { orderBy: [{ sortOrder: "asc" }, { durationMinutes: "asc" }] },
@@ -168,6 +168,7 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
       courseId,
       coursePriceTierId,
       requireCourseWhenStarting: st.requireCourseWhenStartingSession,
+      requireGuestVisibleCourse: true,
       dineInSeparateBill: separateBill,
     });
     if (!result.ok) {

@@ -14,13 +14,21 @@ export async function resolveCourseAndTierForSession(options: {
   storeId: string;
   courseId: string | null;
   coursePriceTierId: string | null | undefined;
+  /** 卓QRなどゲスト向け導線: true のコースのみ許可 */
+  requireVisibleToGuest?: boolean;
 }): Promise<ResolveTierResult> {
   let { courseId, coursePriceTierId } = options;
   const tierIdRaw = coursePriceTierId;
 
+  const courseWhere = {
+    storeId: options.storeId,
+    active: true as const,
+    ...(options.requireVisibleToGuest ? { visibleToGuest: true as const } : {}),
+  };
+
   if (tierIdRaw) {
     const tier = await prisma.coursePriceTier.findFirst({
-      where: { id: tierIdRaw, course: { storeId: options.storeId, active: true } },
+      where: { id: tierIdRaw, course: courseWhere },
       select: { id: true, courseId: true },
     });
     if (!tier) return { ok: false, error: "course price tier not found", code: "BAD_TIER" };
@@ -36,7 +44,7 @@ export async function resolveCourseAndTierForSession(options: {
   }
 
   const course = await prisma.course.findFirst({
-    where: { id: courseId, storeId: options.storeId, active: true },
+    where: { id: courseId, ...courseWhere },
     select: { id: true },
   });
   if (!course) return { ok: false, error: "course not found", code: "BAD_COURSE" };

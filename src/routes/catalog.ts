@@ -1909,6 +1909,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       name: string;
       kind: string;
       priceTiers: unknown;
+      visibleToGuest?: boolean;
       menuItemIds?: unknown;
       includedMenuLinks?: unknown;
       optionPacks?: unknown;
@@ -1944,12 +1945,15 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       optionPacksToCreate = v.packs;
     }
 
+    const visibleToGuest = req.body?.visibleToGuest !== false;
+
     const course = await prisma.$transaction(async (tx) => {
       const c = await tx.course.create({
         data: {
           storeId: store.id,
           name,
           kind,
+          visibleToGuest,
         },
       });
       await tx.coursePriceTier.createMany({
@@ -2009,6 +2013,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       name?: string;
       kind?: string;
       active?: boolean;
+      visibleToGuest?: boolean;
       menuItemIds?: unknown;
       includedMenuLinks?: unknown;
       priceTiers?: unknown;
@@ -2023,6 +2028,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       name?: string;
       kind?: string;
       active?: boolean;
+      visibleToGuest?: boolean;
     } = {};
     if (typeof req.body?.name === "string") {
       const n = req.body.name.trim();
@@ -2036,6 +2042,9 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     }
     if (typeof req.body?.active === "boolean") {
       data.active = req.body.active;
+    }
+    if (typeof req.body?.visibleToGuest === "boolean") {
+      data.visibleToGuest = req.body.visibleToGuest;
     }
 
     const bodyObj = req.body && typeof req.body === "object" ? req.body : null;

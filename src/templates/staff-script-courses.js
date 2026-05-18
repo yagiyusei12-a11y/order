@@ -777,6 +777,7 @@ function render() {
       nPack +
       "件" +
       (c.active ? "" : " · <strong>無効</strong>") +
+      (c.visibleToGuest === false ? " · <strong>ゲスト非表示</strong>" : "") +
       "</div>";
 
     const actions = document.createElement("div");
@@ -792,6 +793,33 @@ function render() {
     labName.className = "muted";
     labName.style.fontSize = "0.72rem";
     labName.textContent = "コース名（ゲスト・会計表示）";
+
+    const guestVisLab = document.createElement("label");
+    guestVisLab.style.cssText =
+      "display:flex;align-items:center;gap:0.4rem;margin-top:0.55rem;font-size:0.82rem;cursor:pointer";
+    const guestVisCb = document.createElement("input");
+    guestVisCb.type = "checkbox";
+    guestVisCb.checked = c.visibleToGuest !== false;
+    guestVisCb.style.transform = "scale(1.12)";
+    const guestVisTxt = document.createElement("span");
+    guestVisTxt.textContent = "お客様の卓QR画面に表示する";
+    guestVisLab.appendChild(guestVisCb);
+    guestVisLab.appendChild(guestVisTxt);
+    guestVisCb.addEventListener("change", async () => {
+      log("");
+      try {
+        await api("/stores/" + encodeURIComponent(STORE) + "/courses/" + encodeURIComponent(c.id), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ visibleToGuest: guestVisCb.checked }),
+        });
+        c.visibleToGuest = guestVisCb.checked;
+        await loadAll();
+      } catch (e) {
+        guestVisCb.checked = c.visibleToGuest !== false;
+        log(String(e.message || e));
+      }
+    });
 
     const labTiers = document.createElement("div");
     labTiers.className = "muted";
@@ -903,6 +931,7 @@ function render() {
     };
     actions.appendChild(labName);
     actions.appendChild(nm);
+    actions.appendChild(guestVisLab);
     actions.appendChild(labTiers);
     actions.appendChild(tierBox);
     actions.appendChild(addTierBtn);
@@ -1031,6 +1060,9 @@ document.getElementById("btnAddCourse").onclick = async () => {
   log("");
   const name = document.getElementById("cName").value.trim();
   const kind = document.getElementById("cKind").value.trim() || "course";
+  const visibleToGuest = document.getElementById("cVisibleToGuest")
+    ? document.getElementById("cVisibleToGuest").checked
+    : true;
   const box = document.getElementById("addTierRows");
   if (!name) return log("名前を入力してください");
   let priceTiers;
@@ -1043,7 +1075,7 @@ document.getElementById("btnAddCourse").onclick = async () => {
     await api("/stores/" + encodeURIComponent(STORE) + "/courses", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, kind, priceTiers }),
+      body: JSON.stringify({ name, kind, priceTiers, visibleToGuest }),
     });
     document.getElementById("cName").value = "";
     log("コースを追加しました");

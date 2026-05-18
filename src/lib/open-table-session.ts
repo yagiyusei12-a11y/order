@@ -36,6 +36,8 @@ export async function openSessionForTable(options: {
   mode: OpenSessionMode;
   /** 店舗設定。新規作成時のみ、コース未選択を拒否する */
   requireCourseWhenStarting?: boolean;
+  /** 卓QRなど: お客様画面に出すコースだけ選べる */
+  requireGuestVisibleCourse?: boolean;
   /**
    * true のとき既存の open セッションを再利用しない（同一卓に複数の open を許可）。
    * ネット／口頭テイクアウトで注文ごとに別会計にするために使用。
@@ -106,6 +108,7 @@ export async function openSessionForTable(options: {
     storeId,
     courseId: resolvedCourseId,
     coursePriceTierId: options.coursePriceTierId,
+    requireVisibleToGuest: options.requireGuestVisibleCourse === true,
   });
   if (!resolved.ok) {
     return {
@@ -158,6 +161,7 @@ export function openOrReuseSessionForTable(input: {
   courseId: string | null;
   coursePriceTierId?: string | null;
   requireCourseWhenStarting?: boolean;
+  requireGuestVisibleCourse?: boolean;
   /** テイクアウト注文ごとに別セッション（別伝票）にする */
   takeoutOrderSeparateBill?: boolean;
   /** 卓QRで「別会計」を選んだとき、同一卓に新規 open を追加する */
@@ -173,6 +177,7 @@ export function openOrReuseSessionForTable(input: {
     courseId,
     coursePriceTierId,
     requireCourseWhenStarting,
+    requireGuestVisibleCourse,
   } = input;
   return openSessionForTable({
     tableId,
@@ -182,6 +187,7 @@ export function openOrReuseSessionForTable(input: {
     courseId,
     coursePriceTierId,
     requireCourseWhenStarting,
+    requireGuestVisibleCourse,
     mode: "reuseIfOpen",
     skipReuse: takeoutOrderSeparateBill === true || dineInSeparateBill === true,
   });

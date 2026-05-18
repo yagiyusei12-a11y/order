@@ -1,6 +1,6 @@
 <main>
   <h2 class="page-title">コース</h2>
-  <p class="muted" style="margin-top:-0.35rem;margin-bottom:1rem">各コースに<strong>複数の時間・料金パターン</strong>（例: 60分・90分）を登録できます。卓開始時にパターンを選びます。対象商品は「対象商品を選択」からダイアログで指定してください。</p>
+  <p class="muted" style="margin-top:-0.35rem;margin-bottom:1rem">各コースに<strong>複数の時間・料金パターン</strong>（例: 60分・90分）を登録できます。卓開始時にパターンを選びます。対象商品は「対象商品を選択」からダイアログで指定してください。<br>「お客様の卓QRに表示」をオフにしたコースは、<strong>レジ・ハンディ・卓・会計</strong>からのみ選べます。</p>
   <div class="row" style="margin-bottom:0.75rem">
     <button type="button" class="btn-ghost" id="btnRefCourses">再読込</button>
     <div style="margin-left:auto;display:flex;align-items:center;gap:.45rem">
@@ -23,6 +23,10 @@
     <label for="cKind">種別コード（内部・一覧用・任意）</label>
     <p class="muted" style="font-size:0.72rem;margin:-0.15rem 0 0.35rem">識別用の短い文字列。画面には補助的に表示されます。</p>
     <input id="cKind" type="text" placeholder="例: eat_drink_all, tabehodai" />
+    <label style="display:flex;align-items:center;gap:0.45rem;margin-top:0.65rem;font-size:0.88rem">
+      <input type="checkbox" id="cVisibleToGuest" checked style="transform:scale(1.15)" />
+      お客様の卓QR画面に表示する
+    </label>
     <strong style="font-size:0.82rem;display:block;margin-top:0.75rem">料金・制限時間パターン</strong>
     <p class="muted" style="font-size:0.72rem;margin:0.25rem 0 0.5rem">分単位が異なると別料金として扱われます。子供は空欄で大人と同額です。</p>
     <div id="addTierRows" style="display:flex;flex-direction:column;gap:0.5rem"></div>

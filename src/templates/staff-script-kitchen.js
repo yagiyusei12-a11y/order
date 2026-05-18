@@ -207,30 +207,39 @@ function installKitAudioUnlockListeners() {
   window.__primeStaffPageAudio = () => void primeKitAudioFromUserGesture();
 }
 
-function playCookTimerCompleteSound() {
+/** 調理タイマー完了 — 大きめ・迫力あるアラーム（厨房向け） */
+async function playCookTimerCompleteSound() {
   try {
+    await primeKitAudioFromUserGesture();
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
     if (!kitAudioCtx) kitAudioCtx = new Ctx();
     const ctx = kitAudioCtx;
-    if (ctx.state === "suspended") void ctx.resume();
+    if (ctx.state === "suspended") await ctx.resume();
+    if (ctx.state !== "running") return;
     const now = ctx.currentTime;
-    const beep = (freq, t0, len, vol) => {
+    const master = ctx.createGain();
+    master.gain.value = 0.92;
+    master.connect(ctx.destination);
+    const blast = (freq, t0, len, peak, type) => {
       const o = ctx.createOscillator();
       const g = ctx.createGain();
-      o.type = "sine";
-      o.frequency.value = freq;
-      g.gain.setValueAtTime(0, t0);
-      g.gain.linearRampToValueAtTime(vol, t0 + 0.02);
-      g.gain.linearRampToValueAtTime(0, t0 + len);
+      o.type = type;
+      o.frequency.setValueAtTime(freq, t0);
+      o.frequency.exponentialRampToValueAtTime(freq * 1.08, t0 + len * 0.85);
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(Math.max(peak, 0.0002), t0 + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + len);
       o.connect(g);
-      g.connect(ctx.destination);
+      g.connect(master);
       o.start(t0);
-      o.stop(t0 + len + 0.02);
+      o.stop(t0 + len + 0.04);
     };
-    beep(784, now, 0.14, 0.2);
-    beep(988, now + 0.18, 0.14, 0.2);
-    beep(1175, now + 0.36, 0.22, 0.22);
+    blast(740, now, 0.22, 0.62, "square");
+    blast(988, now + 0.26, 0.22, 0.68, "square");
+    blast(1240, now + 0.52, 0.32, 0.72, "sawtooth");
+    blast(880, now + 1.05, 0.2, 0.58, "square");
+    blast(1175, now + 1.28, 0.28, 0.65, "sawtooth");
   } catch (_) {}
 }
 
@@ -381,7 +390,7 @@ function finishCookTimerUi() {
 function fireCookTimerNotice(productName, seconds, opts) {
   const playSound = !opts || opts.playSound !== false;
   kitCookNoticeQueue.push({ productName: String(productName || ""), seconds });
-  if (playSound) playCookTimerCompleteSound();
+  if (playSound) void playCookTimerCompleteSound();
   appendCookTimerNoticeLine(productName);
 }
 
@@ -424,7 +433,7 @@ function restoreKitCookTimersFromStorage() {
       for (const e of expired) {
         fireCookTimerNotice(e.productName, e.seconds, { playSound: false });
       }
-      playCookTimerCompleteSound();
+      void playCookTimerCompleteSound();
     }
     if (kitCookDeadlines.size > 0) ensureKitCookTick();
     persistKitCookTimers();

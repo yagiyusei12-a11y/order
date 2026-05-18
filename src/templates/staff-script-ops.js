@@ -99,6 +99,41 @@ function loadSocketIoClient() {
   });
 }
 
+function opsDetailModalIsOpen() {
+  const modal = document.getElementById("opsDetailModal");
+  return Boolean(modal && !modal.hidden);
+}
+
+/** 会計モーダル内のスクロール位置（自動更新の renderDetail で先頭に戻るのを防ぐ） */
+function captureOpsDetailScrollTops() {
+  if (!opsDetailModalIsOpen()) return null;
+  const panel = document.getElementById("detailPanel");
+  if (!panel) return null;
+  const ordersEl = panel.querySelector(".ops-register-layout__orders-scroll");
+  const registerEl = panel.querySelector(".ops-register-layout__register");
+  return {
+    orders: ordersEl ? ordersEl.scrollTop : 0,
+    register: registerEl ? registerEl.scrollTop : 0,
+  };
+}
+
+function restoreOpsDetailScrollTops(snaps) {
+  if (!snaps) return;
+  const panel = document.getElementById("detailPanel");
+  if (!panel) return;
+  const apply = () => {
+    const ordersEl = panel.querySelector(".ops-register-layout__orders-scroll");
+    const registerEl = panel.querySelector(".ops-register-layout__register");
+    if (ordersEl) ordersEl.scrollTop = snaps.orders;
+    if (registerEl) registerEl.scrollTop = snaps.register;
+  };
+  apply();
+  requestAnimationFrame(() => {
+    apply();
+    requestAnimationFrame(apply);
+  });
+}
+
 function debouncedOpsRefresh() {
   if (opsRefreshDebounceTimer) clearTimeout(opsRefreshDebounceTimer);
   opsRefreshDebounceTimer = setTimeout(() => {
@@ -2495,7 +2530,9 @@ async function loadAll() {
     for (const b of billsRes.bills || []) if (b.sessionId) billsBySessionId.set(b.sessionId, b);
     renderGrid();
     renderMiniSessions();
+    const detailScrollSnaps = captureOpsDetailScrollTops();
     await renderDetail();
+    restoreOpsDetailScrollTops(detailScrollSnaps);
     await renderReceiptBox();
   } finally {
     if (scrollEl) {

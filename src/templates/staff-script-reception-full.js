@@ -15,6 +15,11 @@ let lastWaiting = [];
 let lastStaffCount = 6;
 let lastResList = [];
 let mapDrag = null;
+let receptionLoadSeq = 0;
+let receptionPollTimer = null;
+/** @type {import("socket.io-client").Socket | null} */
+let receptionSocket = null;
+let receptionSocketInitPromise = null;
 
 function escapeHtml(s) {
   return String(s || "")
@@ -198,7 +203,8 @@ function changeViewShift() {
   currentShiftKey = document.getElementById("viewDate").value + "_" + document.getElementById("viewShift").value;
   document.getElementById("viewShiftLabel").innerText =
     (document.getElementById("viewShift").value === "lunch" ? "ランチ" : "ディナー");
-  loadData();
+  void loadData();
+  void ensureReceptionSocket();
 }
 async function clearEntry() { document.getElementById("entryPopup").style.display = "none"; await fetch(API_URL + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "popEntry" }) }); loadData(); }
 async function resetReservedCall() {
@@ -696,14 +702,76 @@ async function markArrived(resId) {
   loadData();
 }
 
+function refreshReservationListModalIfOpen() {
+  const modal = document.getElementById("reservationListModal");
+  if (modal && modal.style.display === "flex") openReservationListModal();
+}
+
+function loadSocketIoClient() {
+  return new Promise((resolve, reject) => {
+    if (typeof io !== "undefined") {
+      resolve(io);
+      return;
+    }
+    const existing = document.querySelector('script[src="/socket.io/socket.io.js"]');
+    if (existing) {
+      existing.addEventListener("load", () =>
+        typeof io !== "undefined" ? resolve(io) : reject(new Error("socket.io client missing")),
+      );
+      existing.addEventListener("error", () => reject(new Error("socket.io script failed")));
+      return;
+    }
+    const s = document.createElement("script");
+    s.src = "/socket.io/socket.io.js";
+    s.async = true;
+    document.head.appendChild(s);
+    s.onload = () => (typeof io !== "undefined" ? resolve(io) : reject(new Error("socket.io client missing")));
+    s.onerror = () => reject(new Error("socket.io script failed"));
+  });
+}
+
+async function ensureReceptionSocket() {
+  if (receptionSocket?.connected) return receptionSocket;
+  if (!receptionSocketInitPromise) {
+    receptionSocketInitPromise = (async () => {
+      const ioFn = await loadSocketIoClient();
+      receptionSocket = ioFn({
+        path: "/socket.io",
+        withCredentials: true,
+        transports: ["websocket", "polling"],
+      });
+      receptionSocket.on("reception:updated", () => {
+        void loadData();
+      });
+      receptionSocket.on("ops:session-updated", () => {
+        void loadData();
+      });
+      return receptionSocket;
+    })();
+  }
+  return receptionSocketInitPromise;
+}
+
+function scheduleReceptionPoll() {
+  if (receptionPollTimer) clearInterval(receptionPollTimer);
+  const tickMs = document.hidden ? 15000 : 2000;
+  receptionPollTimer = setInterval(() => {
+    if (!document.hidden) void loadData();
+  }, tickMs);
+}
+
 async function loadData() {
   if (!currentShiftKey) return;
+  const seq = ++receptionLoadSeq;
   try {
     const res = await fetch(
       API_URL + "/state?shiftKey=" + encodeURIComponent(currentShiftKey) + "&skip304=1&t=" + Date.now(),
       { cache: "no-store" },
     );
-    if (res.status === 304) return;
+    if (res.status === 304) {
+      if (seq === receptionLoadSeq) refreshReservationListModalIfOpen();
+      return;
+    }
     if (!res.ok) {
       const raw = await res.text().catch(() => "");
       console.error("reception-full /state", res.status, raw.slice(0, 500));
@@ -718,6 +786,7 @@ async function loadData() {
       renderNetworkErrorMap("parse");
       return;
     }
+    if (seq !== receptionLoadSeq) return;
     tableMaster = Array.isArray(data.tableMaster) ? data.tableMaster : [];
     configCache = data.config && typeof data.config === "object" ? { ...data.config } : {};
     if (data.config) {
@@ -824,6 +893,7 @@ async function loadData() {
     } else {
       render(shiftData.waiting || [], staffCount, resList);
     }
+    refreshReservationListModalIfOpen();
   } catch (e) {
     console.error("reception-full loadData", e);
     renderNetworkErrorMap("error");
@@ -1193,6 +1263,17 @@ window.onload = () => {
   if (btn) btn.addEventListener("click", toggleFullscreen);
   document.addEventListener("fullscreenchange", () => setKioskMode(Boolean(document.fullscreenElement)));
   setKioskMode(Boolean(document.fullscreenElement));
+  scheduleReceptionPoll();
+  void ensureReceptionSocket();
 };
-setInterval(loadData, 3000);
+document.addEventListener("visibilitychange", () => {
+  scheduleReceptionPoll();
+  if (!document.hidden) void loadData();
+});
+window.addEventListener("focus", () => {
+  void loadData();
+});
+window.addEventListener("pageshow", (ev) => {
+  if (ev.persisted) void loadData();
+});
 

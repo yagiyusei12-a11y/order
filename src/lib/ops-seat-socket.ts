@@ -37,6 +37,13 @@ export function broadcastOpsSessionUpdated(storeId: string, sessionId: string): 
   opsSocketServer.to(storeRoom(sidStore)).emit("ops:session-updated", payload);
 }
 
+/** 受付画面・他端末への予約・席状態の再取得トリガ */
+export function broadcastReceptionUpdated(storeId: string): void {
+  const sid = storeId.trim();
+  if (!opsSocketServer || !sid) return;
+  opsSocketServer.to(storeRoom(sid)).emit("reception:updated", { storeId: sid, at: Date.now() });
+}
+
 export function broadcastOpsSessionUpdatedMany(
   storeId: string,
   sessionIds: Iterable<string | null | undefined>,

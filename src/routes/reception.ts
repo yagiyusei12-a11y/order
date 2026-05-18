@@ -31,6 +31,12 @@ import {
   syncReceptionShiftSeatsForTable,
   type ReceptionSeatStatus,
 } from "../lib/reception-seat-state.js";
+import { broadcastReceptionUpdated } from "../lib/ops-seat-socket.js";
+
+function receptionMutationNotify(storeId: string): { status: "success" } {
+  broadcastReceptionUpdated(storeId);
+  return { status: "success" };
+}
 
 type SeatStatus = ReceptionSeatStatus;
 
@@ -684,7 +690,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           where: { storeId: store.id },
           data: { data: next as never },
         });
-        return { status: "success" };
+        return receptionMutationNotify(store.id);
       }
       if (type === "callReserved") {
         const callType = typeof b.callType === "string" ? b.callType : "normal";
@@ -692,21 +698,21 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           where: { storeId: store.id },
           data: { callReserved: true, callType },
         });
-        return { status: "success" };
+        return receptionMutationNotify(store.id);
       }
       if (type === "resetCall") {
         await prisma.receptionState.update({
           where: { storeId: store.id },
           data: { callReserved: false, callType: "" },
         });
-        return { status: "success" };
+        return receptionMutationNotify(store.id);
       }
       if (type === "popEntry") {
         const st = await prisma.receptionState.findUnique({ where: { storeId: store.id } });
         const q = Array.isArray((st?.entryQueue as unknown) as unknown[]) ? ((st?.entryQueue as unknown[]) ?? []) : [];
         q.shift();
         await prisma.receptionState.update({ where: { storeId: store.id }, data: { entryQueue: q as never } });
-        return { status: "success" };
+        return receptionMutationNotify(store.id);
       }
       if (type === "addReservation") {
         const res = (b.reservation && typeof b.reservation === "object" && !Array.isArray(b.reservation)
@@ -724,7 +730,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         });
         const seats = Array.isArray((res as any)?.seats) ? ((res as any).seats as unknown[]).filter((x) => typeof x === "string") as string[] : [];
         await syncReservationSeatLocks({ storeId: store.id, resKey: resId, shiftKey: `${date}_${shift}`, seats, status });
-        return { status: "success" };
+        return receptionMutationNotify(store.id);
       }
       if (type === "bulkUpdateReservations") {
         const arr = Array.isArray(b.reservations) ? (b.reservations as unknown[]) : [];
@@ -744,7 +750,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           const seats = Array.isArray((r as any)?.seats) ? ((r as any).seats as unknown[]).filter((x) => typeof x === "string") as string[] : [];
           await syncReservationSeatLocks({ storeId: store.id, resKey: resId, shiftKey: `${date}_${shift}`, seats, status });
         }
-        return { status: "success" };
+        return receptionMutationNotify(store.id);
       }
 
       if (type === "updateAll" || type === "updateSeats") {
@@ -800,7 +806,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           }
         }
 
-        return { status: "success" };
+        return receptionMutationNotify(store.id);
       }
 
       return reply.code(400).send({ error: "unknown type" });
@@ -1109,6 +1115,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           ).catch((err: unknown) => req.log.warn({ err }, "net reserve confirmation mail failed"));
         }
 
+        broadcastReceptionUpdated(store.id);
         return {
           ok: true,
           resId: out.resId,

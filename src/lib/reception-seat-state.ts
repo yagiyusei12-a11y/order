@@ -3,6 +3,24 @@ import { prisma } from "../db.js";
 import { shiftFromTimeHHMM } from "./net-reserve-slots.js";
 import { mergeStoreSettings } from "./store-settings.js";
 import { storeNowWallClock } from "./store-wall-time.js";
+import { broadcastReceptionUpdated } from "./ops-seat-socket.js";
+
+const receptionBroadcastTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** 卓セッション変化などで受付マップを他端末へ即通知（短い debounce） */
+export function scheduleReceptionBroadcast(storeId: string): void {
+  const sid = storeId.trim();
+  if (!sid) return;
+  const prev = receptionBroadcastTimers.get(sid);
+  if (prev) clearTimeout(prev);
+  receptionBroadcastTimers.set(
+    sid,
+    setTimeout(() => {
+      receptionBroadcastTimers.delete(sid);
+      broadcastReceptionUpdated(sid);
+    }, 350),
+  );
+}
 
 export type ReceptionSeatStatus = "vacant" | "reserved" | "occupied" | "cleaning" | "closed";
 
@@ -207,4 +225,5 @@ export async function syncReceptionShiftSeatsForTable(storeId: string, tableId: 
     where: { storeId_shiftKey: { storeId, shiftKey } },
     data: { seats: seats as never },
   });
+  scheduleReceptionBroadcast(storeId);
 }

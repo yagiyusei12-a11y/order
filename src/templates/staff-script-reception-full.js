@@ -529,34 +529,50 @@ function startSeatResize(ev, el) {
   } catch (_) { /* noop */ }
 }
 
+function seatStatusForManualReservationPick(id) {
+  const st = seatStates[String(id || "")];
+  if (!st || !st.status) return "empty";
+  return st.status === "vacant" ? "empty" : st.status;
+}
+
+/** 手動予約の席選択: 予約済み（黄）・利用中（青）は出さない */
+function isSeatHiddenForManualReservation(id) {
+  const st = seatStatusForManualReservationPick(id);
+  return st === "reserved" || st === "occupied";
+}
+
 function updateReserveSeatSelector() {
   const date = document.getElementById("resDate").value;
   const shift = document.getElementById("resShift").value;
   const usedSeats = new Set();
   existingReservations.forEach((r) => {
     if (r.date === date && r.shift === shift && r.status !== "キャンセル") {
-      (r.seats || []).forEach((s) => usedSeats.add(s));
+      (r.seats || []).forEach((s) => {
+        const rid = resolveSeatStateId(s);
+        if (rid) usedSeats.add(rid);
+        usedSeats.add(s);
+      });
     }
   });
   const selArea = document.getElementById("seatSelectorArea");
   selArea.innerHTML = "";
   getMasterIds().forEach((id) => {
-    if (!usedSeats.has(id)) {
-      const btn = document.createElement("div");
-      btn.className = "seat-check-btn";
-      if (selectedResSeats.includes(id)) btn.classList.add("selected");
-      btn.innerText = seatLabel(id);
-      btn.onclick = () => {
-        if (selectedResSeats.includes(id)) {
-          selectedResSeats = selectedResSeats.filter((s) => s !== id);
-          btn.classList.remove("selected");
-        } else {
-          selectedResSeats.push(id);
-          btn.classList.add("selected");
-        }
-      };
-      selArea.appendChild(btn);
-    }
+    if (usedSeats.has(id)) return;
+    if (isSeatHiddenForManualReservation(id)) return;
+    const btn = document.createElement("div");
+    btn.className = "seat-check-btn";
+    if (selectedResSeats.includes(id)) btn.classList.add("selected");
+    btn.innerText = seatLabel(id);
+    btn.onclick = () => {
+      if (selectedResSeats.includes(id)) {
+        selectedResSeats = selectedResSeats.filter((s) => s !== id);
+        btn.classList.remove("selected");
+      } else {
+        selectedResSeats.push(id);
+        btn.classList.add("selected");
+      }
+    };
+    selArea.appendChild(btn);
   });
 }
 
@@ -734,6 +750,11 @@ async function markArrived(resId) {
 function refreshReservationListModalIfOpen() {
   const modal = document.getElementById("reservationListModal");
   if (modal && modal.style.display === "flex") openReservationListModal();
+}
+
+function refreshReserveSeatSelectorIfOpen() {
+  const modal = document.getElementById("reserveModal");
+  if (modal && modal.style.display === "flex") updateReserveSeatSelector();
 }
 
 function loadSocketIoClient() {
@@ -922,6 +943,7 @@ async function loadData() {
       render(shiftData.waiting || [], resList);
     }
     refreshReservationListModalIfOpen();
+    refreshReserveSeatSelectorIfOpen();
   } catch (e) {
     console.error("reception-full loadData", e);
     renderNetworkErrorMap("error");

@@ -23,7 +23,12 @@ import {
   storeNowWallClock,
 } from "../lib/store-wall-time.js";
 import { displayTableCode, tableDisplayLabel } from "../lib/table-display-code.js";
-import { sendMailSafe } from "../lib/mail.js";
+import { isMailConfigured, sendMailSafe } from "../lib/mail.js";
+import {
+  netReserveStaffNotifyEmails,
+  sendNotifyEmailList,
+} from "../lib/notify-emails.js";
+import { staffRequestOrigin } from "../lib/guest-display-url.js";
 import {
   buildTodayReceptionShiftKey,
   clearLegacyStaffCountBlocks,
@@ -1230,6 +1235,45 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
             },
             { storeSettings: stSet },
           ).catch((err: unknown) => req.log.warn({ err }, "net reserve confirmation mail failed"));
+        }
+
+        const staffNotifyTo = netReserveStaffNotifyEmails(c as Record<string, unknown>);
+        if (staffNotifyTo.length > 0) {
+          if (!isMailConfigured(stSet)) {
+            req.log.warn(
+              { storeId: store.id, recipients: staffNotifyTo.length },
+              "net reserve staff notify skipped: SMTP not configured",
+            );
+          } else {
+            const origin = staffRequestOrigin(req);
+            const receptionUrl = `${origin}/staff-app/${encodeURIComponent(store.id)}/reception`;
+            const staffLines = [
+              `【ネット予約】${store.name}`,
+              "",
+              `予約番号: ${out.resId}`,
+              `日付: ${date}`,
+              `時間: ${time}`,
+              `お名前: ${name}`,
+              `電話: ${phoneNorm.phone}`,
+              `人数: ${Math.floor(num)}名`,
+              ...(out.seatLabels?.length ? [`席: ${out.seatLabels.join("、")}`] : []),
+              ...(seatTypeMode === "require_select" && seatTypeBody ? [`席種別: ${seatTypeBody}`] : []),
+              ...(note ? [`備考: ${note}`] : []),
+              ...(emailForMail ? [`メール: ${emailForMail}`] : []),
+              "",
+              `受付画面: ${receptionUrl}`,
+            ];
+            void sendNotifyEmailList(
+              staffNotifyTo,
+              {
+                subject: `【ネット予約】${date} ${time} ${name}様 ${Math.floor(num)}名`,
+                text: staffLines.join("\n"),
+              },
+              { storeSettings: stSet },
+            ).catch((err: unknown) =>
+              req.log.warn({ err }, "net reserve staff notify mail failed"),
+            );
+          }
         }
 
         broadcastReceptionUpdated(store.id);

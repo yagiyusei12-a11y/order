@@ -59,7 +59,7 @@
     <div class="card" style="margin-top:1rem;border-color:#64748b">
       <strong style="font-size:0.9rem">メール送信（SMTP）</strong>
       <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
-        ネット予約・ネットテイクアウトの通知メールに使用します。ここを有効にしていれば VPS の <code>SMTP_*</code> 環境変数は不要です（未設定時のみ環境変数にフォールバック）。
+        ネット予約の店舗向け通知・お客様への確定メール・ネットテイクアウトの通知に使用します。ここを有効にしていれば VPS の <code>SMTP_*</code> 環境変数は不要です（未設定時のみ環境変数にフォールバック）。
         パスワードはデータベースに保存されます（漏えい対策は運用でご検討ください）。
       </p>
       <label class="row" style="align-items:center;gap:0.45rem;font-size:0.85rem;margin-bottom:0.65rem">
@@ -565,6 +565,18 @@
               備考欄を表示する
             </label>
           </div>
+          <label for="nrNotifyEmails" style="display:block;margin-top:1rem;font-weight:800;font-size:0.9rem">
+            予約通知メール（店舗向け）
+          </label>
+          <textarea
+            id="nrNotifyEmails"
+            rows="3"
+            placeholder="例: info@example.com&#10;（1行に1件。カンマ区切りも可）"
+            style="width:100%;max-width:32rem;padding:0.55rem 0.6rem;border-radius:10px;border:1px solid var(--border);font-family:inherit;font-size:0.88rem"
+          ></textarea>
+          <p class="nr-muted">
+            ネット予約が入ったときに送信します（お客様への確定メールとは別）。<strong>設定 → 店舗情報の SMTP</strong> を有効にし、差出人を設定してください。空欄のときは送信しません。
+          </p>
         </div>
       </section>
 

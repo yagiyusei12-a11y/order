@@ -1513,6 +1513,18 @@ async function loadNetReserveAll() {
   const en = nrEl("nrEnableNote");
   if (en) en.checked = enableNote;
 
+  const notifyEl = nrEl("nrNotifyEmails");
+  if (notifyEl) {
+    const rawN = nrConfigCache.netReserveNotifyEmails;
+    if (Array.isArray(rawN)) {
+      notifyEl.value = rawN.map((x) => String(x == null ? "" : x).trim()).filter(Boolean).join("\n");
+    } else if (typeof rawN === "string") {
+      notifyEl.value = rawN;
+    } else {
+      notifyEl.value = "";
+    }
+  }
+
   const slotM = Number(nrConfigCache.netReserveSlotMinutes);
   const slotEl = nrEl("nrSlotMinutes");
   if (slotEl) {
@@ -1600,6 +1612,11 @@ async function nrSaveNetReserveAll() {
   const nextConfig = { ...(nrConfigCache || {}) };
   nextConfig.netReserveDaysAhead = Math.floor(daysAhead);
   nextConfig.netReserveEnableNote = enableNote;
+  const notifyLines = String(nrEl("nrNotifyEmails")?.value || "")
+    .split(/[\r\n,，;；]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  nextConfig.netReserveNotifyEmails = notifyLines;
   const slotStep = Number(nrEl("nrSlotMinutes")?.value);
   if (!Number.isFinite(slotStep) || slotStep < 5 || slotStep > 60) {
     alert("予約枠の刻みは 5〜60 分で入力してください。");

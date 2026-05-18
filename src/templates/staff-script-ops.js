@@ -74,6 +74,9 @@ function managerOpsAllowed() {
 
 let opsSocket = null;
 let opsSocketInitPromise = null;
+let opsPollTimer = null;
+let opsRefreshDebounceTimer = null;
+let opsSocketListenersBound = false;
 
 function loadSocketIoClient() {
   return new Promise((resolve, reject) => {
@@ -96,6 +99,37 @@ function loadSocketIoClient() {
   });
 }
 
+function debouncedOpsRefresh() {
+  if (opsRefreshDebounceTimer) clearTimeout(opsRefreshDebounceTimer);
+  opsRefreshDebounceTimer = setTimeout(() => {
+    opsRefreshDebounceTimer = null;
+    if (document.hidden) return;
+    void loadAll().catch(() => {});
+  }, 400);
+}
+
+function bindOpsSocketListeners(sock) {
+  if (!sock || opsSocketListenersBound) return;
+  opsSocketListenersBound = true;
+  sock.on("ops:session-updated", () => debouncedOpsRefresh());
+  sock.on("reception:updated", () => debouncedOpsRefresh());
+}
+
+function opsAutoRefreshMs() {
+  const sec = storeSettingsCache.kitchenAutoRefreshSec;
+  if (typeof sec === "number" && Number.isFinite(sec) && sec >= 5) return Math.round(sec) * 1000;
+  return 10000;
+}
+
+function scheduleOpsFloorPoll() {
+  if (opsPollTimer) clearInterval(opsPollTimer);
+  const ms = opsAutoRefreshMs();
+  opsPollTimer = setInterval(() => {
+    if (document.hidden) return;
+    void loadAll().catch(() => {});
+  }, ms);
+}
+
 async function ensureOpsSocket() {
   if (opsSocket?.connected) return opsSocket;
   if (!opsSocketInitPromise) {
@@ -106,10 +140,13 @@ async function ensureOpsSocket() {
         withCredentials: true,
         transports: ["websocket", "polling"],
       });
+      bindOpsSocketListeners(opsSocket);
       return opsSocket;
     })();
   }
-  return opsSocketInitPromise;
+  const sock = await opsSocketInitPromise;
+  bindOpsSocketListeners(sock);
+  return sock;
 }
 
 function openSessionsAtTable(tableId) {
@@ -2453,6 +2490,7 @@ async function loadAll() {
       if (typeof merged.opsPrintLegalProfile[k] !== "string") merged.opsPrintLegalProfile[k] = legalProfileEmpty[k];
     }
     storeSettingsCache = merged;
+    scheduleOpsFloorPoll();
     billsBySessionId = new Map();
     for (const b of billsRes.bills || []) if (b.sessionId) billsBySessionId.set(b.sessionId, b);
     renderGrid();
@@ -2481,4 +2519,7 @@ const btnOpenDrawerEl = document.getElementById("btnOpenDrawer");
 if (btnOpenDrawerEl) btnOpenDrawerEl.onclick = () => tryOpenDrawer();
 window.__opsOpenBillDiscountModal = openBillDiscountModal;
 window.__opsOpenLineDiscountModal = openLineDiscountModal;
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) void loadAll().catch((e) => log(String(e.message || e)));
+});
 loadAll().catch((e) => log(String(e.message || e)));

@@ -27,6 +27,7 @@ import {
   ORDER_LINE_STATUS_GUEST_DEFERRED,
   SET_SERVE_LATER_LINE_KIND,
 } from "../lib/set-order-bundle.js";
+import { broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
 import {
   baseNetFromStoredPrice,
   eatModeTaxRatePercent,
@@ -1777,6 +1778,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
           include: { lines: true },
         });
       });
+      broadcastOpsSessionUpdated(orderStoreId, billingId);
       return order;
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";

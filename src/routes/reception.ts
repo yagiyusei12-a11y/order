@@ -44,6 +44,18 @@ function receptionStateWeakEtag(parts: (string | number)[]): string {
   return `W/"${digest}"`;
 }
 
+function normalizePhoneDigits(s: string): string {
+  return String(s || "").replace(/\D/g, "");
+}
+
+function normalizeReceptionPhone(raw: unknown): { ok: true; phone: string } | { ok: false } {
+  const trimmed = typeof raw === "string" ? raw.trim() : "";
+  if (!trimmed) return { ok: false };
+  const digits = normalizePhoneDigits(trimmed);
+  if (digits.length < 10 || digits.length > 15) return { ok: false };
+  return { ok: true, phone: trimmed.slice(0, 30) };
+}
+
 /** receptionConfig.data: ランチ/ディナー境界（時）。未設定は 15。 */
 function receptionLunchEndHour(configData: Record<string, unknown>): number {
   const n = Number(configData.receptionShiftLunchEndHour);
@@ -930,6 +942,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
       note?: unknown;
       seatType?: unknown;
       email?: unknown;
+      phone?: unknown;
     };
   }>("/reception/:storeId/net/reservations", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
@@ -967,6 +980,8 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
     const shift = shiftFromTimeHHMM(time, lunchHr);
     if (!shift) return reply.code(400).send({ error: "invalid time" });
     if (!name) return reply.code(400).send({ error: "name required" });
+    const phoneNorm = normalizeReceptionPhone(req.body?.phone);
+    if (!phoneNorm.ok) return reply.code(400).send({ error: "phone required" });
     if (!Number.isFinite(num) || num < 1 || num > 20) return reply.code(400).send({ error: "num must be 1..20" });
 
     const stSet = mergeStoreSettings(store.settings);
@@ -1044,6 +1059,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
             shift,
             time,
             name,
+            phone: phoneNorm.phone,
             num: Math.floor(num),
             status: "予約確定",
             seats,
@@ -1076,6 +1092,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
             `日付: ${date}`,
             `時間: ${time}`,
             `お名前: ${name}`,
+            `電話: ${phoneNorm.phone}`,
             `人数: ${Math.floor(num)}名`,
             ...(note ? [`備考: ${note}`] : []),
             ...(seatTypeMode === "require_select" && seatTypeBody ? [`席種別: ${seatTypeBody}`] : []),

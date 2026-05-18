@@ -52,6 +52,9 @@
       </div>
     </div>
 
+    <label for="rPhone">電話番号</label>
+    <input type="tel" id="rPhone" placeholder="例: 09012345678" autocomplete="tel" maxlength="30" required>
+
     <label for="rEmail">メールアドレス（任意・確認用）</label>
     <input type="email" id="rEmail" placeholder="予約確定メールを受け取る場合" autocomplete="email" maxlength="200">
 
@@ -252,9 +255,11 @@
         const date = document.getElementById("rDate").value;
         const time = document.getElementById("rTime").value;
         const name = document.getElementById("rName").value.trim();
+        const phone = document.getElementById("rPhone").value.trim();
         const num = Number(document.getElementById("rNum").value);
         const note = document.getElementById("rNote").value.trim();
         const email = document.getElementById("rEmail").value.trim();
+        const phoneDigits = phone.replace(/\D/g, "");
         const sel = document.getElementById("rTime");
         const opt = sel && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex] : null;
         const stSel = document.getElementById("rSeatType");
@@ -264,8 +269,8 @@
           showMsg("err", "席の種別を選んでください。");
           return;
         }
-        if (!date || !time || !name || !Number.isFinite(num) || num < 1 || (opt && opt.disabled)) {
-          showMsg("err", "日付・時間・お名前・人数を確認してください。満席の時間は選べません。");
+        if (!date || !time || !name || !phone || phoneDigits.length < 10 || !Number.isFinite(num) || num < 1 || (opt && opt.disabled)) {
+          showMsg("err", "日付・時間・お名前・電話番号（10桁以上）・人数を確認してください。満席の時間は選べません。");
           return;
         }
         try {
@@ -273,6 +278,7 @@
             date,
             time,
             name,
+            phone,
             num,
             note,
             ...(email ? { email } : {}),

@@ -16,6 +16,19 @@ let lastStaffCount = 6;
 let lastResList = [];
 let mapDrag = null;
 
+function escapeHtml(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function reservationPhoneDisplay(r) {
+  const p = r && (r.phone || r.tel);
+  return p != null && String(p).trim() ? String(p).trim() : "—";
+}
+
 function seatLabel(id) {
   const raw0 = String(id || "").trim();
   const raw = raw0.toUpperCase();
@@ -478,6 +491,9 @@ function updateReserveSeatSelector() {
 function openReserveModal() {
   document.getElementById("resDate").value = document.getElementById("viewDate").value;
   document.getElementById("resShift").value = document.getElementById("viewShift").value;
+  document.getElementById("resName").value = "";
+  const phEl = document.getElementById("resPhone");
+  if (phEl) phEl.value = "";
   document.getElementById("resNote").value = "";
   selectedResSeats = [];
   updateReserveSeatSelector();
@@ -486,9 +502,29 @@ function openReserveModal() {
 function closeReserveModal() { document.getElementById("reserveModal").style.display = "none"; }
 
 async function submitReservation() {
-  const date = document.getElementById("resDate").value, shift = document.getElementById("resShift").value, time = document.getElementById("resTime").value, name = document.getElementById("resName").value, num = document.getElementById("resNum").value, note = document.getElementById("resNote").value;
-  if (!date || !time || !name || !num || selectedResSeats.length === 0) return alert("すべての項目と席を入力してください。");
-  const resData = { resId: "M" + Date.now(), date, shift, time, name, num: parseInt(num), status: "予約確定", seats: selectedResSeats, note: note };
+  const date = document.getElementById("resDate").value,
+    shift = document.getElementById("resShift").value,
+    time = document.getElementById("resTime").value,
+    name = document.getElementById("resName").value,
+    phone = (document.getElementById("resPhone") && document.getElementById("resPhone").value) || "",
+    num = document.getElementById("resNum").value,
+    note = document.getElementById("resNote").value;
+  const phoneDigits = String(phone).replace(/\D/g, "");
+  if (!date || !time || !name || !phone.trim() || phoneDigits.length < 10 || !num || selectedResSeats.length === 0) {
+    return alert("日付・時間・お名前・電話番号（10桁以上）・人数・席を入力してください。");
+  }
+  const resData = {
+    resId: "M" + Date.now(),
+    date,
+    shift,
+    time,
+    name,
+    phone: phone.trim(),
+    num: parseInt(num, 10),
+    status: "予約確定",
+    seats: selectedResSeats,
+    note: note,
+  };
   await fetch(API_URL + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "addReservation", reservation: resData }) });
   closeReserveModal(); loadData();
 }
@@ -503,63 +539,62 @@ function openBulkEditModal() {
   openCsvModal(resList);
 }
 
-function parseCSV(str) {
-  const arr = []; let quote = false, row = 0, col = 0;
-  for (let c = 0; c < str.length; c++) {
-    const cc = str[c], nc = str[c + 1];
-    arr[row] = arr[row] || []; arr[row][col] = arr[row][col] || "";
-    if (cc === "\"" && quote && nc === "\"") { arr[row][col] += cc; ++c; continue; }
-    if (cc === "\"") { quote = !quote; continue; }
-    if (cc === "," && !quote) { ++col; continue; }
-    if (cc === "\r" && nc === "\n" && !quote) { ++row; col = 0; ++c; continue; }
-    if (cc === "\n" && !quote) { ++row; col = 0; continue; }
-    if (cc === "\r" && !quote) { ++row; col = 0; continue; }
-    arr[row][col] += cc;
+function openReservationListModal() {
+  const d = document.getElementById("viewDate").value;
+  const s = document.getElementById("viewShift").value;
+  const shiftLabel = s === "lunch" ? "ランチ" : "ディナー";
+  const resList = existingReservations
+    .filter((r) => r.date === d && r.shift === s)
+    .sort((a, b) => String(a.time || "").localeCompare(String(b.time || "")));
+  const sub = document.getElementById("resListModalSubtitle");
+  if (sub) {
+    sub.textContent =
+      d + " · " + shiftLabel + " — " + (resList.length ? resList.length + "件" : "予約はありません");
   }
-  return arr;
-}
-
-function handleCsvUpload(e) {
-  const file = e.target.files[0]; if (!file) return;
-  const reader = new FileReader();
-  reader.onload = function (evt) { processCSV(evt.target.result); document.getElementById("csvFileInput").value = ""; };
-  reader.readAsText(file, "Shift_JIS");
-}
-
-function processCSV(text) {
-  const lines = parseCSV(text); const parsed = [];
-  for (let i = 1; i < lines.length; i++) {
-    const row = lines[i]; if (!row || row.length < 11 || !row[0].trim()) continue;
-    let dateStr = row[1].replace(/年|月/g, "-").replace(/日/g, ""); const parts = dateStr.split("-");
-    if (parts.length === 3) dateStr = `${parts[0]}-${parts[1].padStart(2, "0")}-${parts[2].padStart(2, "0")}`;
-    const time = row[2].split("～")[0]; const shift = parseInt(time.split(":")[0]) < 15 ? "lunch" : "dinner";
-    const noteStr = row[11] || "";
-    parsed.push({ resId: row[0], date: dateStr, shift: shift, time: time, name: row[3], num: parseInt(row[10] || 0), status: row[9], seats: [], note: noteStr });
-  }
-  const usedSeats = {};
-  existingReservations.forEach((r) => {
-    if (r.status === "キャンセル" || r.status === "来店済み") return;
-    const key = r.date + "_" + r.shift; if (!usedSeats[key]) usedSeats[key] = new Set();
-    (r.seats || []).forEach((s) => usedSeats[key].add(s));
-  });
-  parsed.forEach((res) => {
-    if (res.status === "キャンセル" || res.status === "来店済み") return;
-    const key = res.date + "_" + res.shift; if (!usedSeats[key]) usedSeats[key] = new Set(); const used = usedSeats[key];
-    const ex = existingReservations.find((er) => er.resId === res.resId);
-    if (ex && ex.seats && ex.seats.length > 0) { res.seats = ex.seats; res.seats.forEach((s) => used.add(s)); return; }
-    const available = getMasterIds().filter((id) => !used.has(id) && !id.startsWith("C")); let assigned = [];
-    // fallback: smallest capacity table (non-counter)
-    if (assigned.length === 0) {
-      const by = new Map((tableMaster || []).map((t) => [t.code, t]));
-      const cand = available
-        .map((id) => ({ id, cap: Number(by.get(id)?.capacity || 2) }))
-        .filter((x) => Number.isFinite(x.cap))
-        .sort((a, b) => a.cap - b.cap);
-      if (cand.length) assigned = [cand[0].id];
+  const body = document.getElementById("resListModalBody");
+  if (!body) return;
+  body.innerHTML = "";
+  if (!resList.length) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 8;
+    td.style.color = "#888";
+    td.textContent = "この日・シフトの予約はありません";
+    tr.appendChild(td);
+    body.appendChild(tr);
+  } else {
+    for (const r of resList) {
+      const tr = document.createElement("tr");
+      if (r.status === "キャンセル") tr.style.opacity = "0.55";
+      const seats =
+        Array.isArray(r.seats) && r.seats.length ? r.seats.map((x) => seatLabel(x)).join(", ") : "—";
+      const note = r.note ? String(r.note).replace(/\s+/g, " ").trim() : "";
+      const cells = [
+        String(r.time || ""),
+        String(r.name || ""),
+        reservationPhoneDisplay(r),
+        String(r.num != null ? r.num : "") + "名",
+        String(r.status || ""),
+        seats,
+        note || "—",
+        String(r.resId || ""),
+      ];
+      for (const text of cells) {
+        const td = document.createElement("td");
+        td.textContent = text;
+        if (text === "予約確定") td.style.fontWeight = "800";
+        tr.appendChild(td);
+      }
+      body.appendChild(tr);
     }
-    res.seats = assigned; assigned.forEach((s) => used.add(s));
-  });
-  openCsvModal(parsed);
+  }
+  const modal = document.getElementById("reservationListModal");
+  if (modal) modal.style.display = "flex";
+}
+
+function closeReservationListModal() {
+  const modal = document.getElementById("reservationListModal");
+  if (modal) modal.style.display = "none";
 }
 
 function openCsvModal(list) {
@@ -571,7 +606,8 @@ function openCsvModal(list) {
       <td><input type="date" class="csv-val" data-key="date" value="${r.date}"></td>
       <td><select class="csv-val" data-key="shift"><option value="lunch" ${r.shift==="lunch"?"selected":""}>ランチ</option><option value="dinner" ${r.shift==="dinner"?"selected":""}>ディナー</option></select></td>
       <td><input type="time" class="csv-val" data-key="time" value="${r.time}"></td>
-      <td><input type="text" class="csv-val" data-key="name" value="${r.name}"></td>
+      <td><input type="text" class="csv-val" data-key="name" value="${escapeHtml(r.name || "")}"></td>
+      <td><input type="tel" class="csv-val" data-key="phone" value="${escapeHtml(r.phone || "")}"></td>
       <td><input type="number" class="csv-val" data-key="num" value="${r.num}" style="width:60px;"></td>
       <td><select class="csv-val" data-key="status"><option value="予約確定" ${r.status==="予約確定"?"selected":""}>予約確定</option><option value="来店済み" ${r.status==="来店済み"?"selected":""}>来店済み</option><option value="キャンセル" ${r.status==="キャンセル"?"selected":""}>キャンセル</option></select></td>
       <td><input type="text" class="csv-val" data-key="note" value="${safeNote}" style="width:120px; font-size:0.85em; background:#f9f9f9;" title="${safeNote}"></td>
@@ -804,6 +840,16 @@ function renderSidePanels(waiting, staffCount, resList) {
 
       const tdName = document.createElement("td");
       tdName.textContent = `${String(r.name || "")}(${String(r.num || "")}名)`;
+      const ph = reservationPhoneDisplay(r);
+      if (ph !== "—") {
+        const brp = document.createElement("br");
+        const spanPh = document.createElement("span");
+        spanPh.style.fontSize = "0.82em";
+        spanPh.style.color = "#cbd5e1";
+        spanPh.textContent = ph;
+        tdName.appendChild(brp);
+        tdName.appendChild(spanPh);
+      }
       if (r.note) {
         const br = document.createElement("br");
         const span = document.createElement("span");
@@ -1080,9 +1126,10 @@ window.openReserveModal = openReserveModal;
 window.closeReserveModal = closeReserveModal;
 window.submitReservation = submitReservation;
 window.openBulkEditModal = openBulkEditModal;
+window.openReservationListModal = openReservationListModal;
+window.closeReservationListModal = closeReservationListModal;
 window.submitBulkCsv = submitBulkCsv;
 window.closeCsvModal = closeCsvModal;
-window.handleCsvUpload = handleCsvUpload;
 window.updateReserveSeatSelector = updateReserveSeatSelector;
 window.clearEntry = clearEntry;
 window.resetReservedCall = resetReservedCall;

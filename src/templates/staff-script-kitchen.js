@@ -896,6 +896,43 @@ function kitOrderGroupHeadText(og, opts) {
   return (og.tableName || "卓未設定") + " · " + (history ? "注文 " : "") + hm;
 }
 
+function orderGroupIsCourseTable(og) {
+  const ln0 = og && og.lines && og.lines[0];
+  return Boolean(ln0 && (ln0.courseId || ln0.courseKind || ln0.courseName));
+}
+
+/** 通常表示・履歴の注文ブロック見出し（コース卓バッジ・卓名強調を innerHTML で付与） */
+function applyKitOrderGroupHead(el, og, opts) {
+  const headText = kitOrderGroupHeadText(og, opts);
+  el.title = headText;
+  const ln0 = og.lines && og.lines[0];
+  if (lineTakeoutMeta(ln0)) {
+    el.textContent = headText;
+    return;
+  }
+  const history = Boolean(opts && opts.history);
+  const isCourse = orderGroupIsCourseTable(og);
+  const hm = new Date(og.orderCreatedAt || 0).toLocaleTimeString("ja-JP", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  let html = "";
+  if (kitDisplayCache.showCourseBadge && isCourse) {
+    html += "<span class=\"kit-hodai-badge\">" + escapeHtml(kitDisplayCache.courseBadgeText) + "</span> ";
+  }
+  const tableName = og.tableName || "卓未設定";
+  if (kitDisplayCache.emphasizeCourseTableQty && isCourse) {
+    html += "<span class=\"kit-done-table-red\">" + escapeHtml(tableName) + "</span>";
+  } else {
+    html += escapeHtml(tableName);
+  }
+  html += " · " + (history ? "注文 " : "") + escapeHtml(hm);
+  el.innerHTML = html;
+  if (kitDisplayCache.showCourseBadge && isCourse) {
+    el.classList.add("kit-order-box-head-course");
+  }
+}
+
 function kitOrderGroupHeadIsTakeout(og) {
   return Boolean(og.lines && og.lines[0] && og.lines[0].takeoutPickupAt);
 }
@@ -1224,9 +1261,7 @@ function renderKitHistoryList(box, lines) {
 
     const head = document.createElement("div");
     head.className = "kit-order-box-head kit-history-head";
-    const headText = kitOrderGroupHeadText(og, { history: true });
-    head.textContent = headText;
-    head.title = headText;
+    applyKitOrderGroupHead(head, og, { history: true });
     if (kitOrderGroupHeadIsTakeout(og)) head.classList.add("kit-order-box-head-takeout");
     d.appendChild(head);
 
@@ -1487,7 +1522,7 @@ function renderKitList() {
         b.style.boxSizing = "border-box";
         b.style.fontSize = "0.68rem";
         const sampleLn = info.lineIds.map((id) => lineByPatchId.get(String(id))).find((x) => x);
-        const isHodaiTable = Boolean(sampleLn && (sampleLn.courseId || sampleLn.courseKind || sampleLn.courseName));
+        const isHodaiTable = Boolean(sampleLn && orderGroupIsCourseTable({ lines: [sampleLn] }));
         const badgePart =
           kitDisplayCache.showCourseBadge && isHodaiTable
             ? "<span class=\"kit-hodai-badge\">" + escapeHtml(kitDisplayCache.courseBadgeText) + "</span>"
@@ -1670,9 +1705,7 @@ function renderKitList() {
 
     const head = document.createElement("div");
     head.className = "kit-order-box-head";
-    const headText = kitOrderGroupHeadText(og);
-    head.textContent = headText;
-    head.title = headText;
+    applyKitOrderGroupHead(head, og);
     if (kitOrderGroupHeadIsTakeout(og)) head.classList.add("kit-order-box-head-takeout");
     d.appendChild(head);
 

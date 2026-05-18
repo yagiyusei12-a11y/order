@@ -234,6 +234,7 @@ export async function registerTakeoutStaff(app: FastifyInstance): Promise<void> 
           eatMode: EatMode;
           taxRatePercent: number;
         }> = [];
+        const needStock = new Map<string, number>();
 
         for (const l of linesIn) {
           if (!l || typeof l.menuItemId !== "string") throw new Error("BAD_ITEM");
@@ -284,6 +285,18 @@ export async function registerTakeoutStaff(app: FastifyInstance): Promise<void> 
             const lineExtraObj = buildSetLineExtra(stepsLite, byStep, nameById, stepsVal, taxRatePercent);
             const nameSnapshot = buildSetNameSnapshot(it.name, lineExtraObj);
             const lineExtra = lineExtraObj as Prisma.InputJsonValue;
+            if (it.stockQty != null && it.stockQty <= 0) throw new Error("BAD_STOCK");
+            needStock.set(it.id, (needStock.get(it.id) ?? 0) + l.qty);
+            for (const stp of it.setSteps) {
+              const picked = byStep.get(stp.id) ?? [];
+              for (const compId of picked) {
+                const ch = stp.choices.find((c) => c.componentMenuItemId === compId);
+                if (!ch) throw new Error("BAD_SET");
+                const comp = ch.componentMenuItem;
+                if (comp.stockQty != null && comp.stockQty <= 0) throw new Error("BAD_STOCK");
+                needStock.set(compId, (needStock.get(compId) ?? 0) + l.qty);
+              }
+            }
             resolvedLines.push({
               menuItemId: it.id,
               qty: l.qty,
@@ -333,6 +346,9 @@ export async function registerTakeoutStaff(app: FastifyInstance): Promise<void> 
             const hasOptDetail = Array.isArray(lineExtraObj.options) && lineExtraObj.options.length > 0;
             const nameSnapshot = hasOptDetail ? buildSingleNameSnapshotWithOptions(it.name, lineExtraObj) : it.name;
 
+            if (it.stockQty != null && it.stockQty <= 0) throw new Error("BAD_STOCK");
+            needStock.set(it.id, (needStock.get(it.id) ?? 0) + l.qty);
+
             resolvedLines.push({
               menuItemId: it.id,
               qty: l.qty,
@@ -343,6 +359,19 @@ export async function registerTakeoutStaff(app: FastifyInstance): Promise<void> 
               eatMode,
               taxRatePercent,
             });
+          }
+        }
+
+        if (needStock.size > 0) {
+          const stockRows = await tx.menuItem.findMany({
+            where: { id: { in: [...needStock.keys()] }, category: { storeId: store.id } },
+            select: { id: true, stockQty: true },
+          });
+          const stockById = new Map(stockRows.map((r) => [r.id, r] as const));
+          for (const [menuItemId, needQty] of needStock) {
+            const row = stockById.get(menuItemId);
+            if (!row) throw new Error("BAD_ITEM");
+            if (row.stockQty !== null && row.stockQty < needQty) throw new Error("BAD_STOCK");
           }
         }
 
@@ -376,6 +405,19 @@ export async function registerTakeoutStaff(app: FastifyInstance): Promise<void> 
           });
         }
 
+        for (const [menuItemId, needQty] of needStock) {
+          const row = await tx.menuItem.findFirst({
+            where: { id: menuItemId, category: { storeId: store.id } },
+            select: { stockQty: true },
+          });
+          if (row?.stockQty != null) {
+            await tx.menuItem.update({
+              where: { id: menuItemId },
+              data: { stockQty: { decrement: needQty } },
+            });
+          }
+        }
+
         const netOrder = await tx.takeoutNetOrder.create({
           data: {
             storeId: store.id,
@@ -397,6 +439,9 @@ export async function registerTakeoutStaff(app: FastifyInstance): Promise<void> 
       if (msg === "BAD_QTY") return reply.code(400).send({ error: "qty must be integer >= 1" });
       if (msg === "BAD_ITEM") return reply.code(400).send({ error: "item not found or not takeout-allowed" });
       if (msg === "BAD_SET") return reply.code(400).send({ error: "bad set selections" });
+      if (msg === "BAD_STOCK") {
+        return reply.code(400).send({ error: "在庫が足りない商品があります" });
+      }
       if (msg === "BAD_OPTIONS") return reply.code(400).send({ error: "bad option selections" });
       throw e;
     }

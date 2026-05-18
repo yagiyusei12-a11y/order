@@ -804,6 +804,13 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         await syncReservationSeatLocks({ storeId: store.id, resKey: resId, shiftKey: `${date}_${shift}`, seats, status });
         return receptionMutationNotify(store.id);
       }
+      if (type === "deleteReservation") {
+        const resId = typeof b.resId === "string" ? b.resId.trim() : "";
+        if (!resId) return reply.code(400).send({ error: "resId required" });
+        await prisma.receptionReservationSeat.deleteMany({ where: { storeId: store.id, resKey: resId } });
+        await prisma.receptionReservation.deleteMany({ where: { storeId: store.id, resKey: resId } });
+        return receptionMutationNotify(store.id);
+      }
       if (type === "bulkUpdateReservations") {
         const arr = Array.isArray(b.reservations) ? (b.reservations as unknown[]) : [];
         for (const row of arr) {

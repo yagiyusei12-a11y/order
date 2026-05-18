@@ -1,7 +1,9 @@
 // Ported from 別システム/index.html (admin map) with API swapped to /reception/:storeId/*
 const API_URL = "/reception/" + encodeURIComponent(STORE);
 let seatStates = {}; let currentShiftKey = ""; let audioCtx = null;
-let selectedResSeats = []; let existingReservations = [];
+let selectedResSeats = [];
+let existingReservations = [];
+let editingReservationResId = null;
 let tableMaster = [];
 let shiftUpdatedAt = 0;
 let seatOrder = [];
@@ -535,8 +537,9 @@ function seatStatusForManualReservationPick(id) {
   return st.status === "vacant" ? "empty" : st.status;
 }
 
-/** 手動予約の席選択: 予約済み（黄）・利用中（青）は出さない */
-function isSeatHiddenForManualReservation(id) {
+/** 手動予約の席選択: 予約済み（黄）・利用中（青）は出さない（編集中の自席は除く） */
+function isSeatHiddenForManualReservation(id, allowSeatIds) {
+  if (allowSeatIds && allowSeatIds.has(id)) return false;
   const st = seatStatusForManualReservationPick(id);
   return st === "reserved" || st === "occupied";
 }
@@ -545,7 +548,11 @@ function updateReserveSeatSelector() {
   const date = document.getElementById("resDate").value;
   const shift = document.getElementById("resShift").value;
   const usedSeats = new Set();
+  const allowSeatIds = new Set(
+    selectedResSeats.map((s) => resolveSeatStateId(s) || s).filter(Boolean),
+  );
   existingReservations.forEach((r) => {
+    if (editingReservationResId && r.resId === editingReservationResId) return;
     if (r.date === date && r.shift === shift && r.status !== "キャンセル") {
       (r.seats || []).forEach((s) => {
         const rid = resolveSeatStateId(s);
@@ -558,7 +565,7 @@ function updateReserveSeatSelector() {
   selArea.innerHTML = "";
   getMasterIds().forEach((id) => {
     if (usedSeats.has(id)) return;
-    if (isSeatHiddenForManualReservation(id)) return;
+    if (isSeatHiddenForManualReservation(id, allowSeatIds)) return;
     const btn = document.createElement("div");
     btn.className = "seat-check-btn";
     if (selectedResSeats.includes(id)) btn.classList.add("selected");
@@ -576,18 +583,68 @@ function updateReserveSeatSelector() {
   });
 }
 
+function setReserveModalMode(mode) {
+  const isEdit = mode === "edit";
+  const titleEl = document.getElementById("reserveModalTitle");
+  const submitBtn = document.getElementById("resSubmitBtn");
+  const resIdLine = document.getElementById("reserveModalResIdLine");
+  if (titleEl) titleEl.textContent = isEdit ? "予約を編集" : "手動予約登録";
+  if (submitBtn) submitBtn.textContent = isEdit ? "保存する" : "登録する";
+  if (resIdLine) {
+    if (isEdit && editingReservationResId) {
+      resIdLine.style.display = "block";
+      resIdLine.textContent = "予約番号: " + editingReservationResId;
+    } else {
+      resIdLine.style.display = "none";
+      resIdLine.textContent = "";
+    }
+  }
+}
+
 function openReserveModal() {
+  editingReservationResId = null;
+  setReserveModalMode("new");
   document.getElementById("resDate").value = document.getElementById("viewDate").value;
   document.getElementById("resShift").value = document.getElementById("viewShift").value;
+  document.getElementById("resTime").value = "";
+  document.getElementById("resNum").value = "";
   document.getElementById("resName").value = "";
   const phEl = document.getElementById("resPhone");
   if (phEl) phEl.value = "";
   document.getElementById("resNote").value = "";
+  const stEl = document.getElementById("resStatus");
+  if (stEl) stEl.value = "予約確定";
   selectedResSeats = [];
   updateReserveSeatSelector();
   document.getElementById("reserveModal").style.display = "flex";
 }
-function closeReserveModal() { document.getElementById("reserveModal").style.display = "none"; }
+
+function openReservationEditModal(r) {
+  if (!r || !r.resId) return;
+  editingReservationResId = String(r.resId);
+  setReserveModalMode("edit");
+  document.getElementById("resDate").value = r.date || "";
+  document.getElementById("resShift").value = r.shift === "dinner" ? "dinner" : "lunch";
+  document.getElementById("resTime").value = r.time || "";
+  document.getElementById("resNum").value = r.num != null ? String(r.num) : "";
+  document.getElementById("resName").value = r.name || "";
+  const phEl = document.getElementById("resPhone");
+  if (phEl) phEl.value = r.phone || "";
+  document.getElementById("resNote").value = r.note || "";
+  const stEl = document.getElementById("resStatus");
+  if (stEl) stEl.value = r.status || "予約確定";
+  selectedResSeats = (Array.isArray(r.seats) ? r.seats : [])
+    .map((s) => resolveSeatStateId(s) || String(s || "").trim())
+    .filter(Boolean);
+  updateReserveSeatSelector();
+  closeReservationListModal();
+  document.getElementById("reserveModal").style.display = "flex";
+}
+
+function closeReserveModal() {
+  document.getElementById("reserveModal").style.display = "none";
+  editingReservationResId = null;
+}
 
 async function submitReservation() {
   const date = document.getElementById("resDate").value,
@@ -601,20 +658,42 @@ async function submitReservation() {
   if (!date || !time || !name || !phone.trim() || phoneDigits.length < 10 || !num || selectedResSeats.length === 0) {
     return alert("日付・時間・お名前・電話番号（10桁以上）・人数・席を入力してください。");
   }
+  const statusEl = document.getElementById("resStatus");
+  const status = statusEl ? statusEl.value : "予約確定";
   const resData = {
-    resId: "M" + Date.now(),
+    resId: editingReservationResId || "M" + Date.now(),
     date,
     shift,
     time,
     name,
     phone: phone.trim(),
     num: parseInt(num, 10),
-    status: "予約確定",
+    status,
     seats: selectedResSeats,
     note: note,
   };
   await fetch(API_URL + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "addReservation", reservation: resData }) });
-  closeReserveModal(); loadData();
+  closeReserveModal();
+  loadData();
+}
+
+async function deleteReservationById(resId, displayName) {
+  const id = String(resId || "").trim();
+  if (!id) return;
+  const label = displayName ? String(displayName).trim() : id;
+  if (!confirm("予約「" + label + "」を削除しますか？\nこの操作は取り消せません。")) return;
+  const res = await fetch(API_URL + "/event", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "deleteReservation", resId: id }),
+  });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    alert(j.error || "削除に失敗しました");
+    return;
+  }
+  await loadData();
+  openReservationListModal();
 }
 
 function openBulkEditModal() {
@@ -643,7 +722,7 @@ function openReservationListModal() {
   if (!resList.length) {
     const tr = document.createElement("tr");
     const td = document.createElement("td");
-    td.colSpan = 10;
+    td.colSpan = 11;
     td.style.color = "#888";
     td.textContent = "本日以降の予約はありません";
     tr.appendChild(td);
@@ -653,7 +732,7 @@ function openReservationListModal() {
       const tr = document.createElement("tr");
       if (r.status === "キャンセル") tr.style.opacity = "0.55";
       const seats =
-        Array.isArray(r.seats) && r.seats.length ? r.seats.map((x) => seatLabel(x)).join(", ") : "—";
+        Array.isArray(r.seats) && r.seats.length ? formatSeatsForBulkEdit(r.seats) : "—";
       const note = r.note ? String(r.note).replace(/\s+/g, " ").trim() : "";
       const cells = [
         String(r.date || ""),
@@ -673,6 +752,25 @@ function openReservationListModal() {
         if (text === "予約確定") td.style.fontWeight = "800";
         tr.appendChild(td);
       }
+      const tdAct = document.createElement("td");
+      const actWrap = document.createElement("div");
+      actWrap.className = "res-list-actions";
+      const btnEdit = document.createElement("button");
+      btnEdit.type = "button";
+      btnEdit.className = "res-btn-edit";
+      btnEdit.textContent = "編集";
+      btnEdit.addEventListener("click", () => openReservationEditModal(r));
+      const btnDel = document.createElement("button");
+      btnDel.type = "button";
+      btnDel.className = "res-btn-delete";
+      btnDel.textContent = "削除";
+      btnDel.addEventListener("click", () => {
+        deleteReservationById(r.resId, r.name).catch((e) => alert(String(e.message || e)));
+      });
+      actWrap.appendChild(btnEdit);
+      actWrap.appendChild(btnDel);
+      tdAct.appendChild(actWrap);
+      tr.appendChild(tdAct);
       body.appendChild(tr);
     }
   }
@@ -1299,6 +1397,8 @@ window.submitReservation = submitReservation;
 window.openBulkEditModal = openBulkEditModal;
 window.openReservationListModal = openReservationListModal;
 window.closeReservationListModal = closeReservationListModal;
+window.openReservationEditModal = openReservationEditModal;
+window.deleteReservationById = deleteReservationById;
 window.submitBulkCsv = submitBulkCsv;
 window.closeCsvModal = closeCsvModal;
 window.updateReserveSeatSelector = updateReserveSeatSelector;

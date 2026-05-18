@@ -62,15 +62,25 @@
     .csv-table th { background:#f5f5f5; position:sticky; top:0; z-index:1; }
     .csv-table input, .csv-table select { width:100%; padding:5px; border:1px solid #ccc; box-sizing:border-box; }
     .csv-table .input-seats { background:#fffbea; border:1px solid #d4ac0d; font-weight:bold; }
+    .res-list-actions { display:flex; flex-wrap:wrap; gap:0.35rem; justify-content:center; }
+    .res-list-actions button { padding:0.35rem 0.55rem; border-radius:6px; border:1px solid #bbb; background:#fff; font-size:0.82em; font-weight:700; cursor:pointer; white-space:nowrap; }
+    .res-list-actions button.res-btn-edit { border-color:#4a90e2; color:#1a4d8c; }
+    .res-list-actions button.res-btn-delete { border-color:#fecaca; color:#b91c1c; }
   </style>
 
   <div id="entryPopup" onclick="clearEntry()"><h2 id="entryText" style="font-size:3em; margin:10px 0;">---</h2><div style="background:white; color:var(--occupied-blue); padding:10px; border-radius:50px; font-weight:bold;">確認</div></div>
 
   <div id="reserveModal">
     <div class="modal-content">
-      <h2 style="margin-top:0;">手動予約登録</h2>
+      <h2 id="reserveModalTitle" style="margin-top:0;">手動予約登録</h2>
+      <p id="reserveModalResIdLine" class="muted" style="display:none;font-size:0.78rem;margin:-0.5rem 0 0.65rem;"></p>
       <div style="display:flex; gap:10px;"><input type="date" id="resDate" required onchange="updateReserveSeatSelector()"><select id="resShift" onchange="updateReserveSeatSelector()"><option value="lunch">ランチ(～15:00)</option><option value="dinner">ディナー(～23:00)</option></select></div>
-      <div style="display:flex; gap:10px;"><input type="time" id="resTime" required style="flex:1;"><input type="number" id="resNum" placeholder="人数" min="1" required style="flex:1;"></div>
+      <div style="display:flex; gap:10px;"><input type="time" id="resTime" required style="flex:1;">      <input type="number" id="resNum" placeholder="人数" min="1" required style="flex:1;"></div>
+      <select id="resStatus" style="margin-bottom:15px;">
+        <option value="予約確定">予約確定</option>
+        <option value="来店済み">来店済み</option>
+        <option value="キャンセル">キャンセル</option>
+      </select>
       <input type="text" id="resName" placeholder="お名前" required>
       <input type="tel" id="resPhone" placeholder="電話番号" required maxlength="30">
       <input type="text" id="resNote" placeholder="備考（任意）">
@@ -78,7 +88,7 @@
       <div class="seat-selector" id="seatSelectorArea"></div>
       <div style="display:flex; gap:10px; margin-top:10px;">
         <button onclick="closeReserveModal()" style="flex:1; padding:12px; border-radius:8px; border:none; background:#ccc; font-weight:bold;">キャンセル</button>
-        <button onclick="submitReservation()" style="flex:1; padding:12px; border-radius:8px; border:none; background:var(--wood-dark); color:white; font-weight:bold;">登録する</button>
+        <button id="resSubmitBtn" onclick="submitReservation()" style="flex:1; padding:12px; border-radius:8px; border:none; background:var(--wood-dark); color:white; font-weight:bold;">登録する</button>
       </div>
     </div>
   </div>
@@ -89,7 +99,7 @@
       <p id="resListModalSubtitle" style="margin:0 0 0.75rem;font-size:0.88rem;line-height:1.45;color:#555;"></p>
       <div class="csv-table-wrap">
         <table class="csv-table">
-          <thead><tr><th>日付</th><th>区分</th><th>時間</th><th>氏名</th><th>電話</th><th>人数</th><th>状況</th><th>席</th><th>備考</th><th>予約番号</th></tr></thead>
+          <thead><tr><th>日付</th><th>区分</th><th>時間</th><th>氏名</th><th>電話</th><th>人数</th><th>状況</th><th>席</th><th>備考</th><th>予約番号</th><th>操作</th></tr></thead>
           <tbody id="resListModalBody"></tbody>
         </table>
       </div>

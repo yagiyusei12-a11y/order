@@ -209,7 +209,7 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
                   choices: {
                     orderBy: { sortOrder: "asc" },
                     include: {
-                      componentMenuItem: { select: { id: true, name: true } },
+                      componentMenuItem: { select: { id: true, name: true, stockQty: true } },
                     },
                   },
                 },
@@ -278,7 +278,18 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
             const lineExtraObj = buildSetLineExtra(stepsLite, byStep, nameById, stepsVal, lineTaxPct);
             const nameSnapshot = buildSetNameSnapshot(item.name, lineExtraObj);
 
+            if (item.stockQty != null && item.stockQty <= 0) throw new Error("BAD_STOCK");
             needStock.set(l.menuItemId, (needStock.get(l.menuItemId) ?? 0) + l.qty);
+            for (const stp of item.setSteps) {
+              const picked = byStep.get(stp.id) ?? [];
+              for (const compId of picked) {
+                const ch = stp.choices.find((c) => c.componentMenuItemId === compId);
+                if (!ch) throw new Error("BAD_SET");
+                const comp = ch.componentMenuItem;
+                if (comp.stockQty != null && comp.stockQty <= 0) throw new Error("BAD_STOCK");
+                needStock.set(compId, (needStock.get(compId) ?? 0) + l.qty);
+              }
+            }
             resolved.push({
               menuItemId: item.id,
               qty: l.qty,
@@ -335,6 +346,7 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
           const optArr = lineExtraOpts.options;
           const hasOptDetail = Array.isArray(optArr) && optArr.length > 0;
 
+          if (item.stockQty != null && item.stockQty <= 0) throw new Error("BAD_STOCK");
           needStock.set(l.menuItemId, (needStock.get(l.menuItemId) ?? 0) + l.qty);
           resolved.push({
             menuItemId: item.id,
@@ -463,7 +475,9 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
       const msg = e instanceof Error ? e.message : "";
       if (msg === "BAD_QTY") return reply.code(400).send({ error: "invalid qty" });
       if (msg === "BAD_ITEM") return reply.code(400).send({ error: "invalid or unavailable menu item" });
-      if (msg === "BAD_STOCK") return reply.code(400).send({ error: "insufficient stock" });
+      if (msg === "BAD_STOCK") {
+        return reply.code(400).send({ error: "在庫が足りないか、売り切れの商品が含まれています" });
+      }
       if (msg === "SESSION_GONE") return reply.code(409).send({ error: "session closed or missing" });
       if (msg === "BAD_OPTIONS") {
         return reply.code(400).send({ error: "オプションの選択が不正です（必須・最大数を確認してください）" });

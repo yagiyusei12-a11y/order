@@ -1,4 +1,4 @@
-/** @typedef {{ id: string; name: string; sellKind?: string; isAvailable?: boolean; allowTakeout?: boolean; price?: number; optionLinks?: { optionGroupId: string }[]; setSteps?: { id: string; label: string; minPick: number; maxPick: number; choices: { componentMenuItemId: string; extraPrice: number; isFixed: boolean; componentMenuItem?: { id: string; name: string } }[] }[] }} HandyItem */
+/** @typedef {{ id: string; name: string; sellKind?: string; isAvailable?: boolean; allowTakeout?: boolean; price?: number; stockQty?: number | null; optionLinks?: { optionGroupId: string }[]; setSteps?: { id: string; label: string; minPick: number; maxPick: number; choices: { componentMenuItemId: string; extraPrice: number; isFixed: boolean; componentMenuItem?: { id: string; name: string; stockQty?: number | null } }[] }[] }} HandyItem */
 
 let sessionsCache = [];
 /** @type {{ categories: { id: string; name: string; items: HandyItem[] }[] }} */
@@ -70,14 +70,93 @@ function formatOrderWhen(iso) {
   }
 }
 
+function itemSoldOut(it) {
+  return it != null && it.stockQty != null && Number(it.stockQty) <= 0;
+}
+
 function itemHandyOk(it) {
   if (!it) return { ok: false, reason: "off" };
   if (!it.isAvailable) return { ok: false, reason: "off" };
+  if (itemSoldOut(it)) return { ok: false, reason: "soldout" };
   if ((it.sellKind || "single") === "set") {
     if (!it.setSteps || !it.setSteps.length) return { ok: false, reason: "セット未設定" };
     return { ok: true };
   }
   return { ok: true };
+}
+
+/** @param {string} menuItemId */
+function handyCartQtyForMenuItem(menuItemId) {
+  let n = 0;
+  for (const [, row] of cart) {
+    if (row.qty <= 0) continue;
+    if (row.id === menuItemId) n += row.qty;
+    for (const st of row.setSelections || []) {
+      for (const mid of st.menuItemIds || []) {
+        if (mid === menuItemId) n += row.qty;
+      }
+    }
+  }
+  return n;
+}
+
+/**
+ * @param {HandyItem | undefined} it
+ * @param {number} addQty
+ */
+function handyCanAddQty(it, addQty) {
+  if (!it) return { ok: false, error: "商品が見つかりません" };
+  if (!it.isAvailable) return { ok: false, error: "「" + it.name + "」は販売停止です" };
+  if (itemSoldOut(it)) return { ok: false, error: "「" + it.name + "」は売り切れです" };
+  if (it.stockQty == null) return { ok: true };
+  const limit = Number(it.stockQty);
+  const cur = handyCartQtyForMenuItem(it.id);
+  const extra = Math.max(0, addQty);
+  if (cur + extra > limit) {
+    const left = Math.max(0, limit - cur);
+    return {
+      ok: false,
+      error: "「" + it.name + "」の在庫が足りません" + (left > 0 ? "（残り" + left + "）" : ""),
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * @param {{ id: string; qty: number; setSelections?: { stepId: string; menuItemIds: string[] }[] }} row
+ * @param {number} addQty
+ */
+function handyCanAddCartRow(row, addQty) {
+  const meta = flatItems().find((x) => x.id === row.id);
+  const v = handyCanAddQty(meta, addQty);
+  if (!v.ok) return v;
+  if (!meta || !itemIsSet(meta) || !row.setSelections) return { ok: true };
+  const steps = itemSetSteps(meta);
+  const choiceById = new Map();
+  for (const st of steps) {
+    for (const ch of st.choices) choiceById.set(ch.menuItemId, ch);
+  }
+  for (const st of row.setSelections) {
+    for (const mid of st.menuItemIds || []) {
+      const ch = choiceById.get(mid);
+      if (!ch) continue;
+      const cv = handyCanAddQty(
+        { id: mid, name: ch.name, stockQty: ch.stockQty, isAvailable: true },
+        addQty,
+      );
+      if (!cv.ok) return cv;
+    }
+  }
+  return { ok: true };
+}
+
+/** @param {string} msg */
+function handyOrderErrorMessage(msg) {
+  const s = String(msg || "");
+  if (s.includes("insufficient stock") || s.includes("在庫が足りない")) {
+    return "在庫が足りないか、売り切れの商品が含まれています";
+  }
+  return s;
 }
 
 function itemIsSet(it) {
@@ -96,6 +175,10 @@ function itemSetSteps(it) {
       name: (ch.componentMenuItem && ch.componentMenuItem.name) || "?",
       extraPrice: Number(ch.extraPrice) || 0,
       isFixed: ch.isFixed === true,
+      stockQty:
+        ch.componentMenuItem && ch.componentMenuItem.stockQty != null
+          ? Number(ch.componentMenuItem.stockQty)
+          : null,
     })),
   }));
 }
@@ -129,6 +212,20 @@ function validateHandySetSelections(steps, selections) {
     for (const mid of userIds) {
       if (!pickable.has(mid)) {
         return { ok: false, error: "「" + st.label + "」の選択が不正です" };
+      }
+      const ch = st.choices.find((c) => c.menuItemId === mid);
+      if (ch && itemSoldOut(ch)) {
+        return { ok: false, error: "「" + ch.name + "」は売り切れです" };
+      }
+      if (ch && ch.stockQty != null) {
+        const cur = handyCartQtyForMenuItem(mid);
+        if (cur + 1 > ch.stockQty) {
+          const left = Math.max(0, ch.stockQty - cur);
+          return {
+            ok: false,
+            error: "「" + ch.name + "」の在庫が足りません" + (left > 0 ? "（残り" + left + "）" : ""),
+          };
+        }
       }
     }
     const uniq = new Set(userIds);
@@ -322,6 +419,11 @@ function addHandyCartLine(it, optionSelections, setSelections) {
       setSelections,
       setLabel: label || undefined,
     };
+    const stockV = handyCanAddCartRow(cur, 1);
+    if (!stockV.ok) {
+      log(stockV.error);
+      return;
+    }
     cur.qty += 1;
     cart.set(key, cur);
   } else {
@@ -342,6 +444,11 @@ function addHandyCartLine(it, optionSelections, setSelections) {
       optionSelections: optionSelections.length ? optionSelections : undefined,
       optionLabel: label || undefined,
     };
+    const stockV = handyCanAddCartRow(cur, 1);
+    if (!stockV.ok) {
+      log(stockV.error);
+      return;
+    }
     cur.qty += 1;
     cart.set(key, cur);
   }
@@ -494,23 +601,27 @@ function openHandySetModal(it) {
       if (ch.isFixed) {
         const fixed = document.createElement("p");
         fixed.className = "handy-opt-fixed";
-        fixed.textContent = "含む: " + ch.name;
+        fixed.textContent = "含む: " + ch.name + (itemSoldOut(ch) ? "（売り切れ）" : "");
         block.appendChild(fixed);
         continue;
       }
+      const sold = itemSoldOut(ch);
       const lbl = document.createElement("label");
-      lbl.className = "handy-opt-pick";
+      lbl.className = "handy-opt-pick" + (sold ? " dim" : "");
       const inp = document.createElement("input");
       inp.type = "checkbox";
       inp.value = ch.menuItemId;
       inp.dataset.stepId = st.id;
+      inp.disabled = sold;
       const ex = ch.extraPrice;
       const taxPct = handyLineTaxPercent();
       const inc = Math.round(ex * (1 + taxPct / 100));
       lbl.appendChild(inp);
       lbl.appendChild(
         document.createTextNode(
-          ch.name + (inc > 0 ? " (+" + inc.toLocaleString("ja-JP") + "円)" : ""),
+          ch.name +
+            (sold ? "（売り切れ）" : "") +
+            (inc > 0 ? " (+" + inc.toLocaleString("ja-JP") + "円)" : ""),
         ),
       );
       block.appendChild(lbl);
@@ -1031,7 +1142,9 @@ function renderItems() {
     const hasOpts = itemHasSelectableOptions(it);
     const isSet = itemIsSet(it);
     const rLabel =
-      hi.reason === "off" || hi.reason === "セット未設定"
+      hi.reason === "soldout"
+        ? "売り切れ"
+        : hi.reason === "off" || hi.reason === "セット未設定"
         ? hi.reason === "off"
           ? "販売停止"
           : "セット未設定"
@@ -1116,6 +1229,11 @@ function renderCart() {
     bPlus.className = "btn-ghost";
     bPlus.textContent = "+";
     bPlus.onclick = () => {
+      const v = handyCanAddCartRow(row, 1);
+      if (!v.ok) {
+        log(v.error);
+        return;
+      }
       row.qty += 1;
       cart.set(key, row);
       renderCart();
@@ -1138,7 +1256,14 @@ async function submitOrder() {
   const lines = [];
   for (const [, row] of cart) {
     if (row.qty > 0) {
+      const stockV = handyCanAddCartRow(row, 0);
+      if (!stockV.ok) return log(stockV.error);
       const meta = flatItems().find((x) => x.id === row.id);
+      if (meta && itemIsSet(meta) && row.setSelections) {
+        const steps = itemSetSteps(meta);
+        const vSet = validateHandySetSelections(steps, row.setSelections);
+        if (!vSet.ok) return log(vSet.error);
+      }
       if (eatMode === "takeout" && meta && meta.allowTakeout !== true) {
         return log("テイクアウトにできない商品がカートに含まれています（提供区分を店内にするか、カートを調整）");
       }
@@ -1178,7 +1303,7 @@ async function submitOrder() {
     const cid = document.getElementById("handyCustomer").value;
     if (cid) await loadInsightsForSelection();
   } catch (e) {
-    log(String(e.message || e));
+    log(handyOrderErrorMessage(e.message || e));
   } finally {
     btn.disabled = false;
     if (btnSticky) btnSticky.disabled = false;

@@ -677,6 +677,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
                         containsAlcohol: true,
                         price: true,
                         priceTaxMode: true,
+                        stockQty: true,
                       },
                     },
                   },

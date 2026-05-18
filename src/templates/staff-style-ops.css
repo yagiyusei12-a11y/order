@@ -1,3 +1,8 @@
+/* レジアプリ WebView（nativeDrawer=1） */
+body.native-pos .page-title {
+  display: none;
+}
+
 /* OPS ツールバー：客面ディスプレイ QR */
 .ops-guest-display-qr {
   display: inline-flex;

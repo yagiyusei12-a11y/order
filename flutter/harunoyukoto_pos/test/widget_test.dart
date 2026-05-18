@@ -14,6 +14,6 @@ void main() {
     await tester.pumpWidget(const HarunoyukotoPosApp());
     await tester.pumpAndSettle();
     expect(find.text('OPS の URL'), findsOneWidget);
-    expect(find.text('はるのゆこと レジ'), findsOneWidget);
+    expect(find.text('初回設定'), findsOneWidget);
   });
 }

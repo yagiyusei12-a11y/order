@@ -630,9 +630,32 @@
       from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
       to { opacity: 1; transform: translateX(-50%) translateY(0); }
     }
+    /* レジアプリ（Flutter WebView）: nativeDrawer=1 で余白を確保 */
+    body.native-pos {
+      --sidebar-w: 0;
+      --topbar-h: 0;
+      --footer-h: 0;
+    }
+    body.native-pos .sidebar,
+    body.native-pos .topbar,
+    body.native-pos .staff-order-footer {
+      display: none !important;
+    }
+    body.native-pos .scroll-main {
+      padding-bottom: 0;
+    }
   </style>
 </head>
 <body>
+  <script>
+    (function () {
+      try {
+        if (new URLSearchParams(location.search).get("nativeDrawer") === "1") {
+          document.body.classList.add("native-pos");
+        }
+      } catch (_) {}
+    })();
+  </script>
   <div class="app">
     <aside class="sidebar" aria-label="メインメニュー">
       <a href="/staff-app/__STORE_PATH__" class="snav" id="nav-home" data-nav-key="home" title="ホーム">

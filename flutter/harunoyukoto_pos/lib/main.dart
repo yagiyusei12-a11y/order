@@ -416,19 +416,32 @@ class _OpsShellPageState extends State<OpsShellPage> {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('はるのゆこと レジ'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: _openSettings,
-            tooltip: '設定',
-          ),
-        ],
+      body: SafeArea(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            _controller == null
+                ? const Center(child: CircularProgressIndicator())
+                : WebViewWidget(controller: _controller!),
+            Positioned(
+              top: 6,
+              right: 6,
+              child: Material(
+                color: Colors.white.withValues(alpha: 0.92),
+                elevation: 2,
+                shadowColor: Colors.black26,
+                borderRadius: BorderRadius.circular(10),
+                child: IconButton(
+                  icon: const Icon(Icons.settings_outlined, size: 22),
+                  onPressed: _openSettings,
+                  tooltip: '設定',
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
-      body: _controller == null
-          ? const Center(child: CircularProgressIndicator())
-          : WebViewWidget(controller: _controller!),
     );
   }
 }
@@ -472,13 +485,17 @@ class _SetupWizardState extends State<_SetupWizard> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('はるのゆこと レジ')),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              const Text(
+                '初回設定',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 20),
               TextField(
                 controller: _urlCtrl,
                 decoration: const InputDecoration(

@@ -29,6 +29,35 @@ function reservationPhoneDisplay(r) {
   return p != null && String(p).trim() ? String(p).trim() : "—";
 }
 
+function reservationShiftLabel(shift) {
+  return shift === "lunch" ? "ランチ" : shift === "dinner" ? "ディナー" : String(shift || "");
+}
+
+function compareReservationsChronological(a, b) {
+  const da = String(a.date || "");
+  const db = String(b.date || "");
+  if (da !== db) return da.localeCompare(db);
+  const sa = String(a.shift || "");
+  const sb = String(b.shift || "");
+  if (sa !== sb) {
+    if (sa === "lunch") return -1;
+    if (sb === "lunch") return 1;
+    return sa.localeCompare(sb);
+  }
+  return String(a.time || "").localeCompare(String(b.time || ""));
+}
+
+/** @param {unknown[]} list @param {string} todayYmd */
+function reservationsFromTodayOnward(list, todayYmd) {
+  const today = String(todayYmd || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) return [];
+  return (Array.isArray(list) ? list : []).filter((r) => {
+    if (!r || typeof r !== "object") return false;
+    const d = String(r.date || "").trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= today;
+  });
+}
+
 function seatLabel(id) {
   const raw0 = String(id || "").trim();
   const raw = raw0.toUpperCase();
@@ -540,16 +569,14 @@ function openBulkEditModal() {
 }
 
 function openReservationListModal() {
-  const d = document.getElementById("viewDate").value;
-  const s = document.getElementById("viewShift").value;
-  const shiftLabel = s === "lunch" ? "ランチ" : "ディナー";
-  const resList = existingReservations
-    .filter((r) => r.date === d && r.shift === s)
-    .sort((a, b) => String(a.time || "").localeCompare(String(b.time || "")));
+  const todayYmd = getFormattedDate(new Date());
+  const resList = reservationsFromTodayOnward(existingReservations, todayYmd).sort(compareReservationsChronological);
   const sub = document.getElementById("resListModalSubtitle");
   if (sub) {
     sub.textContent =
-      d + " · " + shiftLabel + " — " + (resList.length ? resList.length + "件" : "予約はありません");
+      todayYmd +
+      " 以降の予約 — " +
+      (resList.length ? resList.length + "件（日付・時間順）" : "予約はありません");
   }
   const body = document.getElementById("resListModalBody");
   if (!body) return;
@@ -557,9 +584,9 @@ function openReservationListModal() {
   if (!resList.length) {
     const tr = document.createElement("tr");
     const td = document.createElement("td");
-    td.colSpan = 8;
+    td.colSpan = 10;
     td.style.color = "#888";
-    td.textContent = "この日・シフトの予約はありません";
+    td.textContent = "本日以降の予約はありません";
     tr.appendChild(td);
     body.appendChild(tr);
   } else {
@@ -570,6 +597,8 @@ function openReservationListModal() {
         Array.isArray(r.seats) && r.seats.length ? r.seats.map((x) => seatLabel(x)).join(", ") : "—";
       const note = r.note ? String(r.note).replace(/\s+/g, " ").trim() : "";
       const cells = [
+        String(r.date || ""),
+        reservationShiftLabel(r.shift),
         String(r.time || ""),
         String(r.name || ""),
         reservationPhoneDisplay(r),

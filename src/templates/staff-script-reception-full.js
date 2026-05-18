@@ -87,6 +87,38 @@ function seatLabel(id) {
   return raw;
 }
 
+/** 予約一括編集の席欄用（T22 → 22、C01 → 1） */
+function seatNumberForBulkEdit(id) {
+  const lab = seatLabel(id);
+  const m = /^([CT])0*(\d+)$/i.exec(lab);
+  if (m) return String(parseInt(m[2], 10));
+  const raw = String(id || "").trim();
+  const m2 = /(\d+)\s*$/i.exec(raw);
+  if (m2) return String(parseInt(m2[1], 10));
+  return lab;
+}
+
+function formatSeatsForBulkEdit(seats) {
+  if (!Array.isArray(seats) || !seats.length) return "";
+  return seats.map((x) => seatNumberForBulkEdit(x)).join(", ");
+}
+
+function parseSeatsFromBulkEditInput(raw) {
+  if (!raw || !String(raw).trim()) return [];
+  return String(raw)
+    .split(/[,、]/)
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean)
+    .map((trimmed) => {
+      if (/^\d+$/.test(trimmed)) {
+        const num = parseInt(trimmed, 10);
+        if (num >= 1 && num <= 10) return "C" + num;
+        if (num >= 21) return "T" + num;
+      }
+      return trimmed;
+    });
+}
+
 function seatTypeLine(id) {
   const st = seatStates[String(id || "")];
   const t = st && String(st.seatType || "").trim();
@@ -651,7 +683,7 @@ function openCsvModal(list) {
       <td><input type="number" class="csv-val" data-key="num" value="${r.num}" style="width:60px;"></td>
       <td><select class="csv-val" data-key="status"><option value="予約確定" ${r.status==="予約確定"?"selected":""}>予約確定</option><option value="来店済み" ${r.status==="来店済み"?"selected":""}>来店済み</option><option value="キャンセル" ${r.status==="キャンセル"?"selected":""}>キャンセル</option></select></td>
       <td><input type="text" class="csv-val" data-key="note" value="${safeNote}" style="width:120px; font-size:0.85em; background:#f9f9f9;" title="${safeNote}"></td>
-      <td><input type="text" class="csv-val input-seats" data-key="seats" value="${(r.seats || []).join(",")}" placeholder="例: 31,32"></td>
+      <td><input type="text" class="csv-val input-seats" data-key="seats" value="${escapeHtml(formatSeatsForBulkEdit(r.seats || []))}" placeholder="例: 22, 23"></td>
     </tr>`;
   });
   document.getElementById("csvModal").style.display = "flex";
@@ -666,15 +698,7 @@ async function submitBulkCsv() {
       const key = input.getAttribute("data-key"); let val = input.value;
       if (key === "num") val = parseInt(val);
       if (key === "seats") {
-        val = val ? val.split(",").map((s) => {
-          const trimmed = s.trim().toUpperCase();
-          if (/^\d+$/.test(trimmed)) {
-            const num = parseInt(trimmed);
-            if (num >= 1 && num <= 10) return "C" + num;
-            else if (num >= 21) return "T" + num;
-          }
-          return trimmed;
-        }).filter((s) => s !== "") : [];
+        val = parseSeatsFromBulkEditInput(val);
       }
       obj[key] = val;
     });

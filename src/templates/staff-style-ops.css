@@ -199,12 +199,20 @@
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: flex-start;
   min-height: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 0.5rem 0.75rem 0.6rem;
   background: var(--surface, #fff);
   box-shadow: -4px 0 16px rgba(15, 23, 42, 0.04);
+}
+
+/* 税抜・消費税・請求金額は常に上から表示（決済欄が長くても隠れない） */
+.ops-register-layout__register .ops-total-row,
+.ops-register-layout__register .ops-total-main {
+  flex-shrink: 0;
 }
 
 .ops-register-layout__register .ops-total-row {
@@ -273,5 +281,9 @@
   }
   .ops-register-layout__right {
     max-height: 45vh;
+    min-height: 12rem;
+  }
+  .ops-register-layout__register {
+    max-height: none;
   }
 }

@@ -74,6 +74,16 @@ function managerOpsAllowed() {
 
 let opsSocket = null;
 let opsSocketInitPromise = null;
+let opsSocketRefreshBound = false;
+let opsAutoRefreshTimer = null;
+let opsLoadInFlight = false;
+let opsRefreshQueued = false;
+let opsLoadSeq = 0;
+let opsLastUserActivityAt = 0;
+/** 卓一覧の定期再取得（秒） */
+const OPS_AUTO_REFRESH_MS = 15000;
+/** 操作直後はこの時間だけ自動更新を止める */
+const OPS_USER_IDLE_MS = 6000;
 
 function loadSocketIoClient() {
   return new Promise((resolve, reject) => {
@@ -99,6 +109,72 @@ function loadSocketIoClient() {
 function opsDetailModalIsOpen() {
   const modal = document.getElementById("opsDetailModal");
   return Boolean(modal && !modal.hidden);
+}
+
+function markOpsUserActivity() {
+  opsLastUserActivityAt = Date.now();
+}
+
+function shouldPauseOpsAutoRefresh() {
+  if (document.hidden) return true;
+  if (opsDetailModalIsOpen()) return true;
+  if (opsLastUserActivityAt && Date.now() - opsLastUserActivityAt < OPS_USER_IDLE_MS) return true;
+  return false;
+}
+
+async function requestOpsRefresh(_reason) {
+  if (shouldPauseOpsAutoRefresh()) {
+    opsRefreshQueued = true;
+    return;
+  }
+  if (opsLoadInFlight) {
+    opsRefreshQueued = true;
+    return;
+  }
+  opsLoadInFlight = true;
+  opsRefreshQueued = false;
+  try {
+    await loadAll();
+  } catch (e) {
+    log(String(e.message || e));
+  } finally {
+    opsLoadInFlight = false;
+    if (opsRefreshQueued && !shouldPauseOpsAutoRefresh()) {
+      opsRefreshQueued = false;
+      void requestOpsRefresh("queued");
+    }
+  }
+}
+
+function opsAutoRefreshTick() {
+  if (shouldPauseOpsAutoRefresh()) return;
+  void requestOpsRefresh("interval");
+}
+
+function bindOpsSocketRefresh() {
+  if (!opsSocket || opsSocketRefreshBound) return;
+  opsSocketRefreshBound = true;
+  opsSocket.on("ops:session-updated", () => {
+    void requestOpsRefresh("socket-session");
+  });
+  opsSocket.on("reception:updated", () => {
+    void requestOpsRefresh("socket-reception");
+  });
+}
+
+function initOpsAutoRefresh() {
+  const mark = () => markOpsUserActivity();
+  ["pointerdown", "keydown", "input", "touchstart", "change"].forEach((evt) => {
+    document.addEventListener(evt, mark, { capture: true, passive: true });
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && opsRefreshQueued) void requestOpsRefresh("visible");
+  });
+  if (opsAutoRefreshTimer) clearInterval(opsAutoRefreshTimer);
+  opsAutoRefreshTimer = setInterval(opsAutoRefreshTick, OPS_AUTO_REFRESH_MS);
+  void ensureOpsSocket()
+    .then(() => bindOpsSocketRefresh())
+    .catch(() => {});
 }
 
 /** 会計モーダル内のスクロール位置（一覧再読込時の renderDetail で先頭に戻るのを防ぐ） */
@@ -220,6 +296,7 @@ function dismissOpsDetailModal() {
   if (panel) panel.innerHTML = "";
   renderGrid();
   void emitOpsSeatClear();
+  if (opsRefreshQueued) void requestOpsRefresh("modal-close");
 }
 
 async function emitOpsSeatSelection() {
@@ -2408,6 +2485,7 @@ async function renderDetail() {
 }
 
 async function loadAll() {
+  const mySeq = ++opsLoadSeq;
   const scrollEl = document.querySelector(".scroll-main");
   const savedTop = scrollEl ? scrollEl.scrollTop : 0;
   try {
@@ -2510,6 +2588,7 @@ async function loadAll() {
     storeSettingsCache = merged;
     billsBySessionId = new Map();
     for (const b of billsRes.bills || []) if (b.sessionId) billsBySessionId.set(b.sessionId, b);
+    if (mySeq !== opsLoadSeq) return;
     renderGrid();
     renderMiniSessions();
     const detailScrollSnaps = captureOpsDetailScrollTops();
@@ -2533,13 +2612,13 @@ if (btnRefReceiptBox) {
   btnRefReceiptBox.onclick = () => renderReceiptBox().catch((e) => log(String(e.message || e)));
 }
 
-document.getElementById("btnRefFloor").onclick = () => loadAll().catch((e) => log(String(e.message || e)));
+document.getElementById("btnRefFloor").onclick = () => {
+  markOpsUserActivity();
+  void requestOpsRefresh("manual-floor");
+};
 const btnOpenDrawerEl = document.getElementById("btnOpenDrawer");
 if (btnOpenDrawerEl) btnOpenDrawerEl.onclick = () => tryOpenDrawer();
 window.__opsOpenBillDiscountModal = openBillDiscountModal;
 window.__opsOpenLineDiscountModal = openLineDiscountModal;
-loadAll().catch((e) => log(String(e.message || e)));
-
-setInterval(() => {
-  if (document.getElementById("tableGrid") && sessionsCache.length) renderGrid();
-}, 60000);
+void requestOpsRefresh("init");
+initOpsAutoRefresh();

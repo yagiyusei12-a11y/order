@@ -656,11 +656,7 @@ async function mountRegisterFlow(panel, ctx) {
         : "";
     })() +
     "</span></div>" +
-    "<div class=\"row\" style=\"margin:0.35rem 0 0.5rem;justify-content:flex-end;flex-wrap:wrap;gap:0.35rem\">" +
-    "<button type=\"button\" class=\"btn-ghost\" id=\"btnMoveTable\" data-ops-action=\"move-table\" style=\"font-weight:700;border-color:#93c5fd\">席移動</button>" +
-    "<button type=\"button\" class=\"btn-ghost\" id=\"btnMergeSession\" data-ops-action=\"merge-session\" style=\"font-weight:700;border-color:#cbd5e1\">他卓と合算</button>" +
-    "<button type=\"button\" class=\"btn-ghost\" id=\"btnEndSession\" style=\"color:#b91c1c;border-color:#fecaca;font-weight:700\">セッションを切る</button>" +
-    "</div>" +
+    "<div id=\"opsAdminSettingsPanel\" class=\"ops-admin-settings-panel\" hidden>" +
     "<details class=\"ops-admin-accordion\">" +
     "<summary class=\"ops-admin-accordion__summary\">⚙️ 人数・コース設定</summary>" +
     "<div class=\"ops-admin-accordion__body\">" +
@@ -697,13 +693,21 @@ async function mountRegisterFlow(panel, ctx) {
         "\""
       : "") +
     ">設定</button></div></details>" +
+    "</div>" +
+    "<div class=\"card ops-admin-toolbar\" style=\"padding:0.5rem 0.65rem;margin:0;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;font-size:0.82rem\">" +
+    "<div class=\"row\" style=\"gap:0.35rem;flex-wrap:wrap;align-items:center;margin:0\">" +
     (bcOl
-      ? "<div class=\"card\" style=\"padding:0.5rem 0.65rem;margin:0 0 0.5rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;font-size:0.82rem\">" +
-        "<div class=\"row\" style=\"gap:0.5rem;flex-wrap:wrap;align-items:center\">" +
-        "<button type=\"button\" class=\"btn-ghost\" id=\"btnMoveLinesSeparateBill\" style=\"font-weight:700;border-color:#93c5fd\">選択を別会計へ</button>" +
-        "<span class=\"muted\" style=\"font-size:0.72rem;line-height:1.35\">商品行にチェックしてから実行します（新しい伝票、または同卓の別セッションへ）。</span>" +
-        "</div></div>"
-      : "");
+      ? "<button type=\"button\" class=\"btn-ghost\" id=\"btnMoveLinesSeparateBill\" style=\"font-weight:700;border-color:#93c5fd\">選択を別会計へ</button>"
+      : "") +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"btnMoveTable\" data-ops-action=\"move-table\" style=\"font-weight:700;border-color:#93c5fd\">席移動</button>" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"btnMergeSession\" data-ops-action=\"merge-session\" style=\"font-weight:700;border-color:#cbd5e1\">他卓と合算</button>" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"btnEndSession\" style=\"color:#b91c1c;border-color:#fecaca;font-weight:700\">セッションを切る</button>" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"btnOpsAdminOpen\" style=\"font-weight:800;border-color:#94a3b8\" aria-expanded=\"false\">開く</button>" +
+    "</div>" +
+    (bcOl
+      ? "<p class=\"muted\" style=\"font-size:0.68rem;margin:0.35rem 0 0;line-height:1.35\">別会計: 商品行にチェックしてから実行</p>"
+      : "") +
+    "</div>";
   const registerHtml =
     (ordersDiscAmt > 0
       ? "<div class=\"row ops-total-row\"><span class=\"muted\">注文値引（商品行）</span><strong style=\"color:#059669\">−" +
@@ -805,6 +809,22 @@ async function mountRegisterFlow(panel, ctx) {
   const btnMoveTable = $("btnMoveTable");
   if (btnMoveTable) {
     btnMoveTable.onclick = () => ctx.hooks.openMoveTableDialog(session, table);
+  }
+
+  const btnOpsAdminOpen = $("btnOpsAdminOpen");
+  const opsAdminSettingsPanel = $("opsAdminSettingsPanel");
+  if (btnOpsAdminOpen && opsAdminSettingsPanel) {
+    btnOpsAdminOpen.onclick = () => {
+      const willShow = opsAdminSettingsPanel.hidden;
+      opsAdminSettingsPanel.hidden = !willShow;
+      btnOpsAdminOpen.textContent = willShow ? "閉じる" : "開く";
+      btnOpsAdminOpen.setAttribute("aria-expanded", willShow ? "true" : "false");
+      if (willShow) {
+        opsAdminSettingsPanel.querySelectorAll(".ops-admin-accordion").forEach((el) => {
+          el.open = true;
+        });
+      }
+    };
   }
 
   const btnOpsSessCounts = $("btnOpsSessCounts");

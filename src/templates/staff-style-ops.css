@@ -115,6 +115,22 @@ body.native-pos .page-title {
   margin-bottom: 0.25rem;
 }
 
+.ops-admin-settings-panel[hidden] {
+  display: none !important;
+}
+
+.ops-admin-settings-panel:not([hidden]) {
+  margin-bottom: 0.35rem;
+}
+
+.ops-admin-toolbar {
+  margin-bottom: 0 !important;
+}
+
+.ops-admin-toolbar .row {
+  margin-top: 0 !important;
+}
+
 .ops-admin-accordion {
   margin: 0 0 0.35rem;
   border: 1px solid var(--border);

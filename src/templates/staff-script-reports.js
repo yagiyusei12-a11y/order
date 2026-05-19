@@ -40,6 +40,206 @@ function addDays(d, n) {
   return x;
 }
 
+const REP_MOBILE_MQ =
+  typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(max-width: 767px)") : null;
+
+function isReportsMobileUi() {
+  return REP_MOBILE_MQ ? REP_MOBILE_MQ.matches : false;
+}
+
+let repMobileDay = startOfTodayLocal();
+let repMobileRefreshTimer = null;
+let repMobileNavWired = false;
+
+function repMobileSameCalendarDay(a, b) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function repMobileIsToday() {
+  return repMobileSameCalendarDay(repMobileDay, startOfTodayLocal());
+}
+
+function repMobileDayQuery() {
+  const from = new Date(repMobileDay.getFullYear(), repMobileDay.getMonth(), repMobileDay.getDate(), 0, 0, 0, 0);
+  const to = new Date(repMobileDay.getFullYear(), repMobileDay.getMonth(), repMobileDay.getDate(), 23, 59, 59, 999);
+  return "from=" + encodeURIComponent(from.toISOString()) + "&to=" + encodeURIComponent(to.toISOString());
+}
+
+function repYen(n) {
+  return Number(n || 0).toLocaleString("ja-JP") + "円";
+}
+
+function repSessionElapsedMinutes(openedAt) {
+  if (!openedAt) return "";
+  const t0 = new Date(openedAt).getTime();
+  if (!Number.isFinite(t0)) return "";
+  const mins = Math.floor((Date.now() - t0) / 60000);
+  if (mins < 0) return "";
+  return mins + "分";
+}
+
+function repTableLabel(table) {
+  if (!table) return "—";
+  let code = "";
+  try {
+    if (typeof displayTableCode === "function" && table.publicCode) {
+      code = String(displayTableCode(table.publicCode) || "").trim();
+    }
+  } catch (_) {}
+  const name = String(table.name || "").trim();
+  return code || name || "—";
+}
+
+function updateRepMobileNavUi() {
+  const label = document.getElementById("repMobDateLabel");
+  const nextBtn = document.getElementById("repMobNext");
+  const todayBtn = document.getElementById("repMobToday");
+  if (label) {
+    label.textContent =
+      repMobileDay.toLocaleDateString("ja-JP", { month: "long", day: "numeric", weekday: "short" }) +
+      (repMobileIsToday() ? "（当日）" : "");
+  }
+  if (nextBtn) {
+    const selected = new Date(repMobileDay.getFullYear(), repMobileDay.getMonth(), repMobileDay.getDate(), 0, 0, 0, 0);
+    nextBtn.disabled = selected.getTime() >= startOfTodayLocal().getTime();
+  }
+  if (todayBtn) todayBtn.disabled = repMobileIsToday();
+}
+
+function renderRepMobileTotals(res) {
+  const el = document.getElementById("repMobTotals");
+  if (!el) return;
+  const confirmed = Number((res.confirmed && res.confirmed.totalAmount) || 0);
+  const pending = Number((res.pending && res.pending.totalAmount) || 0);
+  const total = confirmed + pending;
+  el.innerHTML =
+    "<div class=\"rep-m-total-grid\">" +
+    "<div class=\"rep-m-total-item\"><span class=\"lab\">精算金額</span><span class=\"val\">" +
+    repYen(confirmed) +
+    "</span></div>" +
+    "<div class=\"rep-m-total-item\"><span class=\"lab\">未精算金額</span><span class=\"val\">" +
+    repYen(pending) +
+    "</span></motionless-div>" +
+    "<div class=\"rep-m-total-item\"><span class=\"lab\">合算金額</span><span class=\"val\">" +
+    repYen(total) +
+    "</span></div></div>";
+}
+
+async function loadRepMobileTables() {
+  const wrap = document.getElementById("repMobTablesWrap");
+  const el = document.getElementById("repMobTables");
+  if (!wrap || !el) return;
+  if (!repMobileIsToday()) {
+    wrap.hidden = true;
+    return;
+  }
+  wrap.hidden = false;
+  el.innerHTML = "<span class=\"muted\">読み込み中…</span>";
+  const [tablesRes, sessionsRes] = await Promise.all([
+    api("/stores/" + encodeURIComponent(STORE) + "/tables"),
+    api("/stores/" + encodeURIComponent(STORE) + "/sessions?status=open&includeTotals=1"),
+  ]);
+  const tables = (tablesRes.tables || []).filter((t) => t.active);
+  const tableById = new Map(tables.map((t) => [t.id, t]));
+  const openSessions = (sessionsRes.sessions || []).filter((s) => s && s.status === "open");
+  openSessions.sort((a, b) => {
+    const ta = tableById.get(a.tableId);
+    const tb = tableById.get(b.tableId);
+    const sa = ta ? Number(ta.sortOrder || 0) : 9999;
+    const sb = tb ? Number(tb.sortOrder || 0) : 9999;
+    if (sa !== sb) return sa - sb;
+    return String(a.id).localeCompare(String(b.id));
+  });
+  if (!openSessions.length) {
+    el.innerHTML = "<span class=\"muted\">使用中の卓はありません。</span>";
+    return;
+  }
+  let h = "";
+  for (const s of openSessions) {
+    const tbl = tableById.get(s.tableId) || s.table;
+    const gc = Number(s.guestCount || 0);
+    const cc = Number(s.childCount || 0);
+    const ppl = cc > 0 ? gc + "名（子" + cc + "）" : gc + "名";
+    const mins = repSessionElapsedMinutes(s.openedAt) || "0分";
+    const amt = Number(s.currentTotal || 0);
+    h +=
+      "<div class=\"rep-m-table-row\">" +
+      "<span class=\"rep-m-table-name\">" +
+      escapeHtml(repTableLabel(tbl)) +
+      "</span>" +
+      "<span class=\"rep-m-table-amt\">" +
+      repYen(amt) +
+      "</span>" +
+      "<span class=\"rep-m-table-meta\">" +
+      escapeHtml(mins) +
+      " · " +
+      escapeHtml(ppl) +
+      "</span></div>";
+  }
+  el.innerHTML = h;
+}
+
+function scheduleRepMobileRefresh() {
+  if (repMobileRefreshTimer) clearInterval(repMobileRefreshTimer);
+  if (!isReportsMobileUi()) return;
+  repMobileRefreshTimer = setInterval(() => {
+    if (isReportsMobileUi()) loadRepMobile().catch(() => {});
+  }, 60000);
+}
+
+async function loadRepMobile() {
+  log("");
+  updateRepMobileNavUi();
+  const totalsEl = document.getElementById("repMobTotals");
+  if (totalsEl) totalsEl.innerHTML = "<span class=\"muted\">読み込み中…</span>";
+  try {
+    const res = await api(
+      "/stores/" + encodeURIComponent(STORE) + "/reports/summary?" + repMobileDayQuery()
+    );
+    renderRepMobileTotals(res);
+    await loadRepMobileTables();
+  } catch (e) {
+    const msg = String(e.message || e);
+    log(msg);
+    if (totalsEl) totalsEl.innerHTML = "<span class=\"muted\">読み込みに失敗しました。</span>";
+  }
+  scheduleRepMobileRefresh();
+}
+
+function shiftRepMobileDay(delta) {
+  repMobileDay = addDays(repMobileDay, delta);
+  loadRepMobile().catch((e) => log(String(e.message || e)));
+}
+
+function wireRepMobileNav() {
+  if (repMobileNavWired) return;
+  repMobileNavWired = true;
+  const prev = document.getElementById("repMobPrev");
+  const today = document.getElementById("repMobToday");
+  const next = document.getElementById("repMobNext");
+  if (prev) prev.onclick = () => shiftRepMobileDay(-1);
+  if (today)
+    today.onclick = () => {
+      repMobileDay = startOfTodayLocal();
+      loadRepMobile().catch((e) => log(String(e.message || e)));
+    };
+  if (next) next.onclick = () => shiftRepMobileDay(1);
+}
+
+function initReportsPage() {
+  if (isReportsMobileUi()) {
+    repMobileDay = startOfTodayLocal();
+    wireRepMobileNav();
+    loadRepMobile().catch((e) => log(String(e.message || e)));
+    return;
+  }
+  if (repMobileRefreshTimer) {
+    clearInterval(repMobileRefreshTimer);
+    repMobileRefreshTimer = null;
+  }
+  runAll().catch((e) => log(String(e.message || e)));
+}
+
 function qsFromInputs() {
   const fromEl = document.getElementById("repFrom");
   const toEl = document.getElementById("repTo");
@@ -1256,5 +1456,8 @@ if (methodInp)
     if (reportsActiveTab === "bills") reloadActiveDetailPanel().catch((e) => log(String(e.message || e)));
   };
 
-// 初期値: 期間なし（全期間集計・伝票は精算日の新しい順）
-runAll().catch((e) => log(String(e.message || e)));
+// 初期値: PCは期間なし（全期間） / スマホは当日ビュー
+initReportsPage();
+if (REP_MOBILE_MQ && typeof REP_MOBILE_MQ.addEventListener === "function") {
+  REP_MOBILE_MQ.addEventListener("change", () => initReportsPage());
+}

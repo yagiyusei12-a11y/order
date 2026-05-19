@@ -1,5 +1,23 @@
 <main>
   <h2 class="page-title">売上レポート</h2>
+
+  <div id="repMobileRoot" class="rep-mobile" aria-label="レポート（スマホ）">
+    <div class="rep-m-daynav">
+      <button type="button" class="btn-ghost" id="repMobPrev">前の日</button>
+      <button type="button" class="btn-primary" id="repMobToday" style="width:auto;padding:0.5rem 0.85rem">当日</button>
+      <button type="button" class="btn-ghost" id="repMobNext">次の日</button>
+    </div>
+    <p class="rep-m-date-label" id="repMobDateLabel"></p>
+    <div class="card rep-m-totals">
+      <div id="repMobTotals"><span class="muted">読み込み中…</span></div>
+    </div>
+    <div class="card rep-m-tables" id="repMobTablesWrap" hidden>
+      <strong style="font-size:0.9rem">使用中の卓</strong>
+      <div id="repMobTables" style="margin-top:0.55rem"></div>
+    </div>
+  </div>
+
+  <div id="repDesktopRoot">
   <p class="muted" style="margin-top:-0.35rem;margin-bottom:1rem">
     確定売上は <strong>精算完了日時（settledAt）</strong> 基準で集計します。未精算（open）は別枠（pending）で表示します。
     開始・終了を空にすると<strong>全期間</strong>を集計し、伝票一覧は精算が新しい順（最大200件）です。
@@ -98,7 +116,63 @@
       <div id="repBills" style="margin-top:0.65rem;min-height:2.5rem"></div>
     </div>
   </section>
+  </div>
 
   <div id="repBillModal" style="display:none"></div>
   <div id="log"></div>
+
+  <style>
+    #repMobileRoot { display: none; }
+    @media (max-width: 767px) {
+      #repMobileRoot { display: block; }
+      #repDesktopRoot { display: none !important; }
+      .rep-m-daynav {
+        display: flex;
+        gap: 0.4rem;
+        flex-wrap: wrap;
+        margin: 0.35rem 0 0.25rem;
+      }
+      .rep-m-daynav button { flex: 1; min-width: 5.5rem; font-weight: 800; }
+      .rep-m-date-label {
+        margin: 0 0 0.75rem;
+        font-size: 0.88rem;
+        font-weight: 800;
+        color: var(--text);
+      }
+      .rep-m-totals { margin-bottom: 0.75rem; padding: 0.75rem; }
+      .rep-m-total-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.55rem;
+      }
+      .rep-m-total-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 0.5rem;
+        padding: 0.45rem 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .rep-m-total-item:last-child {
+        border-bottom: none;
+        padding-bottom: 0;
+        font-weight: 900;
+      }
+      .rep-m-total-item .lab { font-size: 0.78rem; color: var(--muted); font-weight: 700; }
+      .rep-m-total-item .val { font-size: 1.05rem; font-weight: 900; white-space: nowrap; }
+      .rep-m-tables { padding: 0.75rem; }
+      .rep-m-table-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 0.2rem 0.65rem;
+        padding: 0.55rem 0;
+        border-bottom: 1px solid var(--border);
+        font-size: 0.88rem;
+      }
+      .rep-m-table-row:last-child { border-bottom: none; }
+      .rep-m-table-name { font-weight: 900; }
+      .rep-m-table-meta { font-size: 0.78rem; color: var(--muted); grid-column: 1 / -1; }
+      .rep-m-table-amt { font-weight: 900; text-align: right; align-self: center; }
+    }
+  </style>
 </main>

@@ -478,9 +478,12 @@ async function mountRegisterFlow(panel, ctx) {
         tb.rows.map((r) => `内訳: ${r.rate}% 税 ${BillRegisterShared.yen(r.tax)}`).join("<br/>") +
         "</div>"
       : "";
-  const methods = ctx.paymentMethods
-    .map((m) => "<option value=\"" + ctx.escapeHtml(m.code) + "\">" + ctx.escapeHtml(m.labelJa || m.code) + "</option>")
-    .join("");
+  const methods =
+    "<option value=\"\">— 選択 —</option>" +
+    ctx.paymentMethods
+      .map((m) => "<option value=\"" + ctx.escapeHtml(m.code) + "\">" + ctx.escapeHtml(m.labelJa || m.code) + "</option>")
+      .join("");
+  const cashKeypadHtml = ctx.hooks.renderCashKeypad();
   const groupedLines = BillRegisterShared.groupedOrderLines(detail);
   const bcDisc = ctx.billCorrectionAllowed("discounts");
   const bcOl = ctx.billCorrectionAllowed("orderLines");
@@ -732,11 +735,16 @@ async function mountRegisterFlow(panel, ctx) {
     "<label>支払い方法</label><select id=\"payMethod\">" +
     methods +
     "</select>" +
-    "<div id=\"cashArea\" style=\"display:none\">" +
-    "<label>現金 受取額</label><input id=\"cashReceived\" type=\"text\" inputmode=\"numeric\" value=\"\" />" +
-    ctx.hooks.renderCashKeypad() +
-    "<p class=\"muted\" style=\"margin-top:0.45rem\">お釣り: <strong id=\"cashChange\">0円</strong></p>" +
-    "</div>" +
+    (ctx.opsTwoColumn
+      ? "<div id=\"cashArea\" class=\"ops-cash-summary\" style=\"display:none\">" +
+        "<p style=\"margin:0.2rem 0;font-size:0.82rem\">受取 <strong id=\"cashReceivedSummary\">—</strong></p>" +
+        "<p style=\"margin:0.15rem 0;font-size:0.95rem;font-weight:800\">お釣り <strong id=\"cashChangeSummary\">0円</strong></p>" +
+        "</div>"
+      : "<div id=\"cashArea\" style=\"display:none\">" +
+        "<label>現金 受取額</label><input id=\"cashReceived\" type=\"text\" inputmode=\"numeric\" value=\"\" />" +
+        cashKeypadHtml +
+        "<p class=\"muted\" style=\"margin-top:0.45rem\">お釣り: <strong id=\"cashChange\">0円</strong></p>" +
+        "</div>") +
     "<button type=\"button\" class=\"btn-primary\" id=\"btnConfirmPayment\" style=\"margin-top:0.65rem\"" +
     ((readOnly || !bcPay) ? " disabled title=\"店舗設定により入金の追加は無効です\"" : "") +
     ">確定</button>" +
@@ -746,12 +754,24 @@ async function mountRegisterFlow(panel, ctx) {
     panel.innerHTML =
       "<div class=\"ops-register-layout\">" +
       "<div class=\"ops-register-layout__left\">" +
-      "<div class=\"ops-register-layout__orders-scroll\">" +
+      "<div class=\"ops-register-layout__orders-scroll\" id=\"opsOrdersScroll\">" +
+      "<div id=\"opsCashKeypadPane\" class=\"ops-cash-keypad-pane\" hidden>" +
+      "<div class=\"ops-cash-keypad-pane__head\">" +
+      "<span class=\"ops-cash-keypad-pane__title\">現金</span>" +
+      "<span class=\"ops-cash-keypad-pane__bill\">請求 " +
+      BillRegisterShared.yen(detail.totalAmount) +
+      "</span></div>" +
+      "<label for=\"cashReceived\">受取額</label>" +
+      "<input id=\"cashReceived\" type=\"text\" inputmode=\"numeric\" class=\"ops-cash-received-input\" value=\"\" autocomplete=\"off\" />" +
+      "<p class=\"ops-cash-change-line\">お釣り <strong id=\"cashChange\">0円</strong></p>" +
+      cashKeypadHtml +
+      "</div>" +
+      "<div class=\"ops-orders-pane\">" +
       coursePacksHtml +
       "<h3 class=\"ops-sec-title\">コース・注文</h3>" +
       "<div class=\"card ops-order-card\"><table class=\"ops-order-table\">" +
       orderTableFallback +
-      "</table></div>" +
+      "</table></div></div>" +
       "</div>" +
       "<div class=\"ops-register-layout__admin\">" +
       leftAdminHtml +
@@ -794,15 +814,32 @@ async function mountRegisterFlow(panel, ctx) {
   const updateCash = () => {
     const received = Number((recvEl && recvEl.value) || 0);
     const change = received - remainder;
-    changeEl.textContent = BillRegisterShared.yen(change);
+    if (changeEl) changeEl.textContent = BillRegisterShared.yen(change);
+    const sumRecv = $("cashReceivedSummary");
+    const sumChg = $("cashChangeSummary");
+    if (sumRecv) sumRecv.textContent = received > 0 ? BillRegisterShared.yen(received) : "—";
+    if (sumChg) sumChg.textContent = BillRegisterShared.yen(change);
+  };
+  const syncCashPaymentUi = () => {
+    const isCash = methodEl && registerCodes.has(methodEl.value);
+    if (cashArea) cashArea.style.display = isCash ? "block" : "none";
+    const keypadPane = panel.querySelector("#opsCashKeypadPane");
+    const ordersPane = panel.querySelector(".ops-orders-pane");
+    const ordersScroll = panel.querySelector("#opsOrdersScroll");
+    if (keypadPane) keypadPane.hidden = !isCash;
+    if (ordersPane) ordersPane.hidden = !!isCash;
+    if (ordersScroll) ordersScroll.classList.toggle("ops-cash-mode", !!isCash);
+    if (isCash) {
+      if (typeof BillRegisterShared.bindCashKeypad === "function") {
+        BillRegisterShared.bindCashKeypad(panel);
+      } else if (ctx.hooks.bindCashKeypad) {
+        ctx.hooks.bindCashKeypad(panel);
+      }
+    }
   };
   if (methodEl && !readOnly) {
-    methodEl.onchange = () => {
-      const isCash = registerCodes.has(methodEl.value);
-      cashArea.style.display = isCash ? "block" : "none";
-      if (isCash) ctx.hooks.bindCashKeypad();
-    };
-    methodEl.dispatchEvent(new Event("change"));
+    methodEl.onchange = syncCashPaymentUi;
+    syncCashPaymentUi();
   }
   if (recvEl) recvEl.oninput = updateCash;
 
@@ -1087,6 +1124,10 @@ async function mountRegisterFlow(panel, ctx) {
       ctx.log("店舗設定により入金の追加は無効です");
       return;
     }
+    if (!methodEl || !methodEl.value) {
+      ctx.log("支払い方法を選択してください");
+      return;
+    }
     const isCash = registerCodes.has(methodEl.value);
     let note = null;
     let change = 0;
@@ -1172,13 +1213,13 @@ async function mountRegisterFlow(panel, ctx) {
 
   function renderCashKeypad() {
     return (
-      "<div id=\"cashKeypad\" style=\"display:grid;grid-template-columns:repeat(3,minmax(56px,1fr));gap:0.35rem;margin-top:0.5rem\">" +
+      "<div id=\"cashKeypad\" class=\"ops-cash-keypad\">" +
       ["1", "2", "3", "4", "5", "6", "7", "8", "9", "C", "0", "B"]
         .map(
           (k) =>
-            "<button type=\"button\" class=\"btn-ghost\" data-k=\"" +
+            "<button type=\"button\" class=\"btn-ghost ops-cash-key\" data-k=\"" +
             k +
-            "\" style=\"padding:0.55rem 0\">" +
+            "\">" +
             (k === "B" ? "←" : k) +
             "</button>"
         )
@@ -1194,9 +1235,10 @@ async function mountRegisterFlow(panel, ctx) {
     await ctx.hooks.loadAll();
   }
 
-  function bindCashKeypad() {
-    const box = document.getElementById("cashKeypad");
-    const input = document.getElementById("cashReceived");
+  function bindCashKeypad(root) {
+    const scope = root && root.querySelector ? root : document;
+    const box = scope.querySelector("#cashKeypad");
+    const input = scope.querySelector("#cashReceived");
     if (!box || !input) return;
     box.onclick = (ev) => {
       const t = ev.target;

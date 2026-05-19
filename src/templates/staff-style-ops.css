@@ -102,6 +102,101 @@ body.native-pos .page-title {
   margin-bottom: 0;
 }
 
+.ops-register-layout__orders-scroll.ops-cash-mode {
+  display: flex;
+  flex-direction: column;
+  padding: 0.35rem 0.5rem 0.5rem;
+}
+
+.ops-orders-pane[hidden] {
+  display: none !important;
+}
+
+.ops-cash-keypad-pane {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 0.35rem;
+}
+
+.ops-cash-keypad-pane[hidden] {
+  display: none !important;
+}
+
+.ops-cash-keypad-pane__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.ops-cash-keypad-pane__title {
+  font-size: 1.05rem;
+  font-weight: 900;
+  color: #0f172a;
+}
+
+.ops-cash-keypad-pane__bill {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: #0369a1;
+}
+
+.ops-cash-keypad-pane label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.ops-cash-received-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.55rem 0.65rem !important;
+  font-size: 1.35rem !important;
+  font-weight: 900;
+  text-align: right;
+  border: 2px solid #93c5fd;
+  border-radius: 10px;
+  margin: 0 !important;
+  flex-shrink: 0;
+}
+
+.ops-cash-change-line {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.ops-cash-keypad-pane .ops-cash-keypad {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.45rem;
+  align-content: stretch;
+  min-height: 12rem;
+  margin: 0.25rem 0 0;
+}
+
+.ops-cash-keypad-pane .ops-cash-key {
+  padding: 1.1rem 0.35rem !important;
+  font-size: 1.65rem !important;
+  font-weight: 900 !important;
+  min-height: 3.1rem;
+  border-radius: 10px;
+  border-color: #cbd5e1;
+}
+
+.ops-register-layout__register .ops-cash-summary {
+  padding: 0.35rem 0.45rem;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 8px;
+  margin-top: 0.25rem;
+}
+
 .ops-register-layout__admin {
   flex: 0 0 auto;
   flex-shrink: 0;

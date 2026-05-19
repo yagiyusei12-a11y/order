@@ -2065,14 +2065,17 @@ async function ensureBillForSession(session, table) {
 }
 
 function renderCashKeypad() {
+  if (typeof BillRegisterShared !== "undefined" && BillRegisterShared.renderCashKeypad) {
+    return BillRegisterShared.renderCashKeypad();
+  }
   return (
-    "<div id=\"cashKeypad\" style=\"display:grid;grid-template-columns:repeat(3,minmax(56px,1fr));gap:0.35rem;margin-top:0.5rem\">" +
+    "<div id=\"cashKeypad\" class=\"ops-cash-keypad\">" +
     ["1", "2", "3", "4", "5", "6", "7", "8", "9", "C", "0", "B"]
       .map(
         (k) =>
-          "<button type=\"button\" class=\"btn-ghost\" data-k=\"" +
+          "<button type=\"button\" class=\"btn-ghost ops-cash-key\" data-k=\"" +
           k +
-          "\" style=\"padding:0.55rem 0\">" +
+          "\">" +
           (k === "B" ? "←" : k) +
           "</button>"
       )
@@ -2081,9 +2084,14 @@ function renderCashKeypad() {
   );
 }
 
-function bindCashKeypad() {
-  const box = document.getElementById("cashKeypad");
-  const input = document.getElementById("cashReceived");
+function bindCashKeypad(root) {
+  if (typeof BillRegisterShared !== "undefined" && BillRegisterShared.bindCashKeypad) {
+    BillRegisterShared.bindCashKeypad(root);
+    return;
+  }
+  const scope = root && root.querySelector ? root : document;
+  const box = scope.querySelector("#cashKeypad");
+  const input = scope.querySelector("#cashReceived");
   if (!box || !input) return;
   box.onclick = (ev) => {
     const t = ev.target;

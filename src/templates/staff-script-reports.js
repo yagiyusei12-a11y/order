@@ -119,7 +119,7 @@ function renderRepMobileTotals(res) {
     "</span></div>" +
     "<div class=\"rep-m-total-item\"><span class=\"lab\">未精算金額</span><span class=\"val\">" +
     repYen(pending) +
-    "</span></motionless-div>" +
+    "</span></div>" +
     "<div class=\"rep-m-total-item\"><span class=\"lab\">合算金額</span><span class=\"val\">" +
     repYen(total) +
     "</span></div></div>";

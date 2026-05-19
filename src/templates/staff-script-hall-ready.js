@@ -10,6 +10,18 @@ let metaLoaded = false;
 let allCategories = [];
 let allStations = [];
 
+const HALL_READY_SOUND_URL = "/staff-assets/30_nekketsu_win.wav";
+/** 未提供の調理済み行が残っている間、3連再生の間隔（ms） */
+const HALL_CHIME_CYCLE_MS = 10000;
+/** @type {Set<string>} */
+const hallChimePendingIds = new Set();
+let hallChimeTimer = null;
+let hallChimePlaying = false;
+let hallChimeInitialized = false;
+let hallReadyAudio = null;
+let hallAudioUnlockDone = false;
+let hallAudioUnlockListenersInstalled = false;
+
 function log(t) {
   const el = document.getElementById("log");
   if (el) el.textContent = t || "";
@@ -114,6 +126,128 @@ function orderCreatedAtMs(ln) {
 
 function isHallPrepEarlyLine(ln) {
   return ln && ln.status !== "done" && ln.status !== "served";
+}
+
+/** キッチンで調理済（status=done）になった行のみ通知（ホール準備の調理前は除く） */
+function isHallReadyChimeLine(ln) {
+  return ln && ln.status === "done";
+}
+
+function hallLineKey(ln) {
+  return kitchenPatchLineId(ln) || String(ln.id || "");
+}
+
+function primeHallAudioFromUserGesture() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (Ctx) {
+      const ctx = new Ctx();
+      const resumeP = ctx.state === "suspended" ? ctx.resume() : Promise.resolve();
+      void Promise.resolve(resumeP).then(() => {
+        try {
+          const buf = ctx.createBuffer(1, 1, ctx.sampleRate);
+          const src = ctx.createBufferSource();
+          src.buffer = buf;
+          src.connect(ctx.destination);
+          src.start(0);
+          hallAudioUnlockDone = true;
+        } catch (_) {}
+      });
+    }
+    if (!hallReadyAudio) {
+      hallReadyAudio = new Audio(HALL_READY_SOUND_URL);
+      hallReadyAudio.preload = "auto";
+      hallReadyAudio.load();
+    }
+  } catch (_) {}
+}
+
+function installHallAudioUnlockListeners() {
+  if (hallAudioUnlockListenersInstalled) return;
+  hallAudioUnlockListenersInstalled = true;
+  const unlock = () => primeHallAudioFromUserGesture();
+  for (const ev of ["pointerdown", "touchstart", "touchend", "click", "keydown"]) {
+    document.addEventListener(ev, unlock, { capture: true, passive: true });
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") primeHallAudioFromUserGesture();
+  });
+  window.__primeStaffPageAudio = () => primeHallAudioFromUserGesture();
+}
+
+function sleepMs(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function playHallReadySoundOnce() {
+  try {
+    primeHallAudioFromUserGesture();
+    const base =
+      hallReadyAudio ||
+      (() => {
+        hallReadyAudio = new Audio(HALL_READY_SOUND_URL);
+        hallReadyAudio.preload = "auto";
+        return hallReadyAudio;
+      })();
+    const audio = !base.paused && base.currentTime > 0 ? new Audio(HALL_READY_SOUND_URL) : base;
+    audio.volume = 1;
+    audio.currentTime = 0;
+    await audio.play();
+  } catch (_) {}
+}
+
+/** 1サイクル: 効果音を3回 */
+async function playHallReadyChimeTriple() {
+  if (hallChimePlaying) return;
+  hallChimePlaying = true;
+  try {
+    for (let i = 0; i < 3; i++) {
+      if (hallChimePendingIds.size === 0) break;
+      await playHallReadySoundOnce();
+      if (i < 2 && hallChimePendingIds.size > 0) await sleepMs(280);
+    }
+  } finally {
+    hallChimePlaying = false;
+  }
+}
+
+function updateHallChimeAlarm() {
+  if (hallChimePendingIds.size === 0) {
+    if (hallChimeTimer) {
+      clearInterval(hallChimeTimer);
+      hallChimeTimer = null;
+    }
+    return;
+  }
+  if (hallChimeTimer) return;
+  void playHallReadyChimeTriple();
+  hallChimeTimer = setInterval(() => {
+    if (hallChimePendingIds.size === 0) {
+      clearInterval(hallChimeTimer);
+      hallChimeTimer = null;
+      return;
+    }
+    void playHallReadyChimeTriple();
+  }, HALL_CHIME_CYCLE_MS);
+}
+
+function syncHallChimePending(prevDone, nextDone) {
+  const prevEligible = prevDone.filter(isHallReadyChimeLine);
+  const nextEligible = nextDone.filter(isHallReadyChimeLine);
+  if (!hallChimeInitialized) {
+    hallChimeInitialized = true;
+    return;
+  }
+  const prevKeys = new Set(prevEligible.map(hallLineKey).filter(Boolean));
+  const nextKeys = new Set(nextEligible.map(hallLineKey).filter(Boolean));
+  for (const ln of nextEligible) {
+    const k = hallLineKey(ln);
+    if (k && !prevKeys.has(k)) hallChimePendingIds.add(k);
+  }
+  for (const id of [...hallChimePendingIds]) {
+    if (!nextKeys.has(id)) hallChimePendingIds.delete(id);
+  }
+  updateHallChimeAlarm();
 }
 
 function servedAtMs(ln) {
@@ -470,6 +604,7 @@ async function refreshHall() {
   const root = document.getElementById("hallReadyRoot");
   try {
     await ensureMeta();
+    const prevDone = lastDoneLines;
     const base = "/stores/" + encodeURIComponent(STORE) + "/kitchen/order-lines?lineStatus=";
     const [waitRes, servedRes] = await Promise.all([
       api(base + encodeURIComponent("hall_wait")),
@@ -477,6 +612,7 @@ async function refreshHall() {
     ]);
     lastDoneLines = waitRes.lines || [];
     lastServedLines = servedRes.lines || [];
+    syncHallChimePending(prevDone, lastDoneLines);
     renderHallList();
   } catch (e) {
     if (root) root.textContent = String(e.message || e);
@@ -561,6 +697,8 @@ if (hallTabServedEl) hallTabServedEl.onclick = () => setHallTab("served");
 try {
   if (sessionStorage.getItem(HALL_LIST_FS_KEY) === "1") applyHallListFullscreen(true);
 } catch (_) {}
+
+installHallAudioUnlockListeners();
 
 refreshHallIntervalFromServer()
   .then(() => {

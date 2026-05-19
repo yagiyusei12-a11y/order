@@ -984,6 +984,16 @@ function floorSessionTotal(session) {
 function sourceTableBadgeHtml(sourceTableId) {
   return BillRegisterShared.sourceTableBadgeHtml(sourceTableId, tablesCache, escapeHtml, displayTableCode);
 }
+/** 卓グリッド用: セッション開始からの経過（分のみ） */
+function formatSessionElapsedMinutes(openedAt) {
+  if (!openedAt) return "";
+  const t0 = new Date(openedAt).getTime();
+  if (!Number.isFinite(t0)) return "";
+  const mins = Math.floor((Date.now() - t0) / 60000);
+  if (mins < 0) return "";
+  return mins + "分";
+}
+
 function statusText(session) {
   if (session.status === "bashing_waiting") {
     const pc = session.table && session.table.publicCode;
@@ -996,7 +1006,8 @@ function statusText(session) {
     const lab = pt ? displayTableCode(pt.publicCode) || pt.name || "代表卓" : "代表卓";
     return "合算中（→ " + lab + "）";
   }
-  return "利用中";
+  const elapsed = formatSessionElapsedMinutes(session.openedAt);
+  return elapsed || "0分";
 }
 function tryOpenDrawer() {
   try {
@@ -2519,3 +2530,7 @@ if (btnOpenDrawerEl) btnOpenDrawerEl.onclick = () => tryOpenDrawer();
 window.__opsOpenBillDiscountModal = openBillDiscountModal;
 window.__opsOpenLineDiscountModal = openLineDiscountModal;
 loadAll().catch((e) => log(String(e.message || e)));
+
+setInterval(() => {
+  if (document.getElementById("tableGrid") && sessionsCache.length) renderGrid();
+}, 60000);

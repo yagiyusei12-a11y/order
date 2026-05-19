@@ -50,6 +50,7 @@ function isReportsMobileUi() {
 let repMobileDay = startOfTodayLocal();
 let repMobileRefreshTimer = null;
 let repMobileNavWired = false;
+const repMobileSessionsById = new Map();
 
 function repMobileSameCalendarDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -88,6 +89,135 @@ function repTableLabel(table) {
   } catch (_) {}
   const name = String(table.name || "").trim();
   return code || name || "—";
+}
+
+function setReportsMobileChrome(on) {
+  document.body.classList.toggle("staff-reports-mobile", !!on);
+}
+
+async function repMobEnsureBillId(session, table) {
+  if (session.bill && session.bill.id) return session.bill.id;
+  const label = repTableLabel(table);
+  const created = await api("/stores/" + encodeURIComponent(STORE) + "/bills", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      totalAmount: Number(session.currentTotal || 0),
+      sessionId: session.id,
+      label: label || "\u5353",
+    }),
+  });
+  return created.id;
+}
+
+function repMobRenderOrderLinesHtml(detail) {
+  const groups =
+    typeof BillRegisterShared !== "undefined" && BillRegisterShared.groupedOrderLines
+      ? BillRegisterShared.groupedOrderLines(detail)
+      : (detail.orderLines || [])
+          .filter((l) => l && l.status !== "cancelled")
+          .map((l) => ({
+            nameSnapshot: l.nameSnapshot,
+            qty: l.qty,
+            lineTotal: l.lineTotal,
+            eatMode: l.eatMode,
+          }));
+  let h = "";
+  if (detail.courseLine && detail.courseLine.name) {
+    h +=
+      '<div class="rep-m-order-line">' +
+      '<div class="nm">' +
+      escapeHtml(detail.courseLine.name) +
+      '<div class="sub">\u30b3\u30fc\u30b9</div></div>' +
+      "<span>" +
+      repYen(detail.courseLine.lineTotal) +
+      "</span></div>";
+  }
+  if (!groups.length && !h) {
+    return '<p class="muted" style="margin:0">\u6ce8\u6587\u306f\u307e\u3060\u3042\u308a\u307e\u305b\u3093\u3002</p>';
+  }
+  for (const g of groups) {
+    const sub =
+      String(g.eatMode || "") === "takeout"
+        ? "\u30c6\u30a4\u30af\u30a2\u30a6\u30c8"
+        : Number(g.qty || 0) > 1
+          ? "\u00d7" + g.qty
+          : "";
+    h +=
+      '<div class="rep-m-order-line">' +
+      '<div class="nm">' +
+      escapeHtml(g.nameSnapshot || "\u2014") +
+      (sub ? '<div class="sub">' + escapeHtml(sub) + "</div>" : "") +
+      "</div>" +
+      "<span>" +
+      repYen(g.lineTotal) +
+      "</span></div>";
+  }
+  return h;
+}
+
+async function openRepMobOrderDialog(session, table) {
+  const backdrop = document.createElement("div");
+  backdrop.className = "rep-m-order-backdrop";
+  backdrop.setAttribute("role", "dialog");
+  backdrop.setAttribute("aria-modal", "true");
+  backdrop.setAttribute("aria-label", "\u6ce8\u6587\u5185\u5bb9");
+  const panel = document.createElement("div");
+  panel.className = "rep-m-order-panel";
+  panel.innerHTML =
+    '<div class="rep-m-order-head">' +
+    "<div><strong>" +
+    escapeHtml(repTableLabel(table)) +
+    '</strong><div class="muted" style="font-size:0.78rem;margin-top:0.2rem">\u8aad\u307f\u8fbc\u307f\u4e2d\u2026</div></div>' +
+    '<button type="button" class="btn-ghost" id="repMobOrderClose" style="width:auto">\u9589\u3058\u308b</button>' +
+    "</div>" +
+    '<div id="repMobOrderBody"><span class="muted">\u8aad\u307f\u8fbc\u307f\u4e2d\u2026</span></div>';
+  const close = () => {
+    if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
+  };
+  panel.querySelector("#repMobOrderClose").onclick = close;
+  backdrop.addEventListener("click", (ev) => {
+    if (ev.target === backdrop) close();
+  });
+  backdrop.appendChild(panel);
+  document.body.appendChild(backdrop);
+  const bodyEl = panel.querySelector("#repMobOrderBody");
+  const subEl = panel.querySelector(".rep-m-order-head .muted");
+  try {
+    const billId = await repMobEnsureBillId(session, table);
+    const detail = await api(
+      "/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(billId)
+    );
+    const gc = Number(session.guestCount || 0);
+    const cc = Number(session.childCount || 0);
+    const ppl = cc > 0 ? gc + "\u540d\uff08\u5b50" + cc + "\uff09" : gc + "\u540d";
+    const mins = repSessionElapsedMinutes(session.openedAt) || "0\u5206";
+    if (subEl) subEl.textContent = mins + " \u00b7 " + ppl;
+    const total = Number((detail.preview && detail.preview.suggestedTotal) || detail.totalAmount || 0);
+    if (bodyEl) {
+      bodyEl.innerHTML =
+        repMobRenderOrderLinesHtml(detail) +
+        '<div class="rep-m-order-total"><span>\u5408\u8a08</span><span>' +
+        repYen(total) +
+        "</span></div>";
+    }
+  } catch (e) {
+    if (bodyEl) bodyEl.innerHTML = '<span class="muted">\u8aad\u307f\u8fbc\u307f\u306b\u5931\u6557\u3057\u307e\u3057\u305f\u3002</span>';
+    if (subEl) subEl.textContent = String(e.message || e);
+  }
+}
+
+function wireRepMobTableRows() {
+  const el = document.getElementById("repMobTables");
+  if (!el) return;
+  el.querySelectorAll("button[data-rep-session-id]").forEach((btn) => {
+    btn.onclick = () => {
+      const sid = btn.getAttribute("data-rep-session-id");
+      if (!sid) return;
+      const rec = repMobileSessionsById.get(sid);
+      if (rec) openRepMobOrderDialog(rec.session, rec.table).catch((err) => log(String(err.message || err)));
+    };
+  });
 }
 
 function updateRepMobileNavUi() {
@@ -151,19 +281,24 @@ async function loadRepMobileTables() {
     return String(a.id).localeCompare(String(b.id));
   });
   if (!openSessions.length) {
+    repMobileSessionsById.clear();
     el.innerHTML = "<span class=\"muted\">使用中の卓はありません。</span>";
     return;
   }
+  repMobileSessionsById.clear();
   let h = "";
   for (const s of openSessions) {
     const tbl = tableById.get(s.tableId) || s.table;
+    repMobileSessionsById.set(s.id, { session: s, table: tbl });
     const gc = Number(s.guestCount || 0);
     const cc = Number(s.childCount || 0);
     const ppl = cc > 0 ? gc + "名（子" + cc + "）" : gc + "名";
     const mins = repSessionElapsedMinutes(s.openedAt) || "0分";
     const amt = Number(s.currentTotal || 0);
     h +=
-      "<div class=\"rep-m-table-row\">" +
+      "<button type=\"button\" class=\"rep-m-table-row\" data-rep-session-id=\"" +
+      escapeHtml(s.id) +
+      "\">" +
       "<span class=\"rep-m-table-name\">" +
       escapeHtml(repTableLabel(tbl)) +
       "</span>" +
@@ -174,9 +309,10 @@ async function loadRepMobileTables() {
       escapeHtml(mins) +
       " · " +
       escapeHtml(ppl) +
-      "</span></div>";
+      "</span></button>";
   }
   el.innerHTML = h;
+  wireRepMobTableRows();
 }
 
 function scheduleRepMobileRefresh() {
@@ -228,11 +364,13 @@ function wireRepMobileNav() {
 
 function initReportsPage() {
   if (isReportsMobileUi()) {
+    setReportsMobileChrome(true);
     repMobileDay = startOfTodayLocal();
     wireRepMobileNav();
     loadRepMobile().catch((e) => log(String(e.message || e)));
     return;
   }
+  setReportsMobileChrome(false);
   if (repMobileRefreshTimer) {
     clearInterval(repMobileRefreshTimer);
     repMobileRefreshTimer = null;

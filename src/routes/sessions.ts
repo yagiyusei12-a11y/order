@@ -19,6 +19,7 @@ import {
   purchaseCourseOptionPackInTx,
 } from "../lib/course-option-pack.js";
 import { firstSalesOrderByTime } from "../lib/first-sales-order.js";
+import { voidOpenBillWhenSessionEndsWithoutSettle } from "../lib/void-open-bill-on-session-end.js";
 
 function normalizeUiCustomerLabel(
   takeoutName: string | null | undefined,
@@ -538,9 +539,12 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       });
       if (!session) return reply.code(404).send({ error: "session not found" });
       if (session.status === "closed") return reply.code(400).send({ error: "already closed" });
-      const updated = await prisma.diningSession.update({
-        where: { id: session.id },
-        data: { status: "closed", closedAt: new Date() },
+      const updated = await prisma.$transaction(async (tx) => {
+        await voidOpenBillWhenSessionEndsWithoutSettle(tx, session.storeId, session.id);
+        return tx.diningSession.update({
+          where: { id: session.id },
+          data: { status: "closed", closedAt: new Date() },
+        });
       });
       await syncReceptionShiftSeatsForTable(session.storeId, session.tableId).catch(() => {});
       return updated;
@@ -556,9 +560,12 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       if (!session) return reply.code(404).send({ error: "session not found" });
       if (session.status === "closed") return reply.code(400).send({ error: "already closed" });
       if (session.status === "bashing_waiting") return reply.code(400).send({ error: "already bashing_waiting" });
-      const updated = await prisma.diningSession.update({
-        where: { id: session.id },
-        data: { status: "bashing_waiting" },
+      const updated = await prisma.$transaction(async (tx) => {
+        await voidOpenBillWhenSessionEndsWithoutSettle(tx, session.storeId, session.id);
+        return tx.diningSession.update({
+          where: { id: session.id },
+          data: { status: "bashing_waiting" },
+        });
       });
       await syncReceptionShiftSeatsForTable(session.storeId, session.tableId).catch(() => {});
       return updated;

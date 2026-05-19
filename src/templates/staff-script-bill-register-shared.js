@@ -7,6 +7,20 @@
     return n.toLocaleString("ja-JP") + "円";
   }
 
+  function formatSessionElapsedLabel(openedAt) {
+    if (!openedAt) return "";
+    const t0 = new Date(openedAt).getTime();
+    if (!Number.isFinite(t0)) return "";
+    const mins = Math.floor((Date.now() - t0) / 60000);
+    if (mins < 0) return "";
+    if (mins < 1) return "開始直後";
+    if (mins < 60) return mins + "分経過";
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return h + "時間" + (m > 0 ? m + "分" : "") + "経過";
+  }
+
+
   function formatOpsDiscountLabel(d) {
     if (!d || typeof d !== "object") return "";
     const k = d.kind === "percent" ? "%" : "円";
@@ -632,6 +646,14 @@ async function mountRegisterFlow(panel, ctx) {
       const cc = Number(session.childCount || 0);
       if (cc > 0) return gc + "人（大人" + (gc - cc) + "・子" + cc + "）";
       return gc + "人";
+    })() +
+    (function () {
+      const el = formatSessionElapsedLabel(session.openedAt);
+      return el
+        ? "<span class=\"ops-register-elapsed\" style=\"font-size:0.85rem;font-weight:800;color:#0369a1\"> · " +
+            el +
+            "</span>"
+        : "";
     })() +
     "</span></div>" +
     "<div class=\"row\" style=\"margin:0.35rem 0 0.5rem;justify-content:flex-end;flex-wrap:wrap;gap:0.35rem\">" +

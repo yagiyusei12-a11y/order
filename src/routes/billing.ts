@@ -379,6 +379,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       where: {
         storeId: store.id,
         ...(status === "open" || status === "settled" || status === "void" ? { status } : {}),
+        ...(status === "open" ? { session: { status: "open" } } : {}),
         ...(dateWhere.settledAt || dateWhere.createdAt ? dateWhere : {}),
         ...(methodCode ? { payments: { some: { methodCode, voidedAt: null } } } : {}),
       },
@@ -623,6 +624,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       where: {
         storeId: store.id,
         status: "open",
+        session: { status: "open" },
         ...(pendingRange.gte || pendingRange.lt ? { createdAt: pendingRange } : {}),
       },
       select: { id: true, totalAmount: true, createdAt: true },
@@ -949,6 +951,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
             where: {
               storeId: store.id,
               status: statusRaw,
+              ...(statusRaw === "open" ? { session: { status: "open" } } : {}),
               ...(dateWhere.settledAt || dateWhere.createdAt ? dateWhere : {}),
               ...(methodCode ? { payments: { some: { methodCode, voidedAt: null } } } : {}),
             },
@@ -1096,6 +1099,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
             where: {
               storeId: store.id,
               status: statusRaw,
+              ...(statusRaw === "open" ? { session: { status: "open" } } : {}),
               ...(dateWhere.settledAt || dateWhere.createdAt ? dateWhere : {}),
               ...(methodCode ? { payments: { some: { methodCode, voidedAt: null } } } : {}),
             },

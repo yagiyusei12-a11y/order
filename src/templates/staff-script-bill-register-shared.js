@@ -1074,10 +1074,7 @@ async function mountRegisterFlow(panel, ctx) {
           { method: "PATCH" }
         );
         ctx.log("バッシング待ちにしました");
-        await ctx.hooks.loadAll();
-        ctx.hooks.setSelectedTableId(table.id);
-        ctx.hooks.renderGrid();
-        await ctx.hooks.renderDetail();
+        await opsReturnToTableList(ctx);
       } catch (e) {
         ctx.log(String(e.message || e));
       }
@@ -1131,12 +1128,8 @@ async function mountRegisterFlow(panel, ctx) {
         ctx.hooks.openOpsInvoicePrintModal(refreshed, change);
       };
       panel.querySelector("#btnFinishCashier").onclick = async () => {
-        // 会計完了時にサーバ側で自動でバッシング待ちへ遷移するため、ここでは画面更新のみ
         ctx.log("完了しました");
-        await ctx.hooks.loadAll();
-        ctx.hooks.setSelectedTableId(table.id);
-        ctx.hooks.renderGrid();
-        await ctx.hooks.renderDetail();
+        await opsReturnToTableList(ctx);
       };
     } catch (e) {
       ctx.log(String(e.message || e));
@@ -1192,6 +1185,13 @@ async function mountRegisterFlow(panel, ctx) {
         .join("") +
       "</div>"
     );
+  }
+
+  async function opsReturnToTableList(ctx) {
+    if (typeof ctx.hooks.backToTableList === "function") {
+      ctx.hooks.backToTableList();
+    }
+    await ctx.hooks.loadAll();
   }
 
   function bindCashKeypad() {

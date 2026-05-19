@@ -452,6 +452,7 @@ function buildOpsRegisterMountContext(session, table, detailPreloaded) {
     loadDetailIfMissing: null,
     hooks: {
       loadAll,
+      backToTableList: dismissOpsDetailModal,
       renderGrid,
       renderDetail,
       openMoveTableDialog,

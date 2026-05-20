@@ -1,11 +1,11 @@
-/** @typedef {{ id: string; name: string; sellKind?: string; isAvailable?: boolean; allowTakeout?: boolean; price?: number; stockQty?: number | null; optionLinks?: { optionGroupId: string }[]; setSteps?: { id: string; label: string; minPick: number; maxPick: number; choices: { componentMenuItemId: string; extraPrice: number; isFixed: boolean; componentMenuItem?: { id: string; name: string; stockQty?: number | null } }[] }[] }} HandyItem */
+/** @typedef {{ id: string; name: string; sellKind?: string; isAvailable?: boolean; allowTakeout?: boolean; price?: number; stockQty?: number | null; optionLinks?: { optionGroupId: string }[]; setSteps?: { id: string; label: string; minPick: number; maxPick: number; choices: { componentMenuItemId: string; extraPrice: number; isFixed: boolean; componentMenuItem?: { id: string; name: string; stockQty?: number | null; optionLinks?: { optionGroupId: string }[] } }[] }[] }} HandyItem */
 
 let sessionsCache = [];
 /** @type {{ categories: { id: string; name: string; items: HandyItem[] }[] }} */
 let menuCache = { categories: [] };
 /** @type {Map<string, { minSelect: number; active: boolean; items: { active: boolean }[] }>} */
 let optionGroupMap = new Map();
-/** @type {Map<string, { cartKey: string; id: string; name: string; qty: number; lineNote: string; optionSelections?: { optionGroupId: string; optionItemIds: string[] }[]; setSelections?: { stepId: string; menuItemIds: string[] }[]; optionLabel?: string; setLabel?: string }>} */
+/** @type {Map<string, { cartKey: string; id: string; name: string; qty: number; lineNote: string; optionSelections?: { optionGroupId: string; optionItemIds: string[] }[]; setSelections?: { stepId: string; menuItemIds: string[] }[]; setComponentOptionSelections?: { stepId: string; menuItemId: string; optionSelections: { optionGroupId: string; optionItemIds: string[] }[] }[]; optionLabel?: string; setLabel?: string }>} */
 let cart = new Map();
 
 /** @type {HandyItem | null} */
@@ -179,6 +179,13 @@ function itemSetSteps(it) {
         ch.componentMenuItem && ch.componentMenuItem.stockQty != null
           ? Number(ch.componentMenuItem.stockQty)
           : null,
+      optionGroups: ch.componentMenuItem
+        ? itemLinkedOptionGroups({
+            optionLinks: (ch.componentMenuItem.optionLinks || []).map((l) => ({
+              optionGroupId: l.optionGroupId,
+            })),
+          })
+        : [],
     })),
   }));
 }
@@ -262,18 +269,81 @@ function handySetSurchargeInclusive(item, setSelections) {
  * @param {HandyItem} item
  * @param {{ stepId: string; menuItemIds: string[] }[]} setSelections
  */
-function handySetLabel(item, setSelections) {
+function handySetLabel(item, setSelections, setComponentOptionSelections) {
   const parts = [];
+  const compOptMap = new Map();
+  for (const row of setComponentOptionSelections || []) {
+    compOptMap.set(row.stepId + "::" + row.menuItemId, row.optionSelections || []);
+  }
   for (const st of itemSetSteps(item)) {
     const sel = (setSelections || []).find((x) => x.stepId === st.id);
     const picked = new Set(sel ? sel.menuItemIds : []);
     const names = [];
     for (const ch of st.choices) {
-      if (ch.isFixed || picked.has(ch.menuItemId)) names.push(ch.name);
+      if (ch.isFixed || picked.has(ch.menuItemId)) {
+        let label = ch.name;
+        const optNames = handyOptionLabel(compOptMap.get(st.id + "::" + ch.menuItemId) || []);
+        if (optNames) label += "(" + optNames + ")";
+        names.push(label);
+      }
     }
     if (names.length) parts.push(names.join("・"));
   }
   return parts.join(" / ");
+}
+
+/**
+ * @param {ReturnType<typeof itemSetSteps>} steps
+ * @param {{ stepId: string; menuItemIds: string[] }[]} setSelections
+ * @param {{ stepId: string; menuItemId: string; optionSelections: { optionGroupId: string; optionItemIds: string[] }[] }[]} compSelections
+ */
+function handySetComponentOptionSurcharge(steps, setSelections, compSelections) {
+  let sum = 0;
+  const byStep = new Map();
+  for (const row of setSelections || []) byStep.set(row.stepId, row.menuItemIds || []);
+  const compMap = new Map();
+  for (const row of compSelections || []) {
+    compMap.set(row.stepId + "::" + row.menuItemId, row.optionSelections || []);
+  }
+  for (const st of steps) {
+    for (const mid of byStep.get(st.id) || []) {
+      const ch = st.choices.find((c) => c.menuItemId === mid);
+      if (!ch || !ch.optionGroups || !ch.optionGroups.length) continue;
+      for (const sel of compMap.get(st.id + "::" + mid) || []) {
+        const g = ch.optionGroups.find((x) => x.id === sel.optionGroupId);
+        if (!g) continue;
+        for (const oid of sel.optionItemIds || []) {
+          const it = g.items.find((x) => x.id === oid);
+          if (it) sum += Number(it.priceDelta) || 0;
+        }
+      }
+    }
+  }
+  return sum;
+}
+
+/**
+ * @param {ReturnType<typeof itemSetSteps>} steps
+ * @param {{ stepId: string; menuItemIds: string[] }[]} setSelections
+ * @param {{ stepId: string; menuItemId: string; optionSelections: { optionGroupId: string; optionItemIds: string[] }[] }[]} compSelections
+ */
+function validateHandySetComponentOptionSelections(steps, setSelections, compSelections) {
+  const byStep = new Map();
+  for (const row of setSelections || []) byStep.set(row.stepId, row.menuItemIds || []);
+  const incoming = new Map();
+  for (const row of compSelections || []) {
+    incoming.set(row.stepId + "::" + row.menuItemId, row.optionSelections || []);
+  }
+  for (const st of steps) {
+    for (const mid of byStep.get(st.id) || []) {
+      const ch = st.choices.find((c) => c.menuItemId === mid);
+      if (!ch || !ch.optionGroups || !ch.optionGroups.length) continue;
+      const sel = incoming.get(st.id + "::" + mid) || [];
+      const v = validateHandyOptionSelections(ch.optionGroups, sel);
+      if (!v.ok) return v;
+    }
+  }
+  return { ok: true };
 }
 
 /** @returns {{ id: string; name: string; minSelect: number; maxSelect: number; items: { id: string; name: string; priceDelta: number }[] }[]} */
@@ -341,14 +411,26 @@ function validateHandyOptionSelections(groups, selections) {
  * @param {string} menuItemId
  * @param {{ optionGroupId: string; optionItemIds: string[] }[]} optionSelections
  * @param {{ stepId: string; menuItemIds: string[] }[]} setSelections
+ * @param {{ stepId: string; menuItemId: string; optionSelections: { optionGroupId: string; optionItemIds: string[] }[] }[]} setComponentOptionSelections
  */
-function handyCartKey(menuItemId, optionSelections, setSelections) {
+function handyCartKey(menuItemId, optionSelections, setSelections, setComponentOptionSelections) {
   let key = menuItemId;
   if (setSelections && setSelections.length) {
     const parts = setSelections
       .map((s) => s.stepId + ":" + [...s.menuItemIds].sort().join(","))
       .sort();
     key += "::set:" + parts.join("|");
+  }
+  if (setComponentOptionSelections && setComponentOptionSelections.length) {
+    const parts = setComponentOptionSelections
+      .map((r) => {
+        const optParts = (r.optionSelections || [])
+          .map((s) => s.optionGroupId + ":" + [...(s.optionItemIds || [])].sort().join(","))
+          .sort();
+        return r.stepId + ":" + r.menuItemId + ":" + optParts.join(";");
+      })
+      .sort();
+    key += "::scopt:" + parts.join("|");
   }
   if (optionSelections && optionSelections.length) {
     const parts = optionSelections
@@ -377,12 +459,17 @@ function handyOptionLabel(selections) {
 
 /**
  * @param {HandyItem | undefined} meta
- * @param {{ optionSelections?: { optionGroupId: string; optionItemIds: string[] }[]; setSelections?: { stepId: string; menuItemIds: string[] }[] }} row
+ * @param {{ optionSelections?: { optionGroupId: string; optionItemIds: string[] }[]; setSelections?: { stepId: string; menuItemIds: string[] }[]; setComponentOptionSelections?: { stepId: string; menuItemId: string; optionSelections: { optionGroupId: string; optionItemIds: string[] }[] }[] }} row
  */
 function handyRowUnitPrice(meta, row) {
   let p = Number(meta && meta.price) || 0;
   if (meta && itemIsSet(meta)) {
-    return p + handySetSurchargeInclusive(meta, row && row.setSelections);
+    const steps = itemSetSteps(meta);
+    return (
+      p +
+      handySetSurchargeInclusive(meta, row && row.setSelections) +
+      handySetComponentOptionSurcharge(steps, row && row.setSelections, row && row.setComponentOptionSelections)
+    );
   }
   for (const sel of (row && row.optionSelections) || []) {
     const g = optionGroupMap.get(sel.optionGroupId);
@@ -399,8 +486,9 @@ function handyRowUnitPrice(meta, row) {
  * @param {HandyItem} it
  * @param {{ optionGroupId: string; optionItemIds: string[] }[]} optionSelections
  * @param {{ stepId: string; menuItemIds: string[] }[]} setSelections
+ * @param {{ stepId: string; menuItemId: string; optionSelections: { optionGroupId: string; optionItemIds: string[] }[] }[]} setComponentOptionSelections
  */
-function addHandyCartLine(it, optionSelections, setSelections) {
+function addHandyCartLine(it, optionSelections, setSelections, setComponentOptionSelections = []) {
   if (itemIsSet(it)) {
     const steps = itemSetSteps(it);
     const v = validateHandySetSelections(steps, setSelections);
@@ -408,8 +496,17 @@ function addHandyCartLine(it, optionSelections, setSelections) {
       log(v.error);
       return;
     }
-    const key = handyCartKey(it.id, [], setSelections);
-    const label = handySetLabel(it, setSelections);
+    const vComp = validateHandySetComponentOptionSelections(
+      steps,
+      setSelections,
+      setComponentOptionSelections,
+    );
+    if (!vComp.ok) {
+      log(vComp.error);
+      return;
+    }
+    const key = handyCartKey(it.id, [], setSelections, setComponentOptionSelections);
+    const label = handySetLabel(it, setSelections, setComponentOptionSelections);
     const cur = cart.get(key) || {
       cartKey: key,
       id: it.id,
@@ -417,6 +514,9 @@ function addHandyCartLine(it, optionSelections, setSelections) {
       qty: 0,
       lineNote: "",
       setSelections,
+      setComponentOptionSelections: setComponentOptionSelections.length
+        ? setComponentOptionSelections
+        : undefined,
       setLabel: label || undefined,
     };
     const stockV = handyCanAddCartRow(cur, 1);
@@ -472,14 +572,14 @@ function closeHandyPickModal() {
 function handyAddItem(it) {
   if (itemIsSet(it)) openHandySetModal(it);
   else if (itemHasSelectableOptions(it)) openHandyOptionModal(it);
-  else addHandyCartLine(it, [], []);
+  else addHandyCartLine(it, [], [], []);
 }
 
 /** @param {HandyItem} it */
 function openHandyOptionModal(it) {
   const groups = itemLinkedOptionGroups(it);
   if (!groups.length) {
-    addHandyCartLine(it, [], []);
+    addHandyCartLine(it, [], [], []);
     return;
   }
   handyOptPendingItem = it;
@@ -559,18 +659,94 @@ function collectHandySetModalSelections() {
     if (!sid) continue;
     const ids = [];
     for (const inp of block.querySelectorAll('input[type="checkbox"]:checked')) {
-      if (inp.value) ids.push(inp.value);
+      if (inp.value && !inp.dataset.compOpt) ids.push(inp.value);
     }
     out.push({ stepId: sid, menuItemIds: ids });
   }
   return out;
 }
 
+function collectHandySetComponentOptionSelections() {
+  /** @type {{ stepId: string; menuItemId: string; optionSelections: { optionGroupId: string; optionItemIds: string[] }[] }[]} */
+  const out = [];
+  const host = document.getElementById("handyOptChoices");
+  if (!host || !handyOptPendingItem) return out;
+  const steps = itemSetSteps(handyOptPendingItem);
+  const byStep = new Map();
+  for (const row of collectHandySetModalSelections()) byStep.set(row.stepId, row.menuItemIds || []);
+  for (const st of steps) {
+    const picked = byStep.get(st.id) || [];
+    for (const mid of picked) {
+      const ch = st.choices.find((c) => c.menuItemId === mid);
+      if (!ch || !ch.optionGroups || !ch.optionGroups.length) continue;
+      const optionSelections = [];
+      for (const g of ch.optionGroups) {
+        const useRadio = Number(g.maxSelect || 1) <= 1;
+        let ids = [];
+        if (useRadio) {
+          const r = host.querySelector(
+            'input[type="radio"][name="copt-' + st.id + "-" + mid + "-" + g.id + '"]:checked',
+          );
+          if (r && r.value) ids = [r.value];
+        } else {
+          ids = [
+            ...host.querySelectorAll(
+              'input[type="checkbox"][name="copt-' + st.id + "-" + mid + "-" + g.id + '"]:checked',
+            ),
+          ].map((x) => x.value);
+        }
+        optionSelections.push({ optionGroupId: g.id, optionItemIds: ids });
+      }
+      out.push({ stepId: st.id, menuItemId: mid, optionSelections });
+    }
+  }
+  return out;
+}
+
+/**
+ * @param {HTMLElement} parent
+ * @param {{ id: string }} st
+ * @param {{ menuItemId: string; name: string; optionGroups?: ReturnType<typeof itemLinkedOptionGroups> }} ch
+ */
+function appendHandySetChoiceOptions(parent, st, ch) {
+  const groups = ch.optionGroups || [];
+  if (!groups.length) return;
+  const wrap = document.createElement("div");
+  wrap.className = "handy-set-comp-opt";
+  for (const g of groups) {
+    const req = Number(g.minSelect || 0) > 0;
+    const title = document.createElement("p");
+    title.className = "handy-opt-group-hint";
+    title.textContent =
+      (req ? "(必須) " : "") + g.name + " · " + g.minSelect + "〜" + g.maxSelect + "個";
+    wrap.appendChild(title);
+    const multi = Number(g.maxSelect || 1) > 1;
+    for (const opt of g.items) {
+      const lbl = document.createElement("label");
+      lbl.className = "handy-opt-pick";
+      const inp = document.createElement("input");
+      inp.type = multi ? "checkbox" : "radio";
+      inp.name = "copt-" + st.id + "-" + ch.menuItemId + "-" + g.id;
+      inp.value = opt.id;
+      inp.dataset.compOpt = "1";
+      const delta = Number(opt.priceDelta) || 0;
+      lbl.appendChild(inp);
+      lbl.appendChild(
+        document.createTextNode(
+          opt.name + (delta > 0 ? " (+" + delta.toLocaleString("ja-JP") + "円)" : ""),
+        ),
+      );
+      wrap.appendChild(lbl);
+    }
+  }
+  parent.appendChild(wrap);
+}
+
 /** @param {HandyItem} it */
 function openHandySetModal(it) {
   const steps = itemSetSteps(it);
   if (!steps.length) {
-    addHandyCartLine(it, [], []);
+    addHandyCartLine(it, [], [], []);
     return;
   }
   handyOptPendingItem = it;
@@ -625,6 +801,7 @@ function openHandySetModal(it) {
         ),
       );
       block.appendChild(lbl);
+      appendHandySetChoiceOptions(block, st, ch);
     }
     host.appendChild(block);
   }
@@ -641,6 +818,7 @@ function confirmHandyPickModal() {
   if (handyPickKind === "set") {
     const steps = itemSetSteps(it);
     const selections = collectHandySetModalSelections();
+    const compOpts = collectHandySetComponentOptionSelections();
     const v = validateHandySetSelections(steps, selections);
     if (!v.ok) {
       if (err) {
@@ -649,7 +827,15 @@ function confirmHandyPickModal() {
       }
       return;
     }
-    addHandyCartLine(it, [], selections);
+    const vComp = validateHandySetComponentOptionSelections(steps, selections, compOpts);
+    if (!vComp.ok) {
+      if (err) {
+        err.textContent = vComp.error;
+        err.hidden = false;
+      }
+      return;
+    }
+    addHandyCartLine(it, [], selections, compOpts);
     closeHandyPickModal();
     return;
   }
@@ -663,7 +849,7 @@ function confirmHandyPickModal() {
     }
     return;
   }
-  addHandyCartLine(it, selections, []);
+  addHandyCartLine(it, selections, [], []);
   closeHandyPickModal();
 }
 
@@ -1263,6 +1449,12 @@ async function submitOrder() {
         const steps = itemSetSteps(meta);
         const vSet = validateHandySetSelections(steps, row.setSelections);
         if (!vSet.ok) return log(vSet.error);
+        const vComp = validateHandySetComponentOptionSelections(
+          steps,
+          row.setSelections,
+          row.setComponentOptionSelections || [],
+        );
+        if (!vComp.ok) return log(vComp.error);
       }
       if (eatMode === "takeout" && meta && meta.allowTakeout !== true) {
         return log("テイクアウトにできない商品がカートに含まれています（提供区分を店内にするか、カートを調整）");
@@ -1275,6 +1467,9 @@ async function submitOrder() {
       };
       if (row.setSelections && row.setSelections.length) {
         line.setSelections = row.setSelections;
+      }
+      if (row.setComponentOptionSelections && row.setComponentOptionSelections.length) {
+        line.setComponentOptionSelections = row.setComponentOptionSelections;
       }
       if (row.optionSelections && row.optionSelections.length) {
         line.optionSelections = row.optionSelections;

@@ -37,7 +37,7 @@ function parsePurchasedCourseOptionPackIds(raw: unknown): string[] {
 
 /**
  * 口頭・電話などスタッフが代行する注文。ゲスト向け表示制限（visibleToGuest / 時間帯）を通さない。
- * オプション付き単品は optionSelections、セットは setSelections で受け付ける。
+ * オプション付き単品は optionSelections、セットは setSelections と setComponentOptionSelections で受け付ける。
  */
 export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<void> {
   app.post<{
@@ -50,6 +50,11 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
         eatMode?: unknown;
         optionSelections?: GuestOptionGroupSelection[];
         setSelections?: GuestSetStepSelection[];
+        setComponentOptionSelections?: {
+          stepId: string;
+          menuItemId: string;
+          optionSelections?: GuestOptionGroupSelection[];
+        }[];
       }[];
       note?: string;
     };
@@ -209,7 +214,21 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
                   choices: {
                     orderBy: { sortOrder: "asc" },
                     include: {
-                      componentMenuItem: { select: { id: true, name: true, stockQty: true } },
+                      componentMenuItem: {
+                        select: {
+                          id: true,
+                          name: true,
+                          stockQty: true,
+                          optionLinks: {
+                            orderBy: { sortOrder: "asc" },
+                            include: {
+                              optionGroup: {
+                                include: { items: { where: { active: true } } },
+                              },
+                            },
+                          },
+                        },
+                      },
                     },
                   },
                 },
@@ -251,6 +270,33 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
             if (!vSet.ok) throw new Error("BAD_SET");
             const byStep = vSet.byStep;
 
+            const setComponentOptionSelectionsRaw = (l as { setComponentOptionSelections?: unknown })
+              .setComponentOptionSelections;
+            const setCompOptRows: Array<{
+              stepId: string;
+              menuItemId: string;
+              optionSelections: unknown;
+            }> = [];
+            if (Array.isArray(setComponentOptionSelectionsRaw)) {
+              for (const row of setComponentOptionSelectionsRaw) {
+                if (!row || typeof row !== "object") continue;
+                const stepId =
+                  typeof (row as { stepId?: unknown }).stepId === "string"
+                    ? (row as { stepId: string }).stepId.trim()
+                    : "";
+                const menuItemId =
+                  typeof (row as { menuItemId?: unknown }).menuItemId === "string"
+                    ? (row as { menuItemId: string }).menuItemId.trim()
+                    : "";
+                if (!stepId || !menuItemId) continue;
+                setCompOptRows.push({
+                  stepId,
+                  menuItemId,
+                  optionSelections: (row as { optionSelections?: unknown }).optionSelections,
+                });
+              }
+            }
+
             const priceTaxMode = item.priceTaxMode === "exclusive" ? "exclusive" : st.menuPriceTaxMode;
             const baseNet = baseNetFromStoredPrice(item.price, priceTaxMode, st.taxRatePercent);
             const baseTaxIncluded = taxIncludedFromNet(baseNet, lineTaxPct);
@@ -260,6 +306,47 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
               const def = stepsVal.find((x) => x.id === stp.id);
               if (def) surcharge += surchargeExclusiveStepSumInclusive(def, picked, lineTaxPct);
             }
+
+            const compOptLineExtraByKey = new Map<string, Record<string, unknown>>();
+            for (const row of setCompOptRows) {
+              const stepRow = item.setSteps.find((s) => s.id === row.stepId);
+              if (!stepRow) throw new Error("BAD_SET_COMP_OPT");
+              const pickedIds = byStep.get(row.stepId) ?? [];
+              const fixedIds = stepRow.choices
+                .filter((c) => c.isFixed === true)
+                .map((c) => c.componentMenuItemId);
+              const allowedPicked = new Set([...fixedIds, ...pickedIds]);
+              if (!allowedPicked.has(row.menuItemId)) throw new Error("BAD_SET_COMP_OPT");
+              const ch = stepRow.choices.find((c) => c.componentMenuItemId === row.menuItemId);
+              if (!ch) throw new Error("BAD_SET_COMP_OPT");
+              const comp = ch.componentMenuItem;
+              const linkedGroupsRaw = (comp.optionLinks || [])
+                .map((ol) => ol.optionGroup)
+                .filter((g): g is NonNullable<typeof g> => Boolean(g && g.active))
+                .map((g) => ({
+                  id: g.id,
+                  name: g.name,
+                  minSelect: g.minSelect,
+                  maxSelect: g.maxSelect,
+                  items: g.items.filter((i) => i.active).map((i) => ({ id: i.id, name: i.name, priceDelta: i.priceDelta })),
+                }))
+                .filter((g) => g.items.length > 0);
+              const linkedGroups = linkedGroupsRaw.map((g) => ({
+                ...g,
+                items: g.items.map((it0) => ({
+                  ...it0,
+                  priceDelta: retaxInclusiveYen(it0.priceDelta, st.taxRatePercent, lineTaxPct),
+                })),
+              }));
+              const vOpt = validateGuestOptionSelections(linkedGroups, row.optionSelections);
+              if (!vOpt.ok) throw new Error("BAD_SET_COMP_OPT");
+              surcharge += sumInclusiveOptionPriceDelta(linkedGroups, vOpt.byGroup);
+              const extra = buildSingleOptionsLineExtra(linkedGroups, vOpt.byGroup);
+              if (Array.isArray(extra.options) && extra.options.length) {
+                compOptLineExtraByKey.set(`${row.stepId}::${row.menuItemId}`, extra);
+              }
+            }
+
             const discRows = item.timeDiscounts.map((d) => ({
               discountKind: d.discountKind,
               value: d.value,
@@ -276,6 +363,30 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
             }
             const stepsLite = item.setSteps.map((s) => ({ id: s.id, label: s.label }));
             const lineExtraObj = buildSetLineExtra(stepsLite, byStep, nameById, stepsVal, lineTaxPct);
+            try {
+              const stepsAny = (lineExtraObj as { steps?: unknown }).steps;
+              if (Array.isArray(stepsAny) && compOptLineExtraByKey.size > 0) {
+                for (const stEx of stepsAny) {
+                  if (!stEx || typeof stEx !== "object") continue;
+                  const stepId =
+                    typeof (stEx as { stepId?: unknown }).stepId === "string"
+                      ? (stEx as { stepId: string }).stepId
+                      : "";
+                  const picksAny = (stEx as { picks?: unknown }).picks;
+                  if (!stepId || !Array.isArray(picksAny)) continue;
+                  for (const p of picksAny) {
+                    if (!p || typeof p !== "object") continue;
+                    const mid =
+                      typeof (p as { menuItemId?: unknown }).menuItemId === "string"
+                        ? (p as { menuItemId: string }).menuItemId
+                        : "";
+                    if (!mid) continue;
+                    const extra = compOptLineExtraByKey.get(`${stepId}::${mid}`);
+                    if (extra) (p as Record<string, unknown>).optionExtra = extra;
+                  }
+                }
+              }
+            } catch (_) {}
             const nameSnapshot = buildSetNameSnapshot(item.name, lineExtraObj);
 
             if (item.stockQty != null && item.stockQty <= 0) throw new Error("BAD_STOCK");
@@ -484,6 +595,11 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
       }
       if (msg === "BAD_SET") {
         return reply.code(400).send({ error: "セットの選択が不正です（各ステップの選択数を確認してください）" });
+      }
+      if (msg === "BAD_SET_COMP_OPT") {
+        return reply
+          .code(400)
+          .send({ error: "セット構成のオプション選択が不正です（必須・最大数を確認してください）" });
       }
       if (msg === "BAD_TAKEOUT") {
         return reply.code(400).send({ error: "テイクアウトにできない商品が含まれています（商品マスタのテイクアウト可を確認）" });

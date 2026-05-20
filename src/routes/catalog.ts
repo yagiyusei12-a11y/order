@@ -678,6 +678,10 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
                         price: true,
                         priceTaxMode: true,
                         stockQty: true,
+                        optionLinks: {
+                          orderBy: { sortOrder: "asc" },
+                          select: { optionGroupId: true, sortOrder: true },
+                        },
                       },
                     },
                   },

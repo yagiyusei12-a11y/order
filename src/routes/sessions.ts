@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { computeCourseSessionTotal } from "../lib/course-pricing.js";
+import { liveSessionSuggestedTotal } from "../lib/session-live-total.js";
 import { computeSessionSuggestedTotal, parseBillDiscount } from "../lib/ops-discount.js";
 import { openSessionForTable } from "../lib/open-table-session.js";
 import { syncReceptionShiftSeatsForTable } from "../lib/reception-seat-state.js";
@@ -197,19 +198,13 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
     return {
       storeId: store.id,
       sessions: sessions.map((s) => {
-        const courseTotal =
-          s.courseId && s.coursePriceTier
-            ? computeCourseSessionTotal(s.coursePriceTier, s.courseId, s.guestCount, s.childCount)
-            : 0;
-        const billDisc = parseBillDiscount(s.bill?.discountJson);
-        const suggested = computeSessionSuggestedTotal(courseTotal, s.orders, billDisc).suggestedTotal;
         const fo = firstSalesOrderByTime(s.orders);
         const tno = fo ? takeoutBySalesOrderId.get(fo.id) : undefined;
         const uiCustomerLabel = normalizeUiCustomerLabel(tno?.customerName, s.customer?.name ?? null);
         const uiOrderedAt = (fo?.createdAt ?? s.openedAt).toISOString();
         return {
           ...s,
-          currentTotal: suggested,
+          currentTotal: liveSessionSuggestedTotal(s),
           uiCustomerLabel,
           uiOrderedAt,
           orders: undefined,

@@ -27,6 +27,7 @@ import { orderLineNetAfterLineDiscount, sumOrderLineNetsByTaxRate } from "../lib
 import { syncReceptionShiftSeatsForTable } from "../lib/reception-seat-state.js";
 import { applyPostSettleSessionStatusInTx } from "../lib/post-settle-session.js";
 import { broadcastOpsSessionUpdatedMany } from "../lib/ops-seat-socket.js";
+import { liveSessionSuggestedTotal } from "../lib/session-live-total.js";
 
 type SessionForPreview = {
   guestCount: number;
@@ -620,11 +621,11 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       if (batch.length < 100) break;
     }
 
-    // 未精算: open 伝票でセッションがまだ終了していない（open / 合算子 merged）。
-    // 期間指定時は createdAt ではなく「その日までに開始し、まだ close していない」滞在を含める。
+    // 未精算: 利用中（open）セッションの会計前合計。伝票 totalAmount は注文直後に未同期のことがあるため live 計算する。
     const pendingRange = settledAtRange;
     const pendingSessionWhere: Prisma.DiningSessionWhereInput = {
-      status: { in: ["open", "merged"] },
+      storeId: store.id,
+      status: "open",
     };
     if (pendingRange.gte || pendingRange.lt) {
       pendingSessionWhere.AND = [
@@ -634,15 +635,25 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
         },
       ];
     }
-    const pendingBills = await prisma.bill.findMany({
-      where: {
-        storeId: store.id,
-        status: "open",
-        session: pendingSessionWhere,
+    const pendingSessions = await prisma.diningSession.findMany({
+      where: pendingSessionWhere,
+      include: {
+        coursePriceTier: true,
+        bill: { select: { status: true, discountJson: true } },
+        orders: {
+          include: {
+            lines: {
+              select: { unitPrice: true, qty: true, status: true, discountJson: true },
+            },
+          },
+        },
       },
-      select: { id: true, totalAmount: true, createdAt: true },
     });
-    const pendingTotal = pendingBills.reduce((s, b) => s + b.totalAmount, 0);
+    let pendingTotal = 0;
+    for (const s of pendingSessions) {
+      pendingTotal += liveSessionSuggestedTotal(s);
+    }
+    const pendingCount = pendingSessions.length;
 
     return {
       storeId: store.id,
@@ -653,7 +664,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
         totalAmount: confirmedTotal,
         lineSalesByTaxRate: { tax8: lineTax8, tax10: lineTax10, other: lineTaxOther },
       },
-      pending: { count: pendingBills.length, totalAmount: pendingTotal },
+      pending: { count: pendingCount, totalAmount: pendingTotal },
     };
   });
 

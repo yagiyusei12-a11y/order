@@ -102,6 +102,63 @@ const header = `/** Auto-built from staff-script-ops.js renderRegisterFlow — d
     return n.toLocaleString("ja-JP") + "円";
   }
 
+  function formatSessionElapsedLabel(openedAt) {
+    if (!openedAt) return "";
+    const t0 = new Date(openedAt).getTime();
+    if (!Number.isFinite(t0)) return "";
+    const mins = Math.floor((Date.now() - t0) / 60000);
+    if (mins < 0) return "";
+    if (mins < 1) return "開始直後";
+    if (mins < 60) return mins + "分経過";
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return h + "時間" + (m > 0 ? m + "分" : "") + "経過";
+  }
+
+  function courseLastOrderDeadlineMs(session, storeSettings) {
+    if (!session || !session.courseId) return null;
+    const tier = session.coursePriceTier;
+    const dm = tier && Number(tier.durationMinutes);
+    if (!Number.isFinite(dm) || dm <= 0) return null;
+    const openedAt = session.openedAt;
+    if (!openedAt) return null;
+    const t0 = new Date(openedAt).getTime();
+    if (!Number.isFinite(t0)) return null;
+    const offsetRaw = Number(storeSettings && storeSettings.guestCourseLastOrderMinutesBeforeEnd);
+    const offset = Math.min(Math.max(0, Number.isFinite(offsetRaw) ? offsetRaw : 30), dm);
+    return t0 + (dm - offset) * 60 * 1000;
+  }
+
+  function courseLastOrderSecondsRemaining(session, storeSettings) {
+    const deadlineMs = courseLastOrderDeadlineMs(session, storeSettings);
+    if (deadlineMs == null) return null;
+    return Math.floor((deadlineMs - Date.now()) / 1000);
+  }
+
+  function formatSessionTimeLabel(session, storeSettings) {
+    const left = courseLastOrderSecondsRemaining(session, storeSettings);
+    if (left != null) {
+      if (left <= 0) return "ラストオーダー終了";
+      return "コース残" + Math.ceil(left / 60) + "分";
+    }
+    return formatSessionElapsedLabel(session && session.openedAt);
+  }
+
+  function formatSessionTimeLabelShort(session, storeSettings) {
+    const left = courseLastOrderSecondsRemaining(session, storeSettings);
+    if (left != null) {
+      if (left <= 0) return "LO終了";
+      return "コース残" + Math.ceil(left / 60) + "分";
+    }
+    const openedAt = session && session.openedAt;
+    if (!openedAt) return "";
+    const t0 = new Date(openedAt).getTime();
+    if (!Number.isFinite(t0)) return "";
+    const mins = Math.floor((Date.now() - t0) / 60000);
+    if (mins < 0) return "";
+    return mins + "分";
+  }
+
   function formatOpsDiscountLabel(d) {
     if (!d || typeof d !== "object") return "";
     const k = d.kind === "percent" ? "%" : "円";
@@ -336,6 +393,9 @@ const header = `/** Auto-built from staff-script-ops.js renderRegisterFlow — d
 const footer = `
   g.BillRegisterShared = {
     yen,
+    formatSessionElapsedLabel,
+    formatSessionTimeLabel,
+    formatSessionTimeLabelShort,
     formatOpsDiscountLabel,
     taxBreakdownFromLines,
     linesForTaxBreakdown,

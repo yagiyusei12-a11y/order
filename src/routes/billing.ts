@@ -1531,8 +1531,6 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
   }>("/stores/:storeId/bills/:billId/custom-lines", async (req, reply) => {
     const st = await mergedSettingsForStore(req.params.storeId);
     if (!st) return reply.code(404).send({ error: "store not found" });
-    if (forbidBillCorrection(reply, st, "orderLines", "店舗設定により明細の追加は無効です")) return;
-
     const bill = await prisma.bill.findFirst({
       where: { id: req.params.billId, storeId: req.params.storeId },
       include: { session: true },

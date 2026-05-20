@@ -633,7 +633,7 @@ async function mountRegisterFlow(panel, ctx) {
 
   const coursePacksHtml = buildOpsCourseOptionPacksSection(ctx, session, readOnly);
   const OPS_OVERLAY_Z = "13000";
-  const customLineFormHtml = !readOnly && bcOl
+  const customLineFormHtml = !readOnly
     ? "<div class=\"ops-custom-line-form card\" style=\"padding:0.5rem 0.65rem;margin:0 0 0.5rem;border:1px solid #e2e8f0\">" +
       "<p class=\"muted\" style=\"font-size:0.68rem;margin:0 0 0.4rem;line-height:1.35\">商品名と税込単価で自由明細を追加（メニュー未登録）</p>" +
       "<div class=\"row\" style=\"gap:0.4rem;flex-wrap:wrap;align-items:flex-end;margin:0\">" +
@@ -784,6 +784,7 @@ async function mountRegisterFlow(panel, ctx) {
       cashKeypadHtml +
       "</div>" +
       "<div class=\"ops-orders-pane\">" +
+      customLineFormHtml +
       coursePacksHtml +
       "<h3 class=\"ops-sec-title\">コース・注文</h3>" +
       "<div class=\"card ops-order-card\"><table class=\"ops-order-table\">" +
@@ -843,9 +844,13 @@ async function mountRegisterFlow(panel, ctx) {
     const keypadPane = panel.querySelector("#opsCashKeypadPane");
     const ordersPane = panel.querySelector(".ops-orders-pane");
     const ordersScroll = panel.querySelector("#opsOrdersScroll");
+    const adminPane = panel.querySelector(".ops-register-layout__admin");
+    const leftCol = panel.querySelector(".ops-register-layout__left");
     if (keypadPane) keypadPane.hidden = !isCash;
     if (ordersPane) ordersPane.hidden = !!isCash;
     if (ordersScroll) ordersScroll.classList.toggle("ops-cash-mode", !!isCash);
+    if (adminPane) adminPane.hidden = !!isCash;
+    if (leftCol) leftCol.classList.toggle("ops-cash-mode-active", !!isCash);
     if (isCash) {
       if (typeof BillRegisterShared.bindCashKeypad === "function") {
         BillRegisterShared.bindCashKeypad(panel);
@@ -981,7 +986,7 @@ async function mountRegisterFlow(panel, ctx) {
   }
 
   const btnOpsCustomLineAdd = $("btnOpsCustomLineAdd");
-  if (btnOpsCustomLineAdd && bcOl) {
+  if (btnOpsCustomLineAdd) {
     btnOpsCustomLineAdd.onclick = async () => {
       const nameEl = $("opsCustomLineName");
       const priceEl = $("opsCustomLinePrice");

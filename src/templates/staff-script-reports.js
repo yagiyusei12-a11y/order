@@ -61,9 +61,11 @@ function repMobileIsToday() {
 }
 
 function repMobileDayQuery() {
-  const from = new Date(repMobileDay.getFullYear(), repMobileDay.getMonth(), repMobileDay.getDate(), 0, 0, 0, 0);
-  const to = new Date(repMobileDay.getFullYear(), repMobileDay.getMonth(), repMobileDay.getDate(), 23, 59, 59, 999);
-  return "from=" + encodeURIComponent(from.toISOString()) + "&to=" + encodeURIComponent(to.toISOString());
+  const y = repMobileDay.getFullYear();
+  const m = pad2(repMobileDay.getMonth() + 1);
+  const day = pad2(repMobileDay.getDate());
+  const ymd = y + "-" + m + "-" + day;
+  return "from=" + encodeURIComponent(ymd) + "&to=" + encodeURIComponent(ymd);
 }
 
 function repYen(n) {

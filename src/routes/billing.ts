@@ -25,6 +25,8 @@ import { isTakeoutTablePublicCode } from "../lib/takeout-table-code.js";
 import { firstSalesOrderByTime } from "../lib/first-sales-order.js";
 import { orderLineNetAfterLineDiscount, sumOrderLineNetsByTaxRate } from "../lib/report-line-tax.js";
 import { syncReceptionShiftSeatsForTable } from "../lib/reception-seat-state.js";
+import { applyPostSettleSessionStatusInTx } from "../lib/post-settle-session.js";
+import { broadcastOpsSessionUpdatedMany } from "../lib/ops-seat-socket.js";
 
 type SessionForPreview = {
   guestCount: number;
@@ -618,14 +620,25 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       if (batch.length < 100) break;
     }
 
-    // 未精算は参考値（createdAt基準で同じ期間に作られたものを pending として表示）
+    // 未精算: open 伝票でセッションがまだ終了していない（open / 合算子 merged）。
+    // 期間指定時は createdAt ではなく「その日までに開始し、まだ close していない」滞在を含める。
     const pendingRange = settledAtRange;
+    const pendingSessionWhere: Prisma.DiningSessionWhereInput = {
+      status: { in: ["open", "merged"] },
+    };
+    if (pendingRange.gte || pendingRange.lt) {
+      pendingSessionWhere.AND = [
+        ...(pendingRange.lt ? [{ openedAt: { lt: pendingRange.lt } }] : []),
+        {
+          OR: [{ closedAt: null }, ...(pendingRange.gte ? [{ closedAt: { gte: pendingRange.gte } }] : [])],
+        },
+      ];
+    }
     const pendingBills = await prisma.bill.findMany({
       where: {
         storeId: store.id,
         status: "open",
-        session: { status: "open" },
-        ...(pendingRange.gte || pendingRange.lt ? { createdAt: pendingRange } : {}),
+        session: pendingSessionWhere,
       },
       select: { id: true, totalAmount: true, createdAt: true },
     });
@@ -1752,26 +1765,14 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
         where: { id: bill.id },
         data: { status, settledAt },
       });
+      let postSettleTableIds: string[] = [];
+      let postSettleSessionIds: string[] = [];
       if (status === "settled" && bill.sessionId) {
-        const sess = await tx.diningSession.findFirst({
-          where: { id: bill.sessionId, storeId: bill.storeId, status: "open" },
-          include: { table: { select: { publicCode: true } } },
-        });
-        if (sess?.table && isTakeoutTablePublicCode(sess.table.publicCode, bill.storeId)) {
-          // テイクアウト卓は卓片付け（バッシング）対象外 → セッションを終了のみ
-          await tx.diningSession.update({
-            where: { id: sess.id },
-            data: { status: "closed", closedAt: new Date() },
-          });
-        } else if (sess) {
-          // 店内卓: 会計完了後は自動でバッシング待ちへ（レジの「完了」押し忘れ防止）
-          await tx.diningSession.updateMany({
-            where: { id: bill.sessionId, storeId: bill.storeId, status: "open" },
-            data: { status: "bashing_waiting" },
-          });
-        }
+        const out = await applyPostSettleSessionStatusInTx(tx, bill.storeId, bill.sessionId);
+        postSettleTableIds = out.tableIds;
+        postSettleSessionIds = out.sessionIds;
       }
-      return payments;
+      return { payments, postSettleTableIds, postSettleSessionIds };
     }).catch((e: Error) => {
       if (e.message === "OVERPAY") return null;
       throw e;
@@ -1783,15 +1784,19 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       where: { id: bill.id },
       include: { payments: true },
     });
-    if (updated?.status === "settled" && updated.sessionId) {
-      const sess = await prisma.diningSession.findFirst({
-        where: { id: updated.sessionId, storeId: bill.storeId },
-        select: { tableId: true },
-      });
-      if (sess) await syncReceptionShiftSeatsForTable(bill.storeId, sess.tableId).catch(() => {});
+    const tableIdsToSync = [...new Set(created.postSettleTableIds || [])];
+    for (const tableId of tableIdsToSync) {
+      await syncReceptionShiftSeatsForTable(bill.storeId, tableId).catch(() => {});
+    }
+    const sessionIdsToNotify = (created.postSettleSessionIds || []).filter(Boolean);
+    if (sessionIdsToNotify.length) {
+      broadcastOpsSessionUpdatedMany(bill.storeId, sessionIdsToNotify);
     }
     const paidTotal = updated!.payments.reduce((s, p) => s + (p.voidedAt ? 0 : p.amount), 0);
-    return { payments: created, bill: { ...updated, paidTotal, remainder: updated!.totalAmount - paidTotal } };
+    return {
+      payments: created.payments,
+      bill: { ...updated, paidTotal, remainder: updated!.totalAmount - paidTotal },
+    };
   });
 
   /**

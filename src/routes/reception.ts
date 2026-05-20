@@ -34,6 +34,7 @@ import {
   clearLegacyStaffCountBlocks,
   computeDefaultSeatsForShift,
   mergeShiftSeatsWithLiveDerived,
+  closeTableSessionsForReceptionMapClear,
   syncReceptionShiftSeatsForTable,
   type ReceptionSeatStatus,
 } from "../lib/reception-seat-state.js";
@@ -559,14 +560,9 @@ async function syncSeatToSessions(storeId: string, seatId: string, next: SeatSta
     return;
   }
   if (next === "empty" || next === "vacant") {
-    if (open) {
-      await prisma.diningSession.update({ where: { id: open.id }, data: { status: "closed", closedAt: new Date() } });
-    }
-    if (bash) {
-      await prisma.diningSession.update({ where: { id: bash.id }, data: { status: "closed", closedAt: new Date() } });
-    }
+    await closeTableSessionsForReceptionMapClear(storeId, seatId);
+    return;
   }
-  await syncReceptionShiftSeatsForTable(storeId, table.id).catch(() => {});
 }
 
 export async function registerReception(app: FastifyInstance): Promise<void> {
@@ -885,6 +881,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
               });
             }
             if (prev === "cleaning" && (next === "empty" || next === "vacant")) {
+              await closeTableSessionsForReceptionMapClear(store.id, id);
               const hasFuture = await seatHasFutureReservation(store.id, id, stSetEv.timezone);
               r.status = hasFuture ? "reserved" : "empty";
             }

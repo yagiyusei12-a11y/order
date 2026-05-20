@@ -3,7 +3,8 @@ import { prisma } from "../db.js";
 import { shiftFromTimeHHMM } from "./net-reserve-slots.js";
 import { mergeStoreSettings } from "./store-settings.js";
 import { storeNowWallClock } from "./store-wall-time.js";
-import { broadcastReceptionUpdated } from "./ops-seat-socket.js";
+import { broadcastOpsSessionUpdated, broadcastReceptionUpdated } from "./ops-seat-socket.js";
+import { voidOpenBillWhenSessionEndsWithoutSettle } from "./void-open-bill-on-session-end.js";
 import {
   canonicalSeatStatusForWrite,
   normalizeReceptionSeatStatus,
@@ -197,6 +198,48 @@ export function mergeShiftSeatsWithLiveDerived(seats: unknown[], derived: Derive
     if (!seen.has(d.id)) extra.push(seatRowFromDerived(d));
   }
   return extra.length ? [...merged, ...extra] : merged;
+}
+
+/**
+ * 受付マップで卓を空にする／バッシング完了時に、その卓に紐づく未終了セッションを閉じる。
+ * （閉じずに shift だけ empty にすると、再読込でライブ状態が赤・青に戻る）
+ */
+export async function closeTableSessionsForReceptionMapClear(
+  storeId: string,
+  tablePublicCode: string,
+): Promise<void> {
+  const pc = String(tablePublicCode ?? "").trim();
+  if (!pc) return;
+  const table = await prisma.table.findFirst({
+    where: { storeId, active: true, publicCode: pc },
+    select: { id: true },
+  });
+  if (!table) return;
+
+  const sessions = await prisma.diningSession.findMany({
+    where: {
+      storeId,
+      tableId: table.id,
+      status: { in: ["open", "bashing_waiting", "merged"] },
+    },
+    select: { id: true, status: true },
+  });
+  if (!sessions.length) return;
+
+  for (const sess of sessions) {
+    await prisma.$transaction(async (tx) => {
+      if (sess.status === "open") {
+        await voidOpenBillWhenSessionEndsWithoutSettle(tx, storeId, sess.id);
+      }
+      await tx.diningSession.update({
+        where: { id: sess.id },
+        data: { status: "closed", closedAt: new Date() },
+      });
+    });
+    broadcastOpsSessionUpdated(storeId, sess.id);
+  }
+
+  await syncReceptionShiftSeatsForTable(storeId, table.id).catch(() => {});
 }
 
 /** 卓のセッション変化を当日シフトの seats JSON に反映（受付マップの色ずれ防止） */

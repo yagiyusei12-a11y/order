@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0c0e12" />
-  <title>??????</title>
+  <title>ご注文</title>
   <style>
     :root {
       --bg: #0c0e12;
@@ -29,7 +29,7 @@
       min-height: 100dvh;
     }
 
-    /* ========== ??????????????????????????????? ========== */
+    /* ========== トップバー（アイコン） ========== */
     .go-topbar {
       position: sticky;
       top: 0;
@@ -62,7 +62,7 @@
     }
     .go-iconbtn:active { background: var(--surface2); color: var(--text); }
     .go-iconbtn svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
-    /* ??????????????????????????????????????????????? */
+    /* 呼出：記号だけだと分かりにくいため文字ラベル */
     .go-iconbtn.go-call {
       width: auto;
       min-width: 44px;
@@ -103,7 +103,7 @@
       color: rgba(226, 232, 240, 0.86);
     }
 
-    /* ========== ?????????????????? ========== */
+    /* ========== カテゴリタブ ========== */
     .go-tabs-wrap {
       position: sticky;
       top: calc(52px + env(safe-area-inset-top));
@@ -140,7 +140,7 @@
       color: var(--accent);
     }
 
-    /* ========== ???????????????????????? ========== */
+    /* ========== メニューグリッド ========== */
     .go-menu-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -364,7 +364,7 @@
       color: #6ee7b7;
     }
 
-    /* ========== ????????????????????? ========== */
+    /* ========== フッターカート ========== */
     footer.go-cart {
       position: fixed;
       bottom: 0;
@@ -428,7 +428,7 @@
     }
     .toast.show { opacity: 1; }
 
-    /* ========== ????????? / ????????????????????????????????????????????????????? ========== */
+    /* ========== カート / 注文履歴シート（固定フッターとは別レイヤー） ========== */
     .guest-sheet {
       position: fixed;
       inset: 0;
@@ -668,7 +668,7 @@
       border: 1px solid rgba(248, 113, 113, 0.35);
     }
 
-    /* ????????????????????????????????????????????????????????? */
+    /* 注文履歴はシート表示に統一（メニュー下の埋め込みは使わない） */
     #orders { display: none; }
     #orders h2 {
       font-size: 0.78rem;
@@ -687,7 +687,7 @@
       line-height: 1.45;
     }
 
-    /* ========== ????????????????? ========== */
+    /* ========== 商品詳細シート ========== */
     #detailSheet {
       position: fixed;
       inset: 0;
@@ -733,7 +733,7 @@
     }
     .detail-hero {
       aspect-ratio: 16 / 10;
-      /* ??????????? intrinsic ??????? aspect-ratio ???????????????????????????????????? */
+      /* 縦長画像の intrinsic 高さや aspect-ratio 非対応端末でもシートを食いつぶさない */
       max-height: min(42dvh, 260px);
       background: linear-gradient(145deg, #1e293b, #0f172a);
       position: relative;
@@ -817,7 +817,7 @@
       padding: 0.7rem 0.75rem;
       margin-bottom: 0.35rem;
       border-radius: 12px;
-      /* ????????????????????????????????????????? */
+      /* 環境によって白飛びしないよう、濃い面に固定 */
       border: 1px solid rgba(148, 163, 184, 0.32);
       background: rgba(15, 23, 42, 0.92);
       cursor: pointer;
@@ -874,7 +874,7 @@
       background: rgba(15, 23, 42, 0.6);
     }
 
-    /* ?????????????????????????????????????????(opt-comp) ??????????????????????????????????????????????? */
+    /* セット構成単品の「オプション」(opt-comp) が白飛びして読めない環境があるため、濃い面に統一 */
     .opt-comp {
       display: none;
       margin: 0.35rem 0 0.55rem 0.8rem !important;
@@ -883,12 +883,12 @@
       background: rgba(2, 6, 23, 0.65) !important;
       border-radius: 12px !important;
     }
-    /* ???????????????????????????????????????????????????? opt-comp ??????? */
+    /* 標準付属はチェックボックスがないため、直後の opt-comp を常に表示 */
     .opt-row-fixed + .opt-comp,
     .opt-comp.opt-comp--fixed {
       display: block;
     }
-    /* ?????????????????????????????????????????????????????????JS??????????????????? */
+    /* チェックした行の直後だけ展開（対応ブラウザ用）。JSでも同じ制御を行う */
     label.opt-row:has(> input[type=checkbox]:checked) + .opt-comp { display: block; }
     .opt-comp .muted { color: rgba(241, 245, 249, 0.78) !important; }
     .opt-comp [data-comp-opt-group].opt-block {
@@ -1168,7 +1168,7 @@
       filter: brightness(1.03);
     }
 
-    /* ??????????????????????????????????????????? */
+    /* コース＋オプション（有料で対象拡大） */
     .course-pack-strip {
       padding: 0.5rem 0.75rem 0.35rem;
       background: linear-gradient(180deg, rgba(249, 115, 22, 0.12), transparent);
@@ -1233,18 +1233,18 @@
 <body>
   <header class="go-topbar">
     <div class="go-topicons">
-      <button type="button" class="go-iconbtn" id="btnHistory" title="???????????" aria-label="???????????">
+      <button type="button" class="go-iconbtn" id="btnHistory" title="注文履歴を表示" aria-label="注文履歴を表示">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
       </button>
-      <button type="button" class="go-iconbtn go-call" id="btnStaff" title="??????????????????????" aria-label="??????????????????????">??????</button>
+      <button type="button" class="go-iconbtn go-call" id="btnStaff" title="呼出（店員を呼ぶ）" aria-label="呼出（店員を呼ぶ）">呼出</button>
     </div>
     <div class="go-brand">
-      <h1>??????</h1>
-      <div class="sub" id="hdr">????????</div>
+      <h1>ご注文</h1>
+      <div class="sub" id="hdr">読み込み中…</div>
       <div class="sub sub-hint" id="checkoutHint" style="display:none"></div>
     </div>
     <div class="go-topicons">
-      <button type="button" class="go-iconbtn" id="btnCartScroll" title="???????????????????" aria-label="???????????????????">
+      <button type="button" class="go-iconbtn" id="btnCartScroll" title="カートの内容を表示" aria-label="カートの内容を表示">
         <svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>
       </button>
     </div>
@@ -1256,7 +1256,7 @@
   <p id="courseMenuNotice" class="muted course-menu-notice" style="display:none;font-size:0.82rem;margin:0 0 0.45rem;line-height:1.45;padding:0 0.15rem"></p>
   <div id="courseMenuFilterWrap" class="course-menu-filter-wrap" style="display: none" hidden>
     <button type="button" id="btnCourseItemsOnly" class="course-menu-filter-btn" aria-pressed="false">
-      ??????????????????????
+      単品メニューも表示
     </button>
   </div>
 
@@ -1266,33 +1266,33 @@
 
   <div class="go-profile" id="profileCard">
     <button type="button" class="go-profile-toggle" id="profileToggle" aria-expanded="false">
-      ????????????????????????????????
+      次回から便利なお客様情報を入力
     </button>
     <div class="go-profile-body" id="profileBody">
-      <label for="custName">?????????????????????????????</label>
-      <input id="custName" type="text" autocomplete="name" maxlength="100" placeholder="???????????????????????" />
-      <label for="custPhone">????????</label>
-      <input id="custPhone" type="tel" autocomplete="tel" maxlength="20" placeholder="???????????????????????" />
-      <label for="custEmail">???????????????????????????????????</label>
-      <input id="custEmail" type="email" autocomplete="email" maxlength="200" placeholder="???????????????????????" />
-      <button type="button" id="btnSaveProfile">???????????????</button>
+      <label for="custName">お名前（ニックネーム可）</label>
+      <input id="custName" type="text" autocomplete="name" maxlength="100" placeholder="未入力でも構いません" />
+      <label for="custPhone">電話番号</label>
+      <input id="custPhone" type="tel" autocomplete="tel" maxlength="20" placeholder="未入力でも構いません" />
+      <label for="custEmail">メールアドレス（端末に保存のみ）</label>
+      <input id="custEmail" type="email" autocomplete="email" maxlength="200" placeholder="未入力でも構いません" />
+      <button type="button" id="btnSaveProfile">お客様情報を保存</button>
       <span id="profileHint" class="muted"></span>
     </div>
   </div>
 
   <div class="go-profile is-collapsed" id="combineBillingCard">
     <button type="button" class="go-profile-toggle" id="combineBillingToggle" aria-expanded="false">
-      ???????????????????????????
+      別会計を同一会計にまとめる
     </button>
     <div class="go-profile-body" id="combineBillingBody">
       <p class="muted" style="font-size: 0.82rem; line-height: 1.45; margin: 0 0 0.55rem">
-        ?????????? URL ??????????????????????????????????? URL ????????????????????????????????????????????????????????<strong>??????????????????????????</strong>????????
+        同じ卓で別 URL の別会計になっている場合、相手の画面の URL に含まれるトークン（末尾の文字列）を入力すると、<strong>相手側の会計をこの画面に統合</strong>できます。
       </p>
-      <label for="shareGuestTokenDisplay">?????????????????????????????????????????????????</label>
+      <label for="shareGuestTokenDisplay">この端末の共有用トークン（相手に伝える場合）</label>
       <input id="shareGuestTokenDisplay" type="text" readonly tabindex="-1" style="font-size: 0.82rem" />
-      <label for="peerGuestTokenInput">???????????????????????????</label>
-      <input id="peerGuestTokenInput" type="text" autocomplete="off" maxlength="200" placeholder="???????????????? URL ??????" />
-      <button type="button" class="submit" id="btnCombineBilling" style="margin-top: 0.45rem; width: 100%">????????</button>
+      <label for="peerGuestTokenInput">統合する相手のトークン</label>
+      <input id="peerGuestTokenInput" type="text" autocomplete="off" maxlength="200" placeholder="相手の注文画面の URL 末尾など" />
+      <button type="button" class="submit" id="btnCombineBilling" style="margin-top: 0.45rem; width: 100%">まとめる</button>
       <span id="combineBillingHint" class="muted" style="display: block; margin-top: 0.35rem; font-size: 0.82rem"></span>
     </div>
   </div>
@@ -1304,11 +1304,11 @@
   <div id="orders"></div>
 
   <footer class="go-cart" id="cartFooter">
-    <div class="info" id="cartFooterInfo" role="button" tabindex="0" aria-label="???????????????????">
-      <div class="count" id="cartCount">????????? 0???</div>
-      <div class="sum" id="cartSum">?0</div>
+    <div class="info" id="cartFooterInfo" role="button" tabindex="0" aria-label="カートの内容を表示">
+      <div class="count" id="cartCount">カート 0点</div>
+      <div class="sum" id="cartSum">¥0</div>
     </div>
-    <button class="submit" id="submit" disabled type="button">?????????</button>
+    <button class="submit" id="submit" disabled type="button">注文する</button>
   </footer>
   <div class="toast" id="toast"></div>
 
@@ -1317,14 +1317,14 @@
   <div id="cartSheet" class="guest-sheet" aria-hidden="true">
     <div class="guest-sheet-bg" id="cartSheetBg" tabindex="-1"></div>
     <div class="detail-panel guest-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="cartSheetTitle">
-      <button type="button" class="detail-close" id="cartSheetCloseBtn" aria-label="????????">??</button>
+      <button type="button" class="detail-close" id="cartSheetCloseBtn" aria-label="閉じる">×</button>
       <div class="detail-scroll guest-sheet-pad" style="padding-top: 2.25rem">
-        <h2 class="detail-title" id="cartSheetTitle">?????????</h2>
+        <h2 class="detail-title" id="cartSheetTitle">カート</h2>
         <div id="cartSheetBody" class="guest-cart-lines"></div>
       </div>
       <div class="guest-sheet-bar">
-        <div class="guest-sheet-sum" id="cartSheetBarSum">?0</div>
-        <button type="button" class="submit" id="cartSheetOrderBtn">?????????</button>
+        <div class="guest-sheet-sum" id="cartSheetBarSum">¥0</div>
+        <button type="button" class="submit" id="cartSheetOrderBtn">注文する</button>
       </div>
     </div>
   </div>
@@ -1332,9 +1332,9 @@
   <div id="historySheet" class="guest-sheet" aria-hidden="true">
     <div class="guest-sheet-bg" id="historySheetBg" tabindex="-1"></div>
     <div class="detail-panel guest-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="historySheetTitle">
-      <button type="button" class="detail-close" id="historySheetCloseBtn" aria-label="????????">??</button>
+      <button type="button" class="detail-close" id="historySheetCloseBtn" aria-label="閉じる">×</button>
       <div class="detail-scroll guest-sheet-pad" style="padding-top: 2.25rem; padding-bottom: 1rem">
-        <h2 class="detail-title" id="historySheetTitle">??????</h2>
+        <h2 class="detail-title" id="historySheetTitle">注文履歴</h2>
         <div id="historySheetBody"></div>
       </div>
     </div>
@@ -1342,7 +1342,7 @@
 
   <div class="agegate" id="ageGate" style="display:none" role="dialog" aria-modal="true" aria-labelledby="ageGateQuestion">
     <div class="agegate-card">
-      <h2 class="agegate-sr">???????????????</h2>
+      <h2 class="agegate-sr">飲酒に関する確認</h2>
       <div class="agegate-icons" aria-hidden="true">
         <svg class="agegate-ico" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
           <circle cx="50" cy="50" r="48" fill="#fef08a" stroke="#ca8a04" stroke-width="2" />
@@ -1352,7 +1352,7 @@
         </svg>
         <svg class="agegate-ico" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
           <circle cx="50" cy="50" r="48" fill="#fef2f2" stroke="#dc2626" stroke-width="2.5" />
-          <!-- ???????????????????????????????????????????? -->
+          <!-- ワイングラス（ボウル・脚・土台） -->
           <path
             d="M50 22 L40 48 Q50 58 60 48 L50 22 Z"
             fill="#fff"
@@ -1363,7 +1363,7 @@
           <path d="M44 40 Q50 46 56 40" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round" />
           <line x1="50" y1="56" x2="50" y2="72" stroke="#991b1b" stroke-width="2.2" stroke-linecap="round" />
           <path d="M40 74 h20" stroke="#991b1b" stroke-width="2.5" stroke-linecap="round" />
-          <!-- ??????????????????????????????????? -->
+          <!-- 車（横から見た簡易シルエット） -->
           <path
             d="M18 78 h64 a3 3 0 0 0 3-3v-4H15v4a3 3 0 0 0 3 3z"
             fill="#e2e8f0"
@@ -1374,15 +1374,15 @@
           <path d="M22 71 L30 60 h40 l8 11" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5" stroke-linejoin="round" />
           <circle cx="32" cy="78" r="4.2" fill="#1e293b" />
           <circle cx="68" cy="78" r="4.2" fill="#1e293b" />
-          <!-- ??????????????? -->
+          <!-- 禁止線（最前面） -->
           <line x1="18" y1="84" x2="82" y2="16" stroke="#dc2626" stroke-width="5.5" stroke-linecap="round" />
         </svg>
       </div>
-      <p class="agegate-lead">20???????????????????????????????????????????????????????????</p>
-      <p class="agegate-q" id="ageGateQuestion">???????????????????20??????????????????????????????????????</p>
+      <p class="agegate-lead">20歳未満の方、および車でご来店の方の飲酒はお断りしております。</p>
+      <p class="agegate-q" id="ageGateQuestion">あなたと同席者は全員20歳以上であり、運転の予定はございませんか？</p>
       <div class="agegate-actions">
-        <button type="button" class="agegate-btn agegate-btn--deny" id="ageGateDeny">?????? (??????)</button>
-        <button type="button" class="agegate-btn agegate-btn--allow" id="ageGateAllow">??? (????OK)</button>
+        <button type="button" class="agegate-btn agegate-btn--deny" id="ageGateDeny">いいえ (飲酒不可)</button>
+        <button type="button" class="agegate-btn agegate-btn--allow" id="ageGateAllow">はい (飲酒OK)</button>
       </div>
     </div>
   </div>
@@ -1429,7 +1429,7 @@
         if (hint) hint.textContent = "";
         const peer = String(peerEl.value || "").trim();
         if (!peer) {
-          toast("?????????????????????????????????????");
+          toast("相手のトークンを入力してください");
           return;
         }
         try {
@@ -1438,7 +1438,7 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ peerGuestToken: peer }),
           });
-          toast("??????????");
+          toast("まとめました");
           location.reload();
         } catch (e) {
           const msg = String(e.message || e);
@@ -1688,9 +1688,9 @@
     let menuItemById = new Map();
     let lastOrderTimer = null;
     let lastOrderDeadlineTs = 0;
-    /** block_all ????????????????????????????????????????? true??????????? */
+    /** block_all かつ締切後など、全カテゴリを締めるとき true（従来互換） */
     let lastOrderClosedFlag = false;
-    /** ????????????????????????????????????????????????????????????????????????????????????? */
+    /** ローカル時計でラストオーダー締切を過ぎたか（単品のみモードの判定に使用） */
     let guestLastOrderPastLocal = false;
     /** allow_all | singles_only | block_all */
     let guestLoPolicy = "block_all";
@@ -1704,15 +1704,15 @@
     let courseIncludedOnly = false;
     let guestShowEatModeTaxNote = false;
     const guestServeLaterDefaults = {
-      guestServeLaterBlockTitle: "??????????",
-      guestServeLaterSelectPlaceholder: "?????????????",
-      guestServeLaterWithMealLabel: "????????????????",
+      guestServeLaterBlockTitle: "後から提供",
+      guestServeLaterSelectPlaceholder: "選択してください",
+      guestServeLaterWithMealLabel: "料理と一緒に出す",
       guestServeLaterPairDrinkDessertLabel:
-        "?????????????????????2???????????????????????????????????????????????????",
-      guestServeLaterPerStepOptionFormat: "{label} ??????????",
-      guestServeLaterSingleRadioDeferFormat: "???{label}????????????????????????????????????????????0?????",
-      guestServeLaterHelpSingle: "??????????????????????????????????????????????????????????????????????????????????",
-      guestServeLaterHelpMulti: "??????????????????????0????????????????????????????????????????????????????",
+        "後からメニューが2つ以上ある場合はドリンクとデザートは後から出す",
+      guestServeLaterPerStepOptionFormat: "{label} だけ後から",
+      guestServeLaterSingleRadioDeferFormat: "「{label}」は後から提供（別の明細・キッチン行・0円）",
+      guestServeLaterHelpSingle: "セット価格はそのままです。在庫切れキャンセルはセット全体まとめて行われます。",
+      guestServeLaterHelpMulti: "選んだ項目だけ別明細（0円）になります。キャンセルはセット全体です。",
     };
     let guestServeLaterCopy = Object.assign({}, guestServeLaterDefaults);
     function syncGuestServeLaterCopyFromStore(store) {
@@ -1723,13 +1723,13 @@
           typeof v === "string" && String(v).trim() ? String(v).trim() : guestServeLaterDefaults[k];
       }
     }
-    /** ????????? `{label}` ?????????????????????????????????????????????? */
+    /** 店舗設定の `{label}` をステップ名に置換し、表示用にエスケープ */
     function guestServeLaterFillTemplate(template, rawLabel) {
-      const lab = String(rawLabel || "").trim() || "?????????";
+      const lab = String(rawLabel || "").trim() || "（項目）";
       const filled = String(template || "").replace(/\{label\}/g, lab);
       return escapeHtml(filled);
     }
-    /** "1" = ?????????????????????? / ?????????"0" = ?????????????????????? */
+    /** "1" = 単品・全商品も表示 / 未設定・"0" = コース対象のみ（既定） */
     function courseFilterStorageKey() {
       return "guestCourseShowAllMenu_" + String(TOKEN || "x");
     }
@@ -1761,7 +1761,7 @@
       return sellKind === "set";
     }
 
-    /** ??????????????????????????????????????????????????????????????????????????????? */
+    /** 商品詳細・カート追加をブロックするか（単品のみモードではセットのみ） */
     function guestProductDetailBlocked(item) {
       if (!guestLastOrderPastLocal) return false;
       if (guestLoPolicy === "allow_all") return false;
@@ -1793,67 +1793,67 @@
     }
 
     function fmtMoney(n) {
-      if (!guestShowMenuPrices) return "???";
-      return "?" + n.toLocaleString("ja-JP");
+      if (!guestShowMenuPrices) return "—";
+      return "¥" + n.toLocaleString("ja-JP");
     }
-    /** ???????????????????????????????????????????????????????????????????????????? */
+    /** 単品・セット内オプションの差額表示（金額非表示設定時は数値を出さない） */
     function fmtGuestOptionDeltaHtml(yenTaxInclusive) {
       const y = Math.max(0, Number(yenTaxInclusive || 0));
       if (!guestShowMenuPrices) {
         return y > 0
-          ? "<span class=\"muted\" style=\"font-size:.68rem\">?????????????????????</span>"
-          : "+?0";
+          ? "<span class=\"muted\" style=\"font-size:.68rem\">（お会計時にご案内）</span>"
+          : "+¥0";
       }
       if (y > 0) {
         return (
           "+" +
           y.toLocaleString("ja-JP") +
-          "??? <span style=\"color:var(--muted);font-size:.68rem\">(????????)</span>"
+          "円 <span style=\"color:var(--muted);font-size:.68rem\">(税込目安)</span>"
         );
       }
-      return "+?0";
+      return "+¥0";
     }
-    /** ????????????????????????????????? */
+    /** セット構成選択の付加価格（税込） */
     function fmtGuestSetStepChoiceExtraHtml(ch) {
       const ex = Number(ch.extraPrice || 0);
-      if (ex <= 0) return "+?0";
+      if (ex <= 0) return "+¥0";
       if (!guestShowMenuPrices) {
-        return "<span class=\"muted\" style=\"font-size:.68rem\">?????????????????????</span>";
+        return "<span class=\"muted\" style=\"font-size:.68rem\">（お会計時にご案内）</span>";
       }
       const incl = choiceExtraInclusive(ch);
       return (
         "+" +
-        fmtMoney(incl).replace("?", "") +
-        " <span style=\"color:var(--muted);font-size:.68rem;font-weight:500\">(???)</span>"
+        fmtMoney(incl).replace("¥", "") +
+        " <span style=\"color:var(--muted);font-size:.68rem;font-weight:500\">(税込)</span>"
       );
     }
 
-    function guestOptionSelectBounds(g) {
-      const minSelect = Math.max(0, Number(g.minSelect) || 0);
-      let maxSelect = Number(g.maxSelect);
-      if (!Number.isFinite(maxSelect) || maxSelect < 1) maxSelect = Math.max(minSelect, 1);
-      if (maxSelect < minSelect) maxSelect = minSelect;
-      return { minSelect, maxSelect };
-    }
-
-    function guestSetChoiceByMid(st, mid) {
-      const k = String(mid);
-      return (
-        (st.choices || []).find((c) => String(c.menuItemId) === k) ||
-        (st.fixedChoices || []).find((c) => String(c.menuItemId) === k) ||
-        null
-      );
-    }
-
-    function guestSetMergedPickIds(st, rootEl) {
-      const stepEl = rootEl.querySelector("[data-step-id=\"" + selEsc(st.id) + "\"]");
-      const userIds = stepEl
-        ? [...stepEl.querySelectorAll("input[type=checkbox][name^=\"p-\"]:checked")].map((x) => x.value)
-        : [];
-      const fixedIds = (st.fixedChoices || []).map((c) => String(c.menuItemId));
-      return [...new Set([...fixedIds, ...userIds])];
-    }
-
+    function guestOptionSelectBounds(g) {
+      const minSelect = Math.max(0, Number(g.minSelect) || 0);
+      let maxSelect = Number(g.maxSelect);
+      if (!Number.isFinite(maxSelect) || maxSelect < 1) maxSelect = Math.max(minSelect, 1);
+      if (maxSelect < minSelect) maxSelect = minSelect;
+      return { minSelect, maxSelect };
+    }
+
+    function guestSetChoiceByMid(st, mid) {
+      const k = String(mid);
+      return (
+        (st.choices || []).find((c) => String(c.menuItemId) === k) ||
+        (st.fixedChoices || []).find((c) => String(c.menuItemId) === k) ||
+        null
+      );
+    }
+
+    function guestSetMergedPickIds(st, rootEl) {
+      const stepEl = rootEl.querySelector("[data-step-id=\"" + selEsc(st.id) + "\"]");
+      const userIds = stepEl
+        ? [...stepEl.querySelectorAll("input[type=checkbox][name^=\"p-\"]:checked")].map((x) => x.value)
+        : [];
+      const fixedIds = (st.fixedChoices || []).map((c) => String(c.menuItemId));
+      return [...new Set([...fixedIds, ...userIds])];
+    }
+
     function guestChoiceOptionGroups(ch) {
       if (ch && ch.optionGroups && ch.optionGroups.length) return ch.optionGroups;
       const mid = ch && ch.menuItemId != null ? String(ch.menuItemId) : "";
@@ -1879,9 +1879,9 @@
         escapeHtml(ch.menuItemId) +
         '">';
       html +=
-        "<div class=\"muted\" style=\"font-size:.68rem;margin:0 0 .25rem\">?????????????????" +
+        "<div class=\"muted\" style=\"font-size:.68rem;margin:0 0 .25rem\">オプション（" +
         escapeHtml(ch.name) +
-        "??</div>";
+        "）</div>";
       for (const g of groups) {
         const b = guestOptionSelectBounds(g);
         const useRadio = b.maxSelect <= 1;
@@ -1889,12 +1889,12 @@
           "<div class=\"opt-block\" data-comp-opt-group><div class=\"opt-block-head\"><strong>" +
           escapeHtml(g.name) +
           "</strong>" +
-          (b.minSelect > 0 ? '<span class="tag-req">????</span>' : '<span class="tag-opt">????</span>') +
+          (b.minSelect > 0 ? '<span class="tag-req">必須</span>' : '<span class="tag-opt">任意</span>') +
           '<span class="tag-opt" style="margin-left:auto">' +
           b.minSelect +
-          "???" +
+          "〜" +
           b.maxSelect +
-          "???</span></div>";
+          "個</span></div>";
         for (const oi of g.items || []) {
           const priceTxt = fmtGuestOptionDeltaHtml(Number(oi.priceDelta || 0));
           const nm = "copt-" + escapeHtml(st.id) + "-" + escapeHtml(ch.menuItemId) + "-" + escapeHtml(g.id);
@@ -1932,62 +1932,63 @@
       return html;
     }
 
-    function guestValidateSetStepPickCount(st, userPickCount) {
-      const pickable = (st.choices || []).length;
-      if (pickable === 0) return userPickCount === 0;
-      return userPickCount >= st.minPick && userPickCount <= st.maxPick;
-    }
+    function guestValidateSetStepPickCount(st, userPickCount) {
+      const pickable = (st.choices || []).length;
+      if (pickable === 0) return userPickCount === 0;
+      return userPickCount >= st.minPick && userPickCount <= st.maxPick;
+    }
+
 
     function guestSetStepUserPickCount(st, menuItemIds) {
       const fixedSet = new Set((st.fixedChoices || []).map((c) => String(c.menuItemId)));
       return (menuItemIds || []).filter((id) => !fixedSet.has(String(id))).length;
     }
 
-    function guestValidateSetComponentOptions(st, rootEl) {
-      for (const mid of guestSetMergedPickIds(st, rootEl)) {
-        const ch = guestSetChoiceByMid(st, mid);
-        if (!ch || !ch.optionGroups || !ch.optionGroups.length) continue;
-        for (const g of ch.optionGroups) {
-          const b = guestOptionSelectBounds(g);
-          const nm = "copt-" + st.id + "-" + mid + "-" + g.id;
-          const useRadio = b.maxSelect <= 1;
-          let picked = 0;
-          if (useRadio) {
-            const r = rootEl.querySelector("input[type=radio][name=\"" + selEsc(nm) + "\"]:checked");
-            picked = r && r.value ? 1 : 0;
-          } else {
-            picked = rootEl.querySelectorAll("input[type=checkbox][name=\"" + selEsc(nm) + "\"]:checked").length;
-          }
-          if (picked < b.minSelect || picked > b.maxSelect) {
-            toast(
-              (ch.name || "??????????") +
-                " ????" +
-                g.name +
-                "???? " +
-                b.minSelect +
-                "???" +
-                b.maxSelect +
-                " ??????????????",
-            );
-            return false;
-          }
-        }
-      }
-      return true;
-    }
-
-    function wireGuestSetComponentOptionLimits(panel) {
-      panel.querySelectorAll('.opt-comp input[type="checkbox"][data-max]').forEach((inp) => {
-        inp.addEventListener("change", () => {
-          const maxP = Number(inp.getAttribute("data-max") || 1);
-          const boxes = panel.querySelectorAll('input[type="checkbox"][name="' + inp.name + '"]');
-          if ([...boxes].filter((b) => b.checked).length > maxP) {
-            inp.checked = false;
-            toast("??????????????????????? " + maxP + " ????????");
-          }
-        });
-      });
-    }
+    function guestValidateSetComponentOptions(st, rootEl) {
+      for (const mid of guestSetMergedPickIds(st, rootEl)) {
+        const ch = guestSetChoiceByMid(st, mid);
+        if (!ch || !ch.optionGroups || !ch.optionGroups.length) continue;
+        for (const g of ch.optionGroups) {
+          const b = guestOptionSelectBounds(g);
+          const nm = "copt-" + st.id + "-" + mid + "-" + g.id;
+          const useRadio = b.maxSelect <= 1;
+          let picked = 0;
+          if (useRadio) {
+            const r = rootEl.querySelector("input[type=radio][name=\"" + selEsc(nm) + "\"]:checked");
+            picked = r && r.value ? 1 : 0;
+          } else {
+            picked = rootEl.querySelectorAll("input[type=checkbox][name=\"" + selEsc(nm) + "\"]:checked").length;
+          }
+          if (picked < b.minSelect || picked > b.maxSelect) {
+            toast(
+              (ch.name || "構成単品") +
+                " の「" +
+                g.name +
+                "」は " +
+                b.minSelect +
+                "〜" +
+                b.maxSelect +
+                " 個選んでください",
+            );
+            return false;
+          }
+        }
+      }
+      return true;
+    }
+
+    function wireGuestSetComponentOptionLimits(panel) {
+      panel.querySelectorAll('.opt-comp input[type="checkbox"][data-max]').forEach((inp) => {
+        inp.addEventListener("change", () => {
+          const maxP = Number(inp.getAttribute("data-max") || 1);
+          const boxes = panel.querySelectorAll('input[type="checkbox"][name="' + inp.name + '"]');
+          if ([...boxes].filter((b) => b.checked).length > maxP) {
+            inp.checked = false;
+            toast("このオプションは最大 " + maxP + " 個までです");
+          }
+        });
+      });
+    }
     function guestTimeDiscountActive(item) {
       if (!item) return false;
       const orig = Number(item.originalTaxIncludedPrice);
@@ -2001,22 +2002,22 @@
       const mode = item.priceTaxMode === "exclusive" ? "exclusive" : menuPriceTaxMode;
       let html =
         "<span class=\"go-time-disc\">" +
-        "<span class=\"go-time-disc-normal\">?????? ?" +
+        "<span class=\"go-time-disc-normal\">通常価格 ¥" +
         orig.toLocaleString("ja-JP") +
         "</span>" +
-        "<span class=\"go-time-disc-now\">?????????? ?" +
+        "<span class=\"go-time-disc-now\">今の時間は ¥" +
         cur.toLocaleString("ja-JP") +
         "</span>";
       if (mode === "exclusive") {
         const base = Number(item.basePrice || 0);
         html +=
-          "<span class=\"incl\">????? ?" +
+          "<span class=\"incl\">税抜 ¥" +
           base.toLocaleString("ja-JP") +
-          "???????????????? ?" +
+          "（今の時間の税込は ¥" +
           cur.toLocaleString("ja-JP") +
-          "??</span>";
+          "）</span>";
       } else {
-        html += "<span class=\"incl\">???????</span>";
+        html += "<span class=\"incl\">（税込）</span>";
       }
       html += "</span>";
       return html;
@@ -2024,26 +2025,26 @@
 
     function fmtItemPrice(item) {
       if (item.courseTier === "included") {
-        if (!guestShowMenuPrices) return "<span class=\"course-included-price\">????????????</span>";
+        if (!guestShowMenuPrices) return "<span class=\"course-included-price\">コース内</span>";
         const optLine = guestCourseIncludedChargeOptionExtras
-          ? "<span class=\"incl\">????????????????????????????????????????</span>"
-          : "<span class=\"incl\">??????????????????????????????????0?????</span>";
+          ? "<span class=\"incl\">オプション差額は追加になる場合があります</span>"
+          : "<span class=\"incl\">オプション差額もコース内（0円）</span>";
         const refLine = guestTimeDiscountActive(item)
-          ? "<span class=\"incl\">????????" + fmtGuestTimeDiscountPriceHtml(item) + "</span>"
-          : "<span class=\"incl\">??????????????????????? ?" + Number(item.price || 0).toLocaleString("ja-JP") + "</span>";
+          ? "<span class=\"incl\">参考・" + fmtGuestTimeDiscountPriceHtml(item) + "</span>"
+          : "<span class=\"incl\">参考・メニュー税込 ¥" + Number(item.price || 0).toLocaleString("ja-JP") + "</span>";
         return (
-          "<span class=\"course-included-price\">????????????????????????????0?????</span>" +
+          "<span class=\"course-included-price\">コース料に含む（本体追加0円）</span>" +
           optLine +
           refLine
         );
       }
       if (!guestShowMenuPrices) {
-        return item.courseTier === "addon" ? "??????????" : "???";
+        return item.courseTier === "addon" ? "追加料金" : "—";
       }
       if (guestTimeDiscountActive(item)) {
         let core = fmtGuestTimeDiscountPriceHtml(item);
         if (item.courseTier === "addon") {
-          core += " <span class=\"badge-course-add\" style=\"font-size:0.55rem;vertical-align:middle\">??????????</span>";
+          core += " <span class=\"badge-course-add\" style=\"font-size:0.55rem;vertical-align:middle\">追加料金</span>";
         }
         return core;
       }
@@ -2053,21 +2054,21 @@
         const base = Number(item.basePrice || item.price || 0);
         const incl = Number(item.taxIncludedPrice || item.price || 0);
         core =
-          "?" +
+          "¥" +
           base.toLocaleString("ja-JP") +
-          "<span class=\"incl\">??? ?" +
+          "<span class=\"incl\">税込 ¥" +
           incl.toLocaleString("ja-JP") +
           "</span>";
       } else {
-        core = "?" + Number(item.price || 0).toLocaleString("ja-JP");
+        core = "¥" + Number(item.price || 0).toLocaleString("ja-JP");
       }
       if (item.courseTier === "addon") {
-        core += " <span class=\"badge-course-add\" style=\"font-size:0.55rem;vertical-align:middle\">??????????</span>";
+        core += " <span class=\"badge-course-add\" style=\"font-size:0.55rem;vertical-align:middle\">追加料金</span>";
       }
       return core;
     }
 
-    /** ????????????????????????????0???????????????????????????????????????? */
+    /** コース内単品は追加料金0（税込ベース）。それ以外はゲスト表示価格 */
     function singleGuestChargeBase(item) {
       if (item.courseTier === "included") return 0;
       return Number(item.price || 0);
@@ -2117,15 +2118,15 @@
     }
 
     function cartSumLabel(n) {
-      if (!guestShowMenuPrices) return "?????????????????????";
-      return "?" + n.toLocaleString("ja-JP");
+      if (!guestShowMenuPrices) return "（お会計時にご案内）";
+      return "¥" + n.toLocaleString("ja-JP");
     }
 
     function renderCart() {
       const lines = Object.values(cart).filter((x) => x.qty > 0);
       const count = lines.reduce((s, x) => s + x.qty, 0);
       const sum = lines.reduce((s, x) => s + x.unitPrice * x.qty, 0);
-      document.getElementById("cartCount").textContent = "????????? " + count + "???";
+      document.getElementById("cartCount").textContent = "カート " + count + "点";
       document.getElementById("cartSum").textContent = cartSumLabel(sum);
       document.getElementById("submit").disabled = count === 0 || guestSubmitBlockedByLastOrder();
       syncCartSheetIfOpen();
@@ -2301,7 +2302,7 @@
     }
 
     /**
-     * @param {{ lines?: { optionGroupId: string, optionItemIds: string[] }[] }} host ??? detail panel element
+     * @param {{ lines?: { optionGroupId: string, optionItemIds: string[] }[] }} host — detail panel element
      */
     function collectOptionSelections(host, item) {
       /** @type {{ optionGroupId: string, optionItemIds: string[] }[]} */
@@ -2407,10 +2408,10 @@
       const btn = panel.querySelector("[data-add]");
       if (!btn || !guestShowMenuPrices) return;
       const n = Number(unitPrice) * Number(qty);
-      btn.textContent = "???? " + fmtMoney(isFinite(n) ? n : 0);
+      btn.textContent = "追加 " + fmtMoney(isFinite(n) ? n : 0);
     }
 
-    /** ??????????ID?????????????????????????????????????? */
+    /** 同一商品IDのカート内合計（在庫残数の計算用） */
     function totalCartQtyForMenuItem(menuItemId) {
       const k = menuItemId != null && menuItemId !== "" ? String(menuItemId) : "";
       if (!k) return 0;
@@ -2431,14 +2432,14 @@
       if (!item) return "";
       if (line.sellKind === "set" && item.setSteps && line.setSelections) {
         for (const st of item.setSteps) {
-          const lab = String(st.label || "").trim() || "?????";
+          const lab = String(st.label || "").trim() || "項目";
           const names = [];
           const seen = new Set();
           for (const fc of st.fixedChoices || []) {
             const id = fc.menuItemId;
             if (!id || seen.has(id)) continue;
             seen.add(id);
-            names.push(String(fc.name || "").trim() || "????????????");
+            names.push(String(fc.name || "").trim() || "（名称未設定）");
           }
           const sel = line.setSelections.find((x) => x.stepId === st.id);
           if (sel && sel.menuItemIds) {
@@ -2446,10 +2447,10 @@
               if (seen.has(mid)) continue;
               seen.add(mid);
               const ch = guestSetChoiceByMid(st, mid);
-              if (ch) names.push(String(ch.name || "").trim() || "????????????");
+              if (ch) names.push(String(ch.name || "").trim() || "（名称未設定）");
             }
           }
-          if (names.length) parts.push(lab + ": " + names.join("???"));
+          if (names.length) parts.push(lab + ": " + names.join("、"));
         }
       }
       if (
@@ -2474,9 +2475,9 @@
               .map((oid) => (g.items || []).find((it) => it.id === oid))
               .filter(Boolean)
               .map((it) => it.name);
-            if (picked.length) optParts.push(picked.join("???"));
+            if (picked.length) optParts.push(picked.join("・"));
           }
-          if (optParts.length) parts.push(String(ch.name || "").trim() + " ???????????????: " + optParts.join(" / "));
+          if (optParts.length) parts.push(String(ch.name || "").trim() + " オプション: " + optParts.join(" / "));
         }
       }
       if (line.optionSelections && line.optionSelections.length && item.optionGroups) {
@@ -2489,21 +2490,21 @@
             const oi = (g.items || []).find((x) => x.id === oid);
             if (oi) nm.push(oi.name);
           }
-          if (nm.length) parts.push(g.name + ": " + nm.join("???"));
+          if (nm.length) parts.push(g.name + ": " + nm.join("・"));
         }
       }
       let slLabels = [];
       if (line.serveLaterDeferStepIds && line.serveLaterDeferStepIds.length && item.setSteps) {
         for (const sid of line.serveLaterDeferStepIds) {
           const st = item.setSteps.find((s) => s.id === sid);
-          if (st) slLabels.push("???" + String(st.label || "").trim() + "???");
+          if (st) slLabels.push("「" + String(st.label || "").trim() + "」");
         }
       } else if (line.serveLaterDeferStepId && item.setSteps) {
         const st = item.setSteps.find((s) => s.id === line.serveLaterDeferStepId);
-        if (st) slLabels.push("???" + String(st.label || "").trim() + "???");
+        if (st) slLabels.push("「" + String(st.label || "").trim() + "」");
       }
       if (slLabels.length)
-        parts.push(slLabels.join("???") + "??????????????????????");
+        parts.push(slLabels.join("・") + "は後から提供（別明細）");
       return parts.join("\n");
     }
 
@@ -2531,7 +2532,7 @@
         p.className = "muted";
         p.style.margin = "0.35rem 0 0";
         p.style.fontSize = "0.82rem";
-        p.textContent = "?????????????????????????????";
+        p.textContent = "カートに商品がありません";
         body.appendChild(p);
         return;
       }
@@ -2546,10 +2547,10 @@
           line.menuItemId != null && line.menuItemId !== ""
             ? menuItemById.get(String(line.menuItemId))
             : null;
-        nm.textContent = String(line.name || (defIt && defIt.name) || "??????");
+        nm.textContent = String(line.name || (defIt && defIt.name) || "商品");
         const pr = document.createElement("div");
         pr.className = "pr";
-        pr.textContent = guestShowMenuPrices ? "?" + (line.unitPrice * line.qty).toLocaleString("ja-JP") : "???";
+        pr.textContent = guestShowMenuPrices ? "¥" + (line.unitPrice * line.qty).toLocaleString("ja-JP") : "—";
         head.appendChild(nm);
         head.appendChild(pr);
         wrap.appendChild(head);
@@ -2565,8 +2566,8 @@
         const btnMinus = document.createElement("button");
         btnMinus.type = "button";
         btnMinus.className = "guest-cart-btn";
-        btnMinus.textContent = "???";
-        btnMinus.title = "1????????";
+        btnMinus.textContent = "−";
+        btnMinus.title = "1つ減らす";
         const ck = line.cartKey;
         btnMinus.onclick = () => adjustCartLineQty(ck, -1);
         const qtySpan = document.createElement("span");
@@ -2576,12 +2577,12 @@
         btnPlus.type = "button";
         btnPlus.className = "guest-cart-btn";
         btnPlus.textContent = "+";
-        btnPlus.title = "1????????";
+        btnPlus.title = "1つ増やす";
         btnPlus.onclick = () => adjustCartLineQty(ck, 1);
         const btnRm = document.createElement("button");
         btnRm.type = "button";
         btnRm.className = "guest-cart-btn danger";
-        btnRm.textContent = "??????";
+        btnRm.textContent = "削除";
         btnRm.onclick = () => removeCartLine(ck);
         act.appendChild(btnMinus);
         act.appendChild(qtySpan);
@@ -2616,17 +2617,17 @@
           ? menuItemById.get(String(line.menuItemId))
           : null;
       if (!item) {
-        toast("?????????????????????????????");
+        toast("メニューを再読込してください");
         return;
       }
       if (line.sellKind === "set" && line.setSelections) {
         if (!setStockAllows(item, line.setSelections, line.qty + delta)) {
-          toast("?????????????");
+          toast("在庫の上限です");
           return;
         }
       } else if (item.stockQty != null) {
         if (totalCartQtyForMenuItem(line.menuItemId) + delta > item.stockQty) {
-          toast("?????????????");
+          toast("在庫の上限です");
           return;
         }
       }
@@ -2670,7 +2671,7 @@
       if (!host || !body) return;
       host.classList.add("is-open");
       host.setAttribute("aria-hidden", "false");
-      body.innerHTML = "<p class=\"muted\" style=\"margin:0;font-size:0.82rem\">????????</p>";
+      body.innerHTML = "<p class=\"muted\" style=\"margin:0;font-size:0.82rem\">読み込み中…</p>";
       try {
         await loadMenu();
         await loadOrders();
@@ -2744,7 +2745,7 @@
     }
 
     /**
-     * @param {*} ln API ???????????OrderLine??
+     * @param {*} ln API の注文明細（OrderLine）
      */
     function parseHistoryLineForReorder(ln) {
       const mid = ln.menuItemId;
@@ -2755,7 +2756,7 @@
       const eatMode = ln.eatMode === "takeout" ? "takeout" : "dine_in";
 
       const hasSetSteps = ex && Array.isArray(ex.steps) && ex.steps.length > 0;
-      /** steps ????????? kind ??? "set" ???????????????????????????????? or ???????????????????????????????? */
+      /** steps が無いのに kind だけ "set" の古い／欠損データはオプション or 単品へフォールバックする */
       const hasSingleOptions =
         ex && Array.isArray(ex.options) && ex.options.length > 0 && !hasSetSteps;
 
@@ -2838,13 +2839,13 @@
       const q = Math.max(1, Math.min(99, Math.floor(Number(qty) || 1)));
       const parsed = parseHistoryLineForReorder(ln);
       if (!parsed.ok) {
-        if (parsed.reason === "serve_later_child") toast("???????????????????????");
-        else toast("???????????????????????");
+        if (parsed.reason === "serve_later_child") toast("この明細は再注文できません");
+        else toast("この注文は再注文できません");
         return;
       }
       const lineMenuKey = ln.menuItemId != null && ln.menuItemId !== "" ? String(ln.menuItemId) : "";
       if (!lineMenuKey) {
-        toast("???????????????????????");
+        toast("この注文は再注文できません");
         return;
       }
       let item = menuItemById.get(lineMenuKey);
@@ -2853,25 +2854,25 @@
         item = menuItemById.get(lineMenuKey);
       }
       if (!item) {
-        toast("??????????????????????????????????????????????????????????????????????");
+        toast("メニューに載っていない商品です。スタッフへお問い合わせください。");
         return;
       }
       if (ln.status === "cancelled") {
-        toast("?????????????????????");
+        toast("取り消された注文です");
         return;
       }
       if (guestReorderBlockedByParsed(parsed)) {
         toast(
           guestLoPolicy === "singles_only"
-            ? "????????????????????????????????????????????????????????????????????????????????????"
-            : "?????????????????????????????????????????",
+            ? "ラストオーダー後はセットをご注文いただけません（単品のみご利用いただけます）"
+            : "ラストオーダーの時間を過ぎています",
         );
         return;
       }
 
       if (parsed.sellKind === "set") {
         if (item.sellKind !== "set") {
-          toast("????????????????????????????????????: ????????? / ????: ?????????????????????????????????????????");
+          toast("メニューが変更されています（以前: セット / 現在: 単品）。メニューから選び直してください");
           return;
         }
         const ex0 = ln.lineExtra && typeof ln.lineExtra === "object" ? ln.lineExtra : null;
@@ -2885,21 +2886,21 @@
           const fixedSet = new Set((st.fixedChoices || []).map((c) => String(c.menuItemId)));
           const userPickCount = ids.filter((id) => !fixedSet.has(String(id))).length;
           if (userPickCount < st.minPick || userPickCount > st.maxPick) {
-            toast("???????????????????????????????????????????????????????????????????????????");
+            toast("セットの内容が変わった可能性があります。メニューから選び直してください");
             return;
           }
         }
         const unitPrice = computeSetUnitPrice(item, setSelections);
         if (unitPrice == null) {
-          toast("??????????????????????????????????");
+          toast("セットの選択を復元できませんでした");
           return;
         }
         if (!setStockAllows(item, setSelections, q)) {
-          toast("????????????????");
+          toast("在庫が不足しています");
           return;
         }
         if (alcoholRestricted && setSelectionHasAlcohol(item, setSelections)) {
-          toast("?????????????????????????");
+          toast("酒類はご注文いただけません");
           return;
         }
         const slIds = parsed.serveLaterDeferStepIds && parsed.serveLaterDeferStepIds.length
@@ -2918,7 +2919,7 @@
           for (const sid of slIds) {
             const st0 = (item.setSteps || []).find((s) => s.id === sid);
             if (!st0 || !st0.allowServeLaterSplit) {
-              toast("????????????????????????????????????????????????");
+              toast("「後から提供」はメニューから選び直してください");
               return;
             }
           }
@@ -2958,14 +2959,14 @@
         cur.qty = (cur.qty || 0) + q;
         cart[cartKey] = cur;
         renderCart();
-        toast(item.name + " ?????????????????");
+        toast(item.name + " をカートに追加");
         closeHistorySheet();
         return;
       }
 
       if (parsed.sellKind === "options") {
         if (item.sellKind !== "single" || !item.optionGroups || !item.optionGroups.length) {
-          toast("??????????????????????????????????????????????????");
+          toast("メニューが変更されているため再注文できません");
           return;
         }
         const optionSelections = parsed.optionSelections;
@@ -2973,14 +2974,14 @@
           const sel = optionSelections.find((x) => String(x.optionGroupId) === String(g.id));
           const n = sel && sel.optionItemIds ? sel.optionItemIds.length : 0;
           if (n < g.minSelect || n > g.maxSelect) {
-            toast("???????????????????????????????????????????????????????????????????????????");
+            toast("オプションの組み合わせが変わりました。メニューから選び直してください");
             return;
           }
         }
         const unitPrice = computeOptionUnitPrice(item, optionSelections);
         const cartKey = "o:" + item.id + ":" + stableOptionKey(optionSelections);
         if (item.stockQty != null && totalCartQtyForMenuItem(item.id) + q > item.stockQty) {
-          toast("??????????????????????????");
+          toast("これ以上は在庫がありません");
           return;
         }
         const fakeLine = {
@@ -2990,7 +2991,7 @@
           qty: q,
         };
         if (alcoholRestricted && cartLineBlocksAlcohol(fakeLine)) {
-          toast("?????????????????????????");
+          toast("酒類はご注文いただけません");
           return;
         }
         const cur = cart[cartKey] || {
@@ -3009,27 +3010,27 @@
         cur.qty = (cur.qty || 0) + q;
         cart[cartKey] = cur;
         renderCart();
-        toast(item.name + " ?????????????????");
+        toast(item.name + " をカートに追加");
         closeHistorySheet();
         return;
       }
 
       if (item.sellKind !== "single") {
         if (item.sellKind === "set" && parsed.sellKind === "plain") {
-          toast("???????????????????????????????????????????????????????????????????????????");
+          toast("注文データにセットの内容がありません。メニューから選び直してください");
         } else {
-          toast("??????????????????????????????????????????????????");
+          toast("メニューが変更されているため再注文できません");
         }
         return;
       }
       const base = singleGuestChargeBase(item);
       const cartKey = item.id;
       if (item.stockQty != null && totalCartQtyForMenuItem(item.id) + q > item.stockQty) {
-        toast("??????????????????????????");
+        toast("これ以上は在庫がありません");
         return;
       }
       if (alcoholRestricted && item.containsAlcohol) {
-        toast("?????????????????????????");
+        toast("酒類はご注文いただけません");
         return;
       }
       const cur = cart[cartKey] || {
@@ -3046,7 +3047,7 @@
       cur.qty = (cur.qty || 0) + q;
       cart[cartKey] = cur;
       renderCart();
-      toast(item.name + " ?????????????????");
+      toast(item.name + " をカートに追加");
       closeHistorySheet();
     }
 
@@ -3059,7 +3060,7 @@
         courseRow.className = "muted";
         courseRow.style.margin = "0 0 0.65rem";
         courseRow.style.fontSize = "0.82rem";
-        courseRow.textContent = "?????????: " + ordersSessionCourse.name;
+        courseRow.textContent = "コース: " + ordersSessionCourse.name;
         body.appendChild(courseRow);
       }
       const list = ordersCache || [];
@@ -3068,7 +3069,7 @@
         p.className = "muted";
         p.style.margin = "0";
         p.style.fontSize = "0.82rem";
-        p.textContent = "???????????????????";
+        p.textContent = "まだ注文がありません";
         body.appendChild(p);
         return;
       }
@@ -3085,13 +3086,13 @@
           row.className = "guest-history-line guest-history-line--reorder";
           const main = document.createElement("div");
           main.className = "guest-history-line-main";
-          const lineSum = guestShowMenuPrices ? "?" + (ln.unitPrice * ln.qty).toLocaleString("ja-JP") : "???";
+          const lineSum = guestShowMenuPrices ? "¥" + (ln.unitPrice * ln.qty).toLocaleString("ja-JP") : "—";
           const nm = document.createElement("span");
           nm.className = "guest-history-name";
           nm.textContent = ln.nameSnapshot || "";
           const prev = document.createElement("span");
           prev.className = "guest-history-prev";
-          prev.textContent = "?????? ??" + ln.qty + " " + lineSum;
+          prev.textContent = "前回 ×" + ln.qty + " " + lineSum;
           main.appendChild(nm);
           main.appendChild(prev);
 
@@ -3100,8 +3101,8 @@
           const minus = document.createElement("button");
           minus.type = "button";
           minus.className = "guest-history-qbtn";
-          minus.setAttribute("aria-label", "????????????????");
-          minus.textContent = "???";
+          minus.setAttribute("aria-label", "数量を減らす");
+          minus.textContent = "−";
           const num = document.createElement("span");
           num.className = "guest-history-qty";
           num.textContent = "1";
@@ -3109,12 +3110,12 @@
           const plus = document.createElement("button");
           plus.type = "button";
           plus.className = "guest-history-qbtn";
-          plus.setAttribute("aria-label", "????????????????");
+          plus.setAttribute("aria-label", "数量を増やす");
           plus.textContent = "+";
           const addBtn = document.createElement("button");
           addBtn.type = "button";
           addBtn.className = "guest-history-addbtn";
-          addBtn.textContent = "??????????????";
+          addBtn.textContent = "カートに追加";
 
           minus.onclick = () => {
             if (rq <= 1) return;
@@ -3131,7 +3132,7 @@
               await mergeHistoryIntoCart(o, ln, rq);
             } catch (err) {
               console.error(err);
-              toast("???????????????????????????: " + String(err && err.message ? err.message : err));
+              toast("カートに追加できませんでした: " + String(err && err.message ? err.message : err));
             }
           };
 
@@ -3141,12 +3142,12 @@
             addBtn.style.opacity = "0.45";
             addBtn.title =
               preview.reason === "serve_later_child"
-                ? "???????????????????????"
-                : "???????????????????";
+                ? "この明細は再注文できません"
+                : "再注文できない注文です";
           } else if (!ln.menuItemId) {
             addBtn.disabled = true;
             addBtn.style.opacity = "0.45";
-            addBtn.title = "???????????????????";
+            addBtn.title = "再注文できない注文です";
           }
 
           controls.appendChild(minus);
@@ -3180,12 +3181,12 @@
       const sub = guestCartLineSubtext(fakeLine);
       const eat = getEatMode(panel, item);
       let h =
-        "<strong style=\"font-size:.92rem\">??????????</strong><div style=\"margin-top:.4rem;white-space:pre-wrap\">" +
-        escapeHtml(sub || "?????????") +
+        "<strong style=\"font-size:.92rem\">ご注文内容</strong><div style=\"margin-top:.4rem;white-space:pre-wrap\">" +
+        escapeHtml(sub || "（詳細なし）") +
         "</div>";
       h +=
-        "<div style=\"margin-top:.55rem;font-size:.8rem;opacity:.85\">?????????: " +
-        (eat === "takeout" ? "??????????????????" : "?????") +
+        "<div style=\"margin-top:.55rem;font-size:.8rem;opacity:.85\">受け取り: " +
+        (eat === "takeout" ? "テイクアウト" : "店内") +
         "</div>";
       return h;
     }
@@ -3201,12 +3202,12 @@
       const sub = guestCartLineSubtext(fakeLine);
       const eat = getEatMode(panel, item);
       let h =
-        "<strong style=\"font-size:.92rem\">??????????</strong><div style=\"margin-top:.4rem;white-space:pre-wrap\">" +
-        escapeHtml(sub || "?????????") +
+        "<strong style=\"font-size:.92rem\">ご注文内容</strong><div style=\"margin-top:.4rem;white-space:pre-wrap\">" +
+        escapeHtml(sub || "（詳細なし）") +
         "</div>";
       h +=
-        "<div style=\"margin-top:.55rem;font-size:.8rem;opacity:.85\">?????????: " +
-        (eat === "takeout" ? "??????????????????" : "?????") +
+        "<div style=\"margin-top:.55rem;font-size:.8rem;opacity:.85\">受け取り: " +
+        (eat === "takeout" ? "テイクアウト" : "店内") +
         "</div>";
       return h;
     }
@@ -3214,9 +3215,9 @@
     function buildPlainDetailSummaryHtml(panel, item) {
       const eat = getEatMode(panel, item);
       return (
-        "<strong style=\"font-size:.92rem\">??????????</strong>" +
-        "<div style=\"margin-top:.55rem;font-size:.8rem;opacity:.85\">?????????: " +
-        (eat === "takeout" ? "??????????????????" : "?????") +
+        "<strong style=\"font-size:.92rem\">ご注文内容</strong>" +
+        "<div style=\"margin-top:.55rem;font-size:.8rem;opacity:.85\">受け取り: " +
+        (eat === "takeout" ? "テイクアウト" : "店内") +
         "</div>"
       );
     }
@@ -3255,7 +3256,7 @@
             const sel = collectSetSelections(panel, item).find((x) => x.stepId === st.id);
             const n = guestSetStepUserPickCount(st, sel && sel.menuItemIds ? sel.menuItemIds : []);
             if (!guestValidateSetStepPickCount(st, n)) {
-              toast(st.label + " ? " + st.minPick + "???" + st.maxPick + " ??????????????");
+              toast(st.label + " は " + st.minPick + "〜" + st.maxPick + " 品選んでください");
               return false;
             }
             if (!guestValidateSetComponentOptions(st, pane)) return false;
@@ -3269,7 +3270,7 @@
             const sel = collectOptionSelections(panel, item).find((x) => x.optionGroupId === g.id);
             const n = sel && sel.optionItemIds ? sel.optionItemIds.length : 0;
             if (n < g.minSelect || n > g.maxSelect) {
-              toast(g.name + " ? " + g.minSelect + "???" + g.maxSelect + " ??????????????");
+              toast(g.name + " は " + g.minSelect + "〜" + g.maxSelect + " 個選んでください");
               return false;
             }
           }
@@ -3277,7 +3278,7 @@
         if (pane.querySelector("[data-serve-later-wrap]")) {
           const sl = getServeLaterDeferPayload(panel, item);
           if (!sl.ok) {
-            toast("??????????????????????????????");
+            toast("「後から提供」を選んでください");
             return false;
           }
         }
@@ -3289,7 +3290,7 @@
           p.style.display = j === idx ? "" : "none";
         });
         if (btnBack) btnBack.style.visibility = idx > 0 ? "visible" : "hidden";
-        if (btnNext) btnNext.textContent = idx >= panes.length - 1 ? "?????????" : "??";
+        if (btnNext) btnNext.textContent = idx >= panes.length - 1 ? "内容を確認" : "次へ";
         try {
           const sheet = document.getElementById("detailSheet");
           const scroll = sheet && sheet.querySelector(".detail-scroll");
@@ -3371,11 +3372,11 @@
         plus.style.opacity = atMax ? "0.4" : "";
         plus.title =
           cap <= 0 && stockNum != null
-            ? "?????????????????"
+            ? "在庫がありません"
             : atMax && stockNum != null
-              ? "?????????????"
+              ? "在庫の上限です"
               : atMax
-                ? "?????????????????"
+                ? "これ以上は選べません"
                 : "";
         syncDetailAddPrice(panel, getUnitPrice(), qty);
       }
@@ -3388,11 +3389,11 @@
       plus.onclick = () => {
         const cap = maxQtyThisAdd();
         if (cap <= 0) {
-          toast("?????????????????");
+          toast("在庫がありません");
           return;
         }
         if (qty >= cap) {
-          toast(stockNum != null ? "?????????????" : "?????????????????");
+          toast(stockNum != null ? "在庫の上限です" : "これ以上は選べません");
           return;
         }
         qty += 1;
@@ -3406,25 +3407,25 @@
       if (guestProductDetailBlocked(item)) {
         toast(
           guestLoPolicy === "singles_only" && item && item.sellKind === "set"
-            ? "????????????????????????????????????????????????????????????????????????????????????"
-            : "?????????????????????????????????????????",
+            ? "ラストオーダー後はセットをご注文いただけません（単品のみご利用いただけます）"
+            : "ラストオーダーの時間を過ぎています",
         );
         return;
       }
       if (alcoholRestricted && item.containsAlcohol) {
-        toast("?????????????????????????");
+        toast("酒類はご注文いただけません");
         return;
       }
       const sold = item.stockQty != null && item.stockQty <= 0;
       if (sold && item.sellKind !== "set") {
-        toast("?????????????");
+        toast("売り切れです");
         return;
       }
       if (item.sellKind !== "set") {
         const sq = item.stockQty;
         const sn = typeof sq === "number" && Number.isFinite(sq) ? sq : null;
         if (sn != null && sn <= totalCartQtyForMenuItem(item.id)) {
-          toast("??????????????????????????");
+          toast("これ以上は在庫がありません");
           return;
         }
       }
@@ -3435,19 +3436,19 @@
       const host = document.getElementById("detailSheet");
       const imgHtml = item.imageUrl
         ? "<img src=\"" + escapeHtml(item.imageUrl) + "\" alt=\"\" />"
-        : "<div style=\"display:flex;align-items:center;justify-content:center;height:100%;font-size:3rem;opacity:.25\">???</div>";
+        : "<div style=\"display:flex;align-items:center;justify-content:center;height:100%;font-size:3rem;opacity:.25\">◆</div>";
 
       let bodyInner = "";
       const eatModeHtml =
         item.allowTakeout
           ? "<div class=\"guest-wiz-pane\" data-wiz-pane=\"1\"><div class=\"opt-block\" data-eatmode-wrap>" +
-            "<div class=\"opt-block-head\"><strong>?????????</strong><span class=\"tag-opt\" style=\"margin-left:auto\">????</span></div>" +
+            "<div class=\"opt-block-head\"><strong>受け取り</strong><span class=\"tag-opt\" style=\"margin-left:auto\">任意</span></div>" +
             "<label class=\"opt-row\" style=\"cursor:pointer;margin:0\"><input type=\"radio\" name=\"eatmode\" value=\"dine_in\" checked />" +
-            "<span class=\"opt-name\">?????</span></label>" +
+            "<span class=\"opt-name\">店内</span></label>" +
             "<label class=\"opt-row\" style=\"cursor:pointer;margin:0\"><input type=\"radio\" name=\"eatmode\" value=\"takeout\" />" +
-            "<span class=\"opt-name\">?????????????????????????8%??</span></label>" +
+            "<span class=\"opt-name\">テイクアウト（税率8%）</span></label>" +
             (guestShowEatModeTaxNote
-              ? "<p class=\"muted\" style=\"font-size:.72rem;margin:.35rem 0 0;line-height:1.4\">????????????????????????????????????????????????????????????????????????????????????????????????</p>"
+              ? "<p class=\"muted\" style=\"font-size:.72rem;margin:.35rem 0 0;line-height:1.4\">店内とテイクアウトでは軽減税率・標準税率などにより、税込表示・請求額が異なる場合があります。</p>"
               : "") +
             "</div></div>"
           : "";
@@ -3464,21 +3465,21 @@
             "<div class=\"opt-block-head\"><strong>" +
             escapeHtml(st.label) +
             "</strong>" +
-            (req ? "<span class=\"tag-req\">????</span>" : "<span class=\"tag-opt\">????</span>") +
+            (req ? "<span class=\"tag-req\">必須</span>" : "<span class=\"tag-opt\">任意</span>") +
             "<span class=\"tag-opt\" style=\"margin-left:auto\">" +
             (pickableN > 0
               ? st.minPick === 0 && st.maxPick === 0
-                ? "????"
-                : st.minPick + "???" + st.maxPick + "???"
-              : "???????") +
+                ? "任意"
+                : st.minPick + "〜" + st.maxPick + "品"
+              : "付属品") +
             "</span></div><div class=\"opt-step-choices\">";
           for (const ch of st.fixedChoices || []) {
             const priceTxt = fmtGuestSetStepChoiceExtraHtml(ch);
             bodyInner +=
               "<div class=\"opt-row opt-row-fixed\" style=\"cursor:default\">" +
-              "<span class=\"opt-fixed-tag\">????</span>" +
+              "<span class=\"opt-fixed-tag\">付属</span>" +
               "<span class=\"opt-name\">" +
-              escapeHtml((ch.name || "").trim() || "????????????") +
+              escapeHtml((ch.name || "").trim() || "（名称未設定）") +
               "</span><span class=\"opt-price\">" +
               priceTxt +
               "</span></div>";
@@ -3504,7 +3505,7 @@
               (soldX ? " disabled" : "") +
               " /><span class=\"opt-name\">" +
               escapeHtml(ch.name) +
-              (blockedAlcohol ? " ? ???????????????" : soldX ? " ? ????" : "") +
+              (blockedAlcohol ? " · 酒類（選択不可）" : soldX ? " · 売切" : "") +
               "</span><span class=\"opt-price\">" +
               priceTxt +
               "</span></label>";
@@ -3520,7 +3521,7 @@
             "<div class=\"opt-block\" data-serve-later-wrap>" +
             "<div class=\"opt-block-head\"><strong>" +
             escapeHtml(guestServeLaterCopy.guestServeLaterBlockTitle) +
-            "</strong><span class=\"tag-req\">????</span></div>" +
+            "</strong><span class=\"tag-req\">必須</span></div>" +
             "<label class=\"opt-row\" style=\"cursor:pointer;margin:0\">" +
             "<input type=\"radio\" name=\"serve-later-mode\" value=\"with_meal\" data-serve-later-radio />" +
             "<span class=\"opt-name\">" +
@@ -3570,7 +3571,7 @@
             "<div class=\"opt-block\" data-serve-later-wrap>" +
             "<div class=\"opt-block-head\"><strong>" +
             escapeHtml(guestServeLaterCopy.guestServeLaterBlockTitle) +
-            "</strong><span class=\"tag-req\">????</span></div>" +
+            "</strong><span class=\"tag-req\">必須</span></div>" +
             "<select data-serve-later-select class=\"guest-select-serve-later\" style=\"width:100%;margin:.25rem 0;padding:.45rem;border-radius:8px;border:1px solid var(--border);font-size:.85rem\">" +
             opts +
             "</select>" +
@@ -3592,12 +3593,12 @@
             "<div class=\"opt-block-head\"><strong>" +
             escapeHtml(g.name) +
             "</strong>" +
-            (req ? "<span class=\"tag-req\">????</span>" : "<span class=\"tag-opt\">????</span>") +
+            (req ? "<span class=\"tag-req\">必須</span>" : "<span class=\"tag-opt\">任意</span>") +
             "<span class=\"tag-opt\" style=\"margin-left:auto\">" +
             g.minSelect +
-            "???" +
+            "〜" +
             g.maxSelect +
-            "???</span></div>";
+            "個</span></div>";
           const useRadio = Number(g.maxSelect || 1) <= 1;
           for (const oi of g.items || []) {
             const yen = Number(oi.priceDelta || 0);
@@ -3640,7 +3641,7 @@
 
       host.innerHTML =
         "<div class=\"detail-panel\" role=\"dialog\" aria-modal=\"true\">" +
-        "<button type=\"button\" class=\"detail-close\" aria-label=\"????????\">??</button>" +
+        "<button type=\"button\" class=\"detail-close\" aria-label=\"閉じる\">×</button>" +
         "<div class=\"detail-hero\">" +
         imgHtml +
         "</div>" +
@@ -3659,18 +3660,18 @@
         "</div>" +
         "<div class=\"detail-footer\" style=\"display:flex;flex-wrap:wrap;align-items:flex-end;gap:.5rem;\">" +
         "<div class=\"qty-bar\">" +
-        "<button type=\"button\" data-qty-min>???</button>" +
+        "<button type=\"button\" data-qty-min>−</button>" +
         "<span class=\"qty-num\" data-qty>1</span>" +
         "<button type=\"button\" data-qty-plus>+</button>" +
         "</div>" +
         "<div data-guest-wiz-controls style=\"flex:1;min-width:140px;display:flex;flex-direction:column;gap:.35rem\">" +
         "<div data-guest-wiz-bar style=\"display:none;gap:.45rem;width:100%\">" +
-        "<button type=\"button\" data-wiz-back style=\"flex:1;padding:.55rem;border-radius:10px;border:1px solid var(--border);background:#fff;font-size:.85rem\">??????</button>" +
-        "<button type=\"button\" data-wiz-next style=\"flex:1;padding:.55rem;border-radius:10px;border:none;background:var(--accent,#2563eb);color:#fff;font-weight:700;font-size:.85rem\">??</button>" +
+        "<button type=\"button\" data-wiz-back style=\"flex:1;padding:.55rem;border-radius:10px;border:1px solid var(--border);background:#fff;font-size:.85rem\">戻る</button>" +
+        "<button type=\"button\" data-wiz-next style=\"flex:1;padding:.55rem;border-radius:10px;border:none;background:var(--accent,#2563eb);color:#fff;font-weight:700;font-size:.85rem\">次へ</button>" +
         "</div>" +
-        "<div data-guest-wiz-done style=\"display:none;width:100%\"><button type=\"button\" data-wiz-edit style=\"width:100%;padding:.5rem;border-radius:10px;border:1px dashed var(--border);background:transparent;font-size:.82rem\">????????????</button></div>" +
+        "<div data-guest-wiz-done style=\"display:none;width:100%\"><button type=\"button\" data-wiz-edit style=\"width:100%;padding:.5rem;border-radius:10px;border:1px dashed var(--border);background:transparent;font-size:.82rem\">選択を変更</button></div>" +
         "</div>" +
-        "<button type=\"button\" class=\"detail-add\" data-add data-add-price disabled style=\"flex:1;min-width:8.5rem;font-weight:700\">????</button>" +
+        "<button type=\"button\" class=\"detail-add\" data-add data-add-price disabled style=\"flex:1;min-width:8.5rem;font-weight:700\">追加</button>" +
         "</div></div>";
 
       host.classList.add("is-open");
@@ -3691,7 +3692,7 @@
             const stepEl = panel.querySelector("[data-step-id=\"" + selEsc(stepId) + "\"]");
             if (!stepEl) return;
 
-            // ???????????????????????????????????????????????????????????????????????????????????
+            // 構成単品のオプションはチェック後にだけ表示（長いスクロールを短くする）
             try {
               const lab = inpX.closest("label.opt-row");
               const next = lab && lab.nextElementSibling;
@@ -3705,14 +3706,14 @@
             const checked = boxes.filter((b) => b.checked);
             if (checked.length > maxP) {
               inpX.checked = false;
-              toast("????????????? " + maxP + " ????????");
+              toast("この項目は最大 " + maxP + " 品までです");
             }
             const sel = collectSetSelections(panel, item);
             const up = computeSetUnitPrice(item, sel);
             const unit = up != null ? up : Number(item.price || 0);
             syncDetailAddPrice(panel, unit, Number(panel.querySelector("[data-qty]").textContent));
 
-            // ?????????????????????????????????????????????????????????????????????????????????????????
+            // 選択解除された構成単品のオプションもクリア（必須オプションの残りを防ぐ）
             if (!inpX.checked) {
               try {
                 const stepId2 = stepId;
@@ -3726,7 +3727,7 @@
           });
         });
 
-        // ????????????????????????????????????????????????????????????????????
+        // 初期表示では、チェックされていない構成単品のオプションは隠す
         try {
           panel
             .querySelectorAll("label.opt-row > input[type=checkbox][name^=\"p-\"]")
@@ -3749,7 +3750,7 @@
         });
         panel.querySelector("[data-add]").onclick = () => {
           if (!detailWizard.isComplete()) {
-            toast("??????????????????????????????");
+            toast("「次へ」で内容確認まで進んでください");
             return;
           }
           const setSelections = collectSetSelections(panel, item);
@@ -3757,35 +3758,35 @@
             const sel = setSelections.find((x) => x.stepId === st.id);
             const n = guestSetStepUserPickCount(st, sel && sel.menuItemIds ? sel.menuItemIds : []);
             if (!guestValidateSetStepPickCount(st, n)) {
-              toast(st.label + " ? " + st.minPick + "???" + st.maxPick + " ??????????????");
+              toast(st.label + " は " + st.minPick + "〜" + st.maxPick + " 品選んでください");
               return;
             }
             if (!guestValidateSetComponentOptions(st, panel)) return;
           }
           const slPayload = getServeLaterDeferPayload(panel, item);
           if (!slPayload.ok) {
-            toast("??????????????????????????????");
+            toast("「後から提供」を選んでください");
             return;
           }
           for (const sid of slPayload.ids) {
             const st0 = (item.setSteps || []).find((s) => s.id === sid);
             if (!st0 || !st0.allowServeLaterSplit) {
-              toast("?????????????????????????????????");
+              toast("「後から提供」の指定が無効です");
               return;
             }
           }
           const unitPrice = computeSetUnitPrice(item, setSelections);
           if (unitPrice == null) {
-            toast("??????????????????????");
+            toast("選択内容を確認してください");
             return;
           }
           const q = getQty();
           if (!setStockAllows(item, setSelections, q)) {
-            toast("????????????????");
+            toast("在庫が不足しています");
             return;
           }
           if (alcoholRestricted && setSelectionHasAlcohol(item, setSelections)) {
-            toast("?????????????????????????");
+            toast("酒類はご注文いただけません");
             return;
           }
           const eatMode = getEatMode(panel, item);
@@ -3825,7 +3826,7 @@
           cart[cartKey] = cur;
           closeDetail();
           renderCart();
-          toast(item.name + " ?????????????????");
+          toast(item.name + " をカートに追加");
         };
       } else if (item.optionGroups && item.optionGroups.length) {
         panel.querySelectorAll("[data-opt-group-id]").forEach((stepEl) => {
@@ -3837,7 +3838,7 @@
               const checked = boxes.filter((b) => b.checked);
               if (checked.length > maxP) {
                 inp.checked = false;
-                toast("??????????????????????? " + maxP + " ????????");
+                toast("このオプションは最大 " + maxP + " 個までです");
               }
               const optionSelections = collectOptionSelections(panel, item);
               syncDetailAddPrice(panel, computeOptionUnitPrice(item, optionSelections), Number(panel.querySelector("[data-qty]").textContent));
@@ -3859,7 +3860,7 @@
         });
         panel.querySelector("[data-add]").onclick = () => {
           if (!optWizard.isComplete()) {
-            toast("??????????????????????????????");
+            toast("「次へ」で内容確認まで進んでください");
             return;
           }
           const optionSelections = collectOptionSelections(panel, item);
@@ -3867,7 +3868,7 @@
             const sel = optionSelections.find((x) => x.optionGroupId === g.id);
             const n = sel && sel.optionItemIds ? sel.optionItemIds.length : 0;
             if (n < g.minSelect || n > g.maxSelect) {
-              toast(g.name + " ? " + g.minSelect + "???" + g.maxSelect + " ??????????????");
+              toast(g.name + " は " + g.minSelect + "〜" + g.maxSelect + " 個選んでください");
               return;
             }
           }
@@ -3889,14 +3890,14 @@
           cur.name = item.name;
           cur.eatMode = eatMode;
           if (item.stockQty != null && (cur.qty || 0) + q > item.stockQty) {
-            toast("??????????????????????????");
+            toast("これ以上は在庫がありません");
             return;
           }
           cur.qty = (cur.qty || 0) + q;
           cart[cartKey] = cur;
           closeDetail();
           renderCart();
-          toast(item.name + " ?????????????????");
+          toast(item.name + " をカートに追加");
         };
       } else {
         const getQty = wireQty(panel, item, () => singleGuestChargeBase(item));
@@ -3905,12 +3906,12 @@
         });
         panel.querySelector("[data-add]").onclick = () => {
           if (!plainWizard.isComplete()) {
-            toast("??????????????????????????????");
+            toast("「次へ」で内容確認まで進んでください");
             return;
           }
           const q = getQty();
           if (item.stockQty != null && q > item.stockQty) {
-            toast("????????????????");
+            toast("在庫が不足しています");
             return;
           }
           const cartKey = item.id;
@@ -3928,20 +3929,20 @@
           cur.name = item.name;
           cur.eatMode = eatMode;
           if (item.stockQty != null && (cur.qty || 0) + q > item.stockQty) {
-            toast("??????????????????????????");
+            toast("これ以上は在庫がありません");
             return;
           }
           cur.qty = (cur.qty || 0) + q;
           cart[cartKey] = cur;
           closeDetail();
           renderCart();
-          toast(item.name + " ?????????????????");
+          toast(item.name + " をカートに追加");
         };
       }
 
       if (!guestShowMenuPrices) {
         const da = panel.querySelector("[data-add]");
-        if (da) da.textContent = "????";
+        if (da) da.textContent = "追加";
       }
     }
 
@@ -3969,7 +3970,7 @@
         lo.policy === "allow_all" || lo.policy === "singles_only" || lo.policy === "block_all"
           ? lo.policy
           : "block_all";
-      /** block_all ?????????????????????????????????????????????????????????????? */
+      /** block_all のときだけ従来どおり「締切後は全面ブロック」フラグを立てる */
       const blocksFull = lo.blocksOrderingAfterDeadline !== false;
       lastOrderDeadlineTs = Date.parse(lo.deadlineIso);
       el.style.display = "block";
@@ -3983,14 +3984,14 @@
         syncGuestMenuCardsDimForLastOrder();
         if (blocksFull && (serverClosed || pastLocal)) {
           el.innerHTML =
-            "<span class=\"lo-inner\">???????????????????????????????????????????????????????????????????????????</span>";
+            "<span class=\"lo-inner\">ラストオーダーは終了しました（追加のご注文はスタッフへお声がけください）</span>";
           el.classList.add("lo-ended");
           stopLastOrderTicker();
           return;
         }
         if (!blocksFull && pastLocal && guestLoPolicy === "allow_all") {
           el.innerHTML =
-            "<span class=\"lo-inner\">?????????????????????????????????????????????????????????????????????</span>";
+            "<span class=\"lo-inner\">ラストオーダーの予定時刻を過ぎました（このままご注文いただけます）</span>";
           el.classList.remove("lo-ended");
           syncGuestMenuCardsDimForLastOrder();
           stopLastOrderTicker();
@@ -3998,7 +3999,7 @@
         }
         if (!blocksFull && pastLocal && guestLoPolicy === "singles_only") {
           el.innerHTML =
-            "<span class=\"lo-inner\">?????????????????????????????????????????????????????????????????????????????????????????????????</span>";
+            "<span class=\"lo-inner\">ラストオーダーは終了しました（セットはご注文いただけません。単品は引き続きご注文いただけます）</span>";
           el.classList.add("lo-ended");
           syncGuestMenuCardsDimForLastOrder();
           stopLastOrderTicker();
@@ -4008,13 +4009,13 @@
         const m = Math.floor(left / 60);
         const s = left % 60;
         el.innerHTML =
-          "<span class=\"lo-inner\">??????????????????????? ??? <strong>" +
+          "<span class=\"lo-inner\">ラストオーダーまで あと <strong>" +
           String(m) +
           ":" +
           String(s).padStart(2, "0") +
-          "</strong>??????? " +
+          "</strong>（残り " +
           left +
-          " ????</span>";
+          " 秒）</span>";
       }
       tick();
       lastOrderTimer = setInterval(tick, 1000);
@@ -4051,31 +4052,31 @@
       }
     }
 
-    /** ?????????????????????: ?????????????????????????????: ????????????????????1????????????????????????????????????????????????????? */
+    /** セット一覧カード: 各ステップを「ラベル: 付属・候補名…」の1行。ラベルと内容が完全一致する行だけ重複を省く */
     function buildGuestSetComponentsUl(it) {
       if (it.sellKind !== "set" || !Array.isArray(it.setSteps) || it.setSteps.length === 0) return null;
       const steps = [...it.setSteps].sort((a, b) => Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0));
       const rawLines = [];
       for (const st of steps) {
-        const lab = String(st.label || "").trim() || "?????";
+        const lab = String(st.label || "").trim() || "項目";
         const names = [];
         const seenInStep = new Set();
         for (const fc of st.fixedChoices || []) {
           const id = fc.menuItemId;
           if (!id || seenInStep.has(id)) continue;
           seenInStep.add(id);
-          const n = String(fc.name || "").trim() || "????????????";
+          const n = String(fc.name || "").trim() || "（名称未設定）";
           names.push(n);
         }
         for (const ch of st.choices || []) {
           const id = ch.menuItemId;
           if (!id || seenInStep.has(id)) continue;
           seenInStep.add(id);
-          const n = String(ch.name || "").trim() || "????????????";
+          const n = String(ch.name || "").trim() || "（名称未設定）";
           names.push(n);
         }
         if (names.length === 0) continue;
-        const joined = names.join("???");
+        const joined = names.join("、");
         rawLines.push({ lab, joined, key: lab + "\u0001" + joined });
       }
       const merged = [];
@@ -4131,10 +4132,10 @@
       guestShowEatModeTaxNote = !!(data.store && data.store.guestShowEatModeTaxNote === true);
       const s = data.session;
       const cc = Number(s.childCount || 0);
-      let hdr = "???? " + (s.guestCount || "???");
-      if (cc > 0) hdr += "????" + (Number(s.guestCount) - cc) + "????" + cc + "??";
+      let hdr = "人数 " + (s.guestCount || "—");
+      if (cc > 0) hdr += "（大人" + (Number(s.guestCount) - cc) + "・子" + cc + "）";
       if (s.course) {
-        hdr += " ? " + s.course.name + "?????????????? " + s.course.durationMinutes + "?????";
+        hdr += " · " + s.course.name + "（制限時間 " + s.course.durationMinutes + "分）";
         if (guestShowMenuPrices) {
           const showNet = coursePriceTaxMode === "exclusive";
           const f = 1 + taxRatePercent / 100;
@@ -4142,19 +4143,19 @@
           const adult = showNet ? Math.round(adultGross / f) : adultGross;
           const childGross = s.course.childPricePerPerson != null ? Number(s.course.childPricePerPerson || 0) : null;
           const child = childGross == null ? null : showNet ? Math.round(childGross / f) : childGross;
-          const suf = showNet ? "?????????" : "???????";
-          hdr += " ? ?? " + Number(adult).toLocaleString("ja-JP") + "???" + suf;
-          if (child != null) hdr += " / ? " + Number(child).toLocaleString("ja-JP") + "???" + suf;
+          const suf = showNet ? "（税抜）" : "（税込）";
+          hdr += " · 大人 " + Number(adult).toLocaleString("ja-JP") + "円" + suf;
+          if (child != null) hdr += " / 子 " + Number(child).toLocaleString("ja-JP") + "円" + suf;
         }
       }
-      if (alcoholRestricted) hdr += " ? ?????????????????????????????";
+      if (alcoholRestricted) hdr += " · アルコール商品は制限中";
       document.getElementById("hdr").textContent = hdr;
 
       try {
         const hintEl = document.getElementById("checkoutHint");
         const tdc = s && s.tableDisplayCode ? String(s.tableDisplayCode) : "";
         if (hintEl && tdc) {
-          hintEl.textContent = "?????????????????????" + tdc + "??????????????????????";
+          hintEl.textContent = "お帰りの際はレジにて（" + tdc + "卓）をお見せください。";
           hintEl.style.display = "";
         } else if (hintEl) {
           hintEl.textContent = "";
@@ -4172,7 +4173,7 @@
             String(data.store.guestCourseMenuNotice).trim();
           noticeEl.textContent = custom
             ? String(custom).trim()
-            : "???????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????";
+            : "コースに含まれる商品のほか、追加でご注文いただけるメニューも一覧に表示されます。「単品メニューも表示」で表示できます。";
           noticeEl.style.display = s.course ? "" : "none";
         }
       } catch (_) {}
@@ -4181,7 +4182,7 @@
       const filterBtn = document.getElementById("btnCourseItemsOnly");
       function syncCourseFilterButtonLabel(btn) {
         if (!btn) return;
-        btn.textContent = courseIncludedOnly ? "??????????????????????" : "???????????????";
+        btn.textContent = courseIncludedOnly ? "単品メニューも表示" : "コース対象のみ表示";
       }
       if (filterWrap && filterBtn) {
         if (s.course) {
@@ -4213,7 +4214,7 @@
       if (sn) {
         sn.style.display = alcoholRestricted ? "block" : "none";
         sn.textContent = alcoholRestricted
-          ? "????????????????????????????????????????????????????????????????????????????????????????????"
+          ? "安全確認により、アルコール商品の注文を制限しています。スタッフへご相談ください。"
           : "";
       }
 
@@ -4242,7 +4243,7 @@
               row.className = "course-pack-row";
               const taxSub =
                 p.extraPriceTaxMode === "exclusive"
-                  ? "??????????????????????????????????????????????????"
+                  ? "（※店舗が税抜入力の場合、お支払いは税込額です）"
                   : "";
 
               if (scope === "per_person_pick") {
@@ -4252,29 +4253,29 @@
                     : gCount;
                 const line = document.createElement("div");
                 line.className = "course-pack-people";
-                line.appendChild(document.createTextNode(p.name + " ? ?????? "));
+                line.appendChild(document.createTextNode(p.name + " · 一人税込 "));
                 const strong = document.createElement("strong");
                 strong.style.color = "var(--accent)";
-                strong.textContent = "?" + unitTi.toLocaleString("ja-JP");
+                strong.textContent = "¥" + unitTi.toLocaleString("ja-JP");
                 line.appendChild(strong);
-                line.appendChild(document.createTextNode(" ?? "));
+                line.appendChild(document.createTextNode(" × "));
                 const numIn = document.createElement("input");
                 numIn.type = "number";
                 numIn.min = "1";
                 numIn.max = String(maxP);
                 numIn.value = "1";
-                numIn.setAttribute("aria-label", "????????????????????");
+                numIn.setAttribute("aria-label", "オプションの人数");
                 line.appendChild(numIn);
-                line.appendChild(document.createTextNode(" ???1???" + maxP + "??"));
+                line.appendChild(document.createTextNode(" 名（1〜" + maxP + "）"));
                 const btnP = document.createElement("button");
                 btnP.type = "button";
                 btnP.className = "course-pack-btn";
                 btnP.style.marginTop = "0.2rem";
-                btnP.textContent = "?????????????????";
+                btnP.textContent = "この内容で追加する";
                 btnP.onclick = async function () {
                   const n = parseInt(numIn.value, 10);
                   if (!Number.isInteger(n) || n < 1 || n > maxP) {
-                    toast("?????1???" + maxP + "???????????????????");
+                    toast("人数は1〜" + maxP + "の整数で選んでください");
                     return;
                   }
                   try {
@@ -4283,7 +4284,7 @@
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ packId: p.id, peopleCount: n }),
                     });
-                    toast("???????????");
+                    toast("追加しました");
                     await loadMenu();
                   } catch (e) {
                     toast(String(e.message || e));
@@ -4313,17 +4314,17 @@
                   Number.isFinite(p.totalIfAllGuestsTaxIncluded)
                     ? p.totalIfAllGuestsTaxIncluded
                     : unitTi * gCount;
-                labelExtra = "??????????" + gCount + "??????";
+                labelExtra = "（税込・延べ" + gCount + "名分）";
               } else {
                 payTotal =
                   typeof p.chargeTaxIncluded === "number" && Number.isFinite(p.chargeTaxIncluded)
                     ? p.chargeTaxIncluded
                     : unitTi;
-                labelExtra = "??????????1?????";
+                labelExtra = "（税込・卓1回）";
               }
               payBtn.innerHTML =
                 escapeHtml(p.name) +
-                " <strong>+?" +
+                " <strong>+¥" +
                 payTotal.toLocaleString("ja-JP") +
                 "</strong><span style=\"font-size:0.72rem\">" +
                 escapeHtml(labelExtra) +
@@ -4333,7 +4334,7 @@
                     escapeHtml(taxSub) +
                     "</span>"
                   : "") +
-                "<span style=\"font-size:0.68rem;font-weight:600;opacity:0.9;display:block;margin-top:0.2rem\">??????????????????????????</span>";
+                "<span style=\"font-size:0.68rem;font-weight:600;opacity:0.9;display:block;margin-top:0.2rem\">対象メニューが広がります</span>";
               payBtn.onclick = async function () {
                 try {
                   await api("/guest/" + encodeURIComponent(TOKEN) + "/course-option-packs/purchase", {
@@ -4341,7 +4342,7 @@
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ packId: p.id }),
                   });
-                  toast("???????????");
+                  toast("追加しました");
                   await loadMenu();
                 } catch (e) {
                   toast(String(e.message || e));
@@ -4371,7 +4372,7 @@
         if (lp.email) document.getElementById("custEmail").value = lp.email || "";
       }
 
-      // ???????????????????????????????????????????????????????????????????????????
+      // お客様情報：開閉はユーザーの明示操作のみ（入力済みでも自動では開かない）
       try {
         const wantOpen = readProfileOpenPref();
         setProfileCollapsed(!wantOpen);
@@ -4405,10 +4406,10 @@
         const hint = document.getElementById("profileHint");
         if (hint && idRes.customer && idRes.customer.visitCount != null) {
           hint.textContent =
-            "???????????: " +
+            "ご来店の記録: " +
             idRes.customer.visitCount +
-            "???" +
-            (idRes.customer.firstLinkThisSession ? "??????????????????????????????" : "");
+            "回" +
+            (idRes.customer.firstLinkThisSession ? "（今回のご来店を記録しました）" : "");
         }
       } catch (_) {}
 
@@ -4450,7 +4451,7 @@
       allBtn.type = "button";
       allBtn.className = "go-tab is-active";
       allBtn.dataset.cat = "";
-      allBtn.textContent = "????";
+      allBtn.textContent = "すべて";
       tabs.appendChild(allBtn);
       for (const c of cats) {
         const b = document.createElement("button");
@@ -4495,7 +4496,7 @@
           } else {
             const ph = document.createElement("div");
             ph.className = "go-ph";
-            ph.textContent = "???";
+            ph.textContent = "◇";
             media.appendChild(ph);
           }
           const badgeStack = document.createElement("div");
@@ -4503,31 +4504,31 @@
           if (it.sellKind === "set") {
             const b = document.createElement("span");
             b.className = "go-card-badge";
-            b.textContent = "?????????";
+            b.textContent = "セット";
             badgeStack.appendChild(b);
           }
           if (showAlcoholBadge) {
             const b = document.createElement("span");
             b.className = "go-card-badge";
             b.style.background = "rgba(124,45,18,.75)";
-            b.textContent = "?????";
+            b.textContent = "酒類";
             badgeStack.appendChild(b);
           }
           if (it.courseTier === "included") {
             const b = document.createElement("span");
             b.className = "badge-course-in";
-            b.textContent = "????????????";
+            b.textContent = "コース内";
             badgeStack.appendChild(b);
           } else if (it.courseTier === "addon") {
             const b = document.createElement("span");
             b.className = "badge-course-add";
-            b.textContent = "??????????";
+            b.textContent = "追加料金";
             badgeStack.appendChild(b);
           }
           if (guestTimeDiscountActive(it)) {
             const b = document.createElement("span");
             b.className = "badge-time-disc";
-            b.textContent = "?????????";
+            b.textContent = "時間割";
             badgeStack.appendChild(b);
           }
           media.appendChild(badgeStack);
@@ -4548,18 +4549,18 @@
           if (sold) {
             const b = document.createElement("span");
             b.className = "badge-sold";
-            b.textContent = "????";
+            b.textContent = "売切";
             badges.appendChild(b);
           } else if (it.lowStock) {
             const b = document.createElement("span");
             b.className = "badge-low";
-            b.textContent = "????????????";
+            b.textContent = "残りわずか";
             badges.appendChild(b);
           }
           if (it.containsAlcohol && alcoholRestricted) {
             const b = document.createElement("span");
             b.className = "badge-sold";
-            b.textContent = "??????";
+            b.textContent = "注文不可";
             badges.appendChild(b);
           }
           body.appendChild(title);
@@ -4575,18 +4576,18 @@
           card.appendChild(body);
           card.onclick = () => {
             if (sold) {
-              toast("?????????????");
+              toast("売り切れです");
               return;
             }
             if (it.containsAlcohol && alcoholRestricted) {
-              toast("?????????????????????????");
+              toast("酒類はご注文いただけません");
               return;
             }
             if (guestProductDetailBlocked(it)) {
               toast(
                 guestLoPolicy === "singles_only" && it.sellKind === "set"
-                  ? "????????????????????????????????????????????????????????????????????????????????????"
-                  : "?????????????????????????????????????????",
+                  ? "ラストオーダー後はセットをご注文いただけません（単品のみご利用いただけます）"
+                  : "ラストオーダーの時間を過ぎています",
               );
               return;
             }
@@ -4621,18 +4622,18 @@
         return;
       }
       root.style.display = "block";
-      const title = "?????????????????????????????????";
+      const title = "後から提供（キッチン未送信）";
       let html = '<div class="guest-deferred-kitchen-inner">';
       html += '<div class="guest-deferred-kitchen-title">' + escapeHtml(title) + "</div>";
       for (const ln of lines) {
-        const nm = escapeHtml(String(ln.nameSnapshot || "??????"));
-        const qty = ln.qty > 1 ? " ??" + String(ln.qty) : "";
+        const nm = escapeHtml(String(ln.nameSnapshot || "商品"));
+        const qty = ln.qty > 1 ? " ×" + String(ln.qty) : "";
         html += '<div class="guest-deferred-kitchen-row">';
         html += '<span class="guest-deferred-kitchen-name">' + nm + qty + "</span>";
         html +=
           '<button type="button" class="guest-deferred-kitchen-btn" data-deferred-line-id="' +
           escapeHtml(String(ln.id)) +
-          '">?????????????????????????</button>';
+          '">キッチンにオーダー</button>';
         html += "</div>";
       }
       html += "</div>";
@@ -4655,7 +4656,7 @@
                 body: "{}",
               },
             );
-            toast("????????????????????????");
+            toast("キッチンに送信しました");
             await loadOrders();
           } catch (e) {
             toast(String(e.message || e));
@@ -4682,14 +4683,14 @@
 
     document.getElementById("submit").onclick = async () => {
       if (guestOrderGateBlocked) {
-        toast(guestOrderGateMessage || "?????????????????????????????????");
+        toast(guestOrderGateMessage || "ただいま注文を受け付けておりません");
         return;
       }
       if (guestSubmitBlockedByLastOrder()) {
         toast(
           guestLoPolicy === "singles_only"
-            ? "????????????????????????????????????????????????????????????????????????????????????"
-            : "?????????????????????????????????????????",
+            ? "ラストオーダー後はセットをご注文いただけません（単品のみご利用いただけます）"
+            : "ラストオーダーの時間を過ぎています",
         );
         return;
       }
@@ -4713,7 +4714,7 @@
           .filter((x) => x.qty > 0)
           .find((line) => cartLineBlocksAlcohol(line));
         if (bad) {
-          toast("???????????????????????????????????");
+          toast("酒類が含まれているため送信できません");
           return;
         }
       }
@@ -4729,7 +4730,7 @@
         for (const k of Object.keys(cart)) delete cart[k];
         renderCart();
         closeCartSheet();
-        toast("??????????????????");
+        toast("注文を送信しました");
         await loadOrders();
         await loadMenu();
       } catch (e) {
@@ -4748,7 +4749,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({}),
         });
-        toast("??????????????????????????????????????????????????");
+        toast("スタッフをお呼びしました。少々お待ちください。");
       } catch (e) {
         toast(String(e.message || e));
       }
@@ -4791,11 +4792,11 @@
         writeLocalCustomerProfile({ name, phone, email });
         const hint = document.getElementById("profileHint");
         if (hint && idRes.customer && idRes.customer.visitCount != null) {
-          hint.textContent = "???????????: " + idRes.customer.visitCount + "??? ? ??????????";
+          hint.textContent = "ご来店の記録: " + idRes.customer.visitCount + "回 · 保存しました";
         }
         setProfileCollapsed(true);
         writeProfileOpenPref(false);
-        toast("??????????????????????");
+        toast("お客様情報を保存しました");
       } catch (e) {
         toast(String(e.message || e));
       }
@@ -4853,7 +4854,7 @@
       } catch (e) {
         document.getElementById("err").style.display = "block";
         document.getElementById("err").textContent = String(e.message || e);
-        document.getElementById("hdr").textContent = "??????????????????????????????????";
+        document.getElementById("hdr").textContent = "セッションを開けませんでした";
       }
     })();
   </script>

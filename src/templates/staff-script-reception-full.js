@@ -537,9 +537,15 @@ function seatStatusForManualReservationPick(id) {
   return st.status === "vacant" ? "empty" : st.status;
 }
 
-/** 手動予約の席選択: 予約済（黄）・案内中（橙）・利用中（青）は出さない（編集中の自席は除く） */
-function isSeatHiddenForManualReservation(id, allowSeatIds) {
+/**
+ * 手動予約の席選択: 予約済（黄）・案内中（橙）・利用中（青）は出さない（編集中の自席は除く）。
+ * 予約日が翌日以降のときは、いまのフロア状況では候補から外さない（同日分は従来どおり）。
+ */
+function isSeatHiddenForManualReservation(id, allowSeatIds, reservationDateYmd) {
   if (allowSeatIds && allowSeatIds.has(id)) return false;
+  const todayYmd = getFormattedDate(new Date());
+  const resDay = String(reservationDateYmd || "").trim();
+  if (resDay && todayYmd && resDay > todayYmd) return false;
   const st = seatStatusForManualReservationPick(id);
   return st === "reserved" || st === "guiding" || st === "occupied";
 }
@@ -565,7 +571,7 @@ function updateReserveSeatSelector() {
   selArea.innerHTML = "";
   getMasterIds().forEach((id) => {
     if (usedSeats.has(id)) return;
-    if (isSeatHiddenForManualReservation(id, allowSeatIds)) return;
+    if (isSeatHiddenForManualReservation(id, allowSeatIds, date)) return;
     const btn = document.createElement("div");
     btn.className = "seat-check-btn";
     if (selectedResSeats.includes(id)) btn.classList.add("selected");

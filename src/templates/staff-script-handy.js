@@ -175,6 +175,27 @@ function itemIsSet(it) {
   return (it.sellKind || "single") === "set" && Array.isArray(it.setSteps) && it.setSteps.length > 0;
 }
 
+/** @param {{ minSelect?: number; maxSelect?: number }} g */
+function handyOptionSelectBounds(g) {
+  const minSelect = Math.max(0, Number(g.minSelect) || 0);
+  let maxSelect = Number(g.maxSelect);
+  if (!Number.isFinite(maxSelect) || maxSelect < 1) maxSelect = Math.max(minSelect, 1);
+  if (maxSelect < minSelect) maxSelect = minSelect;
+  return { minSelect, maxSelect };
+}
+
+/** @param {{ optionLinks?: { optionGroupId: string; sortOrder?: number }[] } | null | undefined} comp @param {string} menuItemId */
+function handyChoiceOptionLinks(comp, menuItemId) {
+  let links = comp && comp.optionLinks;
+  if (!links || !links.length) {
+    const flat = flatItems().find((x) => x.id === menuItemId);
+    if (flat && flat.optionLinks && flat.optionLinks.length) links = flat.optionLinks;
+  }
+  return [...(links || [])].sort(
+    (a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0),
+  );
+}
+
 /** @param {HandyItem} it */
 function itemSetSteps(it) {
   return (it.setSteps || []).map((st) => ({
@@ -182,23 +203,22 @@ function itemSetSteps(it) {
     label: st.label,
     minPick: Number(st.minPick) || 0,
     maxPick: Number(st.maxPick) || 0,
-    choices: (st.choices || []).map((ch) => ({
-      menuItemId: ch.componentMenuItemId,
-      name: (ch.componentMenuItem && ch.componentMenuItem.name) || "?",
-      extraPrice: Number(ch.extraPrice) || 0,
-      isFixed: ch.isFixed === true,
-      stockQty:
-        ch.componentMenuItem && ch.componentMenuItem.stockQty != null
-          ? Number(ch.componentMenuItem.stockQty)
-          : null,
-      optionGroups: ch.componentMenuItem
-        ? itemLinkedOptionGroups({
-            optionLinks: (ch.componentMenuItem.optionLinks || []).map((l) => ({
-              optionGroupId: l.optionGroupId,
-            })),
-          })
-        : [],
-    })),
+    choices: (st.choices || []).map((ch) => {
+      const menuItemId = ch.componentMenuItemId;
+      const comp = ch.componentMenuItem;
+      return {
+        menuItemId,
+        name: (comp && comp.name) || "?",
+        extraPrice: Number(ch.extraPrice) || 0,
+        isFixed: ch.isFixed === true,
+        stockQty: comp && comp.stockQty != null ? Number(comp.stockQty) : null,
+        optionGroups: itemLinkedOptionGroups({
+          optionLinks: handyChoiceOptionLinks(comp, menuItemId).map((l) => ({
+            optionGroupId: l.optionGroupId,
+          })),
+        }),
+      };
+    }),
   }));
 }
 
@@ -222,7 +242,11 @@ function validateHandySetSelections(steps, selections) {
     const userIds = byStepInput.get(st.id) || [];
     const pickable = new Set(st.choices.filter((c) => !c.isFixed).map((c) => c.menuItemId));
     const n = userIds.length;
-    if (n < st.minPick || n > st.maxPick) {
+    if (pickable.size === 0) {
+      if (n > 0) {
+        return { ok: false, error: "「" + st.label + "」の選択が不正です" };
+      }
+    } else if (n < st.minPick || n > st.maxPick) {
       return {
         ok: false,
         error: "「" + st.label + "」は" + st.minPick + "〜" + st.maxPick + "個選んでください",
@@ -379,11 +403,12 @@ function itemLinkedOptionGroups(it) {
         priceDelta: Number(x.priceDelta) || 0,
       }));
     if (!items.length) continue;
+    const bounds = handyOptionSelectBounds(g);
     groups.push({
       id: g.id,
       name: g.name,
-      minSelect: Number(g.minSelect) || 0,
-      maxSelect: Number(g.maxSelect) || 0,
+      minSelect: bounds.minSelect,
+      maxSelect: bounds.maxSelect,
       items,
     });
   }
@@ -631,9 +656,23 @@ function openHandyOptionModal(it) {
       lbl.className = "handy-opt-pick";
       const inp = document.createElement("input");
       inp.type = multi ? "checkbox" : "radio";
-      inp.name = multi ? "handyOpt_" + g.id + "_" + opt.id : "handyOpt_" + g.id;
+      inp.name = multi ? "handyOpt_" + g.id : "handyOpt_" + g.id;
       inp.value = opt.id;
       inp.dataset.groupId = g.id;
+      if (multi) {
+        inp.addEventListener("change", () => {
+          const boxes = block.querySelectorAll(
+            'input[type="checkbox"][data-group-id="' + g.id + '"]',
+          );
+          if ([...boxes].filter((b) => b.checked).length > g.maxSelect) {
+            inp.checked = false;
+            if (err) {
+              err.textContent = "「" + g.name + "」は最大" + g.maxSelect + "個までです";
+              err.hidden = false;
+            }
+          }
+        });
+      }
       const delta = Number(opt.priceDelta) || 0;
       lbl.appendChild(inp);
       lbl.appendChild(
@@ -698,7 +737,7 @@ function collectHandySetComponentOptionSelections() {
       if (!ch || !ch.optionGroups || !ch.optionGroups.length) continue;
       const optionSelections = [];
       for (const g of ch.optionGroups) {
-        const useRadio = Number(g.maxSelect || 1) <= 1;
+        const useRadio = g.maxSelect <= 1;
         let ids = [];
         if (useRadio) {
           const r = host.querySelector(
@@ -724,20 +763,23 @@ function collectHandySetComponentOptionSelections() {
  * @param {HTMLElement} parent
  * @param {{ id: string }} st
  * @param {{ menuItemId: string; name: string; optionGroups?: ReturnType<typeof itemLinkedOptionGroups> }} ch
+ * @param {{ visible?: boolean }} [opts]
  */
-function appendHandySetChoiceOptions(parent, st, ch) {
+function appendHandySetChoiceOptions(parent, st, ch, opts) {
   const groups = ch.optionGroups || [];
   if (!groups.length) return;
   const wrap = document.createElement("div");
   wrap.className = "handy-set-comp-opt";
+  wrap.dataset.forMenuItemId = ch.menuItemId;
+  if (opts && opts.visible === false) wrap.hidden = true;
   for (const g of groups) {
-    const req = Number(g.minSelect || 0) > 0;
+    const req = g.minSelect > 0;
     const title = document.createElement("p");
     title.className = "handy-opt-group-hint";
     title.textContent =
       (req ? "(必須) " : "") + g.name + " · " + g.minSelect + "〜" + g.maxSelect + "個";
     wrap.appendChild(title);
-    const multi = Number(g.maxSelect || 1) > 1;
+    const multi = g.maxSelect > 1;
     for (const opt of g.items) {
       const lbl = document.createElement("label");
       lbl.className = "handy-opt-pick";
@@ -746,6 +788,21 @@ function appendHandySetChoiceOptions(parent, st, ch) {
       inp.name = "copt-" + st.id + "-" + ch.menuItemId + "-" + g.id;
       inp.value = opt.id;
       inp.dataset.compOpt = "1";
+      if (multi) {
+        inp.addEventListener("change", () => {
+          const boxes = wrap.querySelectorAll(
+            'input[type="checkbox"][name="' + inp.name + '"]',
+          );
+          if ([...boxes].filter((b) => b.checked).length > g.maxSelect) {
+            inp.checked = false;
+            const err = document.getElementById("handyOptError");
+            if (err) {
+              err.textContent = "「" + g.name + "」は最大" + g.maxSelect + "個までです";
+              err.hidden = false;
+            }
+          }
+        });
+      }
       const delta = Number(opt.priceDelta) || 0;
       lbl.appendChild(inp);
       lbl.appendChild(
@@ -757,6 +814,41 @@ function appendHandySetChoiceOptions(parent, st, ch) {
     }
   }
   parent.appendChild(wrap);
+}
+
+/** @param {HTMLElement} block @param {string} menuItemId @param {boolean} on */
+function handySetToggleComponentOptions(block, menuItemId, on) {
+  const wrap = block.querySelector('.handy-set-comp-opt[data-for-menu-item-id="' + menuItemId + '"]');
+  if (wrap) wrap.hidden = !on;
+}
+
+/** @param {HTMLElement} host */
+function wireHandySetStepPickLimits(host) {
+  for (const block of host.querySelectorAll(".handy-set-step")) {
+    const sid = block.dataset.stepId;
+    if (!sid || !handyOptPendingItem) continue;
+    const st = itemSetSteps(handyOptPendingItem).find((s) => s.id === sid);
+    if (!st) continue;
+    const pickable = st.choices.filter((c) => !c.isFixed);
+    if (!pickable.length) continue;
+    const maxPick = st.maxPick;
+    if (maxPick <= 0) continue;
+    for (const inp of block.querySelectorAll('input[type="checkbox"][data-step-id]')) {
+      inp.addEventListener("change", () => {
+        handySetToggleComponentOptions(block, inp.value, inp.checked);
+        const checked = [...block.querySelectorAll('input[type="checkbox"][data-step-id]:checked')];
+        if (checked.length > maxPick) {
+          inp.checked = false;
+          handySetToggleComponentOptions(block, inp.value, false);
+          const err = document.getElementById("handyOptError");
+          if (err) {
+            err.textContent = "「" + st.label + "」は最大" + maxPick + "個までです";
+            err.hidden = false;
+          }
+        }
+      });
+    }
+  }
 }
 
 /** @param {HandyItem} it */
@@ -787,7 +879,11 @@ function openHandySetModal(it) {
     title.textContent = st.label;
     const hint = document.createElement("p");
     hint.className = "handy-opt-group-hint";
-    hint.textContent = st.minPick + "〜" + st.maxPick + "個選ぶ";
+    const pickableCount = st.choices.filter((c) => !c.isFixed).length;
+    hint.textContent =
+      pickableCount > 0
+        ? st.minPick + "〜" + st.maxPick + "個選ぶ"
+        : "付属品（選択不要）";
     block.appendChild(title);
     block.appendChild(hint);
     for (const ch of st.choices) {
@@ -819,10 +915,11 @@ function openHandySetModal(it) {
         ),
       );
       block.appendChild(lbl);
-      appendHandySetChoiceOptions(block, st, ch);
+      appendHandySetChoiceOptions(block, st, ch, { visible: false });
     }
     host.appendChild(block);
   }
+  wireHandySetStepPickLimits(host);
   bd.style.display = "flex";
   bd.setAttribute("aria-hidden", "false");
   const first = host.querySelector("input");

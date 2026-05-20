@@ -1,6 +1,9 @@
 /** @typedef {{ id: string; name: string; sellKind?: string; isAvailable?: boolean; allowTakeout?: boolean; price?: number; stockQty?: number | null; optionLinks?: { optionGroupId: string }[]; setSteps?: { id: string; label: string; minPick: number; maxPick: number; choices: { componentMenuItemId: string; extraPrice: number; isFixed: boolean; componentMenuItem?: { id: string; name: string; stockQty?: number | null; optionLinks?: { optionGroupId: string }[] } }[] }[] }} HandyItem */
 
 let sessionsCache = [];
+/** @type {Set<string>} */
+let handyIncludedMenuItemIds = new Set();
+let handyCourseChargeOptionExtras = true;
 /** @type {{ categories: { id: string; name: string; items: HandyItem[] }[] }} */
 let menuCache = { categories: [] };
 /** @type {Map<string, { minSelect: number; active: boolean; items: { active: boolean }[] }>} */
@@ -505,7 +508,45 @@ function handyOptionLabel(selections) {
  * @param {HandyItem | undefined} meta
  * @param {{ optionSelections?: { optionGroupId: string; optionItemIds: string[] }[]; setSelections?: { stepId: string; menuItemIds: string[] }[]; setComponentOptionSelections?: { stepId: string; menuItemId: string; optionSelections: { optionGroupId: string; optionItemIds: string[] }[] }[] }} row
  */
+function handyItemInCourseIncluded(menuItemId) {
+  return handyIncludedMenuItemIds.has(menuItemId);
+}
+
+function refreshHandyCoursePricing() {
+  handyIncludedMenuItemIds = new Set();
+  const sid = document.getElementById("handySession").value;
+  const sess = sid ? sessionsCache.find((x) => x.id === sid) : null;
+  if (sess && Array.isArray(sess.includedMenuItemIds)) {
+    for (const id of sess.includedMenuItemIds) {
+      if (typeof id === "string" && id) handyIncludedMenuItemIds.add(id);
+    }
+  }
+}
+
+async function loadHandyStoreSettings() {
+  try {
+    const sr = await api("/stores/" + encodeURIComponent(STORE) + "/settings");
+    const s = (sr.store && sr.store.settings) || {};
+    handyCourseChargeOptionExtras = s.guestCourseIncludedChargeOptionExtras !== false;
+  } catch (_) {
+    handyCourseChargeOptionExtras = true;
+  }
+}
+
 function handyRowUnitPrice(meta, row) {
+  if (meta && !itemIsSet(meta) && handyItemInCourseIncluded(meta.id)) {
+    if (!handyCourseChargeOptionExtras) return 0;
+    let p = 0;
+    for (const sel of (row && row.optionSelections) || []) {
+      const g = optionGroupMap.get(sel.optionGroupId);
+      if (!g) continue;
+      for (const oid of sel.optionItemIds || []) {
+        const it = (g.items || []).find((x) => x.id === oid);
+        if (it) p += Number(it.priceDelta) || 0;
+      }
+    }
+    return p;
+  }
   let p = Number(meta && meta.price) || 0;
   if (meta && itemIsSet(meta)) {
     const steps = itemSetSteps(meta);
@@ -1224,6 +1265,9 @@ async function loadSessions(preferSessionId) {
     sel.value = prevPreferred;
   }
   updateHandySeparateBtn();
+  refreshHandyCoursePricing();
+  renderItems();
+  renderCart();
 }
 
 async function loadCustomers() {
@@ -1444,6 +1488,7 @@ function renderItems() {
     left.style.minWidth = "0";
     const hasOpts = itemHasSelectableOptions(it);
     const isSet = itemIsSet(it);
+    const inCourse = !isSet && handyItemInCourseIncluded(it.id);
     const rLabel =
       hi.reason === "soldout"
         ? "売り切れ"
@@ -1453,11 +1498,14 @@ function renderItems() {
           : "セット未設定"
         : takeoutBlocked
           ? "テイクアウト不可"
-          : isSet
-            ? "セット"
-            : hasOpts
-              ? "オプションあり"
-              : "";
+          : inCourse
+            ? "コース内"
+            : isSet
+              ? "セット"
+              : hasOpts
+                ? "オプションあり"
+                : "";
+    const priceLabel = inCourse ? "コース内（本体0円）" : yen(it.price);
     left.innerHTML =
       "<div style=\"font-weight:700\">" +
       escapeHtml(it.name) +
@@ -1465,7 +1513,7 @@ function renderItems() {
       "<div class=\"meta\">" +
       escapeHtml(it._catName || "") +
       " · " +
-      yen(it.price) +
+      priceLabel +
       (rLabel ? " · " + rLabel : "") +
       "</div>";
     const btn = document.createElement("button");
@@ -1679,11 +1727,19 @@ if (handyStickySubmitEl) handyStickySubmitEl.onclick = () => submitOrder();
   const okB = document.getElementById("handySepConfirm");
   if (okB) okB.onclick = () => confirmSeparateBill().catch((e) => log(String(e.message || e)));
   const sessSel = document.getElementById("handySession");
-  if (sessSel) sessSel.addEventListener("change", updateHandySeparateBtn);
+  if (sessSel) {
+    sessSel.addEventListener("change", () => {
+      updateHandySeparateBtn();
+      refreshHandyCoursePricing();
+      renderItems();
+      renderCart();
+    });
+  }
 })();
 
 (async () => {
   wireHandyEatModeRadios();
+  const settingsPromise = loadHandyStoreSettings().catch(() => {});
   const sessionsPromise = loadSessions().catch((e) => log(String(e.message || e)));
   try {
     await loadMenuAndOptions();
@@ -1692,7 +1748,7 @@ if (handyStickySubmitEl) handyStickySubmitEl.onclick = () => submitOrder();
   } catch (e) {
     log(String(e.message || e));
   }
-  await sessionsPromise;
+  await Promise.all([settingsPromise, sessionsPromise]);
   try {
     await loadCustomers();
   } catch (e) {

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { courseIncludedSingleMenuItemIds } from "../lib/course-included-singles.js";
 import { prisma } from "../db.js";
 import { computeCourseSessionTotal } from "../lib/course-pricing.js";
 import { liveSessionSuggestedTotal } from "../lib/session-live-total.js";
@@ -178,6 +179,21 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
     const takeoutBySalesOrderId = new Map(takeoutRows.map((r) => [r.salesOrderId, r]));
 
     const includeTotals = req.query.includeTotals === "1" || req.query.includeTotals === "true";
+
+    const includedBySessionId = new Map<string, string[]>();
+    await Promise.all(
+      sessions
+        .filter((s): s is (typeof sessions)[number] & { courseId: string } => Boolean(s.courseId))
+        .map(async (s) => {
+          const ids = await courseIncludedSingleMenuItemIds(prisma, {
+            courseId: s.courseId,
+            guestCount: s.guestCount ?? 0,
+            purchasedCourseOptionPackIds: s.purchasedCourseOptionPackIds,
+          });
+          includedBySessionId.set(s.id, [...ids]);
+        }),
+    );
+
     if (!includeTotals) {
       return {
         storeId: store.id,
@@ -190,6 +206,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
             ...s,
             uiCustomerLabel,
             uiOrderedAt,
+            includedMenuItemIds: includedBySessionId.get(s.id) ?? [],
             orders: undefined,
           };
         }),
@@ -207,6 +224,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
           currentTotal: liveSessionSuggestedTotal(s),
           uiCustomerLabel,
           uiOrderedAt,
+          includedMenuItemIds: includedBySessionId.get(s.id) ?? [],
           orders: undefined,
         };
       }),

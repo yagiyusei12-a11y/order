@@ -25,6 +25,7 @@ import {
   taxIncludedFromNet,
   type EatMode,
 } from "../lib/order-line-tax.js";
+import { courseIncludedSingleMenuItemIds } from "../lib/course-included-singles.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
 import { prisma } from "../db.js";
 import { broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
@@ -133,36 +134,13 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
           }
         }
 
-        const includedTierIds = new Set<string>();
-        const gcTier = sess.guestCount ?? 0;
-        if (sess.courseId) {
-          const linkT = await tx.courseMenuItem.findMany({
-            where: { courseId: sess.courseId },
-            include: { menuItem: { select: { sellKind: true } } },
-          });
-          for (const row of linkT) {
-            if (
-              row.menuItem &&
-              row.menuItem.sellKind !== "set" &&
-              gcTier >= row.minGuestCount
-            ) {
-              includedTierIds.add(row.menuItemId);
-            }
-          }
-          const pidsT = parsePurchasedCourseOptionPackIds(sess.purchasedCourseOptionPackIds);
-          if (pidsT.length > 0 && sess.courseId) {
-            const pimT = await tx.courseOptionPackMenuItem.findMany({
-              where: {
-                packId: { in: pidsT },
-                pack: { courseId: sess.courseId },
-              },
-              include: { menuItem: { select: { sellKind: true } } },
-            });
-            for (const r of pimT) {
-              if (r.menuItem && r.menuItem.sellKind !== "set") includedTierIds.add(r.menuItemId);
-            }
-          }
-        }
+        const includedTierIds = sess.courseId
+          ? await courseIncludedSingleMenuItemIds(tx, {
+              courseId: sess.courseId,
+              guestCount: sess.guestCount ?? 0,
+              purchasedCourseOptionPackIds: sess.purchasedCourseOptionPackIds,
+            })
+          : new Set<string>();
 
         type Resolved = {
           menuItemId: string;
@@ -470,8 +448,14 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
               ),
             })),
           }));
-          const optSum = sumInclusiveOptionPriceDelta(linkedGroupsTaxed, vOpt.byGroup);
-          const unitPrice = discountedBase + optSum;
+          const inCourseIncluded = Boolean(sess.courseId && includedTierIds.has(item.id));
+          const effectiveBase = inCourseIncluded ? 0 : discountedBase;
+          const chargeOptExtras = st.guestCourseIncludedChargeOptionExtras !== false;
+          const optSum =
+            inCourseIncluded && !chargeOptExtras
+              ? 0
+              : sumInclusiveOptionPriceDelta(linkedGroupsTaxed, vOpt.byGroup);
+          const unitPrice = effectiveBase + optSum;
           const lineExtraOpts = buildSingleOptionsLineExtra(linkedGroupsTaxed, vOpt.byGroup);
           const optArr = lineExtraOpts.options;
           const hasOptDetail = Array.isArray(optArr) && optArr.length > 0;

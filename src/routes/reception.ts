@@ -443,6 +443,37 @@ async function syncReservationSeatLocks(input: {
   });
 }
 
+/** ネット予約: 時刻枠キーに加え、昼/夜シフト（date_lunch / date_dinner）でもロック（同一シフト内の別時刻の二重割当防止） */
+async function createNetReservationSeatLocks(
+  tx: Prisma.TransactionClient,
+  input: {
+    storeId: string;
+    resKey: string;
+    slotKey: string;
+    legacyShiftKey: string;
+    seatIds: string[];
+  },
+): Promise<void> {
+  const uniqueSeats = [...new Set(input.seatIds.filter((s) => typeof s === "string" && s))];
+  if (uniqueSeats.length === 0) return;
+  const rows: { storeId: string; shiftKey: string; seatId: string; resKey: string }[] = [];
+  for (const seatId of uniqueSeats) {
+    rows.push({
+      storeId: input.storeId,
+      shiftKey: input.slotKey,
+      seatId,
+      resKey: input.resKey,
+    });
+    rows.push({
+      storeId: input.storeId,
+      shiftKey: input.legacyShiftKey,
+      seatId,
+      resKey: input.resKey,
+    });
+  }
+  await tx.receptionReservationSeat.createMany({ data: rows });
+}
+
 async function ensureReceptionRows(storeId: string): Promise<void> {
   await prisma.receptionConfig.upsert({
     where: { storeId },
@@ -1159,8 +1190,12 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
             create: { storeId: store.id, resKey: resId, data: reservation as never, date, shift, status: "予約確定" },
             update: { data: reservation as never, date, shift, status: "予約確定" },
           });
-          await tx.receptionReservationSeat.createMany({
-            data: seats.map((seatId) => ({ storeId: store.id, shiftKey: slotKeySnap, seatId, resKey: resId })),
+          await createNetReservationSeatLocks(tx, {
+            storeId: store.id,
+            resKey: resId,
+            slotKey: slotKeySnap,
+            legacyShiftKey: legacyKey,
+            seatIds: seats,
           });
           const labelByCode = new Map(
             tables.map((t) => [t.publicCode, tableDisplayLabel(t.name, t.publicCode)]),

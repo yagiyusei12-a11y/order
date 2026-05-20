@@ -365,44 +365,6 @@ async function collectUsedSeatsForNetReservation(
   return used;
 }
 
-/** 本日の未来予約（未キャンセル・来店前）が席に紐づくか */
-async function seatHasFutureReservation(
-  storeId: string,
-  seatId: string,
-  storeTimeZone: string,
-): Promise<boolean> {
-  const now = storeNowWallClock(storeTimeZone);
-  const today = now.dateYmd;
-  const rows = await prisma.receptionReservation.findMany({
-    where: { storeId, status: "予約確定", date: { gte: today } },
-    select: { data: true, date: true, status: true },
-  });
-  for (const row of rows) {
-    const d = (row.data && typeof row.data === "object" && !Array.isArray(row.data)
-      ? row.data
-      : {}) as Record<string, unknown>;
-    const date = typeof d.date === "string" ? d.date : row.date;
-    const status = typeof d.status === "string" ? d.status : row.status;
-    if (status !== "予約確定") continue;
-    const seatsArr = Array.isArray(d.seats) ? (d.seats as unknown[]) : [];
-    if (!seatsArr.some((x) => typeof x === "string" && x === seatId)) continue;
-    if (date > today) return true;
-    if (date < today) continue;
-    const timeStr = typeof d.time === "string" ? d.time : "";
-    if (!timeStr.trim()) return true;
-    const m = /^(\d{1,2}):(\d{2})$/.exec(timeStr.trim());
-    if (!m) return true;
-    try {
-      const base = startOfWallCalendarDayUtc(today, storeTimeZone).getTime();
-      const resMs = base + (Number(m[1]) * 60 + Number(m[2])) * 60 * 1000;
-      if (resMs > now.nowMs) return true;
-    } catch {
-      return true;
-    }
-  }
-  return false;
-}
-
 function netReserveSlotStepMinutes(c: Record<string, unknown>): number {
   const n = Number(c.netReserveSlotMinutes);
   if (!Number.isFinite(n)) return 15;
@@ -882,8 +844,8 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
             }
             if (prev === "cleaning" && (next === "empty" || next === "vacant")) {
               await closeTableSessionsForReceptionMapClear(store.id, id);
-              const hasFuture = await seatHasFutureReservation(store.id, id, stSetEv.timezone);
-              r.status = hasFuture ? "reserved" : "empty";
+              // スタッフがバッシング完了で空席に戻した操作は常に白（empty）。予約ブロックは GET /state の applyReservationBlocksToSeats で近い枠のみ反映。
+              r.status = "empty";
             }
           }
         }

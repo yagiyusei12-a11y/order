@@ -184,9 +184,6 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
           if (typeof l.menuItemId !== "string" || !l.menuItemId) {
             throw new Error("BAD_ITEM");
           }
-          if (allowedIds && !allowedIds.has(l.menuItemId)) {
-            throw new Error("BAD_ITEM");
-          }
 
           const item = await tx.menuItem.findFirst({
             where: {
@@ -240,8 +237,9 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
 
           const eatMode = normalizeEatMode((l as { eatMode?: unknown }).eatMode);
           const lineTaxPct = eatModeTaxRatePercent(eatMode, st.taxRatePercent);
-          if (allowedIds && !allowedIds.has(item.id)) {
-            throw new Error("BAD_ITEM");
+          // コース制限は単品のみ（セットはゲスト注文と同様、コース linked 外でも可）
+          if (allowedIds && item.sellKind !== "set" && !allowedIds.has(item.id)) {
+            throw new Error("BAD_ITEM_COURSE");
           }
           if (eatMode === "takeout") {
             if (item.allowTakeout !== true) throw new Error("BAD_TAKEOUT");
@@ -319,7 +317,6 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
                 const ch = stp.choices.find((c) => c.componentMenuItemId === compId);
                 if (!ch) throw new Error("BAD_SET");
                 const comp = ch.componentMenuItem;
-                if (comp.isAvailable === false) throw new Error("BAD_ITEM");
                 const linkedGroupsRaw = (comp.optionLinks || [])
                   .map((ol) => ol.optionGroup)
                   .filter((g): g is NonNullable<typeof g> => Boolean(g && g.active))
@@ -599,6 +596,11 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
       const msg = e instanceof Error ? e.message : "";
       if (msg === "BAD_QTY") return reply.code(400).send({ error: "invalid qty" });
       if (msg === "BAD_ITEM") return reply.code(400).send({ error: "invalid or unavailable menu item" });
+      if (msg === "BAD_ITEM_COURSE") {
+        return reply
+          .code(400)
+          .send({ error: "コースの対象外の単品です（コースに含まれる商品か、＋オプションで追加された商品のみ注文できます）" });
+      }
       if (msg === "BAD_STOCK") {
         return reply.code(400).send({ error: "在庫が足りないか、売り切れの商品が含まれています" });
       }

@@ -162,8 +162,11 @@ function handyOrderErrorMessage(msg) {
   if (s.includes("セットの選択が不正")) {
     return s;
   }
+  if (s.includes("コースの対象外の単品")) {
+    return s;
+  }
   if (s.includes("invalid or unavailable menu item")) {
-    return "注文できない商品が含まれています（販売停止の構成・コース制限など）";
+    return "注文できない商品が含まれています（セット本体の販売停止・メニュー削除など）";
   }
   return s;
 }

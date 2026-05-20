@@ -11,16 +11,23 @@ let allCategories = [];
 let allStations = [];
 
 const HALL_READY_SOUND_URL = "/staff-assets/30_nekketsu_win.wav";
-/** 未提供の調理済み行が残っている間、3連再生の間隔（ms） */
+/** 未提供の調理済み行が残っている間、再通知の間隔（ms） */
 const HALL_CHIME_CYCLE_MS = 10000;
 /** @type {Set<string>} */
 const hallChimePendingIds = new Set();
 let hallChimeTimer = null;
 let hallChimePlaying = false;
 let hallChimeInitialized = false;
+/** @type {AudioContext | null} */
+let hallAudioCtx = null;
 let hallReadyAudio = null;
 let hallAudioUnlockDone = false;
+let hallHtmlAudioPrimed = false;
 let hallAudioUnlockListenersInstalled = false;
+/** @type {AudioBuffer | null} */
+let hallReadyDecodedBuffer = null;
+/** @type {Promise<AudioBuffer | null> | null} */
+let hallReadyDecodePromise = null;
 
 function log(t) {
   const el = document.getElementById("log");
@@ -137,21 +144,48 @@ function hallLineKey(ln) {
   return kitchenPatchLineId(ln) || String(ln.id || "");
 }
 
+/** iPad/iOS Safari: ユーザー操作で AudioContext と HTML Audio を解除（ポーリングからの再生に必要） */
 function primeHallAudioFromUserGesture() {
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (Ctx) {
-      const ctx = new Ctx();
-      const resumeP = ctx.state === "suspended" ? ctx.resume() : Promise.resolve();
-      void Promise.resolve(resumeP).then(() => {
-        try {
-          const buf = ctx.createBuffer(1, 1, ctx.sampleRate);
-          const src = ctx.createBufferSource();
-          src.buffer = buf;
-          src.connect(ctx.destination);
-          src.start(0);
-          hallAudioUnlockDone = true;
-        } catch (_) {}
+      if (!hallAudioCtx) hallAudioCtx = new Ctx();
+      const resumeP =
+        hallAudioCtx.state === "suspended" ? hallAudioCtx.resume() : Promise.resolve();
+      return Promise.resolve(resumeP).then(() => {
+        if (!hallAudioUnlockDone && hallAudioCtx && hallAudioCtx.state === "running") {
+          try {
+            const buf = hallAudioCtx.createBuffer(1, 1, hallAudioCtx.sampleRate);
+            const src = hallAudioCtx.createBufferSource();
+            src.buffer = buf;
+            src.connect(hallAudioCtx.destination);
+            src.start(0);
+            hallAudioUnlockDone = true;
+          } catch (_) {}
+        }
+        if (!hallReadyAudio) {
+          hallReadyAudio = new Audio(HALL_READY_SOUND_URL);
+          hallReadyAudio.preload = "auto";
+          hallReadyAudio.load();
+        }
+        if (!hallHtmlAudioPrimed && hallReadyAudio) {
+          hallReadyAudio.muted = true;
+          const p = hallReadyAudio.play();
+          hallHtmlAudioPrimed = true;
+          const finish = () => {
+            try {
+              hallReadyAudio.pause();
+              hallReadyAudio.muted = false;
+              hallReadyAudio.currentTime = 0;
+            } catch (_) {}
+          };
+          if (p && typeof p.then === "function") {
+            return p.then(finish).catch(() => {
+              hallHtmlAudioPrimed = false;
+            });
+          }
+          finish();
+        }
       });
     }
     if (!hallReadyAudio) {
@@ -160,28 +194,64 @@ function primeHallAudioFromUserGesture() {
       hallReadyAudio.load();
     }
   } catch (_) {}
+  return Promise.resolve();
 }
 
 function installHallAudioUnlockListeners() {
   if (hallAudioUnlockListenersInstalled) return;
   hallAudioUnlockListenersInstalled = true;
-  const unlock = () => primeHallAudioFromUserGesture();
+  const unlock = () => {
+    void primeHallAudioFromUserGesture();
+  };
   for (const ev of ["pointerdown", "touchstart", "touchend", "click", "keydown"]) {
-    document.addEventListener(ev, unlock, { capture: true, passive: true });
+    window.addEventListener(ev, unlock, { capture: true, passive: true });
   }
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") primeHallAudioFromUserGesture();
+    if (document.visibilityState === "visible") void primeHallAudioFromUserGesture();
   });
-  window.__primeStaffPageAudio = () => primeHallAudioFromUserGesture();
+  window.__primeStaffPageAudio = () => void primeHallAudioFromUserGesture();
 }
 
-function sleepMs(ms) {
-  return new Promise((r) => setTimeout(r, ms));
+async function ensureHallReadyDecodedBuffer() {
+  if (hallReadyDecodedBuffer) return hallReadyDecodedBuffer;
+  if (!hallReadyDecodePromise) {
+    hallReadyDecodePromise = (async () => {
+      try {
+        await primeHallAudioFromUserGesture();
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return null;
+        if (!hallAudioCtx) hallAudioCtx = new Ctx();
+        if (hallAudioCtx.state === "suspended") await hallAudioCtx.resume();
+        const res = await fetch(HALL_READY_SOUND_URL);
+        if (!res.ok) return null;
+        const ab = await res.arrayBuffer();
+        hallReadyDecodedBuffer = await hallAudioCtx.decodeAudioData(ab);
+        return hallReadyDecodedBuffer;
+      } catch (_) {
+        return null;
+      }
+    })();
+  }
+  return hallReadyDecodePromise;
+}
+
+async function playHallReadySoundViaWebAudio() {
+  const ctx = hallAudioCtx;
+  if (!ctx) return false;
+  if (ctx.state === "suspended") await ctx.resume();
+  if (ctx.state !== "running") return false;
+  const buf = await ensureHallReadyDecodedBuffer();
+  if (!buf) return false;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.connect(ctx.destination);
+  src.start(0);
+  return true;
 }
 
 async function playHallReadySoundOnce() {
   try {
-    primeHallAudioFromUserGesture();
+    await primeHallAudioFromUserGesture();
     const base =
       hallReadyAudio ||
       (() => {
@@ -193,19 +263,20 @@ async function playHallReadySoundOnce() {
     audio.volume = 1;
     audio.currentTime = 0;
     await audio.play();
-  } catch (_) {}
+  } catch (_) {
+    try {
+      await playHallReadySoundViaWebAudio();
+    } catch (_) {}
+  }
 }
 
-/** 1サイクル: 効果音を3回 */
-async function playHallReadyChimeTriple() {
+/** 調理済みが届いたタイミングで効果音を1回 */
+async function playHallReadyChimeOnce() {
   if (hallChimePlaying) return;
   hallChimePlaying = true;
   try {
-    for (let i = 0; i < 3; i++) {
-      if (hallChimePendingIds.size === 0) break;
-      await playHallReadySoundOnce();
-      if (i < 2 && hallChimePendingIds.size > 0) await sleepMs(280);
-    }
+    if (hallChimePendingIds.size === 0) return;
+    await playHallReadySoundOnce();
   } finally {
     hallChimePlaying = false;
   }
@@ -220,14 +291,14 @@ function updateHallChimeAlarm() {
     return;
   }
   if (hallChimeTimer) return;
-  void playHallReadyChimeTriple();
+  void playHallReadyChimeOnce();
   hallChimeTimer = setInterval(() => {
     if (hallChimePendingIds.size === 0) {
       clearInterval(hallChimeTimer);
       hallChimeTimer = null;
       return;
     }
-    void playHallReadyChimeTriple();
+    void playHallReadyChimeOnce();
   }, HALL_CHIME_CYCLE_MS);
 }
 

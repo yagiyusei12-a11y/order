@@ -12,7 +12,7 @@ let allStations = [];
 
 const HALL_READY_SOUND_URL = "/staff-assets/30_nekketsu_win.wav";
 /** 未提供の調理済み行が残っている間、再通知の間隔（ms） */
-const HALL_CHIME_CYCLE_MS = 10000;
+const HALL_CHIME_CYCLE_MS = 30000;
 /** @type {Set<string>} */
 const hallChimePendingIds = new Set();
 let hallChimeTimer = null;

@@ -775,7 +775,7 @@ async function mountRegisterFlow(panel, ctx) {
       ? "<p class=\"muted\" style=\"font-size:0.68rem;margin:0.35rem 0 0;line-height:1.35\">別会計: 商品行にチェックしてから実行</p>"
       : "") +
     "</div>";
-  const registerHtml =
+  const paymentSummaryHtml =
     (ordersDiscAmt > 0
       ? "<div class=\"row ops-total-row\"><span class=\"muted\">注文値引（商品行）</span><strong style=\"color:#059669\">−" +
         BillRegisterShared.yen(ordersDiscAmt) +
@@ -795,7 +795,8 @@ async function mountRegisterFlow(panel, ctx) {
     taxDetailHtml +
     "<div class=\"row ops-total-row ops-total-main\"><span class=\"muted\">請求金額</span><strong>" +
     BillRegisterShared.yen(detail.totalAmount) +
-    "</strong></div>" +
+    "</strong></div>";
+  const paymentFormHtml =
     "<label>支払い方法</label><select id=\"payMethod\">" +
     methods +
     "</select>" +
@@ -811,7 +812,14 @@ async function mountRegisterFlow(panel, ctx) {
         "</div>") +
     "<button type=\"button\" class=\"btn-primary\" id=\"btnConfirmPayment\" style=\"margin-top:0.65rem\"" +
     ((readOnly || !bcPay) ? " disabled title=\"店舗設定により入金の追加は無効です\"" : "") +
-    ">確定</button>" +
+    ">確定</button>";
+  const registerHtml =
+    "<div id=\"opsPaymentSummary\">" +
+    paymentSummaryHtml +
+    "</div>" +
+    "<div id=\"opsPaymentForm\">" +
+    paymentFormHtml +
+    "</div>" +
     "<div id=\"afterPayment\" style=\"margin-top:0.7rem\"></div>";
 
   if (ctx.opsTwoColumn) {
@@ -1263,6 +1271,15 @@ async function mountRegisterFlow(panel, ctx) {
       });
       if (isCash) ctx.hooks.tryOpenDrawer();
       const refreshed = await ctx.api(ctx.billPath(detail.id));
+      const remAfter = Number(refreshed.remainder || 0);
+      if (remAfter <= 0) {
+        const summaryEl = panel.querySelector("#opsPaymentSummary");
+        const formEl = panel.querySelector("#opsPaymentForm");
+        if (summaryEl) summaryEl.hidden = true;
+        if (formEl) formEl.hidden = true;
+        const regCol = panel.querySelector(".ops-register-layout__register");
+        if (regCol) regCol.classList.add("ops-register-layout__register--paid");
+      }
       afterBox.innerHTML =
         "<div class=\"card\" style=\"padding:0.75rem;margin-top:0.4rem;background:#ecfdf3;border-color:#86efac\">" +
         "<strong>会計情報</strong>" +

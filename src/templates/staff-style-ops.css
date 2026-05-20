@@ -414,6 +414,19 @@ body.native-pos .page-title {
   overflow-y: auto;
 }
 
+.ops-register-layout__register--paid {
+  padding-top: 0.35rem;
+}
+
+.ops-register-layout__register--paid #opsPaymentSummary,
+.ops-register-layout__register--paid #opsPaymentForm {
+  display: none !important;
+}
+
+.ops-register-layout__register--paid #afterPayment {
+  margin-top: 0 !important;
+}
+
 @media (max-width: 720px) {
   .ops-register-layout {
     grid-template-columns: 1fr;

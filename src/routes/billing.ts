@@ -28,6 +28,8 @@ import { syncReceptionShiftSeatsForTable } from "../lib/reception-seat-state.js"
 import { applyPostSettleSessionStatusInTx } from "../lib/post-settle-session.js";
 import { broadcastOpsSessionUpdatedMany } from "../lib/ops-seat-socket.js";
 import { liveSessionSuggestedTotal } from "../lib/session-live-total.js";
+import { recomputeOpenBillTotalForSession } from "../lib/recompute-session-bill.js";
+import { eatModeTaxRatePercent, normalizeEatMode } from "../lib/order-line-tax.js";
 
 type SessionForPreview = {
   guestCount: number;
@@ -1520,6 +1522,108 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     broadcastOpsSessionUpdated(bill.storeId, bill.sessionId);
     const billPayload = await buildBillDetailPayload(req.params.storeId, bill.id);
     return { ok: true, line: updated, bill: billPayload };
+  });
+
+  /** OPS など：メニュー未登録の自由明細（商品名・税込単価） */
+  app.post<{
+    Params: { storeId: string; billId: string };
+    Body: { name?: string; unitPrice?: number; qty?: number; eatMode?: unknown };
+  }>("/stores/:storeId/bills/:billId/custom-lines", async (req, reply) => {
+    const st = await mergedSettingsForStore(req.params.storeId);
+    if (!st) return reply.code(404).send({ error: "store not found" });
+    if (forbidBillCorrection(reply, st, "orderLines", "店舗設定により明細の追加は無効です")) return;
+
+    const bill = await prisma.bill.findFirst({
+      where: { id: req.params.billId, storeId: req.params.storeId },
+      include: { session: true },
+    });
+    if (!bill) return reply.code(404).send({ error: "bill not found" });
+    if (!bill.sessionId || !bill.session) {
+      return reply.code(400).send({ error: "bill is not linked to session" });
+    }
+    if (bill.status !== "open") {
+      return reply.code(400).send({ error: "only open bill can add custom lines" });
+    }
+
+    const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    if (!name || name.length > 80) {
+      return reply.code(400).send({ error: "name required (max 80 chars)" });
+    }
+    const unitPriceRaw = req.body?.unitPrice;
+    if (
+      typeof unitPriceRaw !== "number" ||
+      !Number.isInteger(unitPriceRaw) ||
+      unitPriceRaw < 0 ||
+      unitPriceRaw > 9_999_999
+    ) {
+      return reply.code(400).send({ error: "unitPrice must be integer 0..9999999" });
+    }
+    const unitPrice = unitPriceRaw;
+    const qtyRaw = req.body?.qty;
+    const qty =
+      qtyRaw === undefined || qtyRaw === null
+        ? 1
+        : Number.isInteger(qtyRaw) && qtyRaw >= 1 && qtyRaw <= 99
+          ? qtyRaw
+          : NaN;
+    if (!Number.isFinite(qty)) {
+      return reply.code(400).send({ error: "qty must be integer 1..99" });
+    }
+
+    const eatMode = normalizeEatMode(req.body?.eatMode);
+    const taxRatePercent = eatModeTaxRatePercent(eatMode, st.taxRatePercent);
+    if (eatMode === "takeout" && bill.session.courseId && !st.guestCourseAddonAllowTakeout) {
+      return reply.code(400).send({ error: "テイクアウト明細はコース設定により追加できません" });
+    }
+
+    const staffUserId = staffUserIdFromReq(req);
+    await prisma.$transaction(async (tx) => {
+      const so = await tx.salesOrder.create({
+        data: {
+          sessionId: bill.sessionId!,
+          status: "submitted",
+          note: "OPS自由明細",
+        },
+      });
+      await tx.orderLine.create({
+        data: {
+          orderId: so.id,
+          menuItemId: null,
+          nameSnapshot: name,
+          unitPrice,
+          qty,
+          note: null,
+          lineExtra: { kind: "customLine", source: "ops" } as Prisma.InputJsonValue,
+          eatMode,
+          taxRatePercent,
+          status: "queued",
+        },
+      });
+      try {
+        await tx.billCorrectionEvent.create({
+          data: {
+            storeId: bill.storeId,
+            billId: bill.id,
+            kind: "custom_line_add",
+            payload: { name, unitPrice, qty, eatMode } as Prisma.InputJsonValue,
+            ...(staffUserId ? { staffUserId } : {}),
+          },
+        });
+      } catch {
+        // ignore
+      }
+      await recomputeOpenBillTotalForSession(tx, bill.storeId, bill.sessionId!);
+    });
+
+    await appendStaffAuditFromRequest(req, bill.storeId, staffUserId, "custom_line_add", {
+      billId: bill.id,
+      name,
+      unitPrice,
+      qty,
+    }).catch(() => {});
+    broadcastOpsSessionUpdated(bill.storeId, bill.sessionId);
+    const billPayload = await buildBillDetailPayload(req.params.storeId, bill.id);
+    return { ok: true, bill: billPayload };
   });
 
   app.patch<{

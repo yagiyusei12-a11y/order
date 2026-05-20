@@ -633,8 +633,25 @@ async function mountRegisterFlow(panel, ctx) {
 
   const coursePacksHtml = buildOpsCourseOptionPacksSection(ctx, session, readOnly);
   const OPS_OVERLAY_Z = "13000";
+  const customLineFormHtml = !readOnly && bcOl
+    ? "<div class=\"ops-custom-line-form card\" style=\"padding:0.5rem 0.65rem;margin:0 0 0.5rem;border:1px solid #e2e8f0\">" +
+      "<p class=\"muted\" style=\"font-size:0.68rem;margin:0 0 0.4rem;line-height:1.35\">商品名と税込単価で自由明細を追加（メニュー未登録）</p>" +
+      "<div class=\"row\" style=\"gap:0.4rem;flex-wrap:wrap;align-items:flex-end;margin:0\">" +
+      "<div style=\"flex:1;min-width:7rem\">" +
+      "<label for=\"opsCustomLineName\" style=\"font-size:0.68rem;display:block\">商品名</label>" +
+      "<input id=\"opsCustomLineName\" type=\"text\" maxlength=\"80\" placeholder=\"例: サービス料\" style=\"width:100%;padding:0.35rem 0.45rem;border-radius:8px;border:1px solid var(--border)\" /></div>" +
+      "<div style=\"width:5.5rem\">" +
+      "<label for=\"opsCustomLinePrice\" style=\"font-size:0.68rem;display:block\">単価（税込）</label>" +
+      "<input id=\"opsCustomLinePrice\" type=\"number\" min=\"0\" step=\"1\" inputmode=\"numeric\" placeholder=\"0\" style=\"width:100%;padding:0.35rem 0.45rem;border-radius:8px;border:1px solid var(--border)\" /></div>" +
+      "<div style=\"width:3.25rem\">" +
+      "<label for=\"opsCustomLineQty\" style=\"font-size:0.68rem;display:block\">数量</label>" +
+      "<input id=\"opsCustomLineQty\" type=\"number\" min=\"1\" max=\"99\" step=\"1\" value=\"1\" style=\"width:100%;padding:0.35rem 0.45rem;border-radius:8px;border:1px solid var(--border)\" /></div>" +
+      "<button type=\"button\" class=\"btn-primary\" id=\"btnOpsCustomLineAdd\" style=\"width:auto;padding:0.45rem 0.75rem;align-self:flex-end\">追加</button>" +
+      "</div></div>"
+    : "";
   const ordersTableHtml =
     coursePacksHtml +
+    customLineFormHtml +
     "<h3 class=\"ops-sec-title\">コース・注文</h3>" +
     "<div class=\"card ops-order-card\"><table class=\"ops-order-table\">" +
     orderTableFallback +
@@ -961,6 +978,53 @@ async function mountRegisterFlow(panel, ctx) {
   const btnBillDiscount = $("btnBillDiscount");
   if (btnBillDiscount) {
     btnBillDiscount.onclick = () => ctx.hooks.openBillDiscountModal(detail, session, table);
+  }
+
+  const btnOpsCustomLineAdd = $("btnOpsCustomLineAdd");
+  if (btnOpsCustomLineAdd && bcOl) {
+    btnOpsCustomLineAdd.onclick = async () => {
+      const nameEl = $("opsCustomLineName");
+      const priceEl = $("opsCustomLinePrice");
+      const qtyEl = $("opsCustomLineQty");
+      const name = nameEl && nameEl.value ? String(nameEl.value).trim() : "";
+      const unitPrice = priceEl ? Number(priceEl.value) : NaN;
+      const qty = qtyEl ? Number(qtyEl.value) : 1;
+      if (!name) {
+        ctx.log("商品名を入力してください");
+        return;
+      }
+      if (!Number.isInteger(unitPrice) || unitPrice < 0) {
+        ctx.log("単価は0以上の整数（税込）で入力してください");
+        return;
+      }
+      if (!Number.isInteger(qty) || qty < 1 || qty > 99) {
+        ctx.log("数量は1〜99の整数で");
+        return;
+      }
+      btnOpsCustomLineAdd.disabled = true;
+      try {
+        await ctx.api(
+          "/stores/" + encodeURIComponent(ctx.storeId) + "/bills/" + encodeURIComponent(detail.id) + "/custom-lines",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, unitPrice, qty }),
+          },
+        );
+        if (nameEl) nameEl.value = "";
+        if (priceEl) priceEl.value = "";
+        if (qtyEl) qtyEl.value = "1";
+        ctx.log("明細を追加しました");
+        await ctx.hooks.loadAll();
+        ctx.hooks.setSelectedTableId(table.id);
+        ctx.hooks.renderGrid();
+        await ctx.hooks.renderDetail();
+      } catch (e) {
+        ctx.log(String(e.message || e));
+      } finally {
+        btnOpsCustomLineAdd.disabled = false;
+      }
+    };
   }
   panel.querySelectorAll(".ops-line-disc").forEach((btn) => {
     btn.onclick = () => {

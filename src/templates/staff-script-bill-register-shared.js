@@ -1240,6 +1240,10 @@ async function mountRegisterFlow(panel, ctx) {
       ctx.log(String(e.message || e));
     }
   };
+  function confirmOpsRemoveOrderLine(g) {
+    const label = String(g.nameSnapshot || "この商品").trim() || "この商品";
+    return window.confirm("「" + label + "」を削除しますか？");
+  }
   panel.querySelectorAll("[data-line-inc]").forEach((btn) => {
     btn.onclick = async () => {
       const key = btn.getAttribute("data-line-inc") || "";
@@ -1260,6 +1264,7 @@ async function mountRegisterFlow(panel, ctx) {
       const mapKey = BillRegisterShared.groupedKeyForBill(detail.id, g.key);
       const draftQty = ctx.qtyState.pendingGroupedQty.has(mapKey) ? ctx.qtyState.pendingGroupedQty.get(mapKey) : Number(g.qty || 0);
       const target = Math.max(0, Number(draftQty || 0) - 1);
+      if (target === 0 && !confirmOpsRemoveOrderLine(g)) return;
       BillRegisterShared.updateGroupedRowDraftUi(panel, g.key, target, g.unitPrice);
       BillRegisterShared.queueGroupedQtyCommit(ctx, detail, g, target, session, table);
     };
@@ -1269,8 +1274,7 @@ async function mountRegisterFlow(panel, ctx) {
       const key = btn.getAttribute("data-line-del") || "";
       const g = groupedLines.find((x) => x.key === key);
       if (!g) return;
-      const label = String(g.nameSnapshot || "この商品").trim() || "この商品";
-      if (!window.confirm("「" + label + "」を削除しますか？")) return;
+      if (!confirmOpsRemoveOrderLine(g)) return;
       BillRegisterShared.updateGroupedRowDraftUi(panel, g.key, 0, g.unitPrice);
       BillRegisterShared.queueGroupedQtyCommit(ctx, detail, g, 0, session, table);
     };

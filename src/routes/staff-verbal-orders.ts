@@ -218,6 +218,7 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
                         select: {
                           id: true,
                           name: true,
+                          isAvailable: true,
                           stockQty: true,
                           optionLinks: {
                             orderBy: { sortOrder: "asc" },
@@ -308,43 +309,54 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
             }
 
             const compOptLineExtraByKey = new Map<string, Record<string, unknown>>();
+            const compOptSelByKey = new Map<string, unknown>();
             for (const row of setCompOptRows) {
-              const stepRow = item.setSteps.find((s) => s.id === row.stepId);
-              if (!stepRow) throw new Error("BAD_SET_COMP_OPT");
-              const pickedIds = byStep.get(row.stepId) ?? [];
-              const fixedIds = stepRow.choices
-                .filter((c) => c.isFixed === true)
-                .map((c) => c.componentMenuItemId);
-              const allowedPicked = new Set([...fixedIds, ...pickedIds]);
-              if (!allowedPicked.has(row.menuItemId)) throw new Error("BAD_SET_COMP_OPT");
-              const ch = stepRow.choices.find((c) => c.componentMenuItemId === row.menuItemId);
-              if (!ch) throw new Error("BAD_SET_COMP_OPT");
-              const comp = ch.componentMenuItem;
-              const linkedGroupsRaw = (comp.optionLinks || [])
-                .map((ol) => ol.optionGroup)
-                .filter((g): g is NonNullable<typeof g> => Boolean(g && g.active))
-                .map((g) => ({
-                  id: g.id,
-                  name: g.name,
-                  minSelect: g.minSelect,
-                  maxSelect: g.maxSelect,
-                  items: g.items.filter((i) => i.active).map((i) => ({ id: i.id, name: i.name, priceDelta: i.priceDelta })),
-                }))
-                .filter((g) => g.items.length > 0);
-              const linkedGroups = linkedGroupsRaw.map((g) => ({
-                ...g,
-                items: g.items.map((it0) => ({
-                  ...it0,
-                  priceDelta: retaxInclusiveYen(it0.priceDelta, st.taxRatePercent, lineTaxPct),
-                })),
-              }));
-              const vOpt = validateGuestOptionSelections(linkedGroups, row.optionSelections);
-              if (!vOpt.ok) throw new Error("BAD_SET_COMP_OPT");
-              surcharge += sumInclusiveOptionPriceDelta(linkedGroups, vOpt.byGroup);
-              const extra = buildSingleOptionsLineExtra(linkedGroups, vOpt.byGroup);
-              if (Array.isArray(extra.options) && extra.options.length) {
-                compOptLineExtraByKey.set(`${row.stepId}::${row.menuItemId}`, extra);
+              compOptSelByKey.set(`${row.stepId}::${row.menuItemId}`, row.optionSelections);
+            }
+            for (const stp of item.setSteps) {
+              const picked = byStep.get(stp.id) ?? [];
+              for (const compId of picked) {
+                const ch = stp.choices.find((c) => c.componentMenuItemId === compId);
+                if (!ch) throw new Error("BAD_SET");
+                const comp = ch.componentMenuItem;
+                if (comp.isAvailable === false) throw new Error("BAD_ITEM");
+                const linkedGroupsRaw = (comp.optionLinks || [])
+                  .map((ol) => ol.optionGroup)
+                  .filter((g): g is NonNullable<typeof g> => Boolean(g && g.active))
+                  .map((g) => ({
+                    id: g.id,
+                    name: g.name,
+                    minSelect: g.minSelect,
+                    maxSelect: g.maxSelect,
+                    items: g.items
+                      .filter((i) => i.active)
+                      .map((i) => ({ id: i.id, name: i.name, priceDelta: i.priceDelta })),
+                  }))
+                  .filter((g) => g.items.length > 0);
+                if (linkedGroupsRaw.length === 0) continue;
+                const linkedGroups = linkedGroupsRaw.map((g) => ({
+                  ...g,
+                  items: g.items.map((it0) => ({
+                    ...it0,
+                    priceDelta: retaxInclusiveYen(it0.priceDelta, st.taxRatePercent, lineTaxPct),
+                  })),
+                }));
+                const optKey = `${stp.id}::${compId}`;
+                const vOpt = validateGuestOptionSelections(
+                  linkedGroups,
+                  compOptSelByKey.get(optKey),
+                );
+                if (!vOpt.ok) throw new Error("BAD_SET_COMP_OPT");
+                surcharge += sumInclusiveOptionPriceDelta(linkedGroups, vOpt.byGroup);
+                const extra = buildSingleOptionsLineExtra(linkedGroups, vOpt.byGroup);
+                if (Array.isArray(extra.options) && extra.options.length) {
+                  compOptLineExtraByKey.set(optKey, extra);
+                }
               }
+            }
+            for (const row of setCompOptRows) {
+              const picked = byStep.get(row.stepId) ?? [];
+              if (!picked.includes(row.menuItemId)) throw new Error("BAD_SET_COMP_OPT");
             }
 
             const discRows = item.timeDiscounts.map((d) => ({
@@ -474,12 +486,13 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
         }
 
         const itemCache = new Map<string, { id: string; name: string; stockQty: number | null; price: number }>();
+        const topLevelMenuItemIds = new Set(resolved.map((r) => r.menuItemId));
         for (const [menuItemId, needQty] of needStock) {
           const row = await tx.menuItem.findFirst({
             where: {
               id: menuItemId,
-              isAvailable: true,
               category: { storeId: session.storeId },
+              ...(topLevelMenuItemIds.has(menuItemId) ? { isAvailable: true } : {}),
             },
             include: {
               timeDiscounts: {

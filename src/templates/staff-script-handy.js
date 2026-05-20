@@ -156,6 +156,15 @@ function handyOrderErrorMessage(msg) {
   if (s.includes("insufficient stock") || s.includes("在庫が足りない")) {
     return "在庫が足りないか、売り切れの商品が含まれています";
   }
+  if (s.includes("セット構成のオプション")) {
+    return s;
+  }
+  if (s.includes("セットの選択が不正")) {
+    return s;
+  }
+  if (s.includes("invalid or unavailable menu item")) {
+    return "注文できない商品が含まれています（販売停止の構成・コース制限など）";
+  }
   return s;
 }
 
@@ -299,14 +308,12 @@ function handySetLabel(item, setSelections, setComponentOptionSelections) {
  */
 function handySetComponentOptionSurcharge(steps, setSelections, compSelections) {
   let sum = 0;
-  const byStep = new Map();
-  for (const row of setSelections || []) byStep.set(row.stepId, row.menuItemIds || []);
   const compMap = new Map();
   for (const row of compSelections || []) {
     compMap.set(row.stepId + "::" + row.menuItemId, row.optionSelections || []);
   }
   for (const st of steps) {
-    for (const mid of byStep.get(st.id) || []) {
+    for (const mid of handyMergedStepPicks(st, setSelections)) {
       const ch = st.choices.find((c) => c.menuItemId === mid);
       if (!ch || !ch.optionGroups || !ch.optionGroups.length) continue;
       for (const sel of compMap.get(st.id + "::" + mid) || []) {
@@ -323,19 +330,28 @@ function handySetComponentOptionSurcharge(steps, setSelections, compSelections) 
 }
 
 /**
+ * @param {ReturnType<typeof itemSetSteps>[number]} st
+ * @param {{ stepId: string; menuItemIds: string[] }[]} setSelections
+ */
+function handyMergedStepPicks(st, setSelections) {
+  const row = (setSelections || []).find((x) => x.stepId === st.id);
+  const userIds = row && Array.isArray(row.menuItemIds) ? row.menuItemIds : [];
+  const fixedIds = st.choices.filter((c) => c.isFixed).map((c) => c.menuItemId);
+  return [...new Set([...fixedIds, ...userIds])];
+}
+
+/**
  * @param {ReturnType<typeof itemSetSteps>} steps
  * @param {{ stepId: string; menuItemIds: string[] }[]} setSelections
  * @param {{ stepId: string; menuItemId: string; optionSelections: { optionGroupId: string; optionItemIds: string[] }[] }[]} compSelections
  */
 function validateHandySetComponentOptionSelections(steps, setSelections, compSelections) {
-  const byStep = new Map();
-  for (const row of setSelections || []) byStep.set(row.stepId, row.menuItemIds || []);
   const incoming = new Map();
   for (const row of compSelections || []) {
     incoming.set(row.stepId + "::" + row.menuItemId, row.optionSelections || []);
   }
   for (const st of steps) {
-    for (const mid of byStep.get(st.id) || []) {
+    for (const mid of handyMergedStepPicks(st, setSelections)) {
       const ch = st.choices.find((c) => c.menuItemId === mid);
       if (!ch || !ch.optionGroups || !ch.optionGroups.length) continue;
       const sel = incoming.get(st.id + "::" + mid) || [];
@@ -672,11 +688,9 @@ function collectHandySetComponentOptionSelections() {
   const host = document.getElementById("handyOptChoices");
   if (!host || !handyOptPendingItem) return out;
   const steps = itemSetSteps(handyOptPendingItem);
-  const byStep = new Map();
-  for (const row of collectHandySetModalSelections()) byStep.set(row.stepId, row.menuItemIds || []);
+  const setSelections = collectHandySetModalSelections();
   for (const st of steps) {
-    const picked = byStep.get(st.id) || [];
-    for (const mid of picked) {
+    for (const mid of handyMergedStepPicks(st, setSelections)) {
       const ch = st.choices.find((c) => c.menuItemId === mid);
       if (!ch || !ch.optionGroups || !ch.optionGroups.length) continue;
       const optionSelections = [];
@@ -779,6 +793,7 @@ function openHandySetModal(it) {
         fixed.className = "handy-opt-fixed";
         fixed.textContent = "含む: " + ch.name + (itemSoldOut(ch) ? "（売り切れ）" : "");
         block.appendChild(fixed);
+        appendHandySetChoiceOptions(block, st, ch);
         continue;
       }
       const sold = itemSoldOut(ch);

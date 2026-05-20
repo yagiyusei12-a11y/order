@@ -883,6 +883,11 @@
       background: rgba(2, 6, 23, 0.65) !important;
       border-radius: 12px !important;
     }
+    /* 標準付属はチェックボックスがないため、直後の opt-comp を常に表示 */
+    .opt-row-fixed + .opt-comp,
+    .opt-comp.opt-comp--fixed {
+      display: block;
+    }
     /* チェックした行の直後だけ展開（対応ブラウザ用）。JSでも同じ制御を行う */
     label.opt-row:has(> input[type=checkbox]:checked) + .opt-comp { display: block; }
     .opt-comp .muted { color: rgba(241, 245, 249, 0.78) !important; }
@@ -1849,64 +1854,84 @@
       return [...new Set([...fixedIds, ...userIds])];
     }
 
-    function guestHtmlSetChoiceOptionGroups(st, ch, visible) {
-      if (!ch || !ch.optionGroups || !ch.optionGroups.length) return "";
-      const disp = visible === false ? ' style="display:none"' : "";
-      let html = "<div class=\"opt-comp\"" + disp + ' data-comp-for="' + escapeHtml(ch.menuItemId) + '">';
-      html +=
-        "<div class=\"muted\" style=\"font-size:.68rem;margin:0 0 .25rem\">オプション（" +
-        escapeHtml(ch.name) +
-        "）</div>";
-      for (const g of ch.optionGroups) {
-        const b = guestOptionSelectBounds(g);
-        const useRadio = b.maxSelect <= 1;
-        html +=
-          "<div class=\"opt-block\" data-comp-opt-group><div class=\"opt-block-head\"><strong>" +
-          escapeHtml(g.name) +
-          "</strong>" +
-          (b.minSelect > 0 ? '<span class="tag-req">必須</span>' : '<span class="tag-opt">任意</span>') +
-          '<span class="tag-opt" style="margin-left:auto">' +
-          b.minSelect +
-          "〜" +
-          b.maxSelect +
-          "個</span></div>";
-        for (const oi of g.items || []) {
-          const priceTxt = fmtGuestOptionDeltaHtml(Number(oi.priceDelta || 0));
-          const nm = "copt-" + escapeHtml(st.id) + "-" + escapeHtml(ch.menuItemId) + "-" + escapeHtml(g.id);
-          if (useRadio) {
-            html +=
-              '<label class="opt-row"><input type="radio" name="' +
-              nm +
-              '" value="' +
-              escapeHtml(oi.id) +
-              '" /><span class="opt-name">' +
-              escapeHtml(oi.name) +
-              '</span><span class="opt-price">' +
-              priceTxt +
-              "</span></label>";
-          } else {
-            html +=
-              '<label class="opt-row"><input type="checkbox" name="' +
-              nm +
-              '" value="' +
-              escapeHtml(oi.id) +
-              '" data-min="' +
-              b.minSelect +
-              '" data-max="' +
-              b.maxSelect +
-              '" /><span class="opt-name">' +
-              escapeHtml(oi.name) +
-              '</span><span class="opt-price">' +
-              priceTxt +
-              "</span></label>";
-          }
-        }
-        html += "</div>";
-      }
-      html += "</div>";
-      return html;
-    }
-
+    function guestChoiceOptionGroups(ch) {
+      if (ch && ch.optionGroups && ch.optionGroups.length) return ch.optionGroups;
+      const mid = ch && ch.menuItemId != null ? String(ch.menuItemId) : "";
+      if (!mid) return [];
+      const fromCatalog = menuItemById.get(mid);
+      if (fromCatalog && fromCatalog.optionGroups && fromCatalog.optionGroups.length) {
+        return fromCatalog.optionGroups;
+      }
+      return [];
+    }
+
+    function guestHtmlSetChoiceOptionGroups(st, ch, visible) {
+      const groups = guestChoiceOptionGroups(ch);
+      if (!groups.length) return "";
+      const disp = visible === false ? ' style="display:none"' : "";
+      const fixedCls = visible !== false ? " opt-comp--fixed" : "";
+      let html =
+        "<div class=\"opt-comp" +
+        fixedCls +
+        "\"" +
+        disp +
+        ' data-comp-for="' +
+        escapeHtml(ch.menuItemId) +
+        '">';
+      html +=
+        "<div class=\"muted\" style=\"font-size:.68rem;margin:0 0 .25rem\">オプション（" +
+        escapeHtml(ch.name) +
+        "）</div>";
+      for (const g of groups) {
+        const b = guestOptionSelectBounds(g);
+        const useRadio = b.maxSelect <= 1;
+        html +=
+          "<div class=\"opt-block\" data-comp-opt-group><div class=\"opt-block-head\"><strong>" +
+          escapeHtml(g.name) +
+          "</strong>" +
+          (b.minSelect > 0 ? '<span class="tag-req">必須</span>' : '<span class="tag-opt">任意</span>') +
+          '<span class="tag-opt" style="margin-left:auto">' +
+          b.minSelect +
+          "〜" +
+          b.maxSelect +
+          "個</span></div>";
+        for (const oi of g.items || []) {
+          const priceTxt = fmtGuestOptionDeltaHtml(Number(oi.priceDelta || 0));
+          const nm = "copt-" + escapeHtml(st.id) + "-" + escapeHtml(ch.menuItemId) + "-" + escapeHtml(g.id);
+          if (useRadio) {
+            html +=
+              '<label class="opt-row"><input type="radio" name="' +
+              nm +
+              '" value="' +
+              escapeHtml(oi.id) +
+              '" /><span class="opt-name">' +
+              escapeHtml(oi.name) +
+              '</span><span class="opt-price">' +
+              priceTxt +
+              "</span></label>";
+          } else {
+            html +=
+              '<label class="opt-row"><input type="checkbox" name="' +
+              nm +
+              '" value="' +
+              escapeHtml(oi.id) +
+              '" data-min="' +
+              b.minSelect +
+              '" data-max="' +
+              b.maxSelect +
+              '" /><span class="opt-name">' +
+              escapeHtml(oi.name) +
+              '</span><span class="opt-price">' +
+              priceTxt +
+              "</span></label>";
+          }
+        }
+        html += "</div>";
+      }
+      html += "</div>";
+      return html;
+    }
+
     function guestValidateSetStepPickCount(st, userPickCount) {
       const pickable = (st.choices || []).length;
       if (pickable === 0) return userPickCount === 0;
@@ -2308,9 +2333,10 @@
       for (const st of item.setSteps || []) {
         for (const mid of guestSetMergedPickIds(st, host)) {
           const ch = guestSetChoiceByMid(st, mid);
-          if (!ch || !ch.optionGroups || !ch.optionGroups.length) continue;
+          const compGroups = guestChoiceOptionGroups(ch);
+          if (!compGroups.length) continue;
           const optionSelections = [];
-          for (const g of ch.optionGroups) {
+          for (const g of compGroups) {
             const b = guestOptionSelectBounds(g);
             const useRadio = b.maxSelect <= 1;
             let ids = [];
@@ -3435,7 +3461,11 @@
             "</strong>" +
             (req ? "<span class=\"tag-req\">必須</span>" : "<span class=\"tag-opt\">任意</span>") +
             "<span class=\"tag-opt\" style=\"margin-left:auto\">" +
-            (pickableN > 0 ? st.minPick + "〜" + st.maxPick + "品" : "付属品") +
+            (pickableN > 0
+              ? st.minPick === 0 && st.maxPick === 0
+                ? "任意"
+                : st.minPick + "〜" + st.maxPick + "品"
+              : "付属品") +
             "</span></div><div class=\"opt-step-choices\">";
           for (const ch of st.fixedChoices || []) {
             const priceTxt = fmtGuestSetStepChoiceExtraHtml(ch);
@@ -4383,6 +4413,22 @@
       for (const c of cats) {
         for (const it of c.items || []) {
           if (it && it.id != null && it.id !== "") menuItemById.set(String(it.id), it);
+          if (it && it.sellKind === "set" && it.setSteps) {
+            for (const st of it.setSteps) {
+              for (const ch of [...(st.fixedChoices || []), ...(st.choices || [])]) {
+                if (!ch || ch.menuItemId == null || ch.menuItemId === "") continue;
+                const mid = String(ch.menuItemId);
+                if (!ch.optionGroups || !ch.optionGroups.length) continue;
+                const prev = menuItemById.get(mid);
+                menuItemById.set(mid, {
+                  ...(prev || {}),
+                  id: mid,
+                  name: ch.name || (prev && prev.name) || "",
+                  optionGroups: ch.optionGroups,
+                });
+              }
+            }
+          }
         }
       }
       const gs = data.session;

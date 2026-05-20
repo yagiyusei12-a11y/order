@@ -882,7 +882,9 @@ function openHandySetModal(it) {
     const pickableCount = st.choices.filter((c) => !c.isFixed).length;
     hint.textContent =
       pickableCount > 0
-        ? st.minPick + "〜" + st.maxPick + "個選ぶ"
+        ? st.minPick === 0 && st.maxPick === 0
+          ? "選ぶ（任意）"
+          : st.minPick + "〜" + st.maxPick + "個選ぶ"
         : "付属品（選択不要）";
     block.appendChild(title);
     block.appendChild(hint);

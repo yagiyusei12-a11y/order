@@ -12,7 +12,7 @@
     file_post_match_bell: "試合終了ベル（MP3）",
   };
 
-  const PRESET_META = {
+  const BUILTIN_PRESET_META = {
     builtin_kitchen_order: { type: "synth", kind: "kitchen_order" },
     builtin_reception_low: { type: "synth", kind: "reception_low" },
     builtin_reception_mid: { type: "synth", kind: "reception_mid" },
@@ -20,6 +20,30 @@
     file_30_nekketsu_win: { type: "file", url: "/staff-assets/30_nekketsu_win.wav" },
     file_post_match_bell: { type: "file", url: "/staff-assets/post-match-bell-1.mp3" },
   };
+
+  /** @type {Record<string, { type: string, kind?: string, url?: string }>} */
+  let PRESET_META = { ...BUILTIN_PRESET_META };
+  /** @type {Record<string, string>} */
+  let PRESET_LABELS_DYNAMIC = { ...PRESET_LABELS };
+
+  /** @type {{ id: string, label: string, url: string }[]} */
+  let customSoundsList = [];
+
+  function rebuildPresetCatalog(customSounds) {
+    customSoundsList = Array.isArray(customSounds) ? customSounds : [];
+    PRESET_META = { ...BUILTIN_PRESET_META };
+    PRESET_LABELS_DYNAMIC = { ...PRESET_LABELS };
+    for (const row of customSoundsList) {
+      if (!row || typeof row !== "object") continue;
+      const id = typeof row.id === "string" ? row.id : "";
+      const label = typeof row.label === "string" ? row.label : "";
+      const url = typeof row.url === "string" ? row.url : "";
+      if (!id || !url) continue;
+      const presetId = "custom_" + id;
+      PRESET_META[presetId] = { type: "file", url };
+      PRESET_LABELS_DYNAMIC[presetId] = label ? "カスタム: " + label : "カスタム音";
+    }
+  }
 
   const DEFAULTS = {
     order: { enabled: true, preset: "builtin_kitchen_order", repeatSec: 0 },
@@ -47,7 +71,8 @@
   function mergeEvent(raw, fallback) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ...fallback };
     const enabled = typeof raw.enabled === "boolean" ? raw.enabled : fallback.enabled;
-    const preset = isPresetId(raw.preset) ? raw.preset : fallback.preset;
+    const presetRaw = typeof raw.preset === "string" ? raw.preset : fallback.preset;
+    const preset = isPresetId(presetRaw) ? presetRaw : fallback.preset;
     let repeatSec = fallback.repeatSec;
     if (typeof raw.repeatSec === "number" && Number.isFinite(raw.repeatSec)) {
       repeatSec = Math.min(600, Math.max(0, Math.round(raw.repeatSec)));
@@ -66,10 +91,12 @@
   }
 
   function applySettings(storeSettings) {
-    const raw =
+    const st =
       storeSettings && typeof storeSettings === "object" && !Array.isArray(storeSettings)
-        ? storeSettings.staffNotificationSounds
-        : null;
+        ? storeSettings
+        : {};
+    rebuildPresetCatalog(st.staffNotificationCustomSounds);
+    const raw = st.staffNotificationSounds;
     cfg = mergeCfg(raw);
   }
 
@@ -272,10 +299,17 @@
     prime: primeFromUserGesture,
     getRepeatMs,
     getConfig: () => cfg,
-    presetLabels: PRESET_LABELS,
+    get customSounds() {
+      return customSoundsList;
+    },
+    get presetLabels() {
+      return PRESET_LABELS_DYNAMIC;
+    },
     defaultConfig: DEFAULTS,
     preview: (eventKey) => play(eventKey),
+    rebuildPresetCatalog,
   };
 
+  rebuildPresetCatalog([]);
   installUnlockListeners();
 })(typeof window !== "undefined" ? window : globalThis);

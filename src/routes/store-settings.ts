@@ -1,6 +1,23 @@
 import bcrypt from "bcryptjs";
 import type { FastifyInstance } from "fastify";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { prisma } from "../db.js";
+import {
+  ALLOWED_NOTIFICATION_SOUND_MIME,
+  customSoundPresetId,
+  findCustomSound,
+  MAX_CUSTOM_SOUNDS,
+  MAX_LABEL_LEN,
+  mergeStaffNotificationCustomSounds,
+  notificationSoundPublicUrl,
+  notificationSoundUploadDir,
+  safeNotificationSoundFilename,
+} from "../lib/staff-notification-sound-files.js";
+import {
+  DEFAULT_STAFF_NOTIFICATION_SOUNDS,
+  mergeStaffNotificationSounds,
+} from "../lib/staff-notification-sounds.js";
 import { appendStaffAuditFromRequest } from "../lib/staff-audit.js";
 import { normalizeStaffEmail, validatePasswordPlain } from "../lib/staff-credentials.js";
 import { assertManagerRole } from "../lib/staff-role.js";
@@ -75,6 +92,7 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
       }
       const cur = mergeStoreSettings(store.settings);
       const patch = { ...(req.body.settings as Record<string, unknown>) };
+      delete patch.staffNotificationCustomSounds;
       const passClear = patch.smtpPassClear === true;
       delete patch.smtpPassClear;
       const rawPass = patch.smtpPass;
@@ -154,6 +172,136 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
       },
     };
   });
+
+  const NOTIFICATION_SOUND_MAX_BYTES = 3 * 1024 * 1024;
+
+  app.post<{ Params: { storeId: string } }>(
+    "/stores/:storeId/notification-sounds",
+    async (req, reply) => {
+      const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+      if (!store) return reply.code(404).send({ error: "store not found" });
+      if (!assertManagerRole(reply, req.user)) return;
+
+      let label = "";
+      let fileBuf: Buffer | null = null;
+      let mime = "";
+      let originalFilename = "";
+      const parts = req.parts();
+      for await (const part of parts) {
+        if (part.type === "field" && part.fieldname === "label") {
+          label = String(part.value || "").trim().slice(0, MAX_LABEL_LEN);
+        } else if (part.type === "file" && part.fieldname === "file") {
+          mime = part.mimetype || "";
+          originalFilename = part.filename || "";
+          fileBuf = await part.toBuffer();
+        }
+      }
+      if (!fileBuf || fileBuf.length === 0) {
+        return reply.code(400).send({ error: "audio file required" });
+      }
+      if (fileBuf.length > NOTIFICATION_SOUND_MAX_BYTES) {
+        return reply.code(400).send({ error: "file too large (max 3MB)" });
+      }
+      if (!ALLOWED_NOTIFICATION_SOUND_MIME.has(mime)) {
+        return reply.code(400).send({ error: "unsupported audio type" });
+      }
+      const filename = safeNotificationSoundFilename(originalFilename, mime);
+      if (!filename) return reply.code(400).send({ error: "unsupported audio extension" });
+      if (!label) {
+        label = originalFilename.replace(/\.[^.]+$/, "").trim().slice(0, MAX_LABEL_LEN) || "カスタム音";
+      }
+
+      const cur = mergeStoreSettings(store.settings);
+      const list = [...cur.staffNotificationCustomSounds];
+      if (list.length >= MAX_CUSTOM_SOUNDS) {
+        return reply.code(400).send({ error: `custom sounds limit (${MAX_CUSTOM_SOUNDS}) reached` });
+      }
+
+      const id = filename.replace(/\.[^.]+$/, "");
+      const dir = notificationSoundUploadDir(store.id);
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, filename), fileBuf);
+      const url = notificationSoundPublicUrl(store.id, filename);
+      list.push({ id, label, url });
+
+      const nextSettings = mergeStoreSettings({
+        ...cur,
+        staffNotificationCustomSounds: list,
+        staffNotificationSounds: mergeStaffNotificationSounds(cur.staffNotificationSounds, list),
+      });
+
+      const updated = await prisma.store.update({
+        where: { id: store.id },
+        data: { settings: nextSettings as object },
+      });
+      await appendStaffAuditFromRequest(req, store.id, staffSubFromReq(req), "notification_sound_upload", {
+        soundId: id,
+        label,
+      }).catch(() => {});
+
+      return {
+        sound: { id, label, url },
+        customSounds: mergeStoreSettings(updated.settings).staffNotificationCustomSounds,
+      };
+    },
+  );
+
+  app.delete<{ Params: { storeId: string; soundId: string } }>(
+    "/stores/:storeId/notification-sounds/:soundId",
+    async (req, reply) => {
+      const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+      if (!store) return reply.code(404).send({ error: "store not found" });
+      if (!assertManagerRole(reply, req.user)) return;
+
+      const soundId = String(req.params.soundId || "").trim();
+      if (!/^[\w-]{8,64}$/.test(soundId)) {
+        return reply.code(400).send({ error: "invalid sound id" });
+      }
+
+      const cur = mergeStoreSettings(store.settings);
+      const target = findCustomSound(cur.staffNotificationCustomSounds, soundId);
+      if (!target) return reply.code(404).send({ error: "sound not found" });
+
+      const list = cur.staffNotificationCustomSounds.filter((s) => s.id !== soundId);
+      const removedPreset = customSoundPresetId(soundId);
+      const nextEvents = { ...cur.staffNotificationSounds };
+      for (const key of Object.keys(DEFAULT_STAFF_NOTIFICATION_SOUNDS) as (keyof typeof DEFAULT_STAFF_NOTIFICATION_SOUNDS)[]) {
+        if (nextEvents[key]?.preset === removedPreset) {
+          nextEvents[key] = { ...nextEvents[key], preset: DEFAULT_STAFF_NOTIFICATION_SOUNDS[key].preset };
+        }
+      }
+
+      const prefix = `/uploads/notification-sounds/${store.id}/`;
+      if (target.url.startsWith(prefix)) {
+        const fname = decodeURIComponent(target.url.slice(prefix.length));
+        if (/^[a-zA-Z0-9._-]+$/.test(fname)) {
+          try {
+            await unlink(join(notificationSoundUploadDir(store.id), fname));
+          } catch (_) {}
+        }
+      }
+
+      const nextSettings = mergeStoreSettings({
+        ...cur,
+        staffNotificationCustomSounds: list,
+        staffNotificationSounds: mergeStaffNotificationSounds(nextEvents, list),
+      });
+
+      const updated = await prisma.store.update({
+        where: { id: store.id },
+        data: { settings: nextSettings as object },
+      });
+      await appendStaffAuditFromRequest(req, store.id, staffSubFromReq(req), "notification_sound_delete", {
+        soundId,
+      }).catch(() => {});
+
+      return {
+        ok: true,
+        customSounds: mergeStoreSettings(updated.settings).staffNotificationCustomSounds,
+        staffNotificationSounds: mergeStoreSettings(updated.settings).staffNotificationSounds,
+      };
+    },
+  );
 
   app.get<{ Params: { storeId: string } }>("/stores/:storeId/staff-users", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });

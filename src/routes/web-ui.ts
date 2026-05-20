@@ -129,6 +129,34 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
     return reply.type(ct).header("Cache-Control", "public, max-age=86400").send(createReadStream(p));
   });
 
+  app.get<{ Params: { storeId: string; name: string } }>(
+    "/uploads/notification-sounds/:storeId/:name",
+    async (req, reply) => {
+      const storeId = req.params.storeId;
+      const raw = req.params.name;
+      if (!/^[a-zA-Z0-9._-]+$/.test(storeId) || !/^[a-zA-Z0-9._-]+$/.test(raw)) {
+        return reply.code(400).send({ error: "bad path" });
+      }
+      const p = join(process.cwd(), "uploads", "notification-sounds", storeId, raw);
+      if (!existsSync(p)) return reply.code(404).send({ error: "file not found" });
+      const lc = raw.toLowerCase();
+      const ct = lc.endsWith(".mp3")
+        ? "audio/mpeg"
+        : lc.endsWith(".wav")
+          ? "audio/wav"
+          : lc.endsWith(".ogg")
+            ? "audio/ogg"
+            : lc.endsWith(".webm")
+              ? "audio/webm"
+              : lc.endsWith(".m4a")
+                ? "audio/mp4"
+                : lc.endsWith(".aac")
+                  ? "audio/aac"
+                  : "application/octet-stream";
+      return reply.type(ct).header("Cache-Control", "public, max-age=86400").send(createReadStream(p));
+    },
+  );
+
   /** スタッフ向け説明書（ログイン不要）。更新が多いときは Cache-Control を no-store に。 */
   app.get("/manual", async (_req, reply) => {
     return reply

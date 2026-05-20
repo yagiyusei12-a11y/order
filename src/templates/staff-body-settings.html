@@ -701,6 +701,18 @@
     <p class="muted" style="margin:0 0 1rem;font-size:0.82rem">
       キッチンの新規注文、調理済・提供、受付マップのバッシング（赤）、ゲストからの呼出などの通知音です。iPad では各端末で<strong>一度画面をタップ</strong>してから鳴ります。
     </p>
+    <div class="card" style="border-color:#c4b5fd;margin-bottom:1rem">
+      <strong style="font-size:0.9rem">自分で追加した音</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.35rem 0 0.65rem">
+        MP3・WAV・OGG など（1ファイル最大3MB・24件まで）。追加後、下の各通知で「音」から選べます。
+      </p>
+      <label for="stSoundUploadLabel">表示名</label>
+      <input id="stSoundUploadLabel" type="text" maxlength="40" placeholder="例: 店長おすすめ" autocomplete="off" />
+      <label for="stSoundUploadFile" style="margin-top:0.5rem">音声ファイル</label>
+      <input id="stSoundUploadFile" type="file" accept="audio/mpeg,audio/wav,audio/ogg,audio/webm,audio/mp4,audio/*" />
+      <button type="button" class="btn-primary" id="btnUploadStaffSound" style="margin-top:0.55rem;width:auto">アップロード</button>
+      <div id="stSoundCustomList" style="margin-top:0.75rem"></div>
+    </div>
     <div id="stSoundCards" style="display:flex;flex-direction:column;gap:0.85rem"></div>
     <button type="button" class="btn-primary" id="btnSaveStaffSounds" style="margin-top:0.75rem">通知音設定を保存</button>
   </div>

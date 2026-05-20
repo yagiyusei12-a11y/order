@@ -916,7 +916,8 @@ async function loadAll() {
   if (kbt) kbt.value = String(s.kitchenCourseBadgeText != null ? s.kitchenCourseBadgeText : "□放題□");
   const keq = document.getElementById("stKitEmphasizeQty");
   if (keq) keq.checked = s.kitchenEmphasizeCourseTableQty !== false;
-  renderStaffSoundSettingsPanel(s.staffNotificationSounds);
+  renderStaffSoundCustomList(s.staffNotificationCustomSounds);
+  renderStaffSoundSettingsPanel(s.staffNotificationSounds, s.staffNotificationCustomSounds);
   if (window.__staffNotificationSounds) {
     window.__staffNotificationSounds.applySettings(s);
   }
@@ -1721,8 +1722,18 @@ function staffSoundPresetOptionsHtml(selected) {
     window.__staffNotificationSounds && window.__staffNotificationSounds.presetLabels
       ? window.__staffNotificationSounds.presetLabels
       : {};
-  const ids = Object.keys(labels);
+  const builtins = [
+    "builtin_kitchen_order",
+    "builtin_reception_low",
+    "builtin_reception_mid",
+    "builtin_call",
+    "file_30_nekketsu_win",
+    "file_post_match_bell",
+  ];
+  const customIds = Object.keys(labels).filter((id) => id.startsWith("custom_"));
+  const ids = [...builtins, ...customIds.sort()];
   return ids
+    .filter((id) => labels[id])
     .map((id) => {
       const lab = labels[id] || id;
       return (
@@ -1738,7 +1749,75 @@ function staffSoundPresetOptionsHtml(selected) {
     .join("");
 }
 
-function renderStaffSoundSettingsPanel(sounds) {
+function renderStaffSoundCustomList(customSounds) {
+  const box = document.getElementById("stSoundCustomList");
+  if (!box) return;
+  const list = Array.isArray(customSounds) ? customSounds : [];
+  if (!list.length) {
+    box.innerHTML = "<p class=\"muted\" style=\"margin:0;font-size:0.78rem\">まだ追加されていません。</p>";
+    return;
+  }
+  box.innerHTML = list
+    .map(
+      (s) =>
+        "<div class=\"row\" style=\"justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.35rem;padding:0.45rem 0;border-bottom:1px solid var(--border)\">" +
+        "<span style=\"font-size:0.82rem;font-weight:700\">" +
+        escapeHtml(s.label || s.id) +
+        "</span>" +
+        "<span class=\"row\" style=\"gap:0.35rem;margin:0\">" +
+        "<button type=\"button\" class=\"btn-ghost\" data-custom-sound-play=\"" +
+        escapeHtml(s.id) +
+        "\" style=\"width:auto;font-size:0.78rem\">試聴</button>" +
+        "<button type=\"button\" class=\"btn-ghost\" data-custom-sound-del=\"" +
+        escapeHtml(s.id) +
+        "\" style=\"width:auto;font-size:0.78rem;color:#b91c1c\">削除</button>" +
+        "</span></div>"
+    )
+    .join("");
+  box.querySelectorAll("[data-custom-sound-play]").forEach((btn) => {
+    btn.onclick = async () => {
+      const id = btn.getAttribute("data-custom-sound-play");
+      if (!id || !window.__staffNotificationSounds) return;
+      const preset = "custom_" + id;
+      const labels = window.__staffNotificationSounds.presetLabels;
+      if (!labels[preset]) return;
+      const tmp = window.__staffNotificationSounds.getConfig();
+      const fake = {
+        staffNotificationCustomSounds: list,
+        staffNotificationSounds: {
+          order: { enabled: true, preset, repeatSec: 0 },
+          hallReady: tmp.hallReady,
+          bashing: tmp.bashing,
+          call: tmp.call,
+        },
+      };
+      window.__staffNotificationSounds.applySettings(fake);
+      void window.__staffNotificationSounds.prime();
+      void window.__staffNotificationSounds.play("order");
+    };
+  });
+  box.querySelectorAll("[data-custom-sound-del]").forEach((btn) => {
+    btn.onclick = async () => {
+      log("");
+      if (!requireManagerForSettings()) return;
+      const id = btn.getAttribute("data-custom-sound-del");
+      if (!id) return;
+      if (!confirm("この音を削除しますか？使用中の通知は標準の音に戻ります。")) return;
+      try {
+        await api(
+          "/stores/" + encodeURIComponent(STORE) + "/notification-sounds/" + encodeURIComponent(id),
+          { method: "DELETE" }
+        );
+        log("カスタム音を削除しました");
+        await loadAll();
+      } catch (e) {
+        log(String(e.message || e));
+      }
+    };
+  });
+}
+
+function renderStaffSoundSettingsPanel(sounds, customSounds) {
   const box = document.getElementById("stSoundCards");
   if (!box) return;
   const cfg =
@@ -1809,7 +1888,10 @@ function renderStaffSoundSettingsPanel(sounds) {
         repeatSec: next[key] ? next[key].repeatSec : 0,
       };
       if (window.__staffNotificationSounds) {
-        window.__staffNotificationSounds.applySettings({ staffNotificationSounds: next });
+        window.__staffNotificationSounds.applySettings({
+          staffNotificationCustomSounds: customSounds,
+          staffNotificationSounds: next,
+        });
         void window.__staffNotificationSounds.prime();
         void window.__staffNotificationSounds.preview(key);
       }
@@ -2078,6 +2160,36 @@ document.getElementById("btnSaveUi").onclick = async () => {
     log(String(e.message || e));
   }
 };
+
+const btnUploadStaffSound = document.getElementById("btnUploadStaffSound");
+if (btnUploadStaffSound) {
+  btnUploadStaffSound.onclick = async () => {
+    log("");
+    if (!requireManagerForSettings()) return;
+    const fileEl = document.getElementById("stSoundUploadFile");
+    const labelEl = document.getElementById("stSoundUploadLabel");
+    const file = fileEl && fileEl.files && fileEl.files[0];
+    if (!file) return log("音声ファイルを選んでください");
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("label", labelEl && labelEl.value ? String(labelEl.value).trim() : "");
+    try {
+      const res = await fetch("/stores/" + encodeURIComponent(STORE) + "/notification-sounds", {
+        method: "POST",
+        body: fd,
+        credentials: "include",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || data.message || "upload failed");
+      if (fileEl) fileEl.value = "";
+      if (labelEl) labelEl.value = "";
+      log("音声を追加しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+}
 
 const btnSaveStaffSounds = document.getElementById("btnSaveStaffSounds");
 if (btnSaveStaffSounds) {

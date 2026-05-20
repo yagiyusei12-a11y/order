@@ -216,7 +216,11 @@ function installKitAudioUnlockListeners() {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") void primeKitAudioFromUserGesture();
   });
-  window.__primeStaffPageAudio = () => void primeKitAudioFromUserGesture();
+  const prevPrime = window.__primeStaffPageAudio;
+  window.__primeStaffPageAudio = () => {
+    void primeKitAudioFromUserGesture();
+    if (typeof prevPrime === "function") prevPrime();
+  };
 }
 
 /** 調理タイマー完了 — post-match-bell-1.mp3 */
@@ -237,54 +241,11 @@ async function playCookTimerCompleteSound() {
   } catch (_) {}
 }
 
-/** 新規注文（キッチン絞り込みに合う queued 行が増えたとき）— 低め・長め・繰り返しで遠くでも聞き取りやすく */
-async function playNewKitchenOrderSound() {
-  try {
-    await primeKitAudioFromUserGesture();
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
-    if (!kitAudioCtx) kitAudioCtx = new Ctx();
-    const ctx = kitAudioCtx;
-    if (ctx.state === "suspended") await ctx.resume();
-    if (ctx.state !== "running") return;
-    const now = ctx.currentTime;
-    const atk = 0.025;
-    /** 基音（三角）＋弱い倍音（矩形）で中低音域でも抜けを出す */
-    const chime = (freq, t0, dur, peak) => {
-      const master = ctx.createGain();
-      master.gain.value = 1;
-      master.connect(ctx.destination);
-      const mk = (type, mul) => {
-        const o = ctx.createOscillator();
-        const g = ctx.createGain();
-        o.type = type;
-        o.frequency.value = freq;
-        const p = peak * mul;
-        g.gain.setValueAtTime(0, t0);
-        g.gain.linearRampToValueAtTime(p, t0 + atk);
-        g.gain.setValueAtTime(p, t0 + Math.max(atk, dur - atk * 2));
-        g.gain.linearRampToValueAtTime(0, t0 + dur);
-        o.connect(g);
-        g.connect(master);
-        o.start(t0);
-        o.stop(t0 + dur + 0.04);
-      };
-      mk("triangle", 1);
-      mk("square", 0.22);
-    };
-    const lo = 315;
-    const hi = 470;
-    const note = 0.34;
-    const gap = 0.12;
-    const betweenPhrases = 0.22;
-    let t = now;
-    for (let phrase = 0; phrase < 2; phrase++) {
-      chime(lo, t, note, 0.42);
-      t += note + gap;
-      chime(hi, t, note, 0.42);
-      t += note + gap + betweenPhrases;
-    }
-  } catch (_) {}
+/** 新規注文（キッチン絞り込みに合う queued 行が増えたとき） */
+function playNewKitchenOrderSound() {
+  if (window.__staffNotificationSounds && typeof window.__staffNotificationSounds.play === "function") {
+    void window.__staffNotificationSounds.play("order");
+  }
 }
 
 function filterStateSignature(st) {
@@ -1872,6 +1833,7 @@ async function refreshKitIntervalFromServer() {
         .slice(0, 24);
       kitDisplayCache.courseBadgeText = bt || "□放題□";
       kitDisplayCache.emphasizeCourseTableQty = s.kitchenEmphasizeCourseTableQty !== false;
+      if (window.__staffNotificationSounds) window.__staffNotificationSounds.applySettings(s);
     }
   } catch (_) {}
 }

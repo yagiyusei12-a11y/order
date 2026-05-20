@@ -1,3 +1,10 @@
+import {
+  mergeStaffNotificationSounds,
+  type StaffNotificationSoundsSettings,
+} from "./staff-notification-sounds.js";
+
+export type { StaffNotificationSoundsSettings, StaffSoundPresetId } from "./staff-notification-sounds.js";
+
 /** IANA タイムゾーン名として使えるか（メニュー時間帯の基準時計に利用） */
 export function isValidIanaTimeZone(z: string): boolean {
   try {
@@ -230,6 +237,8 @@ export type StoreSettingsShape = {
   smtpUser: string;
   smtpPass: string;
   mailFrom: string;
+  /** スタッフ画面の通知音（注文・調理済・バッシング・呼出） */
+  staffNotificationSounds: StaffNotificationSoundsSettings;
 };
 
 /** スタッフ向け API 用（パスワードを伏せる） */
@@ -428,6 +437,7 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     smtpUser: "",
     smtpPass: "",
     mailFrom: "",
+    staffNotificationSounds: mergeStaffNotificationSounds(null),
   };
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return d;
   const o = raw as Record<string, unknown>;
@@ -707,5 +717,6 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
   if (typeof o.mailFrom === "string") {
     d.mailFrom = o.mailFrom.trim().slice(0, 320);
   }
+  d.staffNotificationSounds = mergeStaffNotificationSounds(o.staffNotificationSounds);
   return d;
 }

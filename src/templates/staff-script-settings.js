@@ -916,6 +916,10 @@ async function loadAll() {
   if (kbt) kbt.value = String(s.kitchenCourseBadgeText != null ? s.kitchenCourseBadgeText : "□放題□");
   const keq = document.getElementById("stKitEmphasizeQty");
   if (keq) keq.checked = s.kitchenEmphasizeCourseTableQty !== false;
+  renderStaffSoundSettingsPanel(s.staffNotificationSounds);
+  if (window.__staffNotificationSounds) {
+    window.__staffNotificationSounds.applySettings(s);
+  }
   const bc = s.billCorrectionPolicy || {};
   const bcEn = document.getElementById("stBcEnabled");
   if (bcEn) bcEn.checked = bc.enabled !== false;
@@ -1682,6 +1686,155 @@ async function nrSaveNetReserveAll() {
   await loadNetReserveAll();
 }
 
+const STAFF_SOUND_EVENT_META = [
+  {
+    key: "order",
+    title: "注文時",
+    desc: "キッチン画面で、絞り込みに合う新規注文（queued）が増えたときに1回鳴ります。",
+    showRepeat: false,
+  },
+  {
+    key: "hallReady",
+    title: "調理済み",
+    desc: "調理済・提供画面で、キッチンで「調理済」になった行が増えたとき。未提供の間は下の間隔で再通知します。",
+    showRepeat: true,
+    repeatLabel: "未提供の再通知間隔（秒・5〜600）",
+  },
+  {
+    key: "bashing",
+    title: "バッシング",
+    desc: "受付マップで卓がバッシング（赤）になったとき。赤のままのリマインド間隔も設定できます。",
+    showRepeat: true,
+    repeatLabel: "バッシング中のリマインド間隔（秒・30〜600）",
+  },
+  {
+    key: "call",
+    title: "呼出",
+    desc: "ゲスト画面からのお呼び出し、および受付の来店呼出。確認するまで下の間隔で再通知します。",
+    showRepeat: true,
+    repeatLabel: "呼出の再通知間隔（秒・5〜600）",
+  },
+];
+
+function staffSoundPresetOptionsHtml(selected) {
+  const labels =
+    window.__staffNotificationSounds && window.__staffNotificationSounds.presetLabels
+      ? window.__staffNotificationSounds.presetLabels
+      : {};
+  const ids = Object.keys(labels);
+  return ids
+    .map((id) => {
+      const lab = labels[id] || id;
+      return (
+        "<option value=\"" +
+        escapeHtml(id) +
+        "\"" +
+        (id === selected ? " selected" : "") +
+        ">" +
+        escapeHtml(lab) +
+        "</option>"
+      );
+    })
+    .join("");
+}
+
+function renderStaffSoundSettingsPanel(sounds) {
+  const box = document.getElementById("stSoundCards");
+  if (!box) return;
+  const cfg =
+    sounds && typeof sounds === "object"
+      ? sounds
+      : window.__staffNotificationSounds
+        ? window.__staffNotificationSounds.defaultConfig
+        : null;
+  box.innerHTML = STAFF_SOUND_EVENT_META.map((ev) => {
+    const c = (cfg && cfg[ev.key]) || { enabled: true, preset: "builtin_kitchen_order", repeatSec: 0 };
+    const rep =
+      ev.showRepeat && ev.repeatLabel
+        ? "<label style=\"margin-top:0.55rem\">" +
+          escapeHtml(ev.repeatLabel) +
+          "</label><input type=\"number\" min=\"0\" max=\"600\" step=\"1\" data-sound-repeat=\"" +
+          escapeHtml(ev.key) +
+          "\" value=\"" +
+          escapeHtml(String(c.repeatSec != null ? c.repeatSec : 0)) +
+          "\" />"
+        : "";
+    return (
+      "<div class=\"card\" style=\"border-color:#e2e8f0\" data-sound-card=\"" +
+      escapeHtml(ev.key) +
+      "\">" +
+      "<div class=\"row\" style=\"justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:0.5rem\">" +
+      "<strong style=\"font-size:0.9rem\">" +
+      escapeHtml(ev.title) +
+      "</strong>" +
+      "<label class=\"row\" style=\"margin:0;align-items:center;gap:0.35rem;font-size:0.82rem\">" +
+      "<input type=\"checkbox\" data-sound-enabled=\"" +
+      escapeHtml(ev.key) +
+      "\"" +
+      (c.enabled !== false ? " checked" : "") +
+      " />有効</label></div>" +
+      "<p class=\"muted\" style=\"font-size:0.75rem;margin:0.35rem 0 0.65rem\">" +
+      escapeHtml(ev.desc) +
+      "</p>" +
+      "<label>音</label>" +
+      "<select data-sound-preset=\"" +
+      escapeHtml(ev.key) +
+      "\">" +
+      staffSoundPresetOptionsHtml(c.preset) +
+      "</select>" +
+      rep +
+      "<button type=\"button\" class=\"btn-ghost\" data-sound-preview=\"" +
+      escapeHtml(ev.key) +
+      "\" style=\"width:auto;margin-top:0.55rem\">試聴</button></div>"
+    );
+  }).join("");
+  box.querySelectorAll("[data-sound-preview]").forEach((btn) => {
+    btn.onclick = () => {
+      const key = btn.getAttribute("data-sound-preview");
+      if (!key) return;
+      const card = btn.closest("[data-sound-card]");
+      const preset = card && card.querySelector("[data-sound-preset=\"" + key + "\"]");
+      const enabled = card && card.querySelector("[data-sound-enabled=\"" + key + "\"]");
+      const tmp = {
+        order: { enabled: true, preset: "builtin_kitchen_order", repeatSec: 0 },
+        hallReady: { enabled: true, preset: "file_30_nekketsu_win", repeatSec: 30 },
+        bashing: { enabled: true, preset: "builtin_reception_low", repeatSec: 180 },
+        call: { enabled: true, preset: "builtin_call", repeatSec: 5 },
+      };
+      const base = window.__staffNotificationSounds ? window.__staffNotificationSounds.getConfig() : tmp;
+      const next = JSON.parse(JSON.stringify(base));
+      next[key] = {
+        enabled: enabled ? enabled.checked : true,
+        preset: preset && preset.value ? preset.value : next[key].preset,
+        repeatSec: next[key] ? next[key].repeatSec : 0,
+      };
+      if (window.__staffNotificationSounds) {
+        window.__staffNotificationSounds.applySettings({ staffNotificationSounds: next });
+        void window.__staffNotificationSounds.prime();
+        void window.__staffNotificationSounds.preview(key);
+      }
+    };
+  });
+}
+
+function collectStaffSoundSettingsFromForm() {
+  const out = {};
+  for (const ev of STAFF_SOUND_EVENT_META) {
+    const en = document.querySelector("[data-sound-enabled=\"" + ev.key + "\"]");
+    const pr = document.querySelector("[data-sound-preset=\"" + ev.key + "\"]");
+    const rep = document.querySelector("[data-sound-repeat=\"" + ev.key + "\"]");
+    const preset = pr && pr.value ? String(pr.value) : "builtin_kitchen_order";
+    let repeatSec = 0;
+    if (rep) {
+      repeatSec = Number(rep.value);
+      if (!Number.isFinite(repeatSec)) repeatSec = 0;
+      repeatSec = Math.min(600, Math.max(0, Math.round(repeatSec)));
+    }
+    out[ev.key] = { enabled: en ? en.checked : true, preset, repeatSec };
+  }
+  return out;
+}
+
 function ensureNetReservePanel() {
   if (!nrEl("nrDaysAhead")) return;
   if (!nrReserveWired) {
@@ -1925,6 +2078,26 @@ document.getElementById("btnSaveUi").onclick = async () => {
     log(String(e.message || e));
   }
 };
+
+const btnSaveStaffSounds = document.getElementById("btnSaveStaffSounds");
+if (btnSaveStaffSounds) {
+  btnSaveStaffSounds.onclick = async () => {
+    log("");
+    if (!requireManagerForSettings()) return;
+    const staffNotificationSounds = collectStaffSoundSettingsFromForm();
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings: { staffNotificationSounds } }),
+      });
+      log("通知音設定を保存しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+}
 
 const btnSaveKitchenDisplay = document.getElementById("btnSaveKitchenDisplay");
 if (btnSaveKitchenDisplay) {

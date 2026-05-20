@@ -10,24 +10,13 @@ let metaLoaded = false;
 let allCategories = [];
 let allStations = [];
 
-const HALL_READY_SOUND_URL = "/staff-assets/30_nekketsu_win.wav";
-/** 未提供の調理済み行が残っている間、再通知の間隔（ms） */
-const HALL_CHIME_CYCLE_MS = 30000;
+/** 未提供の調理済み行が残っている間、再通知の間隔（ms・設定から読込） */
+let hallChimeCycleMs = 30000;
 /** @type {Set<string>} */
 const hallChimePendingIds = new Set();
 let hallChimeTimer = null;
 let hallChimePlaying = false;
 let hallChimeInitialized = false;
-/** @type {AudioContext | null} */
-let hallAudioCtx = null;
-let hallReadyAudio = null;
-let hallAudioUnlockDone = false;
-let hallHtmlAudioPrimed = false;
-let hallAudioUnlockListenersInstalled = false;
-/** @type {AudioBuffer | null} */
-let hallReadyDecodedBuffer = null;
-/** @type {Promise<AudioBuffer | null> | null} */
-let hallReadyDecodePromise = null;
 
 function log(t) {
   const el = document.getElementById("log");
@@ -144,130 +133,11 @@ function hallLineKey(ln) {
   return kitchenPatchLineId(ln) || String(ln.id || "");
 }
 
-/** iPad/iOS Safari: ユーザー操作で AudioContext と HTML Audio を解除（ポーリングからの再生に必要） */
-function primeHallAudioFromUserGesture() {
-  try {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (Ctx) {
-      if (!hallAudioCtx) hallAudioCtx = new Ctx();
-      const resumeP =
-        hallAudioCtx.state === "suspended" ? hallAudioCtx.resume() : Promise.resolve();
-      return Promise.resolve(resumeP).then(() => {
-        if (!hallAudioUnlockDone && hallAudioCtx && hallAudioCtx.state === "running") {
-          try {
-            const buf = hallAudioCtx.createBuffer(1, 1, hallAudioCtx.sampleRate);
-            const src = hallAudioCtx.createBufferSource();
-            src.buffer = buf;
-            src.connect(hallAudioCtx.destination);
-            src.start(0);
-            hallAudioUnlockDone = true;
-          } catch (_) {}
-        }
-        if (!hallReadyAudio) {
-          hallReadyAudio = new Audio(HALL_READY_SOUND_URL);
-          hallReadyAudio.preload = "auto";
-          hallReadyAudio.load();
-        }
-        if (!hallHtmlAudioPrimed && hallReadyAudio) {
-          hallReadyAudio.muted = true;
-          const p = hallReadyAudio.play();
-          hallHtmlAudioPrimed = true;
-          const finish = () => {
-            try {
-              hallReadyAudio.pause();
-              hallReadyAudio.muted = false;
-              hallReadyAudio.currentTime = 0;
-            } catch (_) {}
-          };
-          if (p && typeof p.then === "function") {
-            return p.then(finish).catch(() => {
-              hallHtmlAudioPrimed = false;
-            });
-          }
-          finish();
-        }
-      });
-    }
-    if (!hallReadyAudio) {
-      hallReadyAudio = new Audio(HALL_READY_SOUND_URL);
-      hallReadyAudio.preload = "auto";
-      hallReadyAudio.load();
-    }
-  } catch (_) {}
-  return Promise.resolve();
-}
-
-function installHallAudioUnlockListeners() {
-  if (hallAudioUnlockListenersInstalled) return;
-  hallAudioUnlockListenersInstalled = true;
-  const unlock = () => {
-    void primeHallAudioFromUserGesture();
-  };
-  for (const ev of ["pointerdown", "touchstart", "touchend", "click", "keydown"]) {
-    window.addEventListener(ev, unlock, { capture: true, passive: true });
-  }
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") void primeHallAudioFromUserGesture();
-  });
-  window.__primeStaffPageAudio = () => void primeHallAudioFromUserGesture();
-}
-
-async function ensureHallReadyDecodedBuffer() {
-  if (hallReadyDecodedBuffer) return hallReadyDecodedBuffer;
-  if (!hallReadyDecodePromise) {
-    hallReadyDecodePromise = (async () => {
-      try {
-        await primeHallAudioFromUserGesture();
-        const Ctx = window.AudioContext || window.webkitAudioContext;
-        if (!Ctx) return null;
-        if (!hallAudioCtx) hallAudioCtx = new Ctx();
-        if (hallAudioCtx.state === "suspended") await hallAudioCtx.resume();
-        const res = await fetch(HALL_READY_SOUND_URL);
-        if (!res.ok) return null;
-        const ab = await res.arrayBuffer();
-        hallReadyDecodedBuffer = await hallAudioCtx.decodeAudioData(ab);
-        return hallReadyDecodedBuffer;
-      } catch (_) {
-        return null;
-      }
-    })();
-  }
-  return hallReadyDecodePromise;
-}
-
-async function playHallReadySoundViaWebAudio() {
-  const ctx = hallAudioCtx;
-  if (!ctx) return false;
-  if (ctx.state === "suspended") await ctx.resume();
-  if (ctx.state !== "running") return false;
-  const buf = await ensureHallReadyDecodedBuffer();
-  if (!buf) return false;
-  const src = ctx.createBufferSource();
-  src.buffer = buf;
-  src.connect(ctx.destination);
-  src.start(0);
-  return true;
-}
-
-async function playHallReadySoundOnce() {
-  try {
-    await primeHallAudioFromUserGesture();
-    const base =
-      hallReadyAudio ||
-      (() => {
-        hallReadyAudio = new Audio(HALL_READY_SOUND_URL);
-        hallReadyAudio.preload = "auto";
-        return hallReadyAudio;
-      })();
-    const audio = !base.paused && base.currentTime > 0 ? new Audio(HALL_READY_SOUND_URL) : base;
-    audio.volume = 1;
-    audio.currentTime = 0;
-    await audio.play();
-  } catch (_) {
-    try {
-      await playHallReadySoundViaWebAudio();
-    } catch (_) {}
-  }
+function syncHallChimeCycleFromSettings(storeSettings) {
+  if (!window.__staffNotificationSounds) return;
+  window.__staffNotificationSounds.applySettings(storeSettings || {});
+  const ms = window.__staffNotificationSounds.getRepeatMs("hallReady");
+  hallChimeCycleMs = ms > 0 ? ms : 30000;
 }
 
 /** 調理済みが届いたタイミングで効果音を1回 */
@@ -276,7 +146,9 @@ async function playHallReadyChimeOnce() {
   hallChimePlaying = true;
   try {
     if (hallChimePendingIds.size === 0) return;
-    await playHallReadySoundOnce();
+    if (window.__staffNotificationSounds && typeof window.__staffNotificationSounds.play === "function") {
+      await window.__staffNotificationSounds.play("hallReady");
+    }
   } finally {
     hallChimePlaying = false;
   }
@@ -292,14 +164,16 @@ function updateHallChimeAlarm() {
   }
   if (hallChimeTimer) return;
   void playHallReadyChimeOnce();
-  hallChimeTimer = setInterval(() => {
-    if (hallChimePendingIds.size === 0) {
-      clearInterval(hallChimeTimer);
-      hallChimeTimer = null;
-      return;
-    }
-    void playHallReadyChimeOnce();
-  }, HALL_CHIME_CYCLE_MS);
+  if (hallChimeCycleMs > 0) {
+    hallChimeTimer = setInterval(() => {
+      if (hallChimePendingIds.size === 0) {
+        clearInterval(hallChimeTimer);
+        hallChimeTimer = null;
+        return;
+      }
+      void playHallReadyChimeOnce();
+    }, hallChimeCycleMs);
+  }
 }
 
 function syncHallChimePending(prevDone, nextDone) {
@@ -666,8 +540,10 @@ async function setLineServed(lineId) {
 async function refreshHallIntervalFromServer() {
   try {
     const d = await api("/stores/" + encodeURIComponent(STORE) + "/settings");
-    const sec = d.store && d.store.settings && d.store.settings.kitchenAutoRefreshSec;
+    const s = d.store && d.store.settings;
+    const sec = s && s.kitchenAutoRefreshSec;
     if (typeof sec === "number" && sec >= 5) hallRefreshMs = sec * 1000;
+    syncHallChimeCycleFromSettings(s);
   } catch (_) {}
 }
 
@@ -777,8 +653,6 @@ if (hallTabServedFsEl) hallTabServedFsEl.onclick = () => setHallTab("served");
 try {
   if (sessionStorage.getItem(HALL_LIST_FS_KEY) === "1") applyHallListFullscreen(true);
 } catch (_) {}
-
-installHallAudioUnlockListeners();
 
 refreshHallIntervalFromServer()
   .then(() => {

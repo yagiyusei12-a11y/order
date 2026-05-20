@@ -72,6 +72,7 @@ function assembleStaffPage(
   }
   const script = loadTemplate(scriptFile);
   const tableDisplay = loadTemplate("staff-script-table-display.js");
+  const notificationSounds = loadTemplate("staff-script-notification-sounds.js");
   return loadTemplate("staff-frame.html")
     .replace(/__PAGE_TITLE__/g, escapeHtml(pageTitle))
     .replace(/__STORE_ID_HTML__/g, escapeHtml(storeId))
@@ -79,7 +80,7 @@ function assembleStaffPage(
     .replace(/__STORE_PATH__/g, pathEnc)
     .replace("__TABLE_DISPLAY_CODE__", tableDisplay)
     .replace("__BODY__", body)
-    .replace("__PAGE_SCRIPT__", prependScript + script + appendScript);
+    .replace("__PAGE_SCRIPT__", notificationSounds + "\n" + prependScript + script + appendScript);
 }
 
 async function assertStaffStore(

@@ -804,6 +804,10 @@
       if (__callAudio && __callAudio.state === "suspended") __callAudio.resume();
     }
     function __playCallChime() {
+      if (window.__staffNotificationSounds && typeof window.__staffNotificationSounds.play === "function") {
+        void window.__staffNotificationSounds.play("call");
+        return;
+      }
       if (!__callAudio) return;
       const o = __callAudio.createOscillator();
       const g = __callAudio.createGain();
@@ -813,6 +817,26 @@
       g.gain.exponentialRampToValueAtTime(0.001, __callAudio.currentTime + 1.0);
       o.connect(g); g.connect(__callAudio.destination);
       o.start(); o.stop(__callAudio.currentTime + 1.0);
+    }
+    function __callChimeIntervalMs() {
+      if (window.__staffNotificationSounds) {
+        const ms = window.__staffNotificationSounds.getRepeatMs("call");
+        if (ms > 0) return ms;
+      }
+      return 5000;
+    }
+    let __callSettingsFetchedAt = 0;
+    async function __refreshCallSoundSettings() {
+      if (Date.now() - __callSettingsFetchedAt < 60000) return;
+      try {
+        const r = await fetch("/stores/" + encodeURIComponent(STORE) + "/settings", { credentials: "include" });
+        if (!r.ok) return;
+        const d = await r.json();
+        if (window.__staffNotificationSounds && d.store && d.store.settings) {
+          window.__staffNotificationSounds.applySettings(d.store.settings);
+          __callSettingsFetchedAt = Date.now();
+        }
+      } catch (_) {}
     }
 
     (function setupGlobalCallBanner() {
@@ -866,7 +890,7 @@
           __playCallChime();
         }
         if (!chimeTimer) {
-          chimeTimer = setInterval(() => __playCallChime(), 5000);
+          chimeTimer = setInterval(() => __playCallChime(), __callChimeIntervalMs());
         }
         lastOn = true;
       }
@@ -890,6 +914,7 @@
       window.addEventListener("keydown", __unlockStaffAudio, { once: true, passive: true });
 
       async function poll() {
+        void __refreshCallSoundSettings();
         try {
           const shiftKey = ""; // server will default to today's shift
           const url = `/reception/${encodeURIComponent(STORE)}/state?t=${Date.now()}` + (shiftKey ? `&shiftKey=${encodeURIComponent(shiftKey)}` : "");

@@ -918,8 +918,23 @@ function scheduleReceptionPoll() {
   }, tickMs);
 }
 
+let receptionSoundSettingsFetchedAt = 0;
+async function refreshReceptionSoundSettings() {
+  if (Date.now() - receptionSoundSettingsFetchedAt < 60000) return;
+  try {
+    const r = await fetch("/stores/" + encodeURIComponent(STORE) + "/settings", { credentials: "include" });
+    if (!r.ok) return;
+    const d = await r.json();
+    if (window.__staffNotificationSounds && d.store && d.store.settings) {
+      window.__staffNotificationSounds.applySettings(d.store.settings);
+      receptionSoundSettingsFetchedAt = Date.now();
+    }
+  } catch (_) {}
+}
+
 async function loadData() {
   if (!currentShiftKey) return;
+  void refreshReceptionSoundSettings();
   const seq = ++receptionLoadSeq;
   try {
     const res = await fetch(
@@ -969,14 +984,19 @@ async function loadData() {
         if (!lastCallReserved) {
           // first time: try to enable audio and play immediately
           try { initAudio(); } catch (_) {}
-          playChime("low");
+          if (window.__staffNotificationSounds) void window.__staffNotificationSounds.play("call");
+          else playChime("low");
         }
         // keep announcing until acknowledged
         if (!callAnnounceTimer) {
+          const callMs =
+            window.__staffNotificationSounds && window.__staffNotificationSounds.getRepeatMs("call");
+          const intervalMs = callMs > 0 ? callMs : 5000;
           callAnnounceTimer = setInterval(() => {
             if (!lastCallReserved) return;
-            playChime("low");
-          }, 5000);
+            if (window.__staffNotificationSounds) void window.__staffNotificationSounds.play("call");
+            else playChime("low");
+          }, intervalMs);
         }
         // render (DOM, no inline handlers)
         alertBar.innerHTML = "";
@@ -1010,8 +1030,19 @@ async function loadData() {
     let needsUpdate = false;
     shiftData.seats.forEach((s) => {
       const oldStatus = seatStates[s.id] ? seatStates[s.id].status : "vacant";
-      if (oldStatus !== "cleaning" && s.status === "cleaning") { playChime("low"); }
-      if (s.status === "cleaning" && s.cleanStart && (Date.now() - s.cleanStart > 180000)) { playChime("low"); s.cleanStart = Date.now(); needsUpdate = true; }
+      if (oldStatus !== "cleaning" && s.status === "cleaning") {
+        if (window.__staffNotificationSounds) void window.__staffNotificationSounds.play("bashing");
+        else playChime("low");
+      }
+      const bashMs =
+        window.__staffNotificationSounds && window.__staffNotificationSounds.getRepeatMs("bashing");
+      const bashReminderMs = bashMs > 0 ? bashMs : 180000;
+      if (s.status === "cleaning" && s.cleanStart && Date.now() - s.cleanStart > bashReminderMs) {
+        if (window.__staffNotificationSounds) void window.__staffNotificationSounds.play("bashing");
+        else playChime("low");
+        s.cleanStart = Date.now();
+        needsUpdate = true;
+      }
     });
     if (needsUpdate) { fetch(API_URL + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "updateSeats", shiftKey: currentShiftKey, payload: shiftData.seats }) }); }
 

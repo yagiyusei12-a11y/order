@@ -12,6 +12,7 @@
     <button type="button" data-stab="menuCourse">メニュー/コース</button>
     <button type="button" data-stab="netReserve">ネット予約</button>
     <button type="button" data-stab="kitchen">キッチン</button>
+    <button type="button" data-stab="sounds">通知音</button>
     <button type="button" data-stab="tables">席マスタ</button>
     <button type="button" data-stab="reports">レポート</button>
     <button type="button" data-stab="accounts">アカウント</button>
@@ -694,6 +695,14 @@
         <a class="btn-ghost" href="/staff-app/__STORE_PATH__/hall-ready" style="text-decoration:none;display:inline-block">調理済・提供へ</a>
       </div>
     </div>
+  </div>
+
+  <div id="settingsTab-sounds" data-stab-panel="sounds" style="display:none">
+    <p class="muted" style="margin:0 0 1rem;font-size:0.82rem">
+      キッチンの新規注文、調理済・提供、受付マップのバッシング（赤）、ゲストからの呼出などの通知音です。iPad では各端末で<strong>一度画面をタップ</strong>してから鳴ります。
+    </p>
+    <div id="stSoundCards" style="display:flex;flex-direction:column;gap:0.85rem"></div>
+    <button type="button" class="btn-primary" id="btnSaveStaffSounds" style="margin-top:0.75rem">通知音設定を保存</button>
   </div>
 
   <div id="settingsTab-tables" data-stab-panel="tables" style="display:none">

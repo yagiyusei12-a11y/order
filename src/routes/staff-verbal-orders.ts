@@ -21,7 +21,7 @@ import {
   baseNetFromStoredPrice,
   eatModeTaxRatePercent,
   normalizeEatMode,
-  retaxInclusiveYen,
+  optionPriceDeltaTaxIncluded,
   taxIncludedFromNet,
   type EatMode,
 } from "../lib/order-line-tax.js";
@@ -335,7 +335,12 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
                   ...g,
                   items: g.items.map((it0) => ({
                     ...it0,
-                    priceDelta: retaxInclusiveYen(it0.priceDelta, st.taxRatePercent, lineTaxPct),
+                    priceDelta: optionPriceDeltaTaxIncluded(
+                      it0.priceDelta,
+                      st.menuPriceTaxMode,
+                      st.taxRatePercent,
+                      lineTaxPct,
+                    ),
                   })),
                 }));
                 const optKey = `${stp.id}::${compId}`;
@@ -457,7 +462,12 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
             ...g,
             items: g.items.map((it) => ({
               ...it,
-              priceDelta: retaxInclusiveYen(it.priceDelta, st.taxRatePercent, lineTaxPct),
+              priceDelta: optionPriceDeltaTaxIncluded(
+                it.priceDelta,
+                st.menuPriceTaxMode,
+                st.taxRatePercent,
+                lineTaxPct,
+              ),
             })),
           }));
           const optSum = sumInclusiveOptionPriceDelta(linkedGroupsTaxed, vOpt.byGroup);

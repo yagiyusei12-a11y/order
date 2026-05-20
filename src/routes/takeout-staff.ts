@@ -24,6 +24,7 @@ import {
   takeoutTablePrimaryPublicCode,
   takeoutTableWhereForStore,
 } from "../lib/takeout-table-code.js";
+import { optionPriceDeltaTaxIncluded } from "../lib/order-line-tax.js";
 
 type EatMode = "dine_in" | "takeout";
 
@@ -323,7 +324,12 @@ export async function registerTakeoutStaff(app: FastifyInstance): Promise<void> 
               ...g,
               items: g.items.map((it0) => ({
                 ...it0,
-                priceDelta: retaxInclusiveYen(it0.priceDelta, storeTaxRatePercent, taxRatePercent),
+                priceDelta: optionPriceDeltaTaxIncluded(
+                  it0.priceDelta,
+                  st.menuPriceTaxMode,
+                  storeTaxRatePercent,
+                  taxRatePercent,
+                ),
               })),
             }));
 

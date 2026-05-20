@@ -31,3 +31,14 @@ export function baseNetFromStoredPrice(
 export function taxIncludedFromNet(netExclusiveYen: number, taxRatePercent: number): number {
   return Math.round(netExclusiveYen * (1 + taxRatePercent / 100));
 }
+
+/** オプション priceDelta（商品価格と同じく menuPriceTaxMode の意味で保存）を行税率の税込加算額へ */
+export function optionPriceDeltaTaxIncluded(
+  storedDelta: number,
+  storedMode: "inclusive" | "exclusive",
+  storeTaxRatePercent: number,
+  lineTaxRatePercent: number,
+): number {
+  const net = baseNetFromStoredPrice(storedDelta, storedMode, storeTaxRatePercent);
+  return taxIncludedFromNet(net, lineTaxRatePercent);
+}

@@ -51,7 +51,7 @@ export function validateGuestOptionSelections(
   return { ok: true, byGroup };
 }
 
-/** priceDelta は税込の商品単価への加算（円）として合算 */
+/** priceDelta は税込の商品単価への加算（円）として合算（呼び出し前に optionPriceDeltaTaxIncluded で変換すること） */
 export function sumInclusiveOptionPriceDelta(
   linkedGroups: OptionGroupForOrder[],
   byGroup: Map<string, string[]>,

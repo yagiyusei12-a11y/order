@@ -32,7 +32,7 @@ import {
   baseNetFromStoredPrice,
   eatModeTaxRatePercent,
   normalizeEatMode,
-  retaxInclusiveYen,
+  optionPriceDeltaTaxIncluded,
   taxIncludedFromNet,
   type EatMode,
 } from "../lib/order-line-tax.js";
@@ -195,6 +195,8 @@ function mapGuestOptionGroups(
       items: { id: string; name: string; priceDelta: number; active: boolean }[];
     } | null;
   }[],
+  menuPriceTaxMode: "inclusive" | "exclusive",
+  taxRatePercent: number,
 ): Record<string, unknown>[] {
   const sorted = [...links].sort((a, b) => a.sortOrder - b.sortOrder);
   const out: Record<string, unknown>[] = [];
@@ -211,7 +213,7 @@ function mapGuestOptionGroups(
       items: activeItems.map((it) => ({
         id: it.id,
         name: it.name,
-        priceDelta: it.priceDelta,
+        priceDelta: optionPriceDeltaTaxIncluded(it.priceDelta, menuPriceTaxMode, taxRatePercent, taxRatePercent),
       })),
     });
   }
@@ -381,7 +383,7 @@ function mapGuestSetMenuItem(
         containsAlcohol: comp.containsAlcohol === true,
       };
       try {
-        const opt = mapGuestOptionGroups(comp.optionLinks ?? []);
+        const opt = mapGuestOptionGroups(comp.optionLinks ?? [], defaultPriceTaxMode, taxRatePercent);
         if (opt.length) row.optionGroups = opt;
       } catch (_) {}
       if (ch.isFixed === true) {
@@ -416,7 +418,7 @@ function mapGuestSetMenuItem(
   }
   if (stepsOut.length === 0) return null;
   const base = mapGuestMenuItem(it, defaultPriceTaxMode, taxRatePercent, nowMin);
-  const opt = mapGuestOptionGroups(it.optionLinks ?? []);
+  const opt = mapGuestOptionGroups(it.optionLinks ?? [], defaultPriceTaxMode, taxRatePercent);
   return opt.length ? { ...base, sellKind: "set", setSteps: stepsOut, optionGroups: opt } : { ...base, sellKind: "set", setSteps: stepsOut };
 }
 
@@ -457,7 +459,7 @@ function mapGuestSetMenuItemForReorder(
         containsAlcohol: comp.containsAlcohol === true,
       };
       try {
-        const opt = mapGuestOptionGroups(comp.optionLinks ?? []);
+        const opt = mapGuestOptionGroups(comp.optionLinks ?? [], defaultPriceTaxMode, taxRatePercent);
         if (opt.length) row.optionGroups = opt;
       } catch (_) {}
       if (ch.isFixed === true) {
@@ -482,7 +484,7 @@ function mapGuestSetMenuItemForReorder(
   }
   if (stepsOut.length === 0) return null;
   const base = mapGuestMenuItem(it, defaultPriceTaxMode, taxRatePercent, nowMin);
-  const opt = mapGuestOptionGroups(it.optionLinks ?? []);
+  const opt = mapGuestOptionGroups(it.optionLinks ?? [], defaultPriceTaxMode, taxRatePercent);
   return opt.length ? { ...base, sellKind: "set", setSteps: stepsOut, optionGroups: opt } : { ...base, sellKind: "set", setSteps: stepsOut };
 }
 
@@ -765,7 +767,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
               return { ...row, courseTier: "addon" as const, allowTakeout: allowTakeoutOut };
             }
             const single = mapGuestMenuItem(it, st.menuPriceTaxMode, st.taxRatePercent, nowMin);
-            const opt = mapGuestOptionGroups(it.optionLinks ?? []);
+            const opt = mapGuestOptionGroups(it.optionLinks ?? [], st.menuPriceTaxMode, st.taxRatePercent);
             if (opt.length) (single as Record<string, unknown>).optionGroups = opt;
             const courseTier =
               session.courseId == null
@@ -1284,7 +1286,12 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                 ...g,
                 items: g.items.map((it) => ({
                   ...it,
-                  priceDelta: retaxInclusiveYen(it.priceDelta, storeTaxRatePercent, taxRatePercent),
+                  priceDelta: optionPriceDeltaTaxIncluded(
+                    it.priceDelta,
+                    st.menuPriceTaxMode,
+                    storeTaxRatePercent,
+                    taxRatePercent,
+                  ),
                 })),
               }));
               const vOpt = validateGuestOptionSelections(linkedGroups, row.optionSelections);
@@ -1514,7 +1521,12 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
               ...g,
               items: g.items.map((it) => ({
                 ...it,
-                priceDelta: retaxInclusiveYen(it.priceDelta, storeTaxRatePercent, taxRatePercent),
+                priceDelta: optionPriceDeltaTaxIncluded(
+                  it.priceDelta,
+                  st.menuPriceTaxMode,
+                  storeTaxRatePercent,
+                  taxRatePercent,
+                ),
               })),
             }));
             const optSum =
@@ -2056,7 +2068,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
           itemsOut.push({ ...row, courseTier: "addon" as const });
         } else {
           const single = mapGuestMenuItem(it, st.menuPriceTaxMode, st.taxRatePercent, nowMin);
-          const opt = mapGuestOptionGroups(it.optionLinks ?? []);
+          const opt = mapGuestOptionGroups(it.optionLinks ?? [], st.menuPriceTaxMode, st.taxRatePercent);
           if (opt.length) (single as Record<string, unknown>).optionGroups = opt;
           const courseTier =
             session.courseId == null

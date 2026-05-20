@@ -74,6 +74,10 @@ let stationsCache = [];
 let optionGroupsCache = [];
 let timeWindowsCache = [];
 let storeSettingsCache = { menuPriceTaxMode: "inclusive", taxRatePercent: 10 };
+
+function optionPriceInputLabel() {
+  return storeSettingsCache.menuPriceTaxMode === "exclusive" ? "加算（税抜・円）" : "加算（税込・円）";
+}
 let activeTab = "items";
 let selectedCategoryId = "";
 let selectedItemId = "";
@@ -1388,7 +1392,9 @@ function renderOptionsTab(layout) {
     "<button type=\"button\" class=\"btn-ghost\" id=\"btnSaveGroup\" style=\"margin-bottom:0.05rem\">保存</button></div></div>" +
     "<div style=\"padding:.8rem;border-bottom:1px solid var(--border)\"><div class=\"muted\" style=\"font-size:0.72rem;margin-bottom:0.4rem\">このグループに含める<strong>選択肢</strong>を追加（価格は商品単価への加算）</div><div class=\"row\" style=\"align-items:flex-end;gap:0.35rem;flex-wrap:wrap\">" +
     "<div style=\"flex:1;display:flex;flex-direction:column;gap:0.2rem;min-width:120px\"><span class=\"muted\" style=\"font-size:0.72rem\">選択肢名</span><input id=\"newOptItemName\" type=\"text\" placeholder=\"例: チーズ\" style=\"margin:0\" /></div>" +
-    "<div style=\"display:flex;flex-direction:column;gap:0.2rem;width:100px\"><span class=\"muted\" style=\"font-size:0.72rem\">加算（円）</span><input id=\"newOptItemPrice\" type=\"number\" step=\"1\" value=\"0\" style=\"margin:0\" title=\"商品価格に足す金額\" /></div>" +
+    "<div style=\"display:flex;flex-direction:column;gap:0.2rem;width:100px\"><span class=\"muted\" style=\"font-size:0.72rem\" id=\"newOptItemPriceLabel\">" +
+    optionPriceInputLabel() +
+    "</span><input id=\"newOptItemPrice\" type=\"number\" step=\"1\" value=\"0\" style=\"margin:0\" title=\"商品の入力方式（税込/税抜）と同じ意味で保存されます\" /></div>" +
     "<button type=\"button\" class=\"btn-ghost\" id=\"btnAddOptItem\" style=\"margin-bottom:0.05rem\">追加</button></div></div>" +
     "<div id=\"optItemsList\"></div>";
   const list = mid.querySelector("#optItemsList");
@@ -1402,7 +1408,9 @@ function renderOptionsTab(layout) {
       escapeHtml(oi.name) +
       "\" data-k=\"name\" />" +
       "</div><div class=\"pm-actions\" style=\"flex-direction:column;align-items:stretch;gap:0.25rem\">" +
-      "<span class=\"muted\" style=\"font-size:0.7rem\">価格加算（円）</span>" +
+      "<span class=\"muted\" style=\"font-size:0.7rem\">" +
+      optionPriceInputLabel() +
+      "</span>" +
       "<input type=\"number\" step=\"1\" value=\"" +
       oi.priceDelta +
       "\" data-k=\"price\" style=\"margin:0;width:92px\" title=\"本体価格に足す金額\" />" +

@@ -32,6 +32,7 @@ import {
   takeoutTableWhereForStore,
 } from "../lib/takeout-table-code.js";
 import { sendMailSafe } from "../lib/mail.js";
+import { optionPriceDeltaTaxIncluded } from "../lib/order-line-tax.js";
 
 type EatMode = "dine_in" | "takeout";
 function retaxInclusiveYen(taxIncludedYen: number, fromTaxRatePercent: number, toTaxRatePercent: number): number {
@@ -211,7 +212,12 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
             items: g.items.filter((i) => i.active).map((i) => ({
               id: i.id,
               name: i.name,
-              priceDelta: retaxInclusiveYen(i.priceDelta, storeTaxRatePercent, takeoutTaxRatePercent),
+              priceDelta: optionPriceDeltaTaxIncluded(
+                i.priceDelta,
+                st.menuPriceTaxMode,
+                storeTaxRatePercent,
+                takeoutTaxRatePercent,
+              ),
             })),
           }))
           .filter((g) => g.items.length > 0);
@@ -270,7 +276,12 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
                           items: g.items.filter((i) => i.active).map((i) => ({
                             id: i.id,
                             name: i.name,
-                            priceDelta: retaxInclusiveYen(i.priceDelta, storeTaxRatePercent, takeoutTaxRatePercent),
+                            priceDelta: optionPriceDeltaTaxIncluded(
+                i.priceDelta,
+                st.menuPriceTaxMode,
+                storeTaxRatePercent,
+                takeoutTaxRatePercent,
+              ),
                           })),
                         }))
                         .filter((g) => g.items.length > 0),
@@ -553,7 +564,12 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
                 ...g,
                 items: g.items.map((it0) => ({
                   ...it0,
-                  priceDelta: retaxInclusiveYen(it0.priceDelta, storeTaxRatePercent, taxRatePercent),
+                  priceDelta: optionPriceDeltaTaxIncluded(
+                    it0.priceDelta,
+                    st.menuPriceTaxMode,
+                    storeTaxRatePercent,
+                    taxRatePercent,
+                  ),
                 })),
               }));
               const vOpt = validateGuestOptionSelections(linkedGroups, row.optionSelections);
@@ -615,7 +631,12 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
               ...g,
               items: g.items.map((it0) => ({
                 ...it0,
-                priceDelta: retaxInclusiveYen(it0.priceDelta, storeTaxRatePercent, taxRatePercent),
+                priceDelta: optionPriceDeltaTaxIncluded(
+                  it0.priceDelta,
+                  st.menuPriceTaxMode,
+                  storeTaxRatePercent,
+                  taxRatePercent,
+                ),
               })),
             }));
 

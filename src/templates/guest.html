@@ -1572,7 +1572,7 @@
         for (const st of item.setSteps) {
           const sel = setSelections.find((x) => String(x.stepId) === String(st.id));
           const n = sel && sel.menuItemIds ? sel.menuItemIds.length : 0;
-          if (n < st.minPick || n > st.maxPick) return null;
+          if (!guestValidateSetStepPickCount(st, n)) return null;
         }
         const unitPrice = computeSetUnitPrice(item, setSelections);
         if (unitPrice == null) return null;
@@ -1823,6 +1823,141 @@
       );
     }
 
+    function guestOptionSelectBounds(g) {
+      const minSelect = Math.max(0, Number(g.minSelect) || 0);
+      let maxSelect = Number(g.maxSelect);
+      if (!Number.isFinite(maxSelect) || maxSelect < 1) maxSelect = Math.max(minSelect, 1);
+      if (maxSelect < minSelect) maxSelect = minSelect;
+      return { minSelect, maxSelect };
+    }
+
+    function guestSetChoiceByMid(st, mid) {
+      const k = String(mid);
+      return (
+        (st.choices || []).find((c) => String(c.menuItemId) === k) ||
+        (st.fixedChoices || []).find((c) => String(c.menuItemId) === k) ||
+        null
+      );
+    }
+
+    function guestSetMergedPickIds(st, rootEl) {
+      const stepEl = rootEl.querySelector("[data-step-id=\"" + selEsc(st.id) + "\"]");
+      const userIds = stepEl
+        ? [...stepEl.querySelectorAll("input[type=checkbox][name^=\"p-\"]:checked")].map((x) => x.value)
+        : [];
+      const fixedIds = (st.fixedChoices || []).map((c) => String(c.menuItemId));
+      return [...new Set([...fixedIds, ...userIds])];
+    }
+
+    function guestHtmlSetChoiceOptionGroups(st, ch, visible) {
+      if (!ch || !ch.optionGroups || !ch.optionGroups.length) return "";
+      const disp = visible === false ? ' style="display:none"' : "";
+      let html = "<div class=\"opt-comp\"" + disp + ' data-comp-for="' + escapeHtml(ch.menuItemId) + '">';
+      html +=
+        "<div class=\"muted\" style=\"font-size:.68rem;margin:0 0 .25rem\">オプション（" +
+        escapeHtml(ch.name) +
+        "）</div>";
+      for (const g of ch.optionGroups) {
+        const b = guestOptionSelectBounds(g);
+        const useRadio = b.maxSelect <= 1;
+        html +=
+          "<div class=\"opt-block\" data-comp-opt-group><div class=\"opt-block-head\"><strong>" +
+          escapeHtml(g.name) +
+          "</strong>" +
+          (b.minSelect > 0 ? '<span class="tag-req">必須</span>' : '<span class="tag-opt">任意</span>') +
+          '<span class="tag-opt" style="margin-left:auto">' +
+          b.minSelect +
+          "〜" +
+          b.maxSelect +
+          "個</span></div>";
+        for (const oi of g.items || []) {
+          const priceTxt = fmtGuestOptionDeltaHtml(Number(oi.priceDelta || 0));
+          const nm = "copt-" + escapeHtml(st.id) + "-" + escapeHtml(ch.menuItemId) + "-" + escapeHtml(g.id);
+          if (useRadio) {
+            html +=
+              '<label class="opt-row"><input type="radio" name="' +
+              nm +
+              '" value="' +
+              escapeHtml(oi.id) +
+              '" /><span class="opt-name">' +
+              escapeHtml(oi.name) +
+              '</span><span class="opt-price">' +
+              priceTxt +
+              "</span></label>";
+          } else {
+            html +=
+              '<label class="opt-row"><input type="checkbox" name="' +
+              nm +
+              '" value="' +
+              escapeHtml(oi.id) +
+              '" data-min="' +
+              b.minSelect +
+              '" data-max="' +
+              b.maxSelect +
+              '" /><span class="opt-name">' +
+              escapeHtml(oi.name) +
+              '</span><span class="opt-price">' +
+              priceTxt +
+              "</span></label>";
+          }
+        }
+        html += "</div>";
+      }
+      html += "</div>";
+      return html;
+    }
+
+    function guestValidateSetStepPickCount(st, userPickCount) {
+      const pickable = (st.choices || []).length;
+      if (pickable === 0) return userPickCount === 0;
+      return userPickCount >= st.minPick && userPickCount <= st.maxPick;
+    }
+
+    function guestValidateSetComponentOptions(st, rootEl) {
+      for (const mid of guestSetMergedPickIds(st, rootEl)) {
+        const ch = guestSetChoiceByMid(st, mid);
+        if (!ch || !ch.optionGroups || !ch.optionGroups.length) continue;
+        for (const g of ch.optionGroups) {
+          const b = guestOptionSelectBounds(g);
+          const nm = "copt-" + st.id + "-" + mid + "-" + g.id;
+          const useRadio = b.maxSelect <= 1;
+          let picked = 0;
+          if (useRadio) {
+            const r = rootEl.querySelector("input[type=radio][name=\"" + selEsc(nm) + "\"]:checked");
+            picked = r && r.value ? 1 : 0;
+          } else {
+            picked = rootEl.querySelectorAll("input[type=checkbox][name=\"" + selEsc(nm) + "\"]:checked").length;
+          }
+          if (picked < b.minSelect || picked > b.maxSelect) {
+            toast(
+              (ch.name || "構成単品") +
+                " の「" +
+                g.name +
+                "」は " +
+                b.minSelect +
+                "〜" +
+                b.maxSelect +
+                " 個選んでください",
+            );
+            return false;
+          }
+        }
+      }
+      return true;
+    }
+
+    function wireGuestSetComponentOptionLimits(panel) {
+      panel.querySelectorAll('.opt-comp input[type="checkbox"][data-max]').forEach((inp) => {
+        inp.addEventListener("change", () => {
+          const maxP = Number(inp.getAttribute("data-max") || 1);
+          const boxes = panel.querySelectorAll('input[type="checkbox"][name="' + inp.name + '"]');
+          if ([...boxes].filter((b) => b.checked).length > maxP) {
+            inp.checked = false;
+            toast("このオプションは最大 " + maxP + " 個までです");
+          }
+        });
+      });
+    }
     function guestTimeDiscountActive(item) {
       if (!item) return false;
       const orig = Number(item.originalTaxIncludedPrice);
@@ -2171,39 +2306,20 @@
     function collectSetComponentOptionSelections(host, item) {
       const out = [];
       for (const st of item.setSteps || []) {
-        const stepEl = host.querySelector("[data-step-id=\"" + selEsc(st.id) + "\"]");
-        if (!stepEl) continue;
-        const pickedIds = [...stepEl.querySelectorAll("input[type=checkbox]:checked")].map((x) => x.value);
-        for (const mid of pickedIds) {
-          const ch = (st.choices || []).find((c) => c.menuItemId === mid);
+        for (const mid of guestSetMergedPickIds(st, host)) {
+          const ch = guestSetChoiceByMid(st, mid);
           if (!ch || !ch.optionGroups || !ch.optionGroups.length) continue;
           const optionSelections = [];
           for (const g of ch.optionGroups) {
-            const useRadio = Number(g.maxSelect || 1) <= 1;
+            const b = guestOptionSelectBounds(g);
+            const useRadio = b.maxSelect <= 1;
             let ids = [];
+            const nm = "copt-" + selEsc(st.id) + "-" + selEsc(mid) + "-" + selEsc(g.id);
             if (useRadio) {
-              const r = stepEl.querySelector(
-                "input[type=radio][name=\"copt-" +
-                  selEsc(st.id) +
-                  "-" +
-                  selEsc(mid) +
-                  "-" +
-                  selEsc(g.id) +
-                  "\"]:checked"
-              );
+              const r = host.querySelector("input[type=radio][name=\"" + nm + "\"]:checked");
               if (r && r.value) ids = [r.value];
             } else {
-              ids = [
-                ...stepEl.querySelectorAll(
-                  "input[type=checkbox][name=\"copt-" +
-                    selEsc(st.id) +
-                    "-" +
-                    selEsc(mid) +
-                    "-" +
-                    selEsc(g.id) +
-                    "\"]:checked"
-                ),
-              ].map((x) => x.value);
+              ids = [...host.querySelectorAll("input[type=checkbox][name=\"" + nm + "\"]:checked")].map((x) => x.value);
             }
             optionSelections.push({ optionGroupId: g.id, optionItemIds: ids });
           }
@@ -2298,7 +2414,7 @@
             for (const mid of sel.menuItemIds) {
               if (seen.has(mid)) continue;
               seen.add(mid);
-              const ch = (st.choices || []).find((c) => c.menuItemId === mid);
+              const ch = guestSetChoiceByMid(st, mid);
               if (ch) names.push(String(ch.name || "").trim() || "（名称未設定）");
             }
           }
@@ -3107,32 +3223,11 @@
           if (st) {
             const sel = collectSetSelections(panel, item).find((x) => x.stepId === st.id);
             const n = sel && sel.menuItemIds ? sel.menuItemIds.length : 0;
-            if (n < st.minPick || n > st.maxPick) {
+            if (!guestValidateSetStepPickCount(st, n)) {
               toast(st.label + " は " + st.minPick + "〜" + st.maxPick + " 品選んでください");
               return false;
             }
-            const picks = sel && sel.menuItemIds ? sel.menuItemIds : [];
-            for (const mid of picks) {
-              const ch = (st.choices || []).find((c) => c.menuItemId === mid);
-              if (!ch || !ch.optionGroups) continue;
-              for (const g of ch.optionGroups) {
-                if (g.minSelect <= 0) continue;
-                const nm = "copt-" + st.id + "-" + mid + "-" + g.id;
-                const useRadio = Number(g.maxSelect || 1) <= 1;
-                let picked = 0;
-                if (useRadio) {
-                  const r = pane.querySelector("input[type=radio][name=\"" + selEsc(nm) + "\"]:checked");
-                  picked = r && r.value ? 1 : 0;
-                } else {
-                  picked = pane.querySelectorAll("input[type=checkbox][name=\"" + selEsc(nm) + "\"]:checked")
-                    .length;
-                }
-                if (picked < g.minSelect) {
-                  toast((ch.name || "構成単品") + " の「" + g.name + "」を選んでください");
-                  return false;
-                }
-              }
-            }
+            if (!guestValidateSetComponentOptions(st, pane)) return false;
           }
         }
         const ogEl = pane.querySelector("[data-opt-group-id]");
@@ -3328,7 +3423,8 @@
       if (item.sellKind === "set" && item.setSteps && item.setSteps.length) {
         bodyInner += "<div class=\"guest-wiz-stack\" data-guest-wiz-stack>";
         for (const st of item.setSteps) {
-          const req = st.minPick > 0;
+          const pickableN = (st.choices || []).length;
+          const req = pickableN > 0 && st.minPick > 0;
           bodyInner +=
             "<div class=\"guest-wiz-pane\" data-wiz-pane=\"1\">" +
             "<div class=\"opt-block\" data-step-id=\"" +
@@ -3339,10 +3435,8 @@
             "</strong>" +
             (req ? "<span class=\"tag-req\">必須</span>" : "<span class=\"tag-opt\">任意</span>") +
             "<span class=\"tag-opt\" style=\"margin-left:auto\">" +
-            st.minPick +
-            "〜" +
-            st.maxPick +
-            "品</span></div><div class=\"opt-step-choices\">";
+            (pickableN > 0 ? st.minPick + "〜" + st.maxPick + "品" : "付属品") +
+            "</span></div><div class=\"opt-step-choices\">";
           for (const ch of st.fixedChoices || []) {
             const priceTxt = fmtGuestSetStepChoiceExtraHtml(ch);
             bodyInner +=
@@ -3353,6 +3447,7 @@
               "</span><span class=\"opt-price\">" +
               priceTxt +
               "</span></div>";
+            bodyInner += guestHtmlSetChoiceOptionGroups(st, ch, true);
           }
           for (const ch of st.choices || []) {
             const blockedAlcohol = alcoholRestricted && ch.containsAlcohol;
@@ -3378,59 +3473,7 @@
               "</span><span class=\"opt-price\">" +
               priceTxt +
               "</span></label>";
-            if (ch.optionGroups && ch.optionGroups.length) {
-              bodyInner += "<div class=\"opt-comp\">";
-              bodyInner += "<div class=\"muted\" style=\"font-size:.68rem;margin:0 0 .25rem\">オプション（" + escapeHtml(ch.name) + "）</div>";
-              for (const g of ch.optionGroups) {
-                const useRadio = Number(g.maxSelect || 1) <= 1;
-                bodyInner +=
-                  "<div class=\"opt-block\" data-comp-opt-group>" +
-                  "<div class=\"opt-block-head\"><strong>" +
-                  escapeHtml(g.name) +
-                  "</strong>" +
-                  (g.minSelect > 0 ? "<span class=\"tag-req\">必須</span>" : "<span class=\"tag-opt\">任意</span>") +
-                  "<span class=\"tag-opt\" style=\"margin-left:auto\">" +
-                  g.minSelect +
-                  "〜" +
-                  g.maxSelect +
-                  (useRadio ? "個" : "個") +
-                  "</span></div>";
-                for (const oi of g.items || []) {
-                  const yen = Number(oi.priceDelta || 0);
-                  const priceTxt = fmtGuestOptionDeltaHtml(yen);
-                  const nm = "copt-" + escapeHtml(st.id) + "-" + escapeHtml(ch.menuItemId) + "-" + escapeHtml(g.id);
-                  if (useRadio) {
-                    bodyInner +=
-                      "<label class=\"opt-row\"><input type=\"radio\" name=\"" +
-                      nm +
-                      "\" value=\"" +
-                      escapeHtml(oi.id) +
-                      "\" /><span class=\"opt-name\">" +
-                      escapeHtml(oi.name) +
-                      "</span><span class=\"opt-price\">" +
-                      priceTxt +
-                      "</span></label>";
-                  } else {
-                    bodyInner +=
-                      "<label class=\"opt-row\"><input type=\"checkbox\" name=\"" +
-                      nm +
-                      "\" value=\"" +
-                      escapeHtml(oi.id) +
-                      "\" data-min=\"" +
-                      g.minSelect +
-                      "\" data-max=\"" +
-                      g.maxSelect +
-                      "\" /><span class=\"opt-name\">" +
-                      escapeHtml(oi.name) +
-                      "</span><span class=\"opt-price\">" +
-                      priceTxt +
-                      "</span></label>";
-                  }
-                }
-                bodyInner += "</div>";
-              }
-              bodyInner += "</div>";
-            }
+            bodyInner += guestHtmlSetChoiceOptionGroups(st, ch, false);
           }
           bodyInner += "</div></div></div>";
         }
@@ -3660,6 +3703,7 @@
               }
             });
         } catch (_) {}
+        wireGuestSetComponentOptionLimits(panel);
         const getQty = wireQty(panel, item, () => {
           const sel = collectSetSelections(panel, item);
           const up = computeSetUnitPrice(item, sel);
@@ -3677,10 +3721,11 @@
           for (const st of item.setSteps || []) {
             const sel = setSelections.find((x) => x.stepId === st.id);
             const n = sel && sel.menuItemIds ? sel.menuItemIds.length : 0;
-            if (n < st.minPick || n > st.maxPick) {
+            if (!guestValidateSetStepPickCount(st, n)) {
               toast(st.label + " は " + st.minPick + "〜" + st.maxPick + " 品選んでください");
               return;
             }
+            if (!guestValidateSetComponentOptions(st, panel)) return;
           }
           const slPayload = getServeLaterDeferPayload(panel, item);
           if (!slPayload.ok) {

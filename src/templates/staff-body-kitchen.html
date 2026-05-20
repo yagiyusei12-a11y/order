@@ -31,10 +31,9 @@
     }
     .kit-full-exit-bar {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 0.5rem;
-      flex-wrap: wrap;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.35rem;
       padding: 0.4rem 0.55rem;
       background: var(--surface);
       border-bottom: 1px solid var(--border);
@@ -42,6 +41,22 @@
       top: 0;
       z-index: 40;
       box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
+    }
+    .kit-fs-exit-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .kit-fs-tabs {
+      margin: 0;
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+    .kit-fs-tabs button {
+      font-size: 0.76rem;
+      padding: 0.32rem 0.55rem;
     }
     .kit-full-exit-bar .kit-full-exit-title {
       font-size: 0.78rem;
@@ -53,7 +68,7 @@
       gap: 0.35rem;
     }
     body.kit-list-fullscreen #kit.kit-layout-normal {
-      min-height: calc(100dvh - 2.75rem);
+      min-height: calc(100dvh - 4.25rem);
     }
     /* 通常表示: 注文をタイル状に詰めて表示 */
     #kit.kit-layout-normal {
@@ -672,11 +687,17 @@
     }
   </style>
   <div id="kitFullExitBar" class="kit-full-exit-bar" hidden>
-    <span class="kit-full-exit-title">キッチン · リスト全画面</span>
-    <div class="row">
-      <button type="button" class="btn-ghost" id="btnKitFsRef" style="width:auto">再読込</button>
-      <button type="button" class="btn-ghost" id="btnKitFsSummary" style="width:auto">まとめ表示</button>
-      <button type="button" class="btn-ghost" id="btnKitFullExit" style="width:auto;font-weight:800">全画面を終了</button>
+    <div class="kit-fs-exit-head">
+      <span class="kit-full-exit-title">キッチン · リスト全画面</span>
+      <div class="row">
+        <button type="button" class="btn-ghost" id="btnKitFsRef" style="width:auto">再読込</button>
+        <button type="button" class="btn-ghost" id="btnKitFsSummary" style="width:auto">まとめ表示</button>
+        <button type="button" class="btn-ghost" id="btnKitFullExit" style="width:auto;font-weight:800">全画面を終了</button>
+      </div>
+    </div>
+    <div class="top-tabs kit-fs-tabs" role="tablist" aria-label="注文ビュー（全画面）">
+      <button type="button" id="kitTabHistoryFs" role="tab" aria-selected="false">注文履歴（調理済）</button>
+      <button type="button" id="kitTabActiveFs" class="is-on" role="tab" aria-selected="true">進行中の注文</button>
     </div>
   </div>
   <div class="kit-fs-hide">

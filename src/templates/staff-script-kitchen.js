@@ -980,6 +980,8 @@ function syncKitTabChrome() {
   const h = document.getElementById("kitTabHistory");
   const a = document.getElementById("kitTabActive");
   const r = document.getElementById("kitTabReserve");
+  const hFs = document.getElementById("kitTabHistoryFs");
+  const aFs = document.getElementById("kitTabActiveFs");
   if (h) {
     h.classList.toggle("is-on", kitMainTab === "history");
     h.setAttribute("aria-selected", kitMainTab === "history" ? "true" : "false");
@@ -991,6 +993,14 @@ function syncKitTabChrome() {
   if (r) {
     r.classList.toggle("is-on", kitMainTab === "reserve");
     r.setAttribute("aria-selected", kitMainTab === "reserve" ? "true" : "false");
+  }
+  if (hFs) {
+    hFs.classList.toggle("is-on", kitMainTab === "history");
+    hFs.setAttribute("aria-selected", kitMainTab === "history" ? "true" : "false");
+  }
+  if (aFs) {
+    aFs.classList.toggle("is-on", kitMainTab === "active");
+    aFs.setAttribute("aria-selected", kitMainTab === "active" ? "true" : "false");
   }
   const showActive = kitMainTab === "active";
   const reserve = kitMainTab === "reserve";
@@ -2173,19 +2183,23 @@ document.getElementById("btnKitFullList").onclick = () => applyKitListFullscreen
   const th = document.getElementById("kitTabHistory");
   const ta = document.getElementById("kitTabActive");
   const tr = document.getElementById("kitTabReserve");
-  if (th)
-    th.onclick = () => {
-      kitMainTab = "history";
-      scheduleKit();
-      renderKitList();
-    };
-  if (ta)
-    ta.onclick = () => {
-      kitMainTab = "active";
-      scheduleKit();
-      syncKitPendingUi();
-      renderKitList();
-    };
+  const thFs = document.getElementById("kitTabHistoryFs");
+  const taFs = document.getElementById("kitTabActiveFs");
+  const onHistory = () => {
+    kitMainTab = "history";
+    scheduleKit();
+    renderKitList();
+  };
+  const onActive = () => {
+    kitMainTab = "active";
+    scheduleKit();
+    syncKitPendingUi();
+    renderKitList();
+  };
+  if (th) th.onclick = onHistory;
+  if (thFs) thFs.onclick = onHistory;
+  if (ta) ta.onclick = onActive;
+  if (taFs) taFs.onclick = onActive;
   if (tr)
     tr.onclick = () => {
       kitMainTab = "reserve";

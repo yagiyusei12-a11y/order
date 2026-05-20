@@ -682,17 +682,26 @@ document.getElementById("hallAuto").onchange = scheduleHall;
 
 function setHallTab(tab) {
   hallTab = tab;
-  const bDone = document.getElementById("hallTabDone");
-  const bServed = document.getElementById("hallTabServed");
-  if (bDone) bDone.classList.toggle("is-on", tab === "done");
-  if (bServed) bServed.classList.toggle("is-on", tab === "served");
+  for (const [id, t] of [
+    ["hallTabDone", "done"],
+    ["hallTabServed", "served"],
+    ["hallTabDoneFs", "done"],
+    ["hallTabServedFs", "served"],
+  ]) {
+    const b = document.getElementById(id);
+    if (b) b.classList.toggle("is-on", tab === t);
+  }
   renderHallList();
 }
 
 const hallTabDoneEl = document.getElementById("hallTabDone");
 const hallTabServedEl = document.getElementById("hallTabServed");
+const hallTabDoneFsEl = document.getElementById("hallTabDoneFs");
+const hallTabServedFsEl = document.getElementById("hallTabServedFs");
 if (hallTabDoneEl) hallTabDoneEl.onclick = () => setHallTab("done");
 if (hallTabServedEl) hallTabServedEl.onclick = () => setHallTab("served");
+if (hallTabDoneFsEl) hallTabDoneFsEl.onclick = () => setHallTab("done");
+if (hallTabServedFsEl) hallTabServedFsEl.onclick = () => setHallTab("served");
 
 try {
   if (sessionStorage.getItem(HALL_LIST_FS_KEY) === "1") applyHallListFullscreen(true);

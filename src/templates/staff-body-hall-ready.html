@@ -31,10 +31,9 @@
     }
     .hall-full-exit-bar {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 0.5rem;
-      flex-wrap: wrap;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.35rem;
       padding: 0.4rem 0.55rem;
       background: var(--surface);
       border-bottom: 1px solid var(--border);
@@ -42,6 +41,22 @@
       top: 0;
       z-index: 40;
       box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
+    }
+    .hall-fs-exit-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .hall-fs-tabs {
+      margin: 0;
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+    .hall-fs-tabs button {
+      font-size: 0.76rem;
+      padding: 0.32rem 0.55rem;
     }
     .hall-full-exit-bar .hall-full-exit-title {
       font-size: 0.78rem;
@@ -53,7 +68,7 @@
       gap: 0.35rem;
     }
     body.hall-list-fullscreen #hallReadyRoot {
-      min-height: calc(100dvh - 2.75rem);
+      min-height: calc(100dvh - 4.25rem);
       margin-bottom: 0;
     }
 
@@ -121,10 +136,16 @@
     .hall-ready-empty .ico { font-size: 2.2rem; margin-bottom: 0.45rem; opacity: 0.4; }
   </style>
   <div id="hallFullExitBar" class="hall-full-exit-bar" hidden>
-    <span class="hall-full-exit-title">調理済・提供 · リスト全画面</span>
-    <div class="row">
-      <button type="button" class="btn-ghost" id="btnHallFsRef" style="width:auto">再読込</button>
-      <button type="button" class="btn-ghost" id="btnHallFullExit" style="width:auto;font-weight:800">全画面を終了</button>
+    <div class="hall-fs-exit-head">
+      <span class="hall-full-exit-title">調理済・提供 · リスト全画面</span>
+      <div class="row">
+        <button type="button" class="btn-ghost" id="btnHallFsRef" style="width:auto">再読込</button>
+        <button type="button" class="btn-ghost" id="btnHallFullExit" style="width:auto;font-weight:800">全画面を終了</button>
+      </div>
+    </div>
+    <div class="top-tabs hall-fs-tabs" role="tablist" aria-label="提供リスト（全画面）">
+      <button type="button" class="is-on" id="hallTabDoneFs">提供待ち（調理済）</button>
+      <button type="button" id="hallTabServedFs">提供済み</button>
     </div>
   </div>
   <div class="hall-fs-hide">

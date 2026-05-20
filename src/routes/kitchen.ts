@@ -18,6 +18,13 @@ import { tableDisplayLabel } from "../lib/table-display-code.js";
 
 const LINE_STATUSES = ["queued", "cooking", "done", "served"] as const;
 
+/** OPS自由明細・コース＋オプション料金はキッチンに出さない */
+function isKitchenExcludedBillingLine(lineExtra: unknown): boolean {
+  if (lineExtra == null || typeof lineExtra !== "object" || Array.isArray(lineExtra)) return false;
+  const kind = (lineExtra as { kind?: unknown }).kind;
+  return kind === "customLine" || kind === "courseOptionPack";
+}
+
 /** ホール提供待ち API（lineStatus=hall_wait）で明細行を出すか */
 function includeLineInHallWait(
   dbStatus: string,
@@ -233,6 +240,7 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
     const outLines: Array<Record<string, unknown>> = [];
 
     for (const l of lines) {
+      if (isKitchenExcludedBillingLine(l.lineExtra)) continue;
       const picks =
         l.menuItem?.sellKind === "set" ? extractSetComponentsFromLineExtra(l.lineExtra) : [];
       const resolved =

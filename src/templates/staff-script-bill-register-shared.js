@@ -651,7 +651,6 @@ async function mountRegisterFlow(panel, ctx) {
     : "";
   const ordersTableHtml =
     coursePacksHtml +
-    customLineFormHtml +
     "<h3 class=\"ops-sec-title\">コース・注文</h3>" +
     "<div class=\"card ops-order-card\"><table class=\"ops-order-table\">" +
     orderTableFallback +
@@ -677,6 +676,7 @@ async function mountRegisterFlow(panel, ctx) {
     })() +
     "</span></div>" +
     "<div id=\"opsAdminSettingsPanel\" class=\"ops-admin-settings-panel\" hidden>" +
+    customLineFormHtml +
     "<details class=\"ops-admin-accordion\">" +
     "<summary class=\"ops-admin-accordion__summary\">⚙️ 人数・コース設定</summary>" +
     "<div class=\"ops-admin-accordion__body\">" +
@@ -784,7 +784,6 @@ async function mountRegisterFlow(panel, ctx) {
       cashKeypadHtml +
       "</div>" +
       "<div class=\"ops-orders-pane\">" +
-      customLineFormHtml +
       coursePacksHtml +
       "<h3 class=\"ops-sec-title\">コース・注文</h3>" +
       "<div class=\"card ops-order-card\"><table class=\"ops-order-table\">" +

@@ -73,6 +73,9 @@ function orderGroupHasKitchenServeFast(og) {
 
 function lineGroupKey(ln) {
   const base = ln.menuItemId ? "mid:" + ln.menuItemId : "name:" + ln.nameSnapshot;
+  if (ln && ln.isSetComponent && ln.setPickOptionSubtext) {
+    return base + "|pickOpt:" + String(ln.setPickOptionSubtext);
+  }
   if (ln && ln.lineExtra && typeof ln.lineExtra === "object") {
     const kind = /** @type {{ kind?: unknown }} */ (ln.lineExtra).kind;
     if (kind === "set" || kind === "single") {
@@ -111,6 +114,8 @@ function orderLineDisplayName(ln) {
 }
 
 function orderLineExtraSubtext(ln) {
+  const pickOpt = ln && ln.setPickOptionSubtext != null ? String(ln.setPickOptionSubtext).trim() : "";
+  if (pickOpt) return pickOpt;
   const extra = ln && ln.lineExtra;
   if (extra == null || typeof extra !== "object") return "";
   const o = /** @type {Record<string, unknown>} */ (extra);

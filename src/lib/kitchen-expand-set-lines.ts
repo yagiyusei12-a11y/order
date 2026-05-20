@@ -3,7 +3,38 @@ export type SetComponentPick = {
   menuItemId: string;
   pickName: string;
   stepLabel: string;
+  /** 構成単品に付いたオプション（kind: single の lineExtra スナップショット） */
+  optionSubtext: string;
 };
+
+/** kind: single のオプション選択をキッチン表示用テキストに（1行 or 複数行） */
+export function formatSingleKindOptionSubtext(lineExtra: unknown): string {
+  if (lineExtra == null || typeof lineExtra !== "object") return "";
+  const o = lineExtra as Record<string, unknown>;
+  if (o.kind !== "single" || !Array.isArray(o.options)) return "";
+  const lines: string[] = [];
+  for (const gr of o.options) {
+    if (!gr || typeof gr !== "object") continue;
+    const gn =
+      typeof (gr as { groupName?: string }).groupName === "string"
+        ? (gr as { groupName: string }).groupName
+        : "";
+    const picks = (gr as { picks?: { name?: string }[] }).picks;
+    const names = Array.isArray(picks)
+      ? picks.map((p) => (p && p.name ? String(p.name) : "")).filter(Boolean)
+      : [];
+    if (gn && names.length) lines.push(gn + ": " + names.join("・"));
+    else if (names.length) lines.push(names.join("・"));
+  }
+  return lines.join("\n");
+}
+
+export function formatSetComponentPickDisplayName(pickName: string, optionSubtext: string): string {
+  const base = String(pickName || "").trim() || "（名称未設定）";
+  const opt = String(optionSubtext || "").trim();
+  if (!opt) return base;
+  return base + "（" + opt.replace(/\n/g, " / ") + "）";
+}
 
 export function extractSetComponentsFromLineExtra(lineExtra: unknown): SetComponentPick[] {
   if (lineExtra == null || typeof lineExtra !== "object") return [];
@@ -26,13 +57,21 @@ export function extractSetComponentsFromLineExtra(lineExtra: unknown): SetCompon
       const pickNameRaw =
         typeof (p as { name?: string }).name === "string" ? (p as { name: string }).name.trim() : "";
       const pickName = pickNameRaw || "（名称未設定）";
+      const optionSubtext = formatSingleKindOptionSubtext(
+        (p as { optionExtra?: unknown }).optionExtra,
+      );
       const prev = byId.get(menuItemId);
       if (prev) {
         if (stepLabel && !prev.stepLabel.includes(stepLabel)) {
           prev.stepLabel = prev.stepLabel ? `${prev.stepLabel}・${stepLabel}` : stepLabel;
         }
+        if (optionSubtext && optionSubtext !== prev.optionSubtext) {
+          prev.optionSubtext = prev.optionSubtext
+            ? `${prev.optionSubtext}\n${optionSubtext}`
+            : optionSubtext;
+        }
       } else {
-        byId.set(menuItemId, { menuItemId, pickName, stepLabel });
+        byId.set(menuItemId, { menuItemId, pickName, stepLabel, optionSubtext });
       }
     }
   }

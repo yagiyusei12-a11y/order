@@ -5,6 +5,7 @@ import {
   applyKitDonePartIdsToLineExtra,
   deriveSetComponentRowStatus,
   extractSetComponentsFromLineExtra,
+  formatSetComponentPickDisplayName,
   readKitDonePartIds,
   stripSetNameSnapshotBracket,
 } from "../lib/kitchen-expand-set-lines.js";
@@ -312,7 +313,7 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
         return {
           menuItemId: p.menuItemId,
           stepLabel: p.stepLabel ? p.stepLabel : null,
-          pickName: p.pickName,
+          pickName: formatSetComponentPickDisplayName(p.pickName, p.optionSubtext),
           name: m.name,
           imageUrl: m.imageUrl ?? null,
           recipe: m.recipe ?? null,
@@ -324,12 +325,14 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
         if (hallWaitMode && !includeLineInHallWait(l.status, parentHallPrep, rowHallPrep)) {
           continue;
         }
+        const pickDisplay = formatSetComponentPickDisplayName(p.pickName, p.optionSubtext);
         outLines.push({
           id: `${l.id}::${p.menuItemId}`,
           kitchenPatchLineId: l.id,
           isSetComponent: true,
           status: deriveSetComponentRowStatus(l.status, l.lineExtra, p.menuItemId),
-          nameSnapshot: p.stepLabel ? `${setTitle} › ${p.stepLabel}: ${p.pickName}` : `${setTitle} › ${p.pickName}`,
+          nameSnapshot: p.stepLabel ? `${setTitle} › ${p.stepLabel}: ${pickDisplay}` : `${setTitle} › ${pickDisplay}`,
+          setPickOptionSubtext: p.optionSubtext || null,
           unitPrice: 0,
           qty: l.qty,
           note: l.note,

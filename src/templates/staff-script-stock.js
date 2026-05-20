@@ -56,6 +56,7 @@ function passesFilters(entry) {
     )
       return false;
   }
+  if ($("fltOff") && $("fltOff").checked && it.isAvailable !== false) return false;
   return true;
 }
 
@@ -139,6 +140,7 @@ function renderTable() {
     nameTd.innerHTML =
       "<div style=\"font-weight:700\">" +
       escapeHtml(String(it.name || "")) +
+      (it.isAvailable === false ? ' <span class="pill" style="font-size:0.65rem">販売停止</span>' : "") +
       "</div>" +
       "<div class=\"muted\" style=\"font-size:0.72rem\">" +
       escapeHtml(String(entry.categoryName || "")) +
@@ -327,5 +329,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (fm) fm.onchange = () => renderTable();
   const fl = $("fltLow");
   if (fl) fl.onchange = () => renderTable();
+  const fo = $("fltOff");
+  if (fo) fo.onchange = () => renderTable();
   loadAll();
 });

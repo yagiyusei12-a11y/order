@@ -195,7 +195,11 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
     const token = req.params.token;
     const jsToken = JSON.stringify(token);
     const body = html("guest.html").replace("__TOKEN_JS__", jsToken);
-    return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(body);
+    return reply
+      .type("text/html; charset=utf-8")
+      .header("Cache-Control", "no-store, no-cache, must-revalidate")
+      .header("Pragma", "no-cache")
+      .send(body);
   });
 
   app.get<{ Params: { storeId: string }; Querystring: { key?: string } }>(

@@ -1269,6 +1269,8 @@ async function mountRegisterFlow(panel, ctx) {
       const key = btn.getAttribute("data-line-del") || "";
       const g = groupedLines.find((x) => x.key === key);
       if (!g) return;
+      const label = String(g.nameSnapshot || "この商品").trim() || "この商品";
+      if (!window.confirm("「" + label + "」を削除しますか？")) return;
       BillRegisterShared.updateGroupedRowDraftUi(panel, g.key, 0, g.unitPrice);
       BillRegisterShared.queueGroupedQtyCommit(ctx, detail, g, 0, session, table);
     };

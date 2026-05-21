@@ -1,6 +1,6 @@
 import { prisma } from "../db.js";
 import { computeCourseSessionTotal } from "./course-pricing.js";
-import { computeSessionSuggestedTotal, parseBillDiscount } from "./ops-discount.js";
+import { computeSessionSuggestedTotal, parseBillDiscounts } from "./ops-discount.js";
 
 export type SessionDisplaySummary = {
   sessionId: string;
@@ -48,8 +48,8 @@ export async function loadSessionDisplaySummary(
         )
       : 0;
 
-  const billDisc = parseBillDiscount(session.bill?.discountJson);
-  const tot = computeSessionSuggestedTotal(courseTotal, session.orders, billDisc);
+  const billDiscs = parseBillDiscounts(session.bill?.discountJson);
+  const tot = computeSessionSuggestedTotal(courseTotal, session.orders, billDiscs);
 
   return {
     sessionId: session.id,

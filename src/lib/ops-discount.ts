@@ -19,6 +19,11 @@ export type OpsLineDiscountJson = OpsBillDiscountJson & {
   scope: "line" | "unit";
 };
 
+export type BillDiscountBreakdownItem = {
+  discount: OpsBillDiscountJson;
+  amount: number;
+};
+
 function roundYen(n: number): number {
   return Math.round(n);
 }
@@ -57,6 +62,21 @@ export function computeBillDiscountAmountYen(subtotal: number, disc: OpsBillDisc
   return Math.min(subtotal, roundYen((subtotal * p) / 100));
 }
 
+/** 複数卓割引を順に適用（各割引は直前の残額に対して計算） */
+export function computeBillDiscountsBreakdown(
+  subtotal: number,
+  discounts: OpsBillDiscountJson[],
+): { items: BillDiscountBreakdownItem[]; totalAmount: number } {
+  let remaining = Math.max(0, subtotal);
+  const items: BillDiscountBreakdownItem[] = [];
+  for (const discount of discounts) {
+    const amount = computeBillDiscountAmountYen(remaining, discount);
+    items.push({ discount, amount });
+    remaining = Math.max(0, remaining - amount);
+  }
+  return { items, totalAmount: remaining };
+}
+
 export type LineInput = {
   unitPrice: number;
   qty: number;
@@ -67,7 +87,7 @@ export type LineInput = {
 export function computeSessionSuggestedTotal(
   courseTotal: number,
   orders: { lines: LineInput[] }[],
-  billDiscount: OpsBillDiscountJson | null | undefined,
+  billDiscount: OpsBillDiscountJson | OpsBillDiscountJson[] | null | undefined,
 ): {
   courseTotal: number;
   ordersGross: number;
@@ -75,6 +95,7 @@ export function computeSessionSuggestedTotal(
   ordersNet: number;
   subtotalBeforeBillDiscount: number;
   billDiscountAmount: number;
+  billDiscountBreakdown: BillDiscountBreakdownItem[];
   suggestedTotal: number;
 } {
   let ordersGross = 0;
@@ -90,8 +111,12 @@ export function computeSessionSuggestedTotal(
   }
   const ordersNet = Math.max(0, ordersGross - ordersDiscount);
   const subtotalBeforeBillDiscount = courseTotal + ordersNet;
-  const billDiscountAmount = computeBillDiscountAmountYen(subtotalBeforeBillDiscount, billDiscount ?? null);
-  const suggestedTotal = Math.max(0, subtotalBeforeBillDiscount - billDiscountAmount);
+  const discounts = Array.isArray(billDiscount) ? billDiscount : billDiscount ? [billDiscount] : [];
+  const { items: billDiscountBreakdown, totalAmount: suggestedTotal } = computeBillDiscountsBreakdown(
+    subtotalBeforeBillDiscount,
+    discounts,
+  );
+  const billDiscountAmount = billDiscountBreakdown.reduce((s, i) => s + i.amount, 0);
   return {
     courseTotal,
     ordersGross,
@@ -99,6 +124,7 @@ export function computeSessionSuggestedTotal(
     ordersNet,
     subtotalBeforeBillDiscount,
     billDiscountAmount,
+    billDiscountBreakdown,
     suggestedTotal,
   };
 }
@@ -114,6 +140,21 @@ export function parseBillDiscount(raw: unknown): OpsBillDiscountJson | null {
   const label = typeof o.label === "string" ? o.label.trim().slice(0, 80) : undefined;
   const presetId = typeof o.presetId === "string" ? o.presetId.trim().slice(0, 64) : undefined;
   return { kind, value, ...(label ? { label } : {}), ...(presetId ? { presetId } : {}) };
+}
+
+/** 伝票 discountJson: 単一オブジェクト（旧）または配列 */
+export function parseBillDiscounts(raw: unknown): OpsBillDiscountJson[] {
+  if (raw == null) return [];
+  if (Array.isArray(raw)) {
+    const out: OpsBillDiscountJson[] = [];
+    for (const item of raw) {
+      const p = parseBillDiscount(item);
+      if (p) out.push(p);
+    }
+    return out;
+  }
+  const one = parseBillDiscount(raw);
+  return one ? [one] : [];
 }
 
 export function parseLineDiscount(raw: unknown): OpsLineDiscountJson | null {

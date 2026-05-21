@@ -6,6 +6,7 @@ import {
   computeLineDiscountAmountYen,
   computeSessionSuggestedTotal,
   parseBillDiscount,
+  parseBillDiscounts,
   parseLineDiscount,
   type OpsBillDiscountJson,
   type OpsLineDiscountJson,
@@ -57,12 +58,15 @@ type BillPreviewPayload = ReturnType<typeof computeSessionSuggestedTotal> & {
   ordersTotal: number;
 };
 
-function sessionPreviewFromSession(session: SessionForPreview, billDiscount: OpsBillDiscountJson | null): BillPreviewPayload {
+function sessionPreviewFromSession(
+  session: SessionForPreview,
+  billDiscounts: OpsBillDiscountJson[],
+): BillPreviewPayload {
   const courseTotal =
     session.courseId && session.coursePriceTier
       ? computeCourseSessionTotal(session.coursePriceTier, session.courseId, session.guestCount, session.childCount)
       : 0;
-  const p = computeSessionSuggestedTotal(courseTotal, session.orders, billDiscount);
+  const p = computeSessionSuggestedTotal(courseTotal, session.orders, billDiscounts);
   return { ...p, ordersTotal: p.ordersNet };
 }
 
@@ -120,6 +124,7 @@ async function buildBillDetailPayload(
     sourceTableId: string | null;
   }[];
   billDiscountJson: OpsBillDiscountJson | null;
+  billDiscounts: OpsBillDiscountJson[];
 } | null> {
   const bill = await prisma.bill.findFirst({
     where: { id: billId, storeId },
@@ -137,9 +142,9 @@ async function buildBillDetailPayload(
   });
   if (!bill) return null;
 
-  const billDiscParsed = parseBillDiscount(bill.discountJson);
+  const billDiscsParsed = parseBillDiscounts(bill.discountJson);
   if (bill.session && bill.status === "open") {
-    const previewSum = sessionPreviewFromSession(bill.session as SessionForPreview, billDiscParsed).suggestedTotal;
+    const previewSum = sessionPreviewFromSession(bill.session as SessionForPreview, billDiscsParsed).suggestedTotal;
     if (bill.totalAmount !== previewSum) {
       await prisma.bill.update({
         where: { id: bill.id },
@@ -193,7 +198,7 @@ async function buildBillDetailPayload(
     sourceTableId: string | null;
   }[] = [];
   if (bill.session) {
-    preview = sessionPreviewFromSession(bill.session as SessionForPreview, billDiscParsed);
+    preview = sessionPreviewFromSession(bill.session as SessionForPreview, billDiscsParsed);
     sessionSummary = {
       id: bill.session.id,
       status: bill.session.status,
@@ -257,7 +262,8 @@ async function buildBillDetailPayload(
     sessionSummary,
     courseLine,
     orderLines,
-    billDiscountJson: billDiscParsed,
+    billDiscountJson: billDiscsParsed[0] ?? null,
+    billDiscounts: billDiscsParsed,
   };
 }
 
@@ -868,15 +874,15 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       }
     }
 
-    function billDiscountKind(raw: unknown): string | null {
-      const p = parseBillDiscount(raw);
-      return p ? p.kind : null;
+    function billDiscountKinds(raw: unknown): string[] {
+      return parseBillDiscounts(raw).map((p) => p.kind);
     }
 
     const rows = settledBills
       .map((b) => {
-        const k = b.discountJson != null ? billDiscountKind(b.discountJson) : null;
-        const hasBillDisc = k != null;
+        const kinds = b.discountJson != null ? billDiscountKinds(b.discountJson) : [];
+        const k = kinds.length ? kinds.join("+") : null;
+        const hasBillDisc = kinds.length > 0;
         const hasLineDisc = lineDiscByBillId.has(b.id);
         const tableName = b.session?.table
           ? tableDisplayLabel(b.session.table.name, b.session.table.publicCode) || null
@@ -892,7 +898,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
         };
       })
       .filter((r) => r.hasBillDiscount || r.hasLineDiscount)
-      .filter((r) => (kind ? r.billDiscountKind === kind : true));
+      .filter((r) => (kind ? (r.billDiscountKind || "").split("+").includes(kind) : true));
 
     return {
       storeId: store.id,
@@ -1208,14 +1214,19 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       .send(stream);
   });
 
-  /** 卓全体割引（税込小計＝コース＋注文の行割引後に対してさらに値引き） */
+  /** 卓全体割引（税込小計＝コース＋注文の行割引後に対してさらに値引き。複数可） */
   app.patch<{
     Params: { storeId: string; billId: string };
     Body: Record<string, unknown>;
   }>("/stores/:storeId/bills/:billId/discount", async (req, reply) => {
     const body = req.body && typeof req.body === "object" ? req.body : {};
-    if (!("discount" in body)) {
-      return reply.code(400).send({ error: "discount required (null で解除)" });
+    const hasDiscount = "discount" in body;
+    const hasDiscounts = "discounts" in body;
+    const hasAppend = "append" in body;
+    if (!hasDiscount && !hasDiscounts && !hasAppend) {
+      return reply.code(400).send({
+        error: "discount (null|1件で置換), discounts (配列で置換), append (1件追加) のいずれかが必要です",
+      });
     }
     const st0 = await mergedSettingsForStore(req.params.storeId);
     if (!st0) return reply.code(404).send({ error: "store not found" });
@@ -1237,10 +1248,34 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     if (bill.status !== "open" || !bill.sessionId || !bill.session) {
       return reply.code(400).send({ error: "オープンかつセッション付きの伝票のみ設定できます" });
     }
-    const raw = body.discount;
-    const parsed = raw === null ? null : parseBillDiscount(raw);
-    if (raw !== null && parsed === null) {
-      return reply.code(400).send({ error: "割引の形式が不正です（kind: percent|yen, value）" });
+    let discounts: OpsBillDiscountJson[];
+    if (hasAppend) {
+      const one = parseBillDiscount(body.append);
+      if (!one) return reply.code(400).send({ error: "append の形式が不正です（kind: percent|yen, value）" });
+      discounts = [...parseBillDiscounts(bill.discountJson), one];
+    } else if (hasDiscounts) {
+      const rawList = body.discounts;
+      if (rawList === null) {
+        discounts = [];
+      } else if (!Array.isArray(rawList)) {
+        return reply.code(400).send({ error: "discounts は配列または null で指定してください" });
+      } else {
+        discounts = [];
+        for (const item of rawList) {
+          const p = parseBillDiscount(item);
+          if (!p) return reply.code(400).send({ error: "割引の形式が不正です（kind: percent|yen, value）" });
+          discounts.push(p);
+        }
+      }
+    } else {
+      const raw = body.discount;
+      if (raw === null) {
+        discounts = [];
+      } else {
+        const one = parseBillDiscount(raw);
+        if (!one) return reply.code(400).send({ error: "割引の形式が不正です（kind: percent|yen, value）" });
+        discounts = [one];
+      }
     }
     const courseTotal =
       bill.session.courseId && bill.session.coursePriceTier
@@ -1251,18 +1286,18 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
             bill.session.childCount,
           )
         : 0;
-    const suggested = computeSessionSuggestedTotal(courseTotal, bill.session.orders, parsed).suggestedTotal;
+    const suggested = computeSessionSuggestedTotal(courseTotal, bill.session.orders, discounts).suggestedTotal;
     const staffUserId = staffUserIdFromReq(req);
     await prisma.bill.update({
       where: { id: bill.id },
       data: {
         // undefined は「更新しない」扱いになり DB が残るため、解除は DbNull で明示する
         discountJson:
-          parsed === null ? Prisma.DbNull : (parsed as unknown as Prisma.InputJsonValue),
+          discounts.length === 0 ? Prisma.DbNull : (discounts as unknown as Prisma.InputJsonValue),
         totalAmount: suggested,
       },
     });
-    await logBillEvent(bill.storeId, bill.id, "bill_discount_set", { discount: raw }, staffUserId);
+    await logBillEvent(bill.storeId, bill.id, "bill_discount_set", { discounts }, staffUserId);
     await appendStaffAuditFromRequest(req, bill.storeId, staffUserId, "bill_discount_set", {
       billId: bill.id,
     }).catch(() => {});
@@ -1362,8 +1397,8 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
               session.childCount,
             )
           : 0;
-      const billDisc = parseBillDiscount(session.bill.discountJson);
-      const suggested = computeSessionSuggestedTotal(courseTotal, session.orders, billDisc).suggestedTotal;
+      const billDiscs = parseBillDiscounts(session.bill.discountJson);
+      const suggested = computeSessionSuggestedTotal(courseTotal, session.orders, billDiscs).suggestedTotal;
       await tx.bill.update({
         where: { id: session.bill.id },
         data: { totalAmount: suggested },

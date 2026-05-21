@@ -3,7 +3,7 @@ import { courseIncludedSingleMenuItemIds } from "../lib/course-included-singles.
 import { prisma } from "../db.js";
 import { computeCourseSessionTotal } from "../lib/course-pricing.js";
 import { liveSessionSuggestedTotal } from "../lib/session-live-total.js";
-import { computeSessionSuggestedTotal, parseBillDiscount } from "../lib/ops-discount.js";
+import { computeSessionSuggestedTotal, parseBillDiscounts } from "../lib/ops-discount.js";
 import { openSessionForTable } from "../lib/open-table-session.js";
 import { syncReceptionShiftSeatsForTable } from "../lib/reception-seat-state.js";
 import {
@@ -610,8 +610,8 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
             )
           : 0;
 
-      const billDisc = parseBillDiscount(session.bill?.discountJson);
-      const tot = computeSessionSuggestedTotal(courseTotal, session.orders, billDisc);
+      const billDiscs = parseBillDiscounts(session.bill?.discountJson);
+      const tot = computeSessionSuggestedTotal(courseTotal, session.orders, billDiscs);
 
       return {
         sessionId: session.id,

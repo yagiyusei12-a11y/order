@@ -543,11 +543,35 @@ async function mountRegisterFlow(panel, ctx) {
       : "";
   const pv = detail.preview || {};
   const ordersDiscAmt = Number(pv.ordersDiscount || 0);
+  const billDiscBreakdown = Array.isArray(pv.billDiscountBreakdown) ? pv.billDiscountBreakdown : [];
   const billDiscAmt = Number(pv.billDiscountAmount || 0);
-  const billDiscLabel =
-    detail.billDiscountJson && BillRegisterShared.formatOpsDiscountLabel(detail.billDiscountJson)
-      ? "現在: " + BillRegisterShared.formatOpsDiscountLabel(detail.billDiscountJson)
-      : "卓割引なし";
+  const billDiscLabel = (function () {
+    if (billDiscBreakdown.length) {
+      const labs = billDiscBreakdown.map(
+        (item) => BillRegisterShared.formatOpsDiscountLabel(item.discount) || "卓割引"
+      );
+      return labs.length > 2 ? "現在: " + labs.length + "件（" + labs.slice(0, 2).join("、") + "…）" : "現在: " + labs.join("、");
+    }
+    const legacy =
+      detail.billDiscountJson && BillRegisterShared.formatOpsDiscountLabel(detail.billDiscountJson)
+        ? BillRegisterShared.formatOpsDiscountLabel(detail.billDiscountJson)
+        : "";
+    return legacy ? "現在: " + legacy : "卓割引なし";
+  })();
+  const billDiscRowsHtml = billDiscBreakdown
+    .map((item) => {
+      const lab = BillRegisterShared.formatOpsDiscountLabel(item.discount) || "卓割引";
+      const amt = Number(item.amount || 0);
+      if (amt <= 0) return "";
+      return (
+        "<div class=\"row ops-total-row\"><span class=\"muted\">" +
+        ctx.escapeHtml(lab) +
+        "</span><strong style=\"color:#059669\">−" +
+        BillRegisterShared.yen(amt) +
+        "</strong></div>"
+      );
+    })
+    .join("");
   const orderRows = groupedLines
     .map(
       (g) => {
@@ -781,11 +805,12 @@ async function mountRegisterFlow(panel, ctx) {
         BillRegisterShared.yen(ordersDiscAmt) +
         "</strong></div>"
       : "") +
-    (billDiscAmt > 0
-      ? "<div class=\"row ops-total-row\"><span class=\"muted\">卓割引（全体）</span><strong style=\"color:#059669\">−" +
-        BillRegisterShared.yen(billDiscAmt) +
-        "</strong></div>"
-      : "") +
+    (billDiscRowsHtml ||
+      (billDiscAmt > 0
+        ? "<div class=\"row ops-total-row\"><span class=\"muted\">卓割引（全体）</span><strong style=\"color:#059669\">−" +
+          BillRegisterShared.yen(billDiscAmt) +
+          "</strong></div>"
+        : "")) +
     "<div class=\"row ops-total-row\"><span class=\"muted\">税抜合計</span><strong>" +
     BillRegisterShared.yen(netTotal) +
     "</strong></div>" +

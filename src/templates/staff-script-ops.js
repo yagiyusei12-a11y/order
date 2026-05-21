@@ -680,6 +680,57 @@ function formatOpsDiscountLabel(d) {
   return name ? name + " " + num : num;
 }
 
+function billDiscountsFromDetail(detail) {
+  if (Array.isArray(detail.billDiscounts) && detail.billDiscounts.length) return detail.billDiscounts;
+  if (detail.billDiscountJson && typeof detail.billDiscountJson === "object") return [detail.billDiscountJson];
+  return [];
+}
+
+function billDiscountBreakdownFromDetail(detail) {
+  const pv = detail.preview;
+  if (pv && Array.isArray(pv.billDiscountBreakdown) && pv.billDiscountBreakdown.length) return pv.billDiscountBreakdown;
+  return [];
+}
+
+function formatBillDiscountsSummary(detail) {
+  const breakdown = billDiscountBreakdownFromDetail(detail);
+  if (breakdown.length) {
+    return breakdown.map((item) => formatOpsDiscountLabel(item.discount) || "卓割引").join("、");
+  }
+  const items = billDiscountsFromDetail(detail);
+  if (!items.length) return "";
+  return items.map((d) => formatOpsDiscountLabel(d)).join("、");
+}
+
+function buildAppliedBillDiscountListHtml(detail) {
+  const breakdown = billDiscountBreakdownFromDetail(detail);
+  if (!breakdown.length) {
+    return "<p class=\"muted\" style=\"font-size:0.82rem;margin:0 0 0.65rem\">適用中の卓割引はありません</p>";
+  }
+  return (
+    "<div style=\"margin:0 0 0.75rem\">" +
+    "<p style=\"margin:0 0 0.35rem;font-size:0.72rem;font-weight:700\">適用中</p>" +
+    "<ul style=\"list-style:none;padding:0;margin:0\">" +
+    breakdown
+      .map((item, idx) => {
+        const lab = formatOpsDiscountLabel(item.discount) || "卓割引";
+        const amt = Number(item.amount || 0);
+        return (
+          "<li class=\"row\" style=\"justify-content:space-between;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--border)\">" +
+          "<span style=\"font-size:0.86rem\">" +
+          escapeHtml(lab) +
+          (amt > 0 ? " <span class=\"muted\" style=\"font-size:0.78rem\">−" + yen(amt) + "</span>" : "") +
+          "</span>" +
+          "<button type=\"button\" class=\"btn-ghost bd-remove\" data-idx=\"" +
+          idx +
+          "\" style=\"font-size:0.72rem;padding:0.2rem 0.45rem;border-color:#fecaca;color:#b91c1c\">削除</button></li>"
+        );
+      })
+      .join("") +
+    "</ul></div>"
+  );
+}
+
 function billPath(id) {
   return "/stores/" + encodeURIComponent(STORE) + "/bills/" + encodeURIComponent(id);
 }
@@ -776,7 +827,6 @@ function openBillDiscountModal(detail, session, table, afterDiscountChange) {
     return;
   }
   const presets = opsDiscountPresetRows(null);
-  const cur = detail.billDiscountJson || null;
   const box = document.createElement("div");
   box.style.cssText =
     "position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:13000;padding:1rem";
@@ -803,30 +853,24 @@ function openBillDiscountModal(detail, session, table, afterDiscountChange) {
   box.innerHTML =
     "<div class=\"card\" style=\"max-width:440px;padding:1.1rem;background:#fff;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.12)\">" +
     "<p style=\"margin:0 0 0.45rem;font-weight:900\">卓全体の割引</p>" +
-    "<p style=\"margin:0 0 0.75rem;font-size:0.82rem;color:var(--muted);line-height:1.45\">コース料金と注文（行割引後）の合計に対して、さらに値引きします。</p>" +
+    "<p style=\"margin:0 0 0.75rem;font-size:0.82rem;color:var(--muted);line-height:1.45\">コース料金と注文（行割引後）の合計に、複数の値引きを順に適用できます（例: 500円＋300円）。</p>" +
+    buildAppliedBillDiscountListHtml(detail) +
+    "<p style=\"margin:0 0 0.45rem;font-size:0.72rem;font-weight:700\">割引を追加</p>" +
     "<label style=\"display:block;font-size:0.72rem;margin-bottom:0.2rem\">プリセット</label>" +
     "<select id=\"bdPreset\" style=\"width:100%;padding:0.45rem;margin-bottom:0.65rem;border-radius:8px;border:1px solid var(--border)\">" +
     presetOpts +
     "</select>" +
     "<label style=\"display:block;font-size:0.72rem;margin-bottom:0.2rem\">割引名称（任意・伝票メモ用）</label>" +
-    "<input id=\"bdLabel\" type=\"text\" style=\"width:100%;padding:0.45rem;margin-bottom:0.65rem;border-radius:8px;border:1px solid var(--border)\" placeholder=\"例: SNS投稿割引\" value=\"" +
-    escapeHtml(cur && cur.label ? cur.label : "") +
-    "\" />" +
+    "<input id=\"bdLabel\" type=\"text\" style=\"width:100%;padding:0.45rem;margin-bottom:0.65rem;border-radius:8px;border:1px solid var(--border)\" placeholder=\"例: SNS投稿割引\" />" +
     "<div class=\"row\" style=\"gap:0.75rem;margin-bottom:0.65rem;flex-wrap:wrap\">" +
-    "<label class=\"row\" style=\"gap:0.35rem;font-size:0.82rem\"><input type=\"radio\" name=\"bdKind\" value=\"yen\" " +
-    (!cur || cur.kind === "yen" ? "checked" : "") +
-    " /> 円引き</label>" +
-    "<label class=\"row\" style=\"gap:0.35rem;font-size:0.82rem\"><input type=\"radio\" name=\"bdKind\" value=\"percent\" " +
-    (cur && cur.kind === "percent" ? "checked" : "") +
-    " /> ％引き</label></div>" +
+    "<label class=\"row\" style=\"gap:0.35rem;font-size:0.82rem\"><input type=\"radio\" name=\"bdKind\" value=\"yen\" checked /> 円引き</label>" +
+    "<label class=\"row\" style=\"gap:0.35rem;font-size:0.82rem\"><input type=\"radio\" name=\"bdKind\" value=\"percent\" /> ％引き</label></div>" +
     "<label style=\"display:block;font-size:0.72rem;margin-bottom:0.2rem\">値（円 or %）</label>" +
-    "<input id=\"bdVal\" type=\"number\" min=\"0\" step=\"1\" style=\"width:100%;padding:0.45rem;margin-bottom:0.85rem;border-radius:8px;border:1px solid var(--border)\" value=\"" +
-    (cur ? escapeHtml(String(cur.value)) : "0") +
-    "\" />" +
+    "<input id=\"bdVal\" type=\"number\" min=\"0\" step=\"1\" style=\"width:100%;padding:0.45rem;margin-bottom:0.85rem;border-radius:8px;border:1px solid var(--border)\" value=\"0\" />" +
     "<div class=\"row\" style=\"gap:0.5rem;justify-content:flex-end;flex-wrap:wrap\">" +
-    "<button type=\"button\" class=\"btn-ghost\" id=\"bdClear\">解除</button>" +
-    "<button type=\"button\" class=\"btn-ghost\" id=\"bdCancel\">キャンセル</button>" +
-    "<button type=\"button\" class=\"btn-primary\" id=\"bdOk\">適用</button>" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"bdClear\">すべて解除</button>" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"bdCancel\">閉じる</button>" +
+    "<button type=\"button\" class=\"btn-primary\" id=\"bdOk\">追加</button>" +
     "</div></div>";
   document.body.appendChild(box);
   const close = () => box.remove();
@@ -846,6 +890,31 @@ function openBillDiscountModal(detail, session, table, afterDiscountChange) {
     if (labEl && nm) labEl.value = nm;
   };
   box.querySelector("#bdCancel").onclick = close;
+  const refreshModal = async () => {
+    const fresh = await api(billPath(detail.id));
+    close();
+    openBillDiscountModal(fresh, session, table, runAfterDiscount);
+    await runAfterDiscount(fresh, session, table);
+  };
+  box.querySelectorAll(".bd-remove").forEach((btn) => {
+    btn.onclick = async () => {
+      const idx = Number(btn.getAttribute("data-idx"));
+      const current = billDiscountsFromDetail(detail);
+      if (!Number.isFinite(idx) || idx < 0 || idx >= current.length) return;
+      const next = current.filter((_, i) => i !== idx);
+      try {
+        await api(billPath(detail.id) + "/discount", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ discounts: next }),
+        });
+        log("卓割引を削除しました");
+        await refreshModal();
+      } catch (e) {
+        log(String(e.message || e));
+      }
+    };
+  });
   box.querySelector("#bdClear").onclick = async () => {
     try {
       await api(billPath(detail.id) + "/discount", {
@@ -854,7 +923,7 @@ function openBillDiscountModal(detail, session, table, afterDiscountChange) {
         body: JSON.stringify({ discount: null }),
       });
       close();
-      log("卓割引を解除しました");
+      log("卓割引をすべて解除しました");
       const fresh = await api(billPath(detail.id));
       await runAfterDiscount(fresh, session, table);
     } catch (e) {
@@ -867,6 +936,10 @@ function openBillDiscountModal(detail, session, table, afterDiscountChange) {
     const value = Math.max(0, Math.floor(Number(valEl.value || 0)));
     const label = labEl && labEl.value ? String(labEl.value).trim().slice(0, 80) : "";
     const ps = presetSel && presetSel.value ? presetSel.value : "";
+    if (value <= 0) {
+      log("割引の値を入力してください");
+      return;
+    }
     if (kindVal === "percent" && value > 100) {
       log("割引率は100以下で指定してください");
       return;
@@ -881,12 +954,10 @@ function openBillDiscountModal(detail, session, table, afterDiscountChange) {
       await api(billPath(detail.id) + "/discount", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ discount: payload }),
+        body: JSON.stringify({ append: payload }),
       });
-      close();
-      log("卓割引を適用しました");
-      const fresh = await api(billPath(detail.id));
-      await runAfterDiscount(fresh, session, table);
+      log("卓割引を追加しました");
+      await refreshModal();
     } catch (e) {
       log(String(e.message || e));
     }
@@ -1284,16 +1355,57 @@ function buildSessionTableInfoPlainLines(detail) {
 }
 
 function buildBillDiscountHtml(detail) {
-  if (!detail.billDiscountJson) return "";
-  const lab = formatOpsDiscountLabel(detail.billDiscountJson);
-  if (!lab) return "";
-  return "<p style=\"font-size:0.86rem\">卓割引等: " + escapeHtml(lab) + "</p>";
+  const breakdown = billDiscountBreakdownFromDetail(detail);
+  if (!breakdown.length) return "";
+  const rows = breakdown
+    .map((item) => {
+      const lab = formatOpsDiscountLabel(item.discount) || "卓割引";
+      const amt = Number(item.amount || 0);
+      return escapeHtml(lab) + (amt > 0 ? " −" + yen(amt) : "");
+    })
+    .join("<br>");
+  return "<p style=\"font-size:0.86rem\">卓割引:<br>" + rows + "</p>";
+}
+
+function buildBillDiscountPlainLines(detail) {
+  const breakdown = billDiscountBreakdownFromDetail(detail);
+  if (!breakdown.length) return [];
+  return breakdown.map((item) => {
+    const lab = formatOpsDiscountLabel(item.discount) || "卓割引";
+    const amt = Number(item.amount || 0);
+    return (amt > 0 ? lab + " −" + yen(amt) : lab) || "卓割引";
+  });
 }
 
 function buildBillDiscountPlainLine(detail) {
-  if (!detail.billDiscountJson) return "";
-  const lab = formatOpsDiscountLabel(detail.billDiscountJson);
-  return lab ? "卓割引等: " + lab : "";
+  const lines = buildBillDiscountPlainLines(detail);
+  return lines.length ? lines.join(" / ") : "";
+}
+
+function appendBillDiscountReceiptRows(rows, detail, useTaxCol) {
+  const breakdown = billDiscountBreakdownFromDetail(detail);
+  for (const item of breakdown) {
+    const lab = formatOpsDiscountLabel(item.discount) || "卓割引";
+    const amt = Number(item.amount || 0);
+    if (amt <= 0) continue;
+    if (useTaxCol) {
+      rows.push(
+        "<tr><td>" +
+          escapeHtml(lab) +
+          "</td><td style=\"text-align:right\"></td><td style=\"text-align:right;color:#059669\">−" +
+          yen(amt) +
+          "</td></tr>"
+      );
+    } else {
+      rows.push(
+        "<tr><td>" +
+          escapeHtml(lab) +
+          "</td><td style=\"text-align:right;color:#059669\">−" +
+          yen(amt) +
+          "</td></tr>"
+      );
+    }
+  }
 }
 
 function appendLegalFooterHtml(fragments) {
@@ -1338,7 +1450,7 @@ function buildReceiptDoc(detail) {
     const s = buildSessionTableInfoHtml(detail);
     if (s) fragments.push(s);
   }
-  if (pf.billDiscount) {
+  if (pf.billDiscount && !pf.lineItems) {
     const bd = buildBillDiscountHtml(detail);
     if (bd) fragments.push(bd);
   }
@@ -1414,6 +1526,9 @@ function buildReceiptDoc(detail) {
         );
       }
     }
+  }
+  if (pf.billDiscount) {
+    appendBillDiscountReceiptRows(rows, detail, useTaxCol);
   }
   let tableHtml = "";
   if (rows.length) {
@@ -1555,10 +1670,6 @@ function buildReceiptPlainLines(detail) {
   if (pf.sessionTableInfo) {
     lines.push.apply(lines, buildSessionTableInfoPlainLines(detail));
   }
-  const disc = buildBillDiscountPlainLine(detail);
-  if (pf.billDiscount && disc) {
-    lines.push(disc);
-  }
   if (pf.billId) {
     lines.push("伝票: " + String(detail.id));
   }
@@ -1604,6 +1715,11 @@ function buildReceiptPlainLines(detail) {
   }
   if (hadLineItems) {
     lines.push("--------------------------------");
+  }
+  if (pf.billDiscount) {
+    for (const dl of buildBillDiscountPlainLines(detail)) {
+      if (dl) lines.push(dl);
+    }
   }
   if (pf.taxBreakdownTable) {
     lines.push.apply(lines, buildTaxBreakdownPlainLines(detail));

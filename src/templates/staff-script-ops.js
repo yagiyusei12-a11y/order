@@ -80,6 +80,8 @@ let opsLoadInFlight = false;
 let opsRefreshQueued = false;
 let opsLoadSeq = 0;
 let opsLastUserActivityAt = 0;
+/** 会計確定直後: レシート印刷など完了するまで一覧の自動更新で画面を潰さない */
+let opsPostPaymentHold = null;
 /** 卓一覧の定期再取得（秒） */
 const OPS_AUTO_REFRESH_MS = 15000;
 /** 操作直後はこの時間だけ自動更新を止める */
@@ -118,8 +120,17 @@ function markOpsUserActivity() {
 function shouldPauseOpsAutoRefresh() {
   if (document.hidden) return true;
   if (opsDetailModalIsOpen()) return true;
+  if (opsPostPaymentHold) return true;
   if (opsLastUserActivityAt && Date.now() - opsLastUserActivityAt < OPS_USER_IDLE_MS) return true;
   return false;
+}
+
+function setOpsPostPaymentHold(hold) {
+  opsPostPaymentHold = hold;
+}
+
+function clearOpsPostPaymentHold() {
+  opsPostPaymentHold = null;
 }
 
 async function requestOpsRefresh(_reason) {
@@ -289,6 +300,7 @@ async function emitOpsSeatClear() {
 }
 
 function dismissOpsDetailModal() {
+  clearOpsPostPaymentHold();
   selectedTableId = null;
   selectedSessionIdOverride = null;
   hideOpsDetailModal();
@@ -493,10 +505,13 @@ const groupedFlushInFlight = new Set();
 let lastRegisterSwitchPrefix = "";
 
 function buildOpsRegisterMountContext(session, table, detailPreloaded) {
+  const postPaymentHold =
+    opsPostPaymentHold && opsPostPaymentHold.sessionId === session.id ? opsPostPaymentHold : null;
   return {
     session,
     table,
-    detailPreloaded,
+    detailPreloaded: detailPreloaded || (postPaymentHold ? postPaymentHold.detail : null),
+    postPaymentHold,
     sessionSwitchPrefixHtml: lastRegisterSwitchPrefix,
     readOnly: false,
     opsTwoColumn: true,
@@ -542,6 +557,8 @@ function buildOpsRegisterMountContext(session, table, detailPreloaded) {
       buildReceiptDoc,
       buildReceiptPlainLines,
       openOpsInvoicePrintModal,
+      setOpsPostPaymentHold,
+      clearOpsPostPaymentHold,
       setSelectedTableId(id) {
         selectedTableId = id;
         openOpsDetailModal();
@@ -2652,6 +2669,14 @@ async function renderDetail() {
       };
     }
     return;
+  }
+  if (opsPostPaymentHold && opsPostPaymentHold.tableId === table.id) {
+    const holdSession = sessionsCache.find((s) => s.id === opsPostPaymentHold.sessionId);
+    if (holdSession) {
+      await refreshRegisterFlow(holdSession, table, opsPostPaymentHold.detail, "");
+      return;
+    }
+    clearOpsPostPaymentHold();
   }
   if (session.status === "bashing_waiting") {
     const takeoutTk = isTakeoutTablePublicCodeForStore(table.publicCode);

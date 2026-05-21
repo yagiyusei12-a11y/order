@@ -513,6 +513,71 @@ function bindOpsCourseOptionPackButtons(panel, ctx, session, table) {
   });
 }
 
+function mountPostPaymentAfterBox(panel, ctx, detail, change) {
+  const afterBox = panel.querySelector("#afterPayment");
+  if (!afterBox) return;
+  const summaryEl = panel.querySelector("#opsPaymentSummary");
+  const formEl = panel.querySelector("#opsPaymentForm");
+  if (summaryEl) summaryEl.hidden = true;
+  if (formEl) formEl.hidden = true;
+  const regCol = panel.querySelector(".ops-register-layout__register");
+  if (regCol) regCol.classList.add("ops-register-layout__register--paid");
+  const layout = panel.querySelector(".ops-register-layout");
+  if (layout) layout.classList.add("ops-register-layout--post-pay");
+  const keypadPane = panel.querySelector("#opsCashKeypadPane");
+  const ordersPane = panel.querySelector(".ops-orders-pane");
+  const ordersScroll = panel.querySelector("#opsOrdersScroll");
+  const adminPane = panel.querySelector(".ops-register-layout__admin");
+  const leftCol = panel.querySelector(".ops-register-layout__left");
+  if (keypadPane) keypadPane.hidden = true;
+  if (ordersPane) ordersPane.hidden = false;
+  if (ordersScroll) ordersScroll.classList.remove("ops-cash-mode");
+  if (adminPane) adminPane.hidden = false;
+  if (leftCol) leftCol.classList.remove("ops-cash-mode-active");
+  afterBox.innerHTML =
+    "<div class=\"card ops-post-pay-card\" style=\"padding:0.85rem;margin-top:0;background:#ecfdf3;border-color:#86efac\">" +
+    "<strong>会計完了</strong>" +
+    "<p style=\"margin:0.45rem 0;font-size:0.92rem\">合計: " +
+    BillRegisterShared.yen(detail.totalAmount) +
+    " / お釣り: " +
+    BillRegisterShared.yen(change) +
+    "</p>" +
+    "<p class=\"muted\" style=\"margin:0 0 0.65rem;font-size:0.8rem;line-height:1.4\">レシート・領収書を印刷できます。完了を押すと卓一覧に戻ります。</p>" +
+    "<div class=\"row\" style=\"gap:0.5rem;flex-wrap:wrap\">" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"btnPrintReceipt\">レシート印刷</button>" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"btnPrintInvoice\">領収書印刷</button>" +
+    "<button type=\"button\" class=\"btn-primary\" id=\"btnFinishCashier\" style=\"width:auto;padding:0.55rem 0.9rem\">完了</button>" +
+    "</div></div>";
+  const btnPrint = panel.querySelector("#btnPrintReceipt");
+  if (btnPrint) {
+    btnPrint.onclick = async () => {
+      await ctx.hooks.printReceiptOrBrowser(
+        ctx.hooks.buildReceiptDoc(detail),
+        ctx.hooks.buildReceiptPlainLines(detail),
+      );
+    };
+  }
+  const btnInv = panel.querySelector("#btnPrintInvoice");
+  if (btnInv) {
+    btnInv.onclick = () => {
+      ctx.hooks.openOpsInvoicePrintModal(detail, change);
+    };
+  }
+  const btnDone = panel.querySelector("#btnFinishCashier");
+  if (btnDone) {
+    btnDone.onclick = async () => {
+      if (ctx.hooks.clearOpsPostPaymentHold) ctx.hooks.clearOpsPostPaymentHold();
+      ctx.log("完了しました");
+      await opsReturnToTableList(ctx);
+    };
+  }
+  if (regCol) {
+    requestAnimationFrame(() => {
+      regCol.scrollTop = regCol.scrollHeight;
+    });
+  }
+}
+
 async function mountRegisterFlow(panel, ctx) {
   const session = ctx.session;
   const table = ctx.table;
@@ -899,6 +964,10 @@ async function mountRegisterFlow(panel, ctx) {
   }
   panel.dataset.opsSessionId = session.id;
   panel.dataset.opsTableId = table.id;
+
+  if (ctx.postPaymentHold && ctx.postPaymentHold.sessionId === session.id) {
+    mountPostPaymentAfterBox(panel, ctx, ctx.postPaymentHold.detail, ctx.postPaymentHold.change);
+  }
 
   bindOpsCourseOptionPackButtons(panel, ctx, session, table);
 
@@ -1343,37 +1412,16 @@ async function mountRegisterFlow(panel, ctx) {
       const refreshed = await ctx.api(ctx.billPath(detail.id));
       const remAfter = Number(refreshed.remainder || 0);
       if (remAfter <= 0) {
-        const summaryEl = panel.querySelector("#opsPaymentSummary");
-        const formEl = panel.querySelector("#opsPaymentForm");
-        if (summaryEl) summaryEl.hidden = true;
-        if (formEl) formEl.hidden = true;
-        const regCol = panel.querySelector(".ops-register-layout__register");
-        if (regCol) regCol.classList.add("ops-register-layout__register--paid");
+        if (ctx.hooks.setOpsPostPaymentHold) {
+          ctx.hooks.setOpsPostPaymentHold({
+            sessionId: session.id,
+            tableId: table.id,
+            detail: refreshed,
+            change,
+          });
+        }
+        mountPostPaymentAfterBox(panel, ctx, refreshed, change);
       }
-      afterBox.innerHTML =
-        "<div class=\"card\" style=\"padding:0.75rem;margin-top:0.4rem;background:#ecfdf3;border-color:#86efac\">" +
-        "<strong>会計情報</strong>" +
-        "<p style=\"margin:0.4rem 0\">合計: " +
-        BillRegisterShared.yen(refreshed.totalAmount) +
-        " / お釣り: " +
-        BillRegisterShared.yen(change) +
-        "</p>" +
-        "<p class=\"muted\" style=\"margin:0 0 0.45rem\">会計情報はレシートボックスへ保存済み（精算済み伝票）</p>" +
-        "<div class=\"row\">" +
-        "<button type=\"button\" class=\"btn-ghost\" id=\"btnPrintReceipt\">レシート印刷</button>" +
-        "<button type=\"button\" class=\"btn-ghost\" id=\"btnPrintInvoice\">領収書印刷</button>" +
-        "<button type=\"button\" class=\"btn-primary\" id=\"btnFinishCashier\" style=\"width:auto;padding:0.5rem 0.8rem\">完了</button>" +
-        "</div></div>";
-      panel.querySelector("#btnPrintReceipt").onclick = async () => {
-        await ctx.hooks.printReceiptOrBrowser(ctx.hooks.buildReceiptDoc(refreshed), ctx.hooks.buildReceiptPlainLines(refreshed));
-      };
-      panel.querySelector("#btnPrintInvoice").onclick = () => {
-        ctx.hooks.openOpsInvoicePrintModal(refreshed, change);
-      };
-      panel.querySelector("#btnFinishCashier").onclick = async () => {
-        ctx.log("完了しました");
-        await opsReturnToTableList(ctx);
-      };
     } catch (e) {
       ctx.log(String(e.message || e));
     }
@@ -1481,6 +1529,7 @@ async function mountRegisterFlow(panel, ctx) {
     applyGroupedQtyTarget,
     queueGroupedQtyCommit,
     mountRegisterFlow,
+    mountPostPaymentAfterBox,
     runMergeSessionDialog,
     renderCashKeypad,
     bindCashKeypad,

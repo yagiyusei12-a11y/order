@@ -425,6 +425,41 @@ body.native-pos .page-title {
 
 .ops-register-layout__register--paid #afterPayment {
   margin-top: 0 !important;
+  max-height: none !important;
+  overflow: visible !important;
+  flex: 1 1 auto;
+}
+
+.ops-register-layout--post-pay {
+  grid-template-columns: 1fr !important;
+}
+
+.ops-register-layout--post-pay .ops-register-layout__left {
+  display: none !important;
+}
+
+.ops-register-layout--post-pay .ops-register-layout__right {
+  max-height: none;
+  min-height: 0;
+}
+
+.ops-register-layout--post-pay .ops-register-layout__register {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ops-register-layout__register--paid .ops-cash-keypad-pane {
+  display: none !important;
+}
+
+.ops-post-pay-card .row {
+  justify-content: stretch;
+}
+
+.ops-post-pay-card .btn-ghost,
+.ops-post-pay-card .btn-primary {
+  flex: 1 1 auto;
+  min-width: 7rem;
 }
 
 @media (max-width: 720px) {

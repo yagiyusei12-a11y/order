@@ -1420,15 +1420,17 @@ const OPS_PRINT_DOC_STYLE =
   ".ops-inv-doc .ops-inv-title{text-align:center;font-size:1.45rem;font-weight:800;letter-spacing:.42em;margin:0 0 18px;padding-right:.42em}" +
   ".ops-inv-recipient{text-align:right;font-size:1.02rem;margin:0 0 16px;line-height:1.6}" +
   ".ops-inv-recipient .ops-fill{display:inline-block;min-width:11em;border-bottom:1px solid #111;text-align:center;padding:0 6px 3px;vertical-align:bottom}" +
-  ".ops-inv-amount{text-align:center;margin:6px 0 18px;padding:12px 8px;border:2px solid #111}" +
+  ".ops-inv-amount{text-align:center;margin:6px 0 10px;padding:12px 8px;border:2px solid #111}" +
   ".ops-inv-amount__label{font-size:.78rem;color:#555;margin-bottom:4px}.ops-inv-amount__yen{font-size:1.42rem;font-weight:800}" +
+  ".ops-inv-tax{margin:0 0 16px;padding:8px 10px;border:1px solid #ccc;font-size:.84rem;background:#fafafa}" +
+  ".ops-inv-tax .ops-meta__row{padding:4px 0}.ops-inv-tax .ops-meta__val{font-weight:700}" +
   ".ops-inv-purpose{margin:0 0 14px;font-size:.92rem}.ops-inv-purpose__label{color:#555;font-size:.78rem;margin-bottom:4px}" +
   ".ops-inv-purpose .ops-fill{display:block;min-height:1.35em;border-bottom:1px solid #111;padding:2px 2px 4px}" +
   ".ops-inv-confirm{text-align:center;font-size:.88rem;margin:0 0 16px}" +
   ".ops-inv-issue{text-align:right;font-size:.84rem;margin:0 0 12px;color:#333}" +
   ".ops-inv-issuer{text-align:right;font-size:.82rem;line-height:1.5;margin-top:14px}" +
-  ".ops-stamp-row{display:flex;justify-content:space-between;gap:10px;margin-top:22px}" +
-  ".ops-stamp-box{flex:1;border:1px solid #333;min-height:4.2em;text-align:center;font-size:.72rem;padding:6px 4px;color:#444}";
+  ".ops-stamp-row{display:flex;justify-content:space-between;gap:14px;margin-top:28px}" +
+  ".ops-stamp-box{flex:1;border:1px solid #333;min-height:6.8em;text-align:center;font-size:.8rem;padding:12px 8px;color:#444;box-sizing:border-box}";
 
 function opsPrintDocumentShell(title, bodyHtml, bodyClass) {
   const cls = bodyClass ? ' class="' + bodyClass + '"' : "";
@@ -1507,11 +1509,63 @@ function buildInvoicePurposePlain(purpose) {
   return "但し　" + opsPlainUnderlineBlank(purpose, 24);
 }
 
+/** 領収金額に対応する税抜・消費税（卓割引・一部領収は按分） */
+function invoiceTaxSummaryForAmount(detail, amountYen) {
+  const tb = BillRegisterShared.taxBreakdownFromLines(
+    BillRegisterShared.linesForTaxBreakdown(detail, storeSettingsCache)
+  );
+  const amount = Math.max(0, Math.round(Number(amountYen || 0)));
+  const totalBill = Math.max(0, Math.round(Number(detail.totalAmount || 0)));
+  const lineGross = Math.max(0, tb.grossTotal);
+  let baseNet = tb.netTotal;
+  let baseTax = tb.taxTotal;
+  let baseGross = lineGross;
+  if (totalBill > 0 && lineGross > totalBill) {
+    const r = totalBill / lineGross;
+    baseNet = Math.round(tb.netTotal * r);
+    baseTax = Math.round(tb.taxTotal * r);
+    baseGross = totalBill;
+  }
+  if (baseGross <= 0) {
+    return { netYen: 0, taxYen: 0, isPartial: amount < totalBill };
+  }
+  const ratio = Math.min(1, amount / baseGross);
+  let netYen = Math.round(baseNet * ratio);
+  let taxYen = amount - netYen;
+  if (taxYen < 0) {
+    taxYen = 0;
+    netYen = amount;
+  }
+  return { netYen, taxYen, isPartial: amount < totalBill };
+}
+
+function buildInvoiceTaxSummaryHtml(summary) {
+  if (!summary) return "";
+  return (
+    '<div class="ops-inv-tax">' +
+    opsPrintMetaRows([
+      ["税抜金額", yen(summary.netYen)],
+      ["消費税額", yen(summary.taxYen)],
+    ]) +
+    (summary.isPartial
+      ? '<p style="font-size:.72rem;color:#666;margin:6px 0 0">※税抜・消費税は領収金額に按分</p>'
+      : "") +
+    "</div>"
+  );
+}
+
+function buildInvoiceTaxSummaryPlain(summary) {
+  if (!summary) return [];
+  const out = ["税抜金額　" + yen(summary.netYen), "消費税額　" + yen(summary.taxYen)];
+  if (summary.isPartial) out.push("※税抜・消費税は領収金額に按分");
+  return out;
+}
+
 function appendInvoiceStampBoxesHtml(parts) {
   parts.push(
     '<div class="ops-stamp-row">' +
-      '<div class="ops-stamp-box">収入印紙</div>' +
-      '<div class="ops-stamp-box">担当印</div>' +
+      '<div class="ops-stamp-box"><div>収入印紙</div><div style="min-height:4.8em" aria-hidden="true"></div></div>' +
+      '<div class="ops-stamp-box"><div>担当印</div><div style="min-height:4.8em" aria-hidden="true"></div></div>' +
     "</div>"
   );
 }
@@ -1705,11 +1759,13 @@ function buildInvoiceDoc(detail, opts) {
   }
   if (inv.amountYen) {
     parts.push(
-      '<div class="ops-inv-amount"><div class="ops-inv-amount__label">金額</div><div class="ops-inv-amount__yen">' +
+      '<div class="ops-inv-amount"><div class="ops-inv-amount__label">金額（税込）</div><div class="ops-inv-amount__yen">' +
         yen(amountYen) +
         (isPartial ? ' <span style="font-size:.72rem;font-weight:600">（伝票全額 ' + yen(totalBill) + "）</span>" : "") +
         "</div></div>"
     );
+    const taxSum = invoiceTaxSummaryForAmount(detail, amountYen);
+    parts.push(buildInvoiceTaxSummaryHtml(taxSum));
   }
   if (inv.purpose) {
     parts.push(buildInvoicePurposeHtml(purpose));
@@ -1888,7 +1944,8 @@ function buildInvoicePlainLines(detail, opts) {
     lines.push(buildInvoiceRecipientPlain(recipient));
   }
   if (inv.amountYen) {
-    lines.push("金額　" + yen(amountYen) + (isPartial ? " （伝票全額" + yen(totalBill) + "）" : ""));
+    lines.push("金額（税込）　" + yen(amountYen) + (isPartial ? " （伝票全額" + yen(totalBill) + "）" : ""));
+    lines.push.apply(lines, buildInvoiceTaxSummaryPlain(invoiceTaxSummaryForAmount(detail, amountYen)));
   }
   lines.push("--------------------------------");
   if (inv.purpose) {
@@ -1949,13 +2006,14 @@ function buildInvoicePlainLines(detail, opts) {
   return lines;
 }
 
-/** 領収書末尾: 収入印紙・担当印（半角枠＋全角ラベル・32桁幅想定） */
+/** 領収書末尾: 収入印紙・担当印（半角枠・サーマル幅想定） */
 function appendInvoiceStampBoxesPlain(lines) {
-  lines.push("+----------+ +----------+");
-  lines.push("| 収入印紙 | |  担当印  |");
-  lines.push("|          | |          |");
-  lines.push("|          | |          |");
-  lines.push("+----------+ +----------+");
+  lines.push("+--------------+ +--------------+");
+  lines.push("|   収入印紙   | |    担当印    |");
+  lines.push("|              | |              |");
+  lines.push("|              | |              |");
+  lines.push("|              | |              |");
+  lines.push("+--------------+ +--------------+");
 }
 
 /** カット前の紙送り（印字ヘッド〜カッター間の余白） */

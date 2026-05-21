@@ -193,6 +193,22 @@
     return Array.from(grouped.values());
   }
 
+  /** 別会計へ移す数量を、DB 行へ按分（lineMoves 用） */
+  function buildLineMovesFromGroup(group, moveQty) {
+    const max = Math.max(0, Number(group.qty || 0));
+    let remaining = Math.max(1, Math.min(max, Math.floor(Number(moveQty || 0))));
+    const moves = [];
+    for (const line of group.lines || []) {
+      if (remaining <= 0) break;
+      const q = Math.max(0, Number(line.qty || 0));
+      if (q <= 0) continue;
+      const take = Math.min(remaining, q);
+      moves.push({ lineId: line.id, qty: take });
+      remaining -= take;
+    }
+    return moves;
+  }
+
   function groupedKeyForBill(billId, groupKey) {
     return billId + "::" + groupKey;
   }
@@ -596,8 +612,8 @@ async function mountRegisterFlow(panel, ctx) {
           "<td>" +
           (bcOl
             ? "<label style=\"display:flex;align-items:flex-start;gap:0.35rem;margin-bottom:0.35rem;font-size:0.72rem;font-weight:600\">" +
-              "<input type=\"checkbox\" class=\"ops-split-select-cb\" data-line-ids=\"" +
-              ctx.escapeHtml((g.lines || []).map((ln) => ln.id).join(",")) +
+              "<input type=\"checkbox\" class=\"ops-split-select-cb\" data-group-key=\"" +
+              ctx.escapeHtml(g.key) +
               "\" style=\"margin-top:0.15rem\" />" +
               "<span>別会計へ</span></label>"
             : "") +
@@ -796,7 +812,7 @@ async function mountRegisterFlow(panel, ctx) {
     "<button type=\"button\" class=\"btn-ghost\" id=\"btnOpsAdminOpen\" style=\"font-weight:800;border-color:#94a3b8\" aria-expanded=\"false\">開く</button>" +
     "</div>" +
     (bcOl
-      ? "<p class=\"muted\" style=\"font-size:0.68rem;margin:0.35rem 0 0;line-height:1.35\">別会計: 商品行にチェックしてから実行</p>"
+      ? "<p class=\"muted\" style=\"font-size:0.68rem;margin:0.35rem 0 0;line-height:1.35\">別会計: 商品にチェック → 移動する数量を指定（同じ商品が複数でも分割可）</p>"
       : "") +
     "</div>";
   const paymentSummaryHtml =
@@ -1127,17 +1143,15 @@ async function mountRegisterFlow(panel, ctx) {
   if (btnMoveLinesSeparateBill && bcOl) {
     btnMoveLinesSeparateBill.onclick = () => {
       const panelEl = panel;
-      const lineIds = [];
+      const selectedKeys = [];
       if (panelEl) {
         panelEl.querySelectorAll(".ops-split-select-cb:checked").forEach((cb) => {
-          const raw = cb.getAttribute("data-line-ids") || "";
-          raw.split(",").forEach((x) => {
-            const t = String(x).trim();
-            if (t) lineIds.push(t);
-          });
+          const k = cb.getAttribute("data-group-key") || "";
+          if (k) selectedKeys.push(k);
         });
       }
-      if (!lineIds.length) {
+      const selectedGroups = groupedLines.filter((g) => selectedKeys.includes(g.key));
+      if (!selectedGroups.length) {
         ctx.log("別会計へ移す明細にチェックしてください");
         return;
       }
@@ -1158,12 +1172,43 @@ async function mountRegisterFlow(panel, ctx) {
             );
           })
           .join("");
+      const qtyRowsHtml = selectedGroups
+        .map((g) => {
+          const maxQ = Math.max(1, Number(g.qty || 0));
+          const qtyField =
+            maxQ > 1
+              ? "<label style=\"display:flex;align-items:center;gap:0.4rem;font-size:0.82rem;white-space:nowrap\">" +
+                "移動数" +
+                "<input type=\"number\" class=\"move-split-qty\" data-group-key=\"" +
+                ctx.escapeHtml(g.key) +
+                "\" min=\"1\" max=\"" +
+                maxQ +
+                "\" step=\"1\" value=\"1\" style=\"width:4rem;padding:0.35rem;border-radius:6px;border:1px solid var(--border)\" />" +
+                "<span class=\"muted\">/ " +
+                maxQ +
+                "</span></label>"
+              : "<input type=\"hidden\" class=\"move-split-qty\" data-group-key=\"" +
+                ctx.escapeHtml(g.key) +
+                "\" value=\"1\" />";
+          return (
+            "<div class=\"row\" style=\"justify-content:space-between;align-items:center;gap:0.5rem;padding:0.45rem 0;border-bottom:1px solid #eee\">" +
+            "<span style=\"font-size:0.86rem;font-weight:600\">" +
+            ctx.escapeHtml(g.nameSnapshot) +
+            " <span class=\"muted\" style=\"font-weight:400\">（注文 " +
+            maxQ +
+            "）</span></span>" +
+            qtyField +
+            "</div>"
+          );
+        })
+        .join("");
       box.innerHTML =
         "<div class=\"card\" style=\"max-width:440px;padding:1.1rem;background:#fff;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.12)\">" +
         "<p style=\"margin:0 0 0.55rem;font-weight:900\">選択明細を別会計へ</p>" +
-        "<p class=\"muted\" style=\"margin:0 0 0.75rem;font-size:0.82rem;line-height:1.45\">" +
-        lineIds.length +
-        " 行を移動します。移動先を選んでください。</p>" +
+        "<p class=\"muted\" style=\"margin:0 0 0.65rem;font-size:0.82rem;line-height:1.45\">同じ商品がまとまって表示されていても、移動する個数だけ別会計に分けられます。</p>" +
+        "<div style=\"margin:0 0 0.75rem\">" +
+        qtyRowsHtml +
+        "</div>" +
         "<label style=\"display:block;font-size:0.78rem;font-weight:800;margin-bottom:0.25rem\">移動先</label>" +
         "<select id=\"moveOrderLinesTargetSel\" style=\"width:100%;padding:0.5rem;margin-bottom:1rem;border-radius:8px;border:1px solid var(--border)\">" +
         destOpts +
@@ -1178,36 +1223,36 @@ async function mountRegisterFlow(panel, ctx) {
       box.querySelector("#moveLinesOk").onclick = async () => {
         const sel = box.querySelector("#moveOrderLinesTargetSel");
         const dest = sel && sel.value ? String(sel.value) : "";
+        const lineMoves = [];
+        for (const g of selectedGroups) {
+          const inp = Array.from(box.querySelectorAll(".move-split-qty")).find(
+            (el) => el.getAttribute("data-group-key") === g.key,
+          );
+          const rawQ = inp ? Number(inp.value) : 1;
+          const moveQ = Math.max(1, Math.min(g.qty, Math.floor(rawQ)));
+          lineMoves.push.apply(lineMoves, buildLineMovesFromGroup(g, moveQ));
+        }
+        if (!lineMoves.length) {
+          ctx.log("移動する数量を確認してください");
+          return;
+        }
         try {
           /** @type {{ targetSessionId?: string }} */
           let out;
-          if (dest) {
-            out = await ctx.api(
-              "/stores/" +
-                encodeURIComponent(ctx.storeId) +
-                "/sessions/" +
-                encodeURIComponent(session.id) +
-                "/move-order-lines",
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ targetSessionId: dest, lineIds }),
-              },
-            );
-          } else {
-            out = await ctx.api(
-              "/stores/" +
-                encodeURIComponent(ctx.storeId) +
-                "/sessions/" +
-                encodeURIComponent(session.id) +
-                "/move-order-lines",
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ createSeparateBill: true, lineIds }),
-              },
-            );
-          }
+          const base =
+            "/stores/" +
+            encodeURIComponent(ctx.storeId) +
+            "/sessions/" +
+            encodeURIComponent(session.id) +
+            "/move-order-lines";
+          const body = dest
+            ? { targetSessionId: dest, lineMoves }
+            : { createSeparateBill: true, lineMoves };
+          out = await ctx.api(base, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
           close();
           ctx.log("別会計へ移しました");
           ctx.hooks.setSelectedSessionOverride((out && out.targetSessionId) || dest || session.id);
@@ -1429,6 +1474,7 @@ async function mountRegisterFlow(panel, ctx) {
     netYenFromGross,
     orderLineExtraSubtext,
     groupedOrderLines,
+    buildLineMovesFromGroup,
     groupedKeyForBill,
     sourceTableBadgeHtml,
     updateGroupedRowDraftUi,

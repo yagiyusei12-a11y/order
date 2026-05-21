@@ -1382,38 +1382,10 @@ function buildBillDiscountPlainLine(detail) {
   return lines.length ? lines.join(" / ") : "";
 }
 
-function appendBillDiscountReceiptRows(rows, detail, useTaxCol) {
-  const breakdown = billDiscountBreakdownFromDetail(detail);
-  for (const item of breakdown) {
-    const lab = formatOpsDiscountLabel(item.discount) || "卓割引";
-    const amt = Number(item.amount || 0);
-    if (amt <= 0) continue;
-    if (useTaxCol) {
-      rows.push(
-        "<tr><td>" +
-          escapeHtml(lab) +
-          "</td><td style=\"text-align:right\"></td><td style=\"text-align:right;color:#059669\">−" +
-          yen(amt) +
-          "</td></tr>"
-      );
-    } else {
-      rows.push(
-        "<tr><td>" +
-          escapeHtml(lab) +
-          "</td><td style=\"text-align:right;color:#059669\">−" +
-          yen(amt) +
-          "</td></tr>"
-      );
-    }
-  }
-}
-
 function appendLegalFooterHtml(fragments) {
   const f = getOpsPrintLegalProfile().legalNoteFooter.trim();
   if (!f) return;
-  fragments.push(
-    "<p class=\"muted\" style=\"font-size:0.78rem;margin-top:0.55rem;white-space:pre-wrap\">" + escapeHtml(f) + "</p>"
-  );
+  fragments.push('<p class="ops-footer-legal">' + escapeHtml(f) + "</p>");
 }
 
 function appendLegalFooterPlain(lines) {
@@ -1423,145 +1395,296 @@ function appendLegalFooterPlain(lines) {
   lines.push(f);
 }
 
-function buildReceiptDoc(detail) {
-  const pf = getOpsReceiptPrintFields();
-  const legal = getOpsPrintLegalProfile();
-  const fragments = ["<h3>レシート</h3>"];
-  if (pf.storeName && opsStoreDisplayName) {
-    fragments.push("<p><strong>" + escapeHtml(opsStoreDisplayName) + "</strong></p>");
-  }
-  if (pf.issuerTradeName) {
-    const nm = effectiveIssuerTradeNameForPrint();
-    if (nm) fragments.push("<p>屋号: " + escapeHtml(nm) + "</p>");
-  }
-  if (pf.qualifiedInvoiceRegistrationNumber && legal.qualifiedInvoiceRegistrationNumber) {
-    fragments.push(
-      "<p>適格請求書発行事業者の登録番号: " + escapeHtml(legal.qualifiedInvoiceRegistrationNumber) + "</p>"
-    );
-  }
-  if (pf.issuerAddressBlock) {
-    const blk = buildIssuerAddressBlockHtml(legal);
-    if (blk) fragments.push(blk);
-  }
-  if (pf.transactionDatetime) {
-    fragments.push("<p>取引年月日: " + escapeHtml(formatBillTransactionWhen(detail)) + "</p>");
-  }
-  if (pf.sessionTableInfo) {
-    const s = buildSessionTableInfoHtml(detail);
-    if (s) fragments.push(s);
-  }
-  if (pf.billDiscount && !pf.lineItems) {
-    const bd = buildBillDiscountHtml(detail);
-    if (bd) fragments.push(bd);
-  }
-  if (pf.billId) {
-    fragments.push("<p>伝票: " + escapeHtml(detail.id) + "</p>");
-  }
+/** ブラウザ／プレビュー印刷用（サーマル幅想定） */
+const OPS_PRINT_DOC_STYLE =
+  "@page{margin:8mm}body{font-family:'Hiragino Sans','Yu Gothic UI',Meiryo,sans-serif;font-size:13px;line-height:1.45;color:#111;max-width:80mm;margin:0 auto;padding:10px 8px 18px}" +
+  ".ops-doc{width:100%}.ops-doc__title{text-align:center;font-size:1rem;font-weight:800;margin:0 0 4px;letter-spacing:.2em}" +
+  ".ops-doc__store{text-align:center;font-size:1.08rem;font-weight:700;margin:0 0 10px}" +
+  ".ops-hr{border:none;border-top:1px dashed #888;margin:10px 0}" +
+  ".ops-meta{font-size:.8rem;color:#444;margin:0 0 6px}.ops-meta__row{display:flex;justify-content:space-between;gap:8px;padding:2px 0}" +
+  ".ops-meta__label{color:#666;flex:0 0 auto}.ops-meta__val{text-align:right;flex:1 1 auto;word-break:break-all}" +
+  ".ops-items{width:100%;border-collapse:collapse;font-size:.88rem;margin:4px 0 6px}" +
+  ".ops-items thead th{font-size:.72rem;font-weight:700;border-bottom:1px solid #222;padding:5px 2px 4px;color:#333}" +
+  ".ops-items tbody td{padding:5px 2px;vertical-align:top;border-bottom:1px dotted #ccc}" +
+  ".ops-items .ops-amt{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}" +
+  ".ops-items .ops-tax{text-align:right;color:#555;font-size:.78rem;width:2.5em}" +
+  ".ops-items .ops-item-name{word-break:break-word}.ops-items tr.ops-disc td{color:#047857}" +
+  ".ops-items tr.ops-disc .ops-amt{font-weight:700}" +
+  ".ops-section-title{font-size:.78rem;font-weight:700;color:#444;margin:8px 0 4px}" +
+  ".ops-total-box{text-align:right;margin:8px 0 4px;padding:8px 0 6px;border-top:2px solid #111;border-bottom:1px solid #111}" +
+  ".ops-total-box__label{font-size:.82rem;color:#444}.ops-total-box__yen{font-size:1.28rem;font-weight:800;letter-spacing:.02em}" +
+  ".ops-pay-list{margin:6px 0 0;padding:0;list-style:none;font-size:.84rem}.ops-pay-list li{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dotted #ddd}" +
+  ".ops-cash{font-size:.84rem;margin-top:6px}.ops-cash__row{display:flex;justify-content:space-between;padding:2px 0}" +
+  ".ops-footer-legal{font-size:.72rem;color:#555;margin-top:10px;white-space:pre-wrap;line-height:1.4}" +
+  ".ops-issuer{font-size:.78rem;line-height:1.45;margin-top:10px;color:#333}" +
+  ".ops-inv-doc .ops-inv-title{text-align:center;font-size:1.45rem;font-weight:800;letter-spacing:.42em;margin:0 0 18px;padding-right:.42em}" +
+  ".ops-inv-recipient{text-align:right;font-size:1.02rem;margin:0 0 16px;line-height:1.6}" +
+  ".ops-inv-recipient .ops-fill{display:inline-block;min-width:11em;border-bottom:1px solid #111;text-align:center;padding:0 6px 3px;vertical-align:bottom}" +
+  ".ops-inv-amount{text-align:center;margin:6px 0 18px;padding:12px 8px;border:2px solid #111}" +
+  ".ops-inv-amount__label{font-size:.78rem;color:#555;margin-bottom:4px}.ops-inv-amount__yen{font-size:1.42rem;font-weight:800}" +
+  ".ops-inv-purpose{margin:0 0 14px;font-size:.92rem}.ops-inv-purpose__label{color:#555;font-size:.78rem;margin-bottom:4px}" +
+  ".ops-inv-purpose .ops-fill{display:block;min-height:1.35em;border-bottom:1px solid #111;padding:2px 2px 4px}" +
+  ".ops-inv-confirm{text-align:center;font-size:.88rem;margin:0 0 16px}" +
+  ".ops-inv-issue{text-align:right;font-size:.84rem;margin:0 0 12px;color:#333}" +
+  ".ops-inv-issuer{text-align:right;font-size:.82rem;line-height:1.5;margin-top:14px}" +
+  ".ops-stamp-row{display:flex;justify-content:space-between;gap:10px;margin-top:22px}" +
+  ".ops-stamp-box{flex:1;border:1px solid #333;min-height:4.2em;text-align:center;font-size:.72rem;padding:6px 4px;color:#444}";
 
+function opsPrintDocumentShell(title, bodyHtml, bodyClass) {
+  const cls = bodyClass ? ' class="' + bodyClass + '"' : "";
+  return (
+    "<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\"><title>" +
+    escapeHtml(title) +
+    "</title><style>" +
+    OPS_PRINT_DOC_STYLE +
+    "</style></head><body" +
+    cls +
+    "><div class=\"ops-doc\">" +
+    bodyHtml +
+    "</div></body></html>"
+  );
+}
+
+function opsPrintHr() {
+  return "<hr class=\"ops-hr\" />";
+}
+
+function opsPrintMetaRows(rows) {
+  if (!rows.length) return "";
+  return (
+    '<div class="ops-meta">' +
+    rows
+      .map(
+        (r) =>
+          '<div class="ops-meta__row"><span class="ops-meta__label">' +
+          escapeHtml(r[0]) +
+          '</span><span class="ops-meta__val">' +
+          escapeHtml(r[1]) +
+          "</span></div>"
+      )
+      .join("") +
+    "</div>"
+  );
+}
+
+function opsPrintBlankSpan(text, minEm) {
+  const t = text && String(text).trim();
+  if (t) return escapeHtml(t);
+  return '<span class="ops-fill" style="min-width:' + (minEm || 11) + 'em">&nbsp;</span>';
+}
+
+function buildInvoiceRecipientHtml(recipient) {
+  return (
+    '<div class="ops-inv-recipient">' +
+    opsPrintBlankSpan(recipient, 12) +
+    "　様</div>"
+  );
+}
+
+function buildInvoicePurposeHtml(purpose) {
+  return (
+    '<div class="ops-inv-purpose">' +
+    '<div class="ops-inv-purpose__label">但し書き</div>' +
+    '<div class="ops-fill">' +
+    (purpose && String(purpose).trim() ? escapeHtml(String(purpose).trim()) : "&nbsp;") +
+    "</div></div>"
+  );
+}
+
+function opsPlainUnderlineBlank(value, charWidth) {
+  const t = value && String(value).trim();
+  if (t) return t;
+  const w = Math.max(8, charWidth || 22);
+  return "_".repeat(w);
+}
+
+function buildInvoiceRecipientPlain(recipient) {
+  const fill = opsPlainUnderlineBlank(recipient, 20);
+  return fill + "　様";
+}
+
+function buildInvoicePurposePlain(purpose) {
+  return "但し　" + opsPlainUnderlineBlank(purpose, 24);
+}
+
+function appendInvoiceStampBoxesHtml(parts) {
+  parts.push(
+    '<div class="ops-stamp-row">' +
+      '<div class="ops-stamp-box">収入印紙</div>' +
+      '<div class="ops-stamp-box">担当印</div>' +
+    "</div>"
+  );
+}
+
+function collectReceiptMetaRows(detail, pf) {
+  const rows = [];
+  if (pf.transactionDatetime) {
+    rows.push(["日時", formatBillTransactionWhen(detail)]);
+  }
+  const s = detail.sessionSummary;
+  if (pf.sessionTableInfo && s && typeof s === "object") {
+    if (s.tableName) rows.push(["卓", String(s.tableName)]);
+    if (s.courseName) rows.push(["コース", String(s.courseName)]);
+    const gc = Number(s.guestCount || 0);
+    const cc = Number(s.childCount || 0);
+    rows.push(["人数", gc + (cc > 0 ? "（子 " + cc + "）" : "")]);
+  }
+  if (pf.billId) rows.push(["伝票No.", String(detail.id)]);
+  return rows;
+}
+
+function buildReceiptLineItemsTableHtml(detail, pf) {
+  if (!pf.lineItems) return "";
   const useTaxCol = !!pf.lineTaxRateColumn;
   const rows = [];
-  if (pf.lineItems && detail.courseLine && Number(detail.courseLine.lineTotal) > 0) {
+  if (detail.courseLine && Number(detail.courseLine.lineTotal) > 0) {
     const showNetForCourse = storeSettingsCache.coursePriceTaxMode === "exclusive";
     const courseDisp = showNetForCourse
       ? BillRegisterShared.netYenFromGross(detail.courseLine.lineTotal, storeSettingsCache.taxRatePercent)
       : detail.courseLine.lineTotal;
-    const courseSuffix = showNetForCourse ? " <span style=\"color:#666;font-size:0.82em\">（税抜）</span>" : "";
+    const courseSuffix = showNetForCourse ? "（税抜）" : "";
     const rate = Number(storeSettingsCache.taxRatePercent ?? 10);
-    if (useTaxCol) {
-      rows.push(
-        "<tr><td>" +
-          escapeHtml(detail.courseLine.name) +
-          courseSuffix +
-          "</td><td style=\"text-align:right\">" +
-          rate +
-          "%</td><td style=\"text-align:right\">" +
-          yen(courseDisp) +
-          "</td></tr>"
-      );
-    } else {
-      rows.push(
-        "<tr><td>" +
-          escapeHtml(detail.courseLine.name) +
-          (courseSuffix ? " <span style=\"color:#666;font-size:0.82em\">（税抜）</span>" : "") +
-          "</td><td style=\"text-align:right\">" +
-          yen(courseDisp) +
-          "</td></tr>"
-      );
-    }
+    rows.push(
+      "<tr><td class=\"ops-item-name\">" +
+        escapeHtml(detail.courseLine.name) +
+        (courseSuffix ? ' <span style="color:#666;font-size:.78em">' + escapeHtml(courseSuffix) + "</span>" : "") +
+        "</td>" +
+        (useTaxCol ? '<td class="ops-tax">' + rate + "%</td>" : "") +
+        '<td class="ops-amt">' +
+        yen(courseDisp) +
+        "</td></tr>"
+    );
   }
-  if (pf.lineItems) {
-    for (const l of detail.orderLines || []) {
-      if (l.status === "cancelled") continue;
-      const srcLab = (function () {
-        if (!l.sourceTableId) return "";
-        const tb = tablesCache.find((x) => x.id === l.sourceTableId);
-        if (!tb) return "";
-        return displayTableCode(tb.publicCode) || tb.name || "";
-      })();
-      const srcSuffix = srcLab ? " <span style=\"color:#666\">(" + escapeHtml(srcLab) + ")</span>" : "";
-      const rate = Number(l.taxRatePercent ?? storeSettingsCache.taxRatePercent ?? 10);
-      if (useTaxCol) {
-        rows.push(
-          "<tr><td>" +
-            escapeHtml(l.nameSnapshot) +
-            srcSuffix +
-            " ×" +
-            l.qty +
-            "</td><td style=\"text-align:right\">" +
-            rate +
-            "%</td><td style=\"text-align:right\">" +
-            yen(l.lineTotal) +
-            "</td></tr>"
-        );
-      } else {
-        rows.push(
-          "<tr><td>" +
-            escapeHtml(l.nameSnapshot) +
-            srcSuffix +
-            " ×" +
-            l.qty +
-            "</td><td style=\"text-align:right\">" +
-            yen(l.lineTotal) +
-            "</td></tr>"
-        );
-      }
-    }
+  for (const l of detail.orderLines || []) {
+    if (l.status === "cancelled") continue;
+    const srcLab = (function () {
+      if (!l.sourceTableId) return "";
+      const tb = tablesCache.find((x) => x.id === l.sourceTableId);
+      if (!tb) return "";
+      return displayTableCode(tb.publicCode) || tb.name || "";
+    })();
+    const srcSuffix = srcLab ? ' <span style="color:#666;font-size:.78em">(' + escapeHtml(srcLab) + ")</span>" : "";
+    const rate = Number(l.taxRatePercent ?? storeSettingsCache.taxRatePercent ?? 10);
+    rows.push(
+      "<tr><td class=\"ops-item-name\">" +
+        escapeHtml(l.nameSnapshot) +
+        srcSuffix +
+        ' <span style="color:#666;font-size:.78em">×' +
+        l.qty +
+        "</span></td>" +
+        (useTaxCol ? '<td class="ops-tax">' + rate + "%</td>" : "") +
+        '<td class="ops-amt">' +
+        yen(l.lineTotal) +
+        "</td></tr>"
+    );
   }
   if (pf.billDiscount) {
-    appendBillDiscountReceiptRows(rows, detail, useTaxCol);
+    const breakdown = billDiscountBreakdownFromDetail(detail);
+    for (const item of breakdown) {
+      const lab = formatOpsDiscountLabel(item.discount) || "卓割引";
+      const amt = Number(item.amount || 0);
+      if (amt <= 0) continue;
+      rows.push(
+        '<tr class="ops-disc"><td class="ops-item-name">' +
+          escapeHtml(lab) +
+          "</td>" +
+          (useTaxCol ? '<td class="ops-tax"></td>' : "") +
+          '<td class="ops-amt">−' +
+          yen(amt) +
+          "</td></tr>"
+      );
+    }
   }
-  let tableHtml = "";
-  if (rows.length) {
-    const th = useTaxCol
-      ? "<tr><th style=\"text-align:left\">品目</th><th style=\"text-align:right\">税率</th><th style=\"text-align:right\">金額</th></tr>"
-      : "";
-    tableHtml = "<table style=\"width:100%;border-collapse:collapse;font-size:0.9rem\">" + th + rows.join("") + "</table><hr>";
-  } else if (pf.lineItems) {
-    tableHtml = "<p class=\"muted\">（明細なし）</p><hr>";
-  }
+  if (!rows.length) return "";
+  const head = useTaxCol
+    ? "<thead><tr><th>品目</th><th class=\"ops-tax\">税率</th><th class=\"ops-amt\">金額</th></tr></thead>"
+    : "<thead><tr><th>品目</th><th class=\"ops-amt\">金額</th></tr></thead>";
+  return '<table class="ops-items">' + head + "<tbody>" + rows.join("") + "</tbody></table>";
+}
 
-  fragments.push(tableHtml);
+function appendReceiptIssuerHtml(parts, pf, legal) {
+  const bits = [];
+  if (pf.issuerTradeName) {
+    const nm = effectiveIssuerTradeNameForPrint();
+    if (nm) bits.push("屋号: " + escapeHtml(nm));
+  }
+  if (pf.qualifiedInvoiceRegistrationNumber && legal.qualifiedInvoiceRegistrationNumber) {
+    bits.push("登録番号: " + escapeHtml(legal.qualifiedInvoiceRegistrationNumber));
+  }
+  if (pf.issuerAddressBlock) {
+    const pc = (legal.issuerPostalCode || "").trim();
+    const ad = (legal.issuerAddress || "").trim();
+    const ph = (legal.issuerPhone || "").trim();
+    const rep = (legal.issuerRepresentativeName || "").trim();
+    if (pc) bits.push("〒" + escapeHtml(pc));
+    if (ad) bits.push(escapeHtml(ad));
+    if (ph) bits.push("TEL " + escapeHtml(ph));
+    if (rep) bits.push("代表者 " + escapeHtml(rep));
+  }
+  if (bits.length) {
+    parts.push('<div class="ops-issuer">' + bits.join("<br/>") + "</div>");
+  }
+}
+
+function buildReceiptDoc(detail) {
+  const pf = getOpsReceiptPrintFields();
+  const legal = getOpsPrintLegalProfile();
+  const parts = [];
+  if (pf.storeName && opsStoreDisplayName) {
+    parts.push('<div class="ops-doc__store">' + escapeHtml(opsStoreDisplayName) + "</div>");
+  }
+  parts.push('<h1 class="ops-doc__title">レシート</h1>');
+  const meta = collectReceiptMetaRows(detail, pf);
+  if (meta.length) parts.push(opsPrintMetaRows(meta));
+  parts.push(opsPrintHr());
+  const itemsTable = buildReceiptLineItemsTableHtml(detail, pf);
+  if (itemsTable) {
+    parts.push('<div class="ops-section-title">お買上げ明細</div>');
+    parts.push(itemsTable);
+  } else if (pf.lineItems) {
+    parts.push('<p style="font-size:.84rem;color:#666;margin:4px 0">（明細なし）</p>');
+  } else if (pf.billDiscount && !pf.lineItems) {
+    const bd = buildBillDiscountHtml(detail);
+    if (bd) parts.push(bd);
+  }
+  parts.push(opsPrintHr());
   if (pf.taxBreakdownTable) {
     const tx = buildTaxBreakdownHtml(detail);
-    if (tx) fragments.push(tx);
+    if (tx) parts.push(tx);
   }
   if (pf.total) {
-    fragments.push("<p><strong>合計 " + yen(detail.totalAmount) + "</strong></p>");
+    parts.push(
+      '<div class="ops-total-box"><div class="ops-total-box__label">ご請求金額</div><div class="ops-total-box__yen">' +
+        yen(detail.totalAmount) +
+        "</div></div>"
+    );
   }
   if (pf.paymentBreakdown) {
-    const py = buildPaymentBreakdownHtml(detail);
-    if (py) fragments.push(py);
+    const ps = (detail.payments || []).filter((p) => p && !p.voidedAt);
+    if (ps.length) {
+      parts.push('<div class="ops-section-title">お支払</div><ul class="ops-pay-list">');
+      for (const p of ps) {
+        const lab = (p.labelJa && String(p.labelJa).trim()) || p.methodCode || "";
+        parts.push(
+          "<li><span>" + escapeHtml(String(lab)) + "</span><span>" + yen(p.amount) + "</span></li>"
+        );
+      }
+      parts.push("</ul>");
+    }
   }
   const cash = extractCashFromBillDetail(detail);
   if (pf.cashChange && cash.received != null) {
-    fragments.push("<p>現金お預かり: " + yen(cash.received) + "<br>お釣り: " + yen(cash.change ?? 0) + "</p>");
+    parts.push(
+      '<div class="ops-cash"><div class="ops-cash__row"><span>お預かり</span><span>' +
+        yen(cash.received) +
+        '</span></div><div class="ops-cash__row"><span>お釣り</span><span>' +
+        yen(cash.change ?? 0) +
+        "</span></div></div>"
+    );
   }
-  appendLegalFooterHtml(fragments);
-  return (
-    "<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\"><title>レシート</title><style>body{font-family:sans-serif;padding:12px}table{width:100%;border-collapse:collapse}td,th{padding:3px 2px}</style></head><body>" +
-    fragments.join("") +
-    "</body></html>"
-  );
+  appendReceiptIssuerHtml(parts, pf, legal);
+  appendLegalFooterHtml(parts);
+  return opsPrintDocumentShell("レシート", parts.join(""));
 }
 
 /** @param {object} opts changeAmount, amountYen, recipient, purpose, issueDate */
@@ -1575,59 +1698,46 @@ function buildInvoiceDoc(detail, opts) {
   const issueD = opts.issueDate instanceof Date ? opts.issueDate : new Date(opts.issueDate || Date.now());
   const totalBill = Number(detail.totalAmount || 0);
   const isPartial = amountYen < totalBill;
-  const parts = [
-    "<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\"><title>領収書</title><style>body{font-family:sans-serif;padding:12px;line-height:1.5}</style></head><body>",
-    "<h2>領収書</h2>",
-  ];
-  if (inv.recipient && recipient) {
-    parts.push("<p>宛名: " + escapeHtml(recipient) + "</p>");
+  const parts = [];
+  parts.push('<h1 class="ops-inv-title">領収書</h1>');
+  if (inv.recipient) {
+    parts.push(buildInvoiceRecipientHtml(recipient));
   }
-  if (inv.purpose && purpose) {
-    parts.push("<p>但し書き: " + escapeHtml(purpose) + "</p>");
-  }
-  if (inv.issueDate) {
-    parts.push("<p>発行: " + escapeHtml(formatInvoiceIssueWhen(issueD)) + "</p>");
-  }
-  if (inv.storeName && opsStoreDisplayName) {
-    parts.push("<p>" + escapeHtml(opsStoreDisplayName) + "</p>");
-  }
-  if (inv.issuerTradeName) {
-    const nm = effectiveIssuerTradeNameForPrint();
-    if (nm) parts.push("<p>屋号: " + escapeHtml(nm) + "</p>");
-  }
-  if (inv.qualifiedInvoiceRegistrationNumber && legal.qualifiedInvoiceRegistrationNumber) {
+  if (inv.amountYen) {
     parts.push(
-      "<p>適格請求書発行事業者の登録番号: " + escapeHtml(legal.qualifiedInvoiceRegistrationNumber) + "</p>"
+      '<div class="ops-inv-amount"><div class="ops-inv-amount__label">金額</div><div class="ops-inv-amount__yen">' +
+        yen(amountYen) +
+        (isPartial ? ' <span style="font-size:.72rem;font-weight:600">（伝票全額 ' + yen(totalBill) + "）</span>" : "") +
+        "</div></div>"
     );
   }
-  if (inv.issuerAddressBlock) {
-    const blk = buildIssuerAddressBlockHtml(legal);
-    if (blk) parts.push(blk);
+  if (inv.purpose) {
+    parts.push(buildInvoicePurposeHtml(purpose));
   }
-  if (inv.transactionDatetime) {
-    parts.push("<p>取引年月日: " + escapeHtml(formatBillTransactionWhen(detail)) + "</p>");
+  parts.push('<p class="ops-inv-confirm">上記正に領収いたしました。</p>');
+  if (inv.issueDate) {
+    parts.push('<div class="ops-inv-issue">発行日: ' + escapeHtml(formatInvoiceIssueWhen(issueD)) + "</div>");
   }
-  if (inv.sessionTableInfo) {
-    const s = buildSessionTableInfoHtml(detail);
-    if (s) parts.push(s);
+  const invMeta = [];
+  if (inv.transactionDatetime) invMeta.push(["取引日時", formatBillTransactionWhen(detail)]);
+  const s = detail.sessionSummary;
+  if (inv.sessionTableInfo && s && typeof s === "object") {
+    if (s.tableName) invMeta.push(["卓", String(s.tableName)]);
+    if (s.courseName) invMeta.push(["コース", String(s.courseName)]);
+  }
+  if (inv.billId) invMeta.push(["伝票No.", String(detail.id)]);
+  if (invMeta.length) {
+    parts.push(opsPrintHr());
+    parts.push(opsPrintMetaRows(invMeta));
   }
   if (inv.billDiscount) {
     const bd = buildBillDiscountHtml(detail);
     if (bd) parts.push(bd);
   }
-  if (inv.billId) {
-    parts.push("<p>伝票: " + escapeHtml(detail.id) + "</p>");
-  }
-  if (inv.amountYen) {
-    parts.push("<p>金額: <strong>" + yen(amountYen) + "</strong></p>");
-  }
-  if (inv.changeLine) {
-    parts.push("<p>お釣り: " + yen(changeAmount) + "</p>");
-  }
   if (inv.taxBreakdownTable) {
     if (isPartial && inv.taxBreakdownFullBillWhenPartial) {
       parts.push(
-        "<p class=\"muted\" style=\"font-size:0.75rem\">※税率別内訳は伝票<strong>全額</strong>ベースです（領収金額は一部の場合があります）。</p>"
+        '<p style="font-size:.72rem;color:#666;margin:8px 0 4px">※税率別内訳は伝票全額ベース（領収は一部の場合あり）</p>'
       );
       const tx = buildTaxBreakdownHtml(detail);
       if (tx) parts.push(tx);
@@ -1640,9 +1750,34 @@ function buildInvoiceDoc(detail, opts) {
     const py = buildPaymentBreakdownHtml(detail);
     if (py) parts.push(py);
   }
+  if (inv.changeLine && changeAmount > 0) {
+    parts.push('<p style="font-size:.84rem;text-align:right;margin:6px 0">お釣り: ' + yen(changeAmount) + "</p>");
+  }
+  const issuerBits = [];
+  if (inv.storeName && opsStoreDisplayName) issuerBits.push("<strong>" + escapeHtml(opsStoreDisplayName) + "</strong>");
+  if (inv.issuerTradeName) {
+    const nm = effectiveIssuerTradeNameForPrint();
+    if (nm) issuerBits.push("屋号: " + escapeHtml(nm));
+  }
+  if (inv.qualifiedInvoiceRegistrationNumber && legal.qualifiedInvoiceRegistrationNumber) {
+    issuerBits.push("登録番号: " + escapeHtml(legal.qualifiedInvoiceRegistrationNumber));
+  }
+  if (inv.issuerAddressBlock) {
+    const pc = (legal.issuerPostalCode || "").trim();
+    const ad = (legal.issuerAddress || "").trim();
+    const ph = (legal.issuerPhone || "").trim();
+    const rep = (legal.issuerRepresentativeName || "").trim();
+    if (pc) issuerBits.push("〒" + escapeHtml(pc));
+    if (ad) issuerBits.push(escapeHtml(ad));
+    if (ph) issuerBits.push("TEL " + escapeHtml(ph));
+    if (rep) issuerBits.push("代表者 " + escapeHtml(rep));
+  }
+  if (issuerBits.length) {
+    parts.push('<div class="ops-inv-issuer">' + issuerBits.join("<br/>") + "</div>");
+  }
+  appendInvoiceStampBoxesHtml(parts);
   appendLegalFooterHtml(parts);
-  parts.push("</body></html>");
-  return parts.join("");
+  return opsPrintDocumentShell("領収書", parts.join(""), "ops-inv-doc");
 }
 
 /** ESC/POS 用プレーンテキスト行（日本語は機種・モードで文字化けする場合あり） */
@@ -1650,31 +1785,19 @@ function buildReceiptPlainLines(detail) {
   const pf = getOpsReceiptPrintFields();
   const legal = getOpsPrintLegalProfile();
   const lines = [];
-  lines.push("レシート");
   if (pf.storeName && opsStoreDisplayName) {
     lines.push(opsStoreDisplayName);
   }
-  if (pf.issuerTradeName) {
-    const nm = effectiveIssuerTradeNameForPrint();
-    if (nm) lines.push("屋号: " + nm);
+  lines.push("【レシート】");
+  lines.push("--------------------------------");
+  const meta = collectReceiptMetaRows(detail, pf);
+  for (const row of meta) {
+    lines.push(row[0] + " " + row[1]);
   }
-  if (pf.qualifiedInvoiceRegistrationNumber && legal.qualifiedInvoiceRegistrationNumber) {
-    lines.push("登録番号: " + legal.qualifiedInvoiceRegistrationNumber);
-  }
-  if (pf.issuerAddressBlock) {
-    lines.push.apply(lines, buildIssuerAddressBlockPlain(legal));
-  }
-  if (pf.transactionDatetime) {
-    lines.push("取引年月日: " + formatBillTransactionWhen(detail));
-  }
-  if (pf.sessionTableInfo) {
-    lines.push.apply(lines, buildSessionTableInfoPlainLines(detail));
-  }
-  if (pf.billId) {
-    lines.push("伝票: " + String(detail.id));
-  }
+  if (meta.length) lines.push("--------------------------------");
   let hadLineItems = false;
   if (pf.lineItems) {
+    lines.push("【明細】");
     if (detail.courseLine && Number(detail.courseLine.lineTotal) > 0) {
       const showNetForCourse = storeSettingsCache.coursePriceTaxMode === "exclusive";
       const courseDisp = showNetForCourse
@@ -1683,7 +1806,7 @@ function buildReceiptPlainLines(detail) {
       const courseSuffix = showNetForCourse ? "（税抜）" : "";
       const rate = Number(storeSettingsCache.taxRatePercent ?? 10);
       lines.push(
-        (pf.lineTaxRateColumn ? "税率" + rate + "% " : "") +
+        (pf.lineTaxRateColumn ? "[" + rate + "%] " : "") +
           String(detail.courseLine.name) +
           courseSuffix +
           "  " +
@@ -1702,7 +1825,7 @@ function buildReceiptPlainLines(detail) {
       const src = srcLab ? " (" + srcLab + ")" : "";
       const rate = Number(l.taxRatePercent ?? storeSettingsCache.taxRatePercent ?? 10);
       lines.push(
-        (pf.lineTaxRateColumn ? "税率" + rate + "% " : "") +
+        (pf.lineTaxRateColumn ? "[" + rate + "%] " : "") +
           String(l.nameSnapshot) +
           src +
           " x" +
@@ -1712,20 +1835,18 @@ function buildReceiptPlainLines(detail) {
       );
       hadLineItems = true;
     }
-  }
-  if (hadLineItems) {
-    lines.push("--------------------------------");
-  }
-  if (pf.billDiscount) {
-    for (const dl of buildBillDiscountPlainLines(detail)) {
-      if (dl) lines.push(dl);
+    if (pf.billDiscount) {
+      for (const dl of buildBillDiscountPlainLines(detail)) {
+        if (dl) lines.push(dl);
+      }
     }
   }
+  if (hadLineItems) lines.push("--------------------------------");
   if (pf.taxBreakdownTable) {
     lines.push.apply(lines, buildTaxBreakdownPlainLines(detail));
   }
   if (pf.total) {
-    lines.push("合計 " + yen(detail.totalAmount));
+    lines.push("ご請求金額 " + yen(detail.totalAmount));
   }
   if (pf.paymentBreakdown) {
     lines.push.apply(lines, buildPaymentBreakdownPlainLines(detail));
@@ -1734,6 +1855,17 @@ function buildReceiptPlainLines(detail) {
   if (pf.cashChange && cash.received != null) {
     lines.push("お預かり " + yen(cash.received));
     lines.push("お釣り " + yen(cash.change ?? 0));
+  }
+  lines.push("--------------------------------");
+  if (pf.issuerTradeName) {
+    const nm = effectiveIssuerTradeNameForPrint();
+    if (nm) lines.push("屋号: " + nm);
+  }
+  if (pf.qualifiedInvoiceRegistrationNumber && legal.qualifiedInvoiceRegistrationNumber) {
+    lines.push("登録番号: " + legal.qualifiedInvoiceRegistrationNumber);
+  }
+  if (pf.issuerAddressBlock) {
+    lines.push.apply(lines, buildIssuerAddressBlockPlain(legal));
   }
   appendLegalFooterPlain(lines);
   return lines;
@@ -1749,16 +1881,56 @@ function buildInvoicePlainLines(detail, opts) {
   const issueD = opts.issueDate instanceof Date ? opts.issueDate : new Date(opts.issueDate || Date.now());
   const totalBill = Number(detail.totalAmount || 0);
   const isPartial = amountYen < totalBill;
-  const lines = ["領収書"];
-  if (inv.recipient && recipient) {
-    lines.push("宛名: " + recipient);
+  const lines = [];
+  lines.push("【領収書】");
+  lines.push("");
+  if (inv.recipient) {
+    lines.push(buildInvoiceRecipientPlain(recipient));
   }
-  if (inv.purpose && purpose) {
-    lines.push("但し書き: " + purpose);
+  if (inv.amountYen) {
+    lines.push("金額　" + yen(amountYen) + (isPartial ? " （伝票全額" + yen(totalBill) + "）" : ""));
   }
+  lines.push("--------------------------------");
+  if (inv.purpose) {
+    lines.push(buildInvoicePurposePlain(purpose));
+  }
+  lines.push("上記正に領収いたしました。");
+  lines.push("");
   if (inv.issueDate) {
-    lines.push("発行: " + formatInvoiceIssueWhen(issueD));
+    lines.push("発行日 " + formatInvoiceIssueWhen(issueD));
   }
+  const invMeta = [];
+  if (inv.transactionDatetime) invMeta.push(["取引日時", formatBillTransactionWhen(detail)]);
+  const s = detail.sessionSummary;
+  if (inv.sessionTableInfo && s && typeof s === "object") {
+    if (s.tableName) invMeta.push(["卓", String(s.tableName)]);
+    if (s.courseName) invMeta.push(["コース", String(s.courseName)]);
+  }
+  if (inv.billId) invMeta.push(["伝票No.", String(detail.id)]);
+  if (invMeta.length) {
+    lines.push("--------------------------------");
+    for (const row of invMeta) lines.push(row[0] + " " + row[1]);
+  }
+  if (inv.billDiscount) {
+    for (const dl of buildBillDiscountPlainLines(detail)) {
+      if (dl) lines.push(dl);
+    }
+  }
+  if (inv.taxBreakdownTable) {
+    if (isPartial && inv.taxBreakdownFullBillWhenPartial) {
+      lines.push("※税率別内訳は伝票全額ベース");
+      lines.push.apply(lines, buildTaxBreakdownPlainLines(detail));
+    } else if (!isPartial) {
+      lines.push.apply(lines, buildTaxBreakdownPlainLines(detail));
+    }
+  }
+  if (inv.paymentBreakdown) {
+    lines.push.apply(lines, buildPaymentBreakdownPlainLines(detail));
+  }
+  if (inv.changeLine && changeAmount > 0) {
+    lines.push("お釣り " + yen(changeAmount));
+  }
+  lines.push("--------------------------------");
   if (inv.storeName && opsStoreDisplayName) {
     lines.push(opsStoreDisplayName);
   }
@@ -1771,36 +1943,6 @@ function buildInvoicePlainLines(detail, opts) {
   }
   if (inv.issuerAddressBlock) {
     lines.push.apply(lines, buildIssuerAddressBlockPlain(legal));
-  }
-  if (inv.transactionDatetime) {
-    lines.push("取引年月日: " + formatBillTransactionWhen(detail));
-  }
-  if (inv.sessionTableInfo) {
-    lines.push.apply(lines, buildSessionTableInfoPlainLines(detail));
-  }
-  const disc = buildBillDiscountPlainLine(detail);
-  if (inv.billDiscount && disc) {
-    lines.push(disc);
-  }
-  if (inv.billId) {
-    lines.push("伝票: " + String(detail.id));
-  }
-  if (inv.amountYen) {
-    lines.push("金額 " + yen(amountYen));
-  }
-  if (inv.changeLine) {
-    lines.push("お釣り " + yen(changeAmount));
-  }
-  if (inv.taxBreakdownTable) {
-    if (isPartial && inv.taxBreakdownFullBillWhenPartial) {
-      lines.push("※税率別内訳は伝票全額ベース（領収は一部の場合あり）");
-      lines.push.apply(lines, buildTaxBreakdownPlainLines(detail));
-    } else if (!isPartial) {
-      lines.push.apply(lines, buildTaxBreakdownPlainLines(detail));
-    }
-  }
-  if (inv.paymentBreakdown) {
-    lines.push.apply(lines, buildPaymentBreakdownPlainLines(detail));
   }
   appendLegalFooterPlain(lines);
   appendInvoiceStampBoxesPlain(lines);

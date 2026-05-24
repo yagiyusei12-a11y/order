@@ -135,6 +135,27 @@ function repMobRenderOrderLinesHtml(detail) {
       repYen(detail.courseLine.lineTotal) +
       "</span></div>";
   }
+  const packGroups =
+    typeof BillRegisterShared !== "undefined" && BillRegisterShared.groupedCourseOptionPackLines
+      ? BillRegisterShared.groupedCourseOptionPackLines(detail)
+      : [];
+  for (const pg of packGroups) {
+    const packName = String(pg.nameSnapshot || "").replace(/^\[コース＋オプション\]\s*/, "");
+    const sub =
+      pg.lines && pg.lines[0] && typeof BillRegisterShared.courseOptionPackLineSubtext === "function"
+        ? BillRegisterShared.courseOptionPackLineSubtext(pg.lines[0])
+        : "\u30b3\u30fc\u30b9\uff0b\u30aa\u30d7\u30b7\u30e7\u30f3";
+    h +=
+      '<div class="rep-m-order-line">' +
+      '<div class="nm">' +
+      escapeHtml(packName) +
+      '<div class="sub">' +
+      escapeHtml(sub) +
+      "</div></div>" +
+      "<span>" +
+      repYen(pg.lineTotal) +
+      "</span></div>";
+  }
   if (!groups.length && !h) {
     return '<p class="muted" style="margin:0">\u6ce8\u6587\u306f\u307e\u3060\u3042\u308a\u307e\u305b\u3093\u3002</p>';
   }

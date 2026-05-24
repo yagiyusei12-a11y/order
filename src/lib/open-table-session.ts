@@ -78,6 +78,7 @@ export async function openSessionForTable(options: {
   });
   if (openOnTable) {
     if (mode === "reuseIfOpen" && !options.skipReuse) {
+      // 卓QRの再読込など: 人数・コースは先に開始したセッションのまま（リクエストで上書き・加算しない）
       await syncReceptionShiftSeatsForTable(storeId, table.id).catch(() => {});
       return { ok: true, session: openOnTable, reused: true };
     }

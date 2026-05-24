@@ -161,8 +161,88 @@
     return lines.join("\n");
   }
 
+  function groupedCourseOptionPackLines(detail) {
+    const lines = (detail.orderLines || []).filter(
+      (l) => l.status !== "cancelled" && isCourseOptionPackLine(l),
+    );
+    const grouped = new Map();
+    for (const l of lines) {
+      const key = [
+        l.nameSnapshot || "",
+        Number(l.unitPrice || 0),
+        JSON.stringify(l.lineExtra ?? null),
+      ].join("::");
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          key,
+          nameSnapshot: l.nameSnapshot,
+          unitPrice: Number(l.unitPrice || 0),
+          qty: 0,
+          lineTotal: 0,
+          lines: [],
+        });
+      }
+      const gg = grouped.get(key);
+      gg.qty += Number(l.qty || 0);
+      gg.lineTotal += Number(l.lineTotal || 0);
+      gg.lines.push(l);
+    }
+    return Array.from(grouped.values());
+  }
+
+  function courseOptionPackLineSubtext(line) {
+    try {
+      const ex = line && line.lineExtra;
+      if (!ex || typeof ex !== "object" || Array.isArray(ex)) return "コースオプション（追加料金）";
+      const scope = ex.chargeScope;
+      if (scope === "table_once") return "コースオプション（卓1回・追加料金）";
+      if (scope === "per_person_all") return "コースオプション（全員・追加料金）";
+      if (scope === "per_person_pick") return "コースオプション（人数選択・追加料金）";
+      return "コースオプション（追加料金）";
+    } catch (_) {
+      return "コースオプション（追加料金）";
+    }
+  }
+
+  function buildCourseOptionPackRowsHtml(groupedPacks, ctx) {
+    if (!groupedPacks.length) return "";
+    return groupedPacks
+      .map((g) => {
+        const ln = g.lines && g.lines[0];
+        const taxRateForRow = ln && ln.taxRatePercent != null ? Number(ln.taxRatePercent) : 0;
+        const showNet = ctx.storeSettings.menuPriceTaxMode === "exclusive";
+        const dispTotal = showNet
+          ? netYenFromGross(g.lineTotal, taxRateForRow || ctx.storeSettings.taxRatePercent)
+          : g.lineTotal;
+        const dispSuffix = showNet ? ' <span class="muted" style="font-size:0.72rem">（税抜）</span>' : "";
+        const displayName = String(g.nameSnapshot || "コースオプション").replace(
+          /^\[コース＋オプション\]\s*/,
+          "",
+        );
+        return (
+          '<tr class="ops-course-line-row ops-course-pack-line-row">' +
+          "<td>" +
+          '<div class="ops-line-name">' +
+          '<span class="badge" style="margin-right:.35rem;background:#7c3aed;color:#fff;font-weight:900">コース＋</span>' +
+          ctx.escapeHtml(displayName) +
+          "</div>" +
+          '<div class="ops-line-sub">' +
+          ctx.escapeHtml(courseOptionPackLineSubtext(ln)) +
+          "</div>" +
+          "</td>" +
+          '<td class="ops-line-total">' +
+          yen(dispTotal) +
+          dispSuffix +
+          "</td></tr>"
+        );
+      })
+      .join("");
+  }
+
   function groupedOrderLines(detail) {
-    const lines = (detail.orderLines || []).filter((l) => l.status !== "cancelled");
+    const lines = (detail.orderLines || []).filter(
+      (l) => l.status !== "cancelled" && !isCourseOptionPackLine(l),
+    );
     const grouped = new Map();
     for (const l of lines) {
       const key = [
@@ -612,6 +692,7 @@ async function mountRegisterFlow(panel, ctx) {
       .map((m) => "<option value=\"" + ctx.escapeHtml(m.code) + "\">" + ctx.escapeHtml(m.labelJa || m.code) + "</option>")
       .join("");
   const cashKeypadHtml = ctx.hooks.renderCashKeypad();
+  const groupedPackLines = BillRegisterShared.groupedCourseOptionPackLines(detail);
   const groupedLines = BillRegisterShared.groupedOrderLines(detail);
   const bcDisc = ctx.billCorrectionAllowed("discounts");
   const bcOl = ctx.billCorrectionAllowed("orderLines");
@@ -658,12 +739,10 @@ async function mountRegisterFlow(panel, ctx) {
       (g) => {
         let discSum = 0;
         for (const ln of g.lines || []) discSum += Number(ln.lineDiscountAmount || 0);
-        const isPack = Boolean(g.lines && g.lines[0] && BillRegisterShared.isCourseOptionPackLine(g.lines[0]));
         const taxRateForRow =
           g.lines && g.lines[0] && g.lines[0].taxRatePercent != null ? Number(g.lines[0].taxRatePercent) : 0;
-        const showNetForPack = isPack && ctx.storeSettings.menuPriceTaxMode === "exclusive";
-        const dispTotal = showNetForPack ? BillRegisterShared.netYenFromGross(g.lineTotal, taxRateForRow) : g.lineTotal;
-        const dispSuffix = showNetForPack ? " <span class=\"muted\" style=\"font-size:0.72rem\">（税抜）</span>" : "";
+        const dispTotal = g.lineTotal;
+        const dispSuffix = "";
         const discBlock =
           discSum > 0
             ? "<div class=\"ops-line-sub\" style=\"color:#059669;font-size:0.72rem;font-weight:700\">値引 −" +
@@ -753,7 +832,8 @@ async function mountRegisterFlow(panel, ctx) {
           : "") +
         "</td></tr>"
       : "";
-  const orderTableBody = courseRowHtml + orderRows;
+  const coursePackRowsHtml = BillRegisterShared.buildCourseOptionPackRowsHtml(groupedPackLines, ctx);
+  const orderTableBody = courseRowHtml + coursePackRowsHtml + orderRows;
   const orderTableFallback =
     orderTableBody ||
     "<tr><td class=\"muted\" colspan=\"2\">コース・注文なし</td></tr>";
@@ -1522,6 +1602,9 @@ async function mountRegisterFlow(panel, ctx) {
     netYenFromGross,
     orderLineExtraSubtext,
     groupedOrderLines,
+    groupedCourseOptionPackLines,
+    buildCourseOptionPackRowsHtml,
+    courseOptionPackLineSubtext,
     buildLineMovesFromGroup,
     groupedKeyForBill,
     sourceTableBadgeHtml,

@@ -1628,6 +1628,26 @@ function buildReceiptLineItemsTableHtml(detail, pf) {
   }
   for (const l of detail.orderLines || []) {
     if (l.status === "cancelled") continue;
+    if (typeof BillRegisterShared !== "undefined" && BillRegisterShared.isCourseOptionPackLine(l)) {
+      const packName = String(l.nameSnapshot || "コースオプション").replace(/^\[コース＋オプション\]\s*/, "");
+      const packSub =
+        typeof BillRegisterShared.courseOptionPackLineSubtext === "function"
+          ? BillRegisterShared.courseOptionPackLineSubtext(l)
+          : "コースオプション";
+      const rate = Number(l.taxRatePercent ?? storeSettingsCache.taxRatePercent ?? 10);
+      rows.push(
+        "<tr><td class=\"ops-item-name\">" +
+          escapeHtml(packName) +
+          ' <span style="color:#666;font-size:.78em">' +
+          escapeHtml(packSub) +
+          "</span></td>" +
+          (useTaxCol ? '<td class="ops-tax">' + rate + "%</td>" : "") +
+          '<td class="ops-amt">' +
+          yen(l.lineTotal) +
+          "</td></tr>",
+      );
+      continue;
+    }
     const srcLab = (function () {
       if (!l.sourceTableId) return "";
       const tb = tablesCache.find((x) => x.id === l.sourceTableId);
@@ -1889,6 +1909,23 @@ function buildReceiptPlainLines(detail) {
     }
     for (const l of detail.orderLines || []) {
       if (l.status === "cancelled") continue;
+      if (typeof BillRegisterShared !== "undefined" && BillRegisterShared.isCourseOptionPackLine(l)) {
+        const packName = String(l.nameSnapshot || "コースオプション").replace(/^\[コース＋オプション\]\s*/, "");
+        const packSub =
+          typeof BillRegisterShared.courseOptionPackLineSubtext === "function"
+            ? BillRegisterShared.courseOptionPackLineSubtext(l)
+            : "";
+        const rate = Number(l.taxRatePercent ?? storeSettingsCache.taxRatePercent ?? 10);
+        lines.push(
+          (pf.lineTaxRateColumn ? "[" + rate + "%] " : "") +
+            packName +
+            (packSub ? " " + packSub : "") +
+            "  " +
+            yen(l.lineTotal),
+        );
+        hadLineItems = true;
+        continue;
+      }
       const srcLab = (function () {
         if (!l.sourceTableId) return "";
         const tb = tablesCache.find((x) => x.id === l.sourceTableId);

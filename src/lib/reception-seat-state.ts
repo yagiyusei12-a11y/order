@@ -53,6 +53,49 @@ export function buildTodayReceptionShiftKey(timeZone: string, lunchEndHour: numb
   return `${dateYmd}_${shift}`;
 }
 
+/** 表示中の shiftKey が「いまの営業シフト」か（このときだけ DiningSession を席に反映） */
+export function isCurrentReceptionShiftKey(
+  shiftKey: string,
+  timeZone: string,
+  lunchEndHour: number,
+): boolean {
+  return shiftKey === buildTodayReceptionShiftKey(timeZone, lunchEndHour);
+}
+
+/** 卓マスタ形だけ残し、セッション由来の利用中/バッシングを外す */
+export function emptyDerivedSeatRows(derived: DerivedSeatRow[]): DerivedSeatRow[] {
+  return derived.map((d) => ({
+    ...d,
+    status: "empty",
+    current: 0,
+    cleanStart: null,
+    entryTime: null,
+  }));
+}
+
+/** 未来日シフトに誤保存されたセッション状態を表示から除去 */
+export function stripLiveSessionStatesFromFutureShiftSeats(
+  seats: unknown[],
+  shiftKey: string,
+  timeZone: string,
+): unknown[] {
+  const m = /^(\d{4}-\d{2}-\d{2})_(lunch|dinner)$/.exec(shiftKey.trim());
+  if (!m) return seats;
+  const { dateYmd } = storeNowWallClock(timeZone);
+  if (m[1] <= dateYmd) return seats;
+  return seats.map((row) => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return row;
+    const o = { ...(row as Record<string, unknown>) };
+    const st = normalizeReceptionSeatStatus(o.status);
+    if (st !== "occupied" && st !== "cleaning") return row;
+    o.status = canonicalSeatStatusForWrite("empty");
+    o.current = 0;
+    o.cleanStart = null;
+    o.entryTime = null;
+    return o;
+  });
+}
+
 async function ensureShift(storeId: string, shiftKey: string): Promise<void> {
   const found = await prisma.receptionShift.findUnique({
     where: { storeId_shiftKey: { storeId, shiftKey } },

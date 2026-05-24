@@ -33,7 +33,10 @@ import {
   buildTodayReceptionShiftKey,
   clearLegacyStaffCountBlocks,
   computeDefaultSeatsForShift,
+  emptyDerivedSeatRows,
+  isCurrentReceptionShiftKey,
   mergeShiftSeatsWithLiveDerived,
+  stripLiveSessionStatesFromFutureShiftSeats,
   closeTableSessionsForReceptionMapClear,
   syncReceptionShiftSeatsForTable,
   type ReceptionSeatStatus,
@@ -584,6 +587,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
       const lunchEnd = receptionLunchEndHour(cData);
       const shiftKey =
         (req.query.shiftKey || "").trim() || buildTodayShiftKey(stSet.timezone, lunchEnd);
+      const isLiveShift = isCurrentReceptionShiftKey(shiftKey, stSet.timezone, lunchEnd);
 
       await ensureShift(store.id, shiftKey);
 
@@ -604,10 +608,12 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
       // 旧 index.html の Etag キャッシュ互換（内容が変わらなければ 304）
       // ※ DiningSession だけ変わった場合も再取得できるようライブ席スナップショットを含める
       const maxResUpdatedAt = reservations.reduce((acc, r) => Math.max(acc, r.updatedAt?.getTime?.() ?? 0), 0);
-      const liveSeatSig = derivedLive
-        .map((s) => `${s.id}:${s.status}:${s.current}:${s.seatType}`)
-        .sort()
-        .join(",");
+      const liveSeatSig = isLiveShift
+        ? derivedLive
+            .map((s) => `${s.id}:${s.status}:${s.current}:${s.seatType}`)
+            .sort()
+            .join(",")
+        : "";
       const tableMasterSig = allTables
         .map((t) => `${t.publicCode}:${String(t.seatType ?? "").trim()}`)
         .sort()
@@ -625,17 +631,20 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
       reply.header("Etag", etag);
       if (!skip304 && inm === etag) return reply.code(304).send();
 
-      // seats が空なら、卓/セッションから初期化（互換維持）
+      // seats が空なら卓マスタから初期化。ライブセッションは「いまの営業シフト」のみ反映
       let seats = Array.isArray((sh?.seats as unknown) as unknown[]) ? (sh?.seats as unknown[]) : [];
       let waiting = Array.isArray((sh?.waiting as unknown) as unknown[]) ? (sh?.waiting as unknown[]) : [];
       if (!seats || seats.length === 0) {
-        seats = derivedLive as unknown[];
+        const initial = isLiveShift ? derivedLive : emptyDerivedSeatRows(derivedLive);
+        seats = initial as unknown[];
         await prisma.receptionShift.update({
           where: { storeId_shiftKey: { storeId: store.id, shiftKey } },
-          data: { seats: derivedLive as never },
+          data: { seats: initial as never },
         });
-      } else {
+      } else if (isLiveShift) {
         seats = mergeShiftSeatsWithLiveDerived(seats, derivedLive) as unknown[];
+      } else {
+        seats = stripLiveSessionStatesFromFutureShiftSeats(seats, shiftKey, stSet.timezone);
       }
 
       let seatsWithBlocks = applyReservationBlocksToSeats({

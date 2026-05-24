@@ -494,14 +494,14 @@ function repWallMonthValue(d) {
 }
 
 function repMonthInputValue() {
-  const el = document.getElementById("repMonthDaily");
+  const el = document.getElementById("repMonthDailyPick");
   const raw = el && el.value ? String(el.value).trim() : "";
   if (/^\d{4}-\d{2}$/.test(raw)) return raw;
   return repWallMonthValue(new Date());
 }
 
 function repSetMonthInputValue(ym) {
-  const el = document.getElementById("repMonthDaily");
+  const el = document.getElementById("repMonthDailyPick");
   if (el && /^\d{4}-\d{2}$/.test(ym)) el.value = ym;
 }
 
@@ -644,8 +644,8 @@ function renderMonthDailyTable(rows, ym) {
 }
 
 async function loadMonthDaily(ymOptional) {
-  renderLoading("repMonthDaily");
-  const el = document.getElementById("repMonthDaily");
+  renderLoading("repMonthDailyOut");
+  const el = document.getElementById("repMonthDailyOut");
   const ym = ymOptional && /^\d{4}-\d{2}$/.test(ymOptional) ? ymOptional : repMonthInputValue();
   repSetMonthInputValue(ym);
   const q = repMonthRangeQuery(ym);
@@ -1778,7 +1778,7 @@ function renderReportsFatalError(msg) {
     "<div style=\"color:#b91c1c;font-size:0.9rem;padding:0.5rem;line-height:1.45\">読み込みに失敗しました。<br />" +
     safe +
     "</div>";
-  for (const id of ["repSummary", "repDaily", "repMonthDaily", "repByMethod", "repDiscounts", "repBills"]) {
+  for (const id of ["repSummary", "repDaily", "repMonthDailyOut", "repByMethod", "repDiscounts", "repBills"]) {
     const el = document.getElementById(id);
     if (el) el.innerHTML = errHtml;
   }
@@ -1830,7 +1830,7 @@ async function runAll() {
   log("");
   try {
     await refreshReportsCorrectionPolicy();
-    if (!document.getElementById("repMonthDaily")?.value) {
+    if (!document.getElementById("repMonthDailyPick")?.value) {
       repSetMonthInputValue(repWallMonthValue(new Date()));
     }
     const q = qsFromInputs();
@@ -1919,9 +1919,9 @@ if (methodInp)
     if (reportsActiveTab === "bills") reloadActiveDetailPanel().catch((e) => log(String(e.message || e)));
   };
 
-const repMonthDailyInp = document.getElementById("repMonthDaily");
-if (repMonthDailyInp) {
-  repMonthDailyInp.onchange = () => {
+const repMonthDailyPick = document.getElementById("repMonthDailyPick");
+if (repMonthDailyPick) {
+  repMonthDailyPick.onchange = () => {
     if (reportsActiveTab === "monthDaily") {
       loadMonthDaily(repMonthInputValue()).catch((e) => log(String(e.message || e)));
     }

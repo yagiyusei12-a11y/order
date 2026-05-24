@@ -398,15 +398,19 @@
       <fieldset style="border:none;margin:0;padding:0;margin-top:0.65rem">
         <legend style="font-size:0.82rem;margin-bottom:0.4rem">締め時刻以降のゲスト注文（QR）</legend>
         <p class="muted" style="font-size:0.72rem;margin:0 0 0.45rem">
-          「単品のみ」ではセットメニューとコースオプション（オプションパック）の追加はできません。必要な場合はスタッフへお声がけください。
+          「単品のみ」系ではセットとコースオプション（オプションパック）の追加はできません。必要な場合はスタッフへお声がけください。
         </p>
         <label class="row" style="align-items:flex-start;gap:0.45rem;font-size:0.82rem;margin:0.35rem 0">
           <input type="radio" name="stLoPolicy" id="stLoPolicyAllow" value="allow_all" style="margin-top:0.15rem;flex-shrink:0" />
           <span>締め後もすべて注文できる（単品・セット）</span>
         </label>
         <label class="row" style="align-items:flex-start;gap:0.45rem;font-size:0.82rem;margin:0.35rem 0">
+          <input type="radio" name="stLoPolicy" id="stLoPolicySinglesPaid" value="singles_paid_only" style="margin-top:0.15rem;flex-shrink:0" />
+          <span>締め後は単品のみ・通常料金（セット不可・コース内0円の放題単品も不可）</span>
+        </label>
+        <label class="row" style="align-items:flex-start;gap:0.45rem;font-size:0.82rem;margin:0.35rem 0">
           <input type="radio" name="stLoPolicy" id="stLoPolicySingles" value="singles_only" style="margin-top:0.15rem;flex-shrink:0" />
-          <span>締め後は単品のみ（セット・オプションパックは不可）</span>
+          <span>締め後は単品のみ（セット不可・コース内0円の放題単品は続けて可）</span>
         </label>
         <label class="row" style="align-items:flex-start;gap:0.45rem;font-size:0.82rem;margin:0.35rem 0">
           <input type="radio" name="stLoPolicy" id="stLoPolicyBlock" value="block_all" style="margin-top:0.15rem;flex-shrink:0" />

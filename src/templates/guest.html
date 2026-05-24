@@ -1693,7 +1693,7 @@
     let lastOrderClosedFlag = false;
     /** ローカル時計でラストオーダー締切を過ぎたか（単品のみモードの判定に使用） */
     let guestLastOrderPastLocal = false;
-    /** allow_all | singles_only | block_all */
+    /** allow_all | singles_only | singles_paid_only | block_all */
     let guestLoPolicy = "block_all";
     /** @type {unknown[]} */
     let guestMenuCategories = [];
@@ -1753,6 +1753,18 @@
         const courseOk = !courseIncludedOnly || inc;
         card.style.display = catOk && courseOk ? "" : "none";
       });
+    }
+
+    function guestLoIsSinglesOnlyMode() {
+      return guestLoPolicy === "singles_only" || guestLoPolicy === "singles_paid_only";
+    }
+
+    function guestLoChargesIncludedAsPaid() {
+      return guestLastOrderPastLocal && guestLoPolicy === "singles_paid_only";
+    }
+
+    function guestLoSetBlockedToast() {
+      return "ラストオーダー後はセットをご注文いただけません（単品のみご利用いただけます）";
     }
 
     function guestCardDimByLastOrderSellKind(sellKind) {
@@ -2025,7 +2037,7 @@
     }
 
     function fmtItemPrice(item) {
-      if (item.courseTier === "included") {
+      if (item.courseTier === "included" && !guestLoChargesIncludedAsPaid()) {
         if (!guestShowMenuPrices) return "<span class=\"course-included-price\">コース内</span>";
         const optLine = guestCourseIncludedChargeOptionExtras
           ? "<span class=\"incl\">オプション差額は追加になる場合があります</span>"
@@ -2071,7 +2083,7 @@
 
     /** コース内単品は追加料金0（税込ベース）。それ以外はゲスト表示価格 */
     function singleGuestChargeBase(item) {
-      if (item.courseTier === "included") return 0;
+      if (item.courseTier === "included" && !guestLoChargesIncludedAsPaid()) return 0;
       return Number(item.price || 0);
     }
 
@@ -2206,7 +2218,11 @@
         }
       }
       const base = singleGuestChargeBase(item);
-      if (item.courseTier === "included" && !guestCourseIncludedChargeOptionExtras) {
+      if (
+        item.courseTier === "included" &&
+        !guestCourseIncludedChargeOptionExtras &&
+        !guestLoChargesIncludedAsPaid()
+      ) {
         return 0;
       }
       return base + add;
@@ -2863,11 +2879,7 @@
         return;
       }
       if (guestReorderBlockedByParsed(parsed)) {
-        toast(
-          guestLoPolicy === "singles_only"
-            ? "ラストオーダー後はセットをご注文いただけません（単品のみご利用いただけます）"
-            : "ラストオーダーの時間を過ぎています",
-        );
+        toast(guestLoIsSinglesOnlyMode() ? guestLoSetBlockedToast() : "ラストオーダーの時間を過ぎています");
         return;
       }
 
@@ -3407,8 +3419,8 @@
     function openProductDetail(item) {
       if (guestProductDetailBlocked(item)) {
         toast(
-          guestLoPolicy === "singles_only" && item && item.sellKind === "set"
-            ? "ラストオーダー後はセットをご注文いただけません（単品のみご利用いただけます）"
+          guestLoIsSinglesOnlyMode() && item && item.sellKind === "set"
+            ? guestLoSetBlockedToast()
             : "ラストオーダーの時間を過ぎています",
         );
         return;
@@ -3968,7 +3980,10 @@
         return;
       }
       guestLoPolicy =
-        lo.policy === "allow_all" || lo.policy === "singles_only" || lo.policy === "block_all"
+        lo.policy === "allow_all" ||
+        lo.policy === "singles_only" ||
+        lo.policy === "singles_paid_only" ||
+        lo.policy === "block_all"
           ? lo.policy
           : "block_all";
       /** block_all のときだけ従来どおり「締切後は全面ブロック」フラグを立てる */
@@ -3998,9 +4013,12 @@
           stopLastOrderTicker();
           return;
         }
-        if (!blocksFull && pastLocal && guestLoPolicy === "singles_only") {
-          el.innerHTML =
-            "<span class=\"lo-inner\">ラストオーダーは終了しました（セットはご注文いただけません。単品は引き続きご注文いただけます）</span>";
+        if (!blocksFull && pastLocal && guestLoIsSinglesOnlyMode()) {
+          const loMsg =
+            guestLoPolicy === "singles_paid_only"
+              ? "ラストオーダーは終了しました（セットはご注文いただけません。単品は通常料金でご注文いただけます）"
+              : "ラストオーダーは終了しました（セットはご注文いただけません。単品は引き続きご注文いただけます）";
+          el.innerHTML = "<span class=\"lo-inner\">" + loMsg + "</span>";
           el.classList.add("lo-ended");
           syncGuestMenuCardsDimForLastOrder();
           stopLastOrderTicker();
@@ -4515,7 +4533,7 @@
             b.textContent = "酒類";
             badgeStack.appendChild(b);
           }
-          if (it.courseTier === "included") {
+          if (it.courseTier === "included" && !guestLoChargesIncludedAsPaid()) {
             const b = document.createElement("span");
             b.className = "badge-course-in";
             b.textContent = "コース内";
@@ -4586,8 +4604,8 @@
             }
             if (guestProductDetailBlocked(it)) {
               toast(
-                guestLoPolicy === "singles_only" && it.sellKind === "set"
-                  ? "ラストオーダー後はセットをご注文いただけません（単品のみご利用いただけます）"
+                guestLoIsSinglesOnlyMode() && it.sellKind === "set"
+                  ? guestLoSetBlockedToast()
                   : "ラストオーダーの時間を過ぎています",
               );
               return;
@@ -4688,11 +4706,7 @@
         return;
       }
       if (guestSubmitBlockedByLastOrder()) {
-        toast(
-          guestLoPolicy === "singles_only"
-            ? "ラストオーダー後はセットをご注文いただけません（単品のみご利用いただけます）"
-            : "ラストオーダーの時間を過ぎています",
-        );
+        toast(guestLoIsSinglesOnlyMode() ? guestLoSetBlockedToast() : "ラストオーダーの時間を過ぎています");
         return;
       }
       const lines = Object.values(cart)

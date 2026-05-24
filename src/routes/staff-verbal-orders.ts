@@ -26,6 +26,10 @@ import {
   type EatMode,
 } from "../lib/order-line-tax.js";
 import { courseIncludedSingleMenuItemIds } from "../lib/course-included-singles.js";
+import {
+  computeGuestLastOrderPayload,
+  guestLastOrderPolicyIsSinglesOnlyMode,
+} from "../lib/guest-last-order.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
 import { prisma } from "../db.js";
 import { broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
@@ -65,6 +69,7 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
 
     const session = await prisma.diningSession.findFirst({
       where: { id: req.params.sessionId, storeId: store.id, status: "open" },
+      include: { course: true, coursePriceTier: true },
     });
     if (!session) {
       return reply.code(404).send({ error: "session not found or not open" });
@@ -81,6 +86,36 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
     });
     const st = mergeStoreSettings(storeRow?.settings);
     const nowMin = minutesSinceMidnightInTimeZone(new Date(), st.timezone);
+
+    let chargeCourseIncludedAsPaidAfterLo = false;
+    if (session.courseId && session.course && session.coursePriceTier) {
+      const lo = computeGuestLastOrderPayload(
+        session.openedAt,
+        session.coursePriceTier.durationMinutes,
+        st.guestCourseLastOrderMinutesBeforeEnd,
+        st.guestLastOrderAfterDeadlinePolicy,
+      );
+      if (lo?.pastDeadline) {
+        const pol = st.guestLastOrderAfterDeadlinePolicy;
+        if (pol === "block_all") {
+          return reply.code(403).send({ error: "ラストオーダーの時間を過ぎています" });
+        }
+        chargeCourseIncludedAsPaidAfterLo = lo.chargesCourseIncludedAsPaid;
+        if (guestLastOrderPolicyIsSinglesOnlyMode(pol)) {
+          for (const raw of lines) {
+            if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+            const sel = Array.isArray((raw as { setSelections?: unknown }).setSelections)
+              ? (raw as { setSelections: unknown[] }).setSelections
+              : [];
+            if (sel.length > 0) {
+              return reply
+                .code(403)
+                .send({ error: "ラストオーダー後はセットをご注文いただけません（単品のみご利用いただけます）" });
+            }
+          }
+        }
+      }
+    }
 
     const userNote = req.body?.note?.trim() || "";
     const orderNote = userNote ? "口頭受注: " + userNote : "口頭受注";
@@ -448,7 +483,9 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
               ),
             })),
           }));
-          const inCourseIncluded = Boolean(sess.courseId && includedTierIds.has(item.id));
+          const inCourseIncluded =
+            !chargeCourseIncludedAsPaidAfterLo &&
+            Boolean(sess.courseId && includedTierIds.has(item.id));
           const effectiveBase = inCourseIncluded ? 0 : discountedBase;
           const chargeOptExtras = st.guestCourseIncludedChargeOptionExtras !== false;
           const optSum =

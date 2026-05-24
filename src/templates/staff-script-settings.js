@@ -871,14 +871,21 @@ async function loadAll() {
   const loMin = document.getElementById("stLoMin");
   if (loMin) loMin.value = String(s.guestCourseLastOrderMinutesBeforeEnd ?? 30);
   let loPol = s.guestLastOrderAfterDeadlinePolicy;
-  if (loPol !== "allow_all" && loPol !== "singles_only" && loPol !== "block_all") {
+  if (
+    loPol !== "allow_all" &&
+    loPol !== "singles_only" &&
+    loPol !== "singles_paid_only" &&
+    loPol !== "block_all"
+  ) {
     loPol = s.guestEnforceLastOrder === false ? "allow_all" : "block_all";
   }
   const loAllow = document.getElementById("stLoPolicyAllow");
+  const loSinglesPaid = document.getElementById("stLoPolicySinglesPaid");
   const loSingles = document.getElementById("stLoPolicySingles");
   const loBlock = document.getElementById("stLoPolicyBlock");
-  if (loAllow && loSingles && loBlock) {
+  if (loAllow && loSinglesPaid && loSingles && loBlock) {
     loAllow.checked = loPol === "allow_all";
+    loSinglesPaid.checked = loPol === "singles_paid_only";
     loSingles.checked = loPol === "singles_only";
     loBlock.checked = loPol === "block_all";
   }
@@ -2097,9 +2104,11 @@ document.getElementById("btnSaveLastOrder").onclick = async () => {
   const guestLastOrderAfterDeadlinePolicy =
     polEl && polEl.value === "allow_all"
       ? "allow_all"
-      : polEl && polEl.value === "singles_only"
-        ? "singles_only"
-        : "block_all";
+      : polEl && polEl.value === "singles_paid_only"
+        ? "singles_paid_only"
+        : polEl && polEl.value === "singles_only"
+          ? "singles_only"
+          : "block_all";
   try {
     await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
       method: "PATCH",

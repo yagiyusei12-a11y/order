@@ -96,11 +96,16 @@ export type OpsPrintLegalProfile = {
 };
 
 /** コース卓でラストオーダー締め時刻を過ぎたあとのゲスト注文ポリシー */
-export type GuestLastOrderAfterDeadlinePolicy = "allow_all" | "singles_only" | "block_all";
+export type GuestLastOrderAfterDeadlinePolicy =
+  | "allow_all"
+  | "singles_only"
+  | "singles_paid_only"
+  | "block_all";
 
 const GUEST_LO_POLICY_SET = new Set<GuestLastOrderAfterDeadlinePolicy>([
   "allow_all",
   "singles_only",
+  "singles_paid_only",
   "block_all",
 ]);
 

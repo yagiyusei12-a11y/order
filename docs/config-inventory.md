@@ -33,7 +33,7 @@
 | `taxRatePercent` | 10 | |
 | `kitchenAutoRefreshSec` | 10 | |
 | `guestCourseLastOrderMinutesBeforeEnd` | 30 | |
-| `guestLastOrderAfterDeadlinePolicy` | `block_all` | `allow_all` / `singles_only` / `block_all`。コース卓のラストオーダー締め後のゲスト注文。未設定時は旧 `guestEnforceLastOrder`（true→`block_all`、false→`allow_all`）から補完 |
+| `guestLastOrderAfterDeadlinePolicy` | `block_all` | `allow_all` / `singles_only` / `singles_paid_only` / `block_all`。コース卓のラストオーダー締め後のゲスト注文。`singles_paid_only` は単品のみかつコース内0円放題も通常料金。未設定時は旧 `guestEnforceLastOrder`（true→`block_all`、false→`allow_all`）から補完 |
 | `guestEnforceLastOrder` | true | 互換用。新規は `guestLastOrderAfterDeadlinePolicy` を優先 |
 | `takeoutPickupTimeWindowIds` | [] | |
 | `takeoutPickupMinLeadMinutes` | 2 | ネットテイクアウトの受取時刻が「今」から何分以上先か（候補生成・確定APIの両方） |

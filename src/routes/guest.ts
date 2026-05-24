@@ -38,9 +38,10 @@ import {
 } from "../lib/order-line-tax.js";
 import { evaluatePublicOrderGate } from "../lib/store-order-gate.js";
 import {
-  mergeStoreSettings,
-  type GuestLastOrderAfterDeadlinePolicy,
-} from "../lib/store-settings.js";
+  computeGuestLastOrderPayload,
+  guestLastOrderPolicyIsSinglesOnlyMode,
+} from "../lib/guest-last-order.js";
+import { mergeStoreSettings } from "../lib/store-settings.js";
 import { displayTableCode } from "../lib/table-display-code.js";
 import { mergeTwoOpenSessionsTx } from "../lib/session-merge.js";
 import {
@@ -232,52 +233,6 @@ function componentVisibleToGuest(
   const w = cat.guestVisibleTimeWindow;
   const slice = w ? { startMin: w.startMin, endMin: w.endMin } : null;
   return categoryGuestVisibleAt(cat, slice, nowMin);
-}
-
-/** コース終了の offset 分前を締め時としたときのゲスト向けラストオーダー情報 */
-function computeGuestLastOrderPayload(
-  openedAt: Date,
-  durationMinutes: number,
-  offsetMinutesBeforeEnd: number,
-  policy: GuestLastOrderAfterDeadlinePolicy,
-): {
-  deadlineIso: string;
-  secondsRemaining: number;
-  pastDeadline: boolean;
-  /** block_all かつ締切後（従来の orderingClosed と同等） */
-  orderingClosed: boolean;
-  policy: GuestLastOrderAfterDeadlinePolicy;
-  /** 従来: guestEnforceLastOrder。block_all のときだけ締切後にクライアントが全面ブロックする */
-  blocksOrderingAfterDeadline: boolean;
-  /** 締切後に単品（通常行）を拒否する */
-  blocksSinglesAfterDeadline: boolean;
-  /** 締切後にセット行を拒否する */
-  blocksSetsAfterDeadline: boolean;
-  /** 締切後にコースオプションパック購入を拒否する */
-  blocksOptionPackAfterDeadline: boolean;
-} | null {
-  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return null;
-  const offset = Math.min(Math.max(0, offsetMinutesBeforeEnd), durationMinutes);
-  const deadlineMs = openedAt.getTime() + (durationMinutes - offset) * 60 * 1000;
-  const now = Date.now();
-  const pastDeadline = now > deadlineMs;
-  const orderingClosed = pastDeadline && policy === "block_all";
-  const secondsRemaining = Math.floor((deadlineMs - now) / 1000);
-  const blocksOrderingAfterDeadline = policy === "block_all";
-  const blocksSinglesAfterDeadline = pastDeadline && policy === "block_all";
-  const blocksSetsAfterDeadline = pastDeadline && policy !== "allow_all";
-  const blocksOptionPackAfterDeadline = pastDeadline && policy !== "allow_all";
-  return {
-    deadlineIso: new Date(deadlineMs).toISOString(),
-    secondsRemaining,
-    pastDeadline,
-    orderingClosed,
-    policy,
-    blocksOrderingAfterDeadline,
-    blocksSinglesAfterDeadline,
-    blocksSetsAfterDeadline,
-    blocksOptionPackAfterDeadline,
-  };
 }
 
 function mapGuestSetMenuItem(
@@ -1036,6 +991,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     const nowMin = minutesSinceMidnightInTimeZone(new Date(), st.timezone);
     const storeTaxRatePercent = st.taxRatePercent;
 
+    let chargeCourseIncludedAsPaidAfterLo = false;
     if (billSession.courseId && billSession.course && billSession.coursePriceTier) {
       const lo = computeGuestLastOrderPayload(
         billSession.openedAt,
@@ -1048,7 +1004,8 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         if (pol === "block_all") {
           return reply.code(403).send({ error: "ラストオーダーの時間を過ぎています" });
         }
-        if (pol === "singles_only") {
+        chargeCourseIncludedAsPaidAfterLo = lo.chargesCourseIncludedAsPaid;
+        if (guestLastOrderPolicyIsSinglesOnlyMode(pol)) {
           for (const raw of lines) {
             if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
             const row = raw as { setSelections?: unknown };
@@ -1514,6 +1471,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
             }));
             const { price: discountedBase } = applyGuestItemTimeDiscounts(baseTaxIncluded, discRows0, nowMin);
             const inCourseIncluded =
+              !chargeCourseIncludedAsPaidAfterLo &&
               Boolean(sess?.courseId && includedSingles.has(plainItem.id));
             const effectiveBase = inCourseIncluded ? 0 : discountedBase;
             const chargeOptExtras = st.guestCourseIncludedChargeOptionExtras !== false;

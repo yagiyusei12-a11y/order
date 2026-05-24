@@ -466,7 +466,7 @@ function reportsCorrectionAllowed(key) {
 let reportsActiveTab = "daily";
 
 /** 月間日別タブの直近表示（CSV用） */
-let repMonthDailyCache = { ym: "", rows: [] };
+let repMonthDailyCache = { ym: "", rows: [], methods: [] };
 
 function setReportsTab(key) {
   reportsActiveTab = key;
@@ -542,7 +542,13 @@ function repFormatYmdLabel(ymd) {
   }).format(inst);
 }
 
-function repMergeMonthDailyRows(ym, apiRows) {
+function repMonthDailyMethodAmount(row, methodCode) {
+  const m = row && row.byMethod;
+  if (!m || typeof m !== "object") return 0;
+  return Number(m[methodCode] || 0);
+}
+
+function repMergeMonthDailyRows(ym, apiRows, methods) {
   const byDate = new Map();
   for (const r of apiRows || []) {
     if (r && r.date) byDate.set(String(r.date), r);
@@ -550,38 +556,49 @@ function repMergeMonthDailyRows(ym, apiRows) {
   const out = [];
   for (const date of repListYmdInMonth(ym)) {
     const hit = byDate.get(date);
+    const emptyByMethod = {};
+    for (const m of methods || []) {
+      emptyByMethod[m.methodCode] = 0;
+    }
     out.push(
-      hit || {
-        date,
-        count: 0,
-        totalAmount: 0,
-        avgAmount: 0,
-        lineSalesTax10: 0,
-        lineSalesTax8: 0,
-        lineSalesTaxOther: 0,
-      },
+      hit
+        ? {
+            ...hit,
+            byMethod: { ...emptyByMethod, ...(hit.byMethod || {}) },
+          }
+        : {
+            date,
+            count: 0,
+            totalAmount: 0,
+            avgAmount: 0,
+            byMethod: emptyByMethod,
+          },
     );
   }
   return out;
 }
 
-function renderMonthDailyTable(rows, ym) {
+function renderMonthDailyTable(rows, ym, methods) {
   if (!rows.length) {
     return "<span class=\"muted\">データがありません。</span>";
   }
+  const cols = methods && methods.length ? methods : [];
   let sumCount = 0;
   let sumTotal = 0;
-  let sumT10 = 0;
-  let sumT8 = 0;
-  let sumOther = 0;
+  const sumByMethod = {};
+  for (const m of cols) sumByMethod[m.methodCode] = 0;
   for (const r of rows) {
     sumCount += Number(r.count || 0);
     sumTotal += Number(r.totalAmount || 0);
-    sumT10 += Number(r.lineSalesTax10 || 0);
-    sumT8 += Number(r.lineSalesTax8 || 0);
-    sumOther += Number(r.lineSalesTaxOther || 0);
+    for (const m of cols) {
+      sumByMethod[m.methodCode] += repMonthDailyMethodAmount(r, m.methodCode);
+    }
   }
   const avgAll = sumCount > 0 ? Math.round(sumTotal / sumCount) : 0;
+  const th =
+    " style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border);white-space:nowrap\"";
+  const td =
+    " style=\"text-align:right;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border);white-space:nowrap\"";
   let h =
     "<p style=\"margin:0 0 0.55rem;font-weight:700\">" +
     escapeHtml(ym) +
@@ -593,15 +610,28 @@ function renderMonthDailyTable(rows, ym) {
     sumCount.toLocaleString("ja-JP") +
     "件</p>" +
     "<div style=\"overflow-x:auto\">" +
-    "<table style=\"width:100%;border-collapse:collapse;font-size:0.88rem;min-width:42rem\"><thead><tr>" +
+    "<table style=\"width:100%;border-collapse:collapse;font-size:0.88rem;min-width:36rem\"><thead><tr>" +
     "<th style=\"text-align:left;padding:0.35rem;border-bottom:1px solid var(--border)\">日付</th>" +
-    "<th style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">件数</th>" +
-    "<th style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">売上</th>" +
-    "<th style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">平均</th>" +
-    "<th style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">税10%明細</th>" +
-    "<th style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">税8%明細</th>" +
-    "<th style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">その他</th>" +
-    "</tr></thead><tbody>";
+    "<th" +
+    th +
+    ">件数</th>" +
+    "<th" +
+    th +
+    ">売上</th>" +
+    "<th" +
+    th +
+    ">平均</th>";
+  for (const m of cols) {
+    h +=
+      "<th" +
+      th +
+      " title=\"" +
+      escapeHtml(m.methodCode) +
+      "\">" +
+      escapeHtml(m.labelJa || m.methodCode) +
+      "</th>";
+  }
+  h += "</tr></thead><tbody>";
   for (const r of rows) {
     const zero = Number(r.totalAmount || 0) === 0 && Number(r.count || 0) === 0;
     const rowStyle = zero ? " color:var(--muted)" : "";
@@ -610,19 +640,28 @@ function renderMonthDailyTable(rows, ym) {
       rowStyle +
       "\"><td style=\"padding:0.4rem 0.35rem;border-bottom:1px solid var(--border);white-space:nowrap\">" +
       escapeHtml(repFormatYmdLabel(r.date)) +
-      "</td><td style=\"text-align:right;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
+      "</td><td" +
+      td +
+      ">" +
       Number(r.count || 0).toLocaleString("ja-JP") +
-      "</td><td style=\"text-align:right;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
+      "</td><td" +
+      td +
+      ">" +
       Number(r.totalAmount || 0).toLocaleString("ja-JP") +
-      " 円</td><td style=\"text-align:right;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
+      " 円</td><td" +
+      td +
+      ">" +
       Number(r.avgAmount || 0).toLocaleString("ja-JP") +
-      " 円</td><td style=\"text-align:right;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
-      Number(r.lineSalesTax10 || 0).toLocaleString("ja-JP") +
-      " 円</td><td style=\"text-align:right;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
-      Number(r.lineSalesTax8 || 0).toLocaleString("ja-JP") +
-      " 円</td><td style=\"text-align:right;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
-      Number(r.lineSalesTaxOther || 0).toLocaleString("ja-JP") +
-      " 円</td></tr>";
+      " 円</td>";
+    for (const m of cols) {
+      h +=
+        "<td" +
+        td +
+        ">" +
+        repMonthDailyMethodAmount(r, m.methodCode).toLocaleString("ja-JP") +
+        " 円</td>";
+    }
+    h += "</tr>";
   }
   h +=
     "</tbody><tfoot><tr style=\"font-weight:900;background:#f8fafc\">" +
@@ -633,13 +672,14 @@ function renderMonthDailyTable(rows, ym) {
     sumTotal.toLocaleString("ja-JP") +
     " 円</td><td style=\"text-align:right;padding:0.45rem 0.35rem;border-top:2px solid var(--border)\">" +
     avgAll.toLocaleString("ja-JP") +
-    " 円</td><td style=\"text-align:right;padding:0.45rem 0.35rem;border-top:2px solid var(--border)\">" +
-    sumT10.toLocaleString("ja-JP") +
-    " 円</td><td style=\"text-align:right;padding:0.45rem 0.35rem;border-top:2px solid var(--border)\">" +
-    sumT8.toLocaleString("ja-JP") +
-    " 円</td><td style=\"text-align:right;padding:0.45rem 0.35rem;border-top:2px solid var(--border)\">" +
-    sumOther.toLocaleString("ja-JP") +
-    " 円</td></tr></tfoot></table></div>";
+    " 円</td>";
+  for (const m of cols) {
+    h +=
+      "<td style=\"text-align:right;padding:0.45rem 0.35rem;border-top:2px solid var(--border)\">" +
+      sumByMethod[m.methodCode].toLocaleString("ja-JP") +
+      " 円</td>";
+  }
+  h += "</tr></tfoot></table></div>";
   return h;
 }
 
@@ -653,14 +693,15 @@ async function loadMonthDaily(ymOptional) {
     el.innerHTML = "<span class=\"muted\">月を選択してください。</span>";
     return;
   }
-  const res = await api("/stores/" + encodeURIComponent(STORE) + "/reports/daily?" + q);
-  const rows = repMergeMonthDailyRows(ym, res.rows || []);
-  repMonthDailyCache = { ym, rows };
-  el.innerHTML = renderMonthDailyTable(rows, ym);
+  const res = await api("/stores/" + encodeURIComponent(STORE) + "/reports/daily-payments?" + q);
+  const methods = res.methods || [];
+  const rows = repMergeMonthDailyRows(ym, res.rows || [], methods);
+  repMonthDailyCache = { ym, rows, methods };
+  el.innerHTML = renderMonthDailyTable(rows, ym, methods);
 }
 
 function downloadMonthDailyCsv() {
-  const { ym, rows } = repMonthDailyCache;
+  const { ym, rows, methods } = repMonthDailyCache;
   if (!rows.length) {
     log("先に月間日別を表示してください。");
     return;
@@ -670,21 +711,13 @@ function downloadMonthDailyCsv() {
     if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
     return s;
   };
-  const lines = ["日付,件数,売上,平均,税10%明細,税8%明細,その他"];
+  const cols = methods && methods.length ? methods : [];
+  const header = ["日付", "件数", "売上", "平均"].concat(cols.map((m) => m.labelJa || m.methodCode));
+  const lines = [header.map(escCsv).join(",")];
   for (const r of rows) {
-    lines.push(
-      [
-        r.date,
-        r.count,
-        r.totalAmount,
-        r.avgAmount,
-        r.lineSalesTax10,
-        r.lineSalesTax8,
-        r.lineSalesTaxOther,
-      ]
-        .map(escCsv)
-        .join(","),
-    );
+    const cells = [r.date, r.count, r.totalAmount, r.avgAmount];
+    for (const m of cols) cells.push(repMonthDailyMethodAmount(r, m.methodCode));
+    lines.push(cells.map(escCsv).join(","));
   }
   const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
   const a = document.createElement("a");

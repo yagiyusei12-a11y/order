@@ -773,6 +773,104 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
   });
 
   /**
+   * reports: 日別×決済方法（確定=settledAt基準、支払い金額を集計）
+   */
+  app.get<{
+    Params: { storeId: string };
+    Querystring: { from?: string; to?: string };
+  }>("/stores/:storeId/reports/daily-payments", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    const tz = mergeStoreSettings(store.settings).timezone;
+    let settledAtRange: { gte?: Date; lt?: Date } = {};
+    try {
+      settledAtRange = parseDateOrDateTimeToUtcRange(req.query.from, req.query.to, tz);
+    } catch (e) {
+      return reply.code(400).send({ error: String((e as Error).message || e) });
+    }
+
+    const storeMethods = await prisma.storePaymentMethod.findMany({
+      where: { storeId: store.id, enabled: true },
+      include: { definition: true },
+      orderBy: { sortOrder: "asc" },
+    });
+    const methods: { methodCode: string; labelJa: string }[] = storeMethods.map((r) => ({
+      methodCode: r.definition.code,
+      labelJa: r.definition.labelJa,
+    }));
+    const methodCodes = new Set(methods.map((m) => m.methodCode));
+
+    const byDate: Record<string, { billIds: Set<string>; byMethod: Record<string, number> }> = {};
+    let payCursor: string | undefined;
+    for (;;) {
+      const batch = await prisma.payment.findMany({
+        where: {
+          voidedAt: null,
+          bill: {
+            storeId: store.id,
+            status: "settled",
+            ...(settledAtRange.gte || settledAtRange.lt ? { settledAt: settledAtRange } : {}),
+          },
+        },
+        take: 200,
+        orderBy: { id: "asc" },
+        ...(payCursor ? { cursor: { id: payCursor }, skip: 1 } : {}),
+        select: {
+          id: true,
+          amount: true,
+          methodCode: true,
+          billId: true,
+          bill: { select: { settledAt: true } },
+        },
+      });
+      if (batch.length === 0) break;
+      for (const p of batch) {
+        const settledAt = p.bill?.settledAt;
+        if (!settledAt) continue;
+        const ymd = wallDateYmdInZone(settledAt, tz);
+        if (!byDate[ymd]) byDate[ymd] = { billIds: new Set(), byMethod: {} };
+        const cell = byDate[ymd];
+        cell.billIds.add(p.billId);
+        cell.byMethod[p.methodCode] = (cell.byMethod[p.methodCode] ?? 0) + p.amount;
+        if (!methodCodes.has(p.methodCode)) methodCodes.add(p.methodCode);
+      }
+      payCursor = batch[batch.length - 1]!.id;
+      if (batch.length < 200) break;
+    }
+
+    const extraCodes = [...methodCodes].filter((c) => !methods.some((m) => m.methodCode === c));
+    if (extraCodes.length > 0) {
+      const defs = await prisma.paymentMethodDefinition.findMany({
+        where: { code: { in: extraCodes } },
+      });
+      const labelByCode = Object.fromEntries(defs.map((d) => [d.code, d.labelJa]));
+      for (const code of extraCodes.sort()) {
+        methods.push({ methodCode: code, labelJa: labelByCode[code] ?? code });
+      }
+    }
+
+    return {
+      storeId: store.id,
+      timeZone: tz,
+      range: { from: req.query.from ?? null, to: req.query.to ?? null },
+      methods,
+      rows: Object.entries(byDate)
+        .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+        .map(([date, v]) => {
+          const totalAmount = Object.values(v.byMethod).reduce((s, n) => s + n, 0);
+          const count = v.billIds.size;
+          return {
+            date,
+            count,
+            totalAmount,
+            avgAmount: count > 0 ? Math.round(totalAmount / count) : 0,
+            byMethod: v.byMethod,
+          };
+        }),
+    };
+  });
+
+  /**
    * reports: 決済方法別（確定=settledAt基準）
    */
   app.get<{

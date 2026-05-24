@@ -462,8 +462,11 @@ function reportsCorrectionAllowed(key) {
   return reportsBillCorrection[key] !== false;
 }
 
-/** @type {"daily"|"method"|"discount"|"bills"} */
+/** @type {"daily"|"monthDaily"|"method"|"discount"|"bills"} */
 let reportsActiveTab = "daily";
+
+/** 月間日別タブの直近表示（CSV用） */
+let repMonthDailyCache = { ym: "", rows: [] };
 
 function setReportsTab(key) {
   reportsActiveTab = key;
@@ -478,8 +481,223 @@ function setReportsTab(key) {
   });
 }
 
+function repWallMonthValue(d) {
+  const tz = repStoreTimeZone && String(repStoreTimeZone).trim() ? String(repStoreTimeZone).trim() : "Asia/Tokyo";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(d || new Date());
+  const y = parts.find((p) => p.type === "year")?.value || "1970";
+  const m = parts.find((p) => p.type === "month")?.value || "01";
+  return y + "-" + m;
+}
+
+function repMonthInputValue() {
+  const el = document.getElementById("repMonthDaily");
+  const raw = el && el.value ? String(el.value).trim() : "";
+  if (/^\d{4}-\d{2}$/.test(raw)) return raw;
+  return repWallMonthValue(new Date());
+}
+
+function repSetMonthInputValue(ym) {
+  const el = document.getElementById("repMonthDaily");
+  if (el && /^\d{4}-\d{2}$/.test(ym)) el.value = ym;
+}
+
+function repListYmdInMonth(ym) {
+  const m = /^(\d{4})-(\d{2})$/.exec(ym);
+  if (!m) return [];
+  const y = parseInt(m[1], 10);
+  const mo = parseInt(m[2], 10);
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || mo < 1 || mo > 12) return [];
+  const days = new Date(y, mo, 0).getDate();
+  const out = [];
+  for (let d = 1; d <= days; d++) out.push(y + "-" + pad2(mo) + "-" + pad2(d));
+  return out;
+}
+
+function repMonthRangeQuery(ym) {
+  const days = repListYmdInMonth(ym);
+  if (!days.length) return "";
+  const from = days[0];
+  const to = days[days.length - 1];
+  return "from=" + encodeURIComponent(from) + "&to=" + encodeURIComponent(to);
+}
+
+function repFormatYmdLabel(ymd) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!m) return ymd;
+  const y = parseInt(m[1], 10);
+  const mo = parseInt(m[2], 10);
+  const d = parseInt(m[3], 10);
+  const tz = repStoreTimeZone && String(repStoreTimeZone).trim() ? String(repStoreTimeZone).trim() : "Asia/Tokyo";
+  const inst = new Date(Date.UTC(y, mo - 1, d, 12, 0, 0));
+  return new Intl.DateTimeFormat("ja-JP", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+  }).format(inst);
+}
+
+function repMergeMonthDailyRows(ym, apiRows) {
+  const byDate = new Map();
+  for (const r of apiRows || []) {
+    if (r && r.date) byDate.set(String(r.date), r);
+  }
+  const out = [];
+  for (const date of repListYmdInMonth(ym)) {
+    const hit = byDate.get(date);
+    out.push(
+      hit || {
+        date,
+        count: 0,
+        totalAmount: 0,
+        avgAmount: 0,
+        lineSalesTax10: 0,
+        lineSalesTax8: 0,
+        lineSalesTaxOther: 0,
+      },
+    );
+  }
+  return out;
+}
+
+function renderMonthDailyTable(rows, ym) {
+  if (!rows.length) {
+    return "<span class=\"muted\">データがありません。</span>";
+  }
+  let sumCount = 0;
+  let sumTotal = 0;
+  let sumT10 = 0;
+  let sumT8 = 0;
+  let sumOther = 0;
+  for (const r of rows) {
+    sumCount += Number(r.count || 0);
+    sumTotal += Number(r.totalAmount || 0);
+    sumT10 += Number(r.lineSalesTax10 || 0);
+    sumT8 += Number(r.lineSalesTax8 || 0);
+    sumOther += Number(r.lineSalesTaxOther || 0);
+  }
+  const avgAll = sumCount > 0 ? Math.round(sumTotal / sumCount) : 0;
+  let h =
+    "<p style=\"margin:0 0 0.55rem;font-weight:700\">" +
+    escapeHtml(ym) +
+    "（" +
+    rows.length +
+    "日分） 合計 " +
+    sumTotal.toLocaleString("ja-JP") +
+    " 円 / " +
+    sumCount.toLocaleString("ja-JP") +
+    "件</p>" +
+    "<div style=\"overflow-x:auto\">" +
+    "<table style=\"width:100%;border-collapse:collapse;font-size:0.88rem;min-width:42rem\"><thead><tr>" +
+    "<th style=\"text-align:left;padding:0.35rem;border-bottom:1px solid var(--border)\">日付</th>" +
+    "<th style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">件数</th>" +
+    "<th style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">売上</th>" +
+    "<th style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">平均</th>" +
+    "<th style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">税10%明細</th>" +
+    "<th style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">税8%明細</th>" +
+    "<th style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">その他</th>" +
+    "</tr></thead><tbody>";
+  for (const r of rows) {
+    const zero = Number(r.totalAmount || 0) === 0 && Number(r.count || 0) === 0;
+    const rowStyle = zero ? " color:var(--muted)" : "";
+    h +=
+      "<tr style=\"" +
+      rowStyle +
+      "\"><td style=\"padding:0.4rem 0.35rem;border-bottom:1px solid var(--border);white-space:nowrap\">" +
+      escapeHtml(repFormatYmdLabel(r.date)) +
+      "</td><td style=\"text-align:right;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
+      Number(r.count || 0).toLocaleString("ja-JP") +
+      "</td><td style=\"text-align:right;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
+      Number(r.totalAmount || 0).toLocaleString("ja-JP") +
+      " 円</td><td style=\"text-align:right;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
+      Number(r.avgAmount || 0).toLocaleString("ja-JP") +
+      " 円</td><td style=\"text-align:right;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
+      Number(r.lineSalesTax10 || 0).toLocaleString("ja-JP") +
+      " 円</td><td style=\"text-align:right;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
+      Number(r.lineSalesTax8 || 0).toLocaleString("ja-JP") +
+      " 円</td><td style=\"text-align:right;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
+      Number(r.lineSalesTaxOther || 0).toLocaleString("ja-JP") +
+      " 円</td></tr>";
+  }
+  h +=
+    "</tbody><tfoot><tr style=\"font-weight:900;background:#f8fafc\">" +
+    "<td style=\"padding:0.45rem 0.35rem;border-top:2px solid var(--border)\">月合計</td>" +
+    "<td style=\"text-align:right;padding:0.45rem 0.35rem;border-top:2px solid var(--border)\">" +
+    sumCount.toLocaleString("ja-JP") +
+    "</td><td style=\"text-align:right;padding:0.45rem 0.35rem;border-top:2px solid var(--border)\">" +
+    sumTotal.toLocaleString("ja-JP") +
+    " 円</td><td style=\"text-align:right;padding:0.45rem 0.35rem;border-top:2px solid var(--border)\">" +
+    avgAll.toLocaleString("ja-JP") +
+    " 円</td><td style=\"text-align:right;padding:0.45rem 0.35rem;border-top:2px solid var(--border)\">" +
+    sumT10.toLocaleString("ja-JP") +
+    " 円</td><td style=\"text-align:right;padding:0.45rem 0.35rem;border-top:2px solid var(--border)\">" +
+    sumT8.toLocaleString("ja-JP") +
+    " 円</td><td style=\"text-align:right;padding:0.45rem 0.35rem;border-top:2px solid var(--border)\">" +
+    sumOther.toLocaleString("ja-JP") +
+    " 円</td></tr></tfoot></table></div>";
+  return h;
+}
+
+async function loadMonthDaily(ymOptional) {
+  renderLoading("repMonthDaily");
+  const el = document.getElementById("repMonthDaily");
+  const ym = ymOptional && /^\d{4}-\d{2}$/.test(ymOptional) ? ymOptional : repMonthInputValue();
+  repSetMonthInputValue(ym);
+  const q = repMonthRangeQuery(ym);
+  if (!q) {
+    el.innerHTML = "<span class=\"muted\">月を選択してください。</span>";
+    return;
+  }
+  const res = await api("/stores/" + encodeURIComponent(STORE) + "/reports/daily?" + q);
+  const rows = repMergeMonthDailyRows(ym, res.rows || []);
+  repMonthDailyCache = { ym, rows };
+  el.innerHTML = renderMonthDailyTable(rows, ym);
+}
+
+function downloadMonthDailyCsv() {
+  const { ym, rows } = repMonthDailyCache;
+  if (!rows.length) {
+    log("先に月間日別を表示してください。");
+    return;
+  }
+  const escCsv = (v) => {
+    const s = String(v == null ? "" : v);
+    if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  };
+  const lines = ["日付,件数,売上,平均,税10%明細,税8%明細,その他"];
+  for (const r of rows) {
+    lines.push(
+      [
+        r.date,
+        r.count,
+        r.totalAmount,
+        r.avgAmount,
+        r.lineSalesTax10,
+        r.lineSalesTax8,
+        r.lineSalesTaxOther,
+      ]
+        .map(escCsv)
+        .join(","),
+    );
+  }
+  const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "daily-" + ym + ".csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  log("月間日別 CSV をダウンロードしました。");
+}
+
 async function loadReportsTabContent(tab, q) {
   if (tab === "daily") await loadDaily(q);
+  else if (tab === "monthDaily") await loadMonthDaily();
   else if (tab === "method") await loadByMethod(q);
   else if (tab === "discount") await loadDiscounts(q);
   else if (tab === "bills") await loadBills(q);
@@ -1560,7 +1778,7 @@ function renderReportsFatalError(msg) {
     "<div style=\"color:#b91c1c;font-size:0.9rem;padding:0.5rem;line-height:1.45\">読み込みに失敗しました。<br />" +
     safe +
     "</div>";
-  for (const id of ["repSummary", "repDaily", "repByMethod", "repDiscounts", "repBills"]) {
+  for (const id of ["repSummary", "repDaily", "repMonthDaily", "repByMethod", "repDiscounts", "repBills"]) {
     const el = document.getElementById(id);
     if (el) el.innerHTML = errHtml;
   }
@@ -1612,6 +1830,9 @@ async function runAll() {
   log("");
   try {
     await refreshReportsCorrectionPolicy();
+    if (!document.getElementById("repMonthDaily")?.value) {
+      repSetMonthInputValue(repWallMonthValue(new Date()));
+    }
     const q = qsFromInputs();
     await loadSummary(q);
     await loadReportsTabContent(reportsActiveTab, q);
@@ -1665,9 +1886,11 @@ document.querySelectorAll("button[data-rep-preset]").forEach((b) => {
     } else if (k === "thisMonth") {
       from = new Date(startToday.getFullYear(), startToday.getMonth(), 1, 0, 0, 0, 0);
       to = addDays(new Date(startToday.getFullYear(), startToday.getMonth() + 1, 1, 0, 0, 0, 0), 0);
+      repSetMonthInputValue(repWallMonthValue(from));
     } else if (k === "lastMonth") {
       from = new Date(startToday.getFullYear(), startToday.getMonth() - 1, 1, 0, 0, 0, 0);
       to = new Date(startToday.getFullYear(), startToday.getMonth(), 1, 0, 0, 0, 0);
+      repSetMonthInputValue(repWallMonthValue(from));
     } else if (k === "clear") {
       if (fromEl) fromEl.value = "";
       if (toEl) toEl.value = "";
@@ -1695,6 +1918,19 @@ if (methodInp)
   methodInp.onchange = () => {
     if (reportsActiveTab === "bills") reloadActiveDetailPanel().catch((e) => log(String(e.message || e)));
   };
+
+const repMonthDailyInp = document.getElementById("repMonthDaily");
+if (repMonthDailyInp) {
+  repMonthDailyInp.onchange = () => {
+    if (reportsActiveTab === "monthDaily") {
+      loadMonthDaily(repMonthInputValue()).catch((e) => log(String(e.message || e)));
+    }
+  };
+}
+const btnRepMonthDailyCsv = document.getElementById("btnRepMonthDailyCsv");
+if (btnRepMonthDailyCsv) {
+  btnRepMonthDailyCsv.onclick = () => downloadMonthDailyCsv();
+}
 
 // 初期値: PCは期間なし（全期間） / スマホは当日ビュー
 initReportsPage();

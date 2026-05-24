@@ -17,7 +17,11 @@ import {
   appendSaleCashEntryIfEnabled,
   appendVoidSaleCashEntryIfEnabled,
 } from "../lib/cash-drawer-from-payments.js";
-import { startOfWallCalendarDayUtc, wallDateYmdInZone } from "../lib/store-wall-time.js";
+import {
+  formatWallDateTimeInZone,
+  startOfWallCalendarDayUtc,
+  wallDateYmdInZone,
+} from "../lib/store-wall-time.js";
 import { prisma } from "../db.js";
 import { broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
 import { appendStaffAuditFromRequest } from "../lib/staff-audit.js";
@@ -889,7 +893,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
           : null;
         return {
           billId: b.id,
-          settledAt: b.settledAt,
+          settledAt: b.settledAt ? formatWallDateTimeInZone(b.settledAt, tz) : null,
           tableName,
           totalAmount: b.totalAmount,
           hasBillDiscount: hasBillDisc,
@@ -1029,8 +1033,8 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
             const row = [
               b.id,
               b.status,
-              b.settledAt ? b.settledAt.toISOString() : "",
-              b.createdAt.toISOString(),
+              b.settledAt ? formatWallDateTimeInZone(b.settledAt, tz) : "",
+              formatWallDateTimeInZone(b.createdAt, tz),
               b.totalAmount,
               paid,
               b.totalAmount - paid,
@@ -1172,7 +1176,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
           if (batch.length === 0) break;
 
           for (const b of batch) {
-            const settledStr = b.settledAt ? b.settledAt.toISOString() : "";
+            const settledStr = b.settledAt ? formatWallDateTimeInZone(b.settledAt, tz) : "";
             const orders = b.session?.orders ?? [];
             for (const o of orders) {
               for (const l of o.lines) {

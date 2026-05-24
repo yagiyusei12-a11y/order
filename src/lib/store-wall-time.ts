@@ -17,6 +17,12 @@ export function wallDateYmdInZone(d: Date, timeZone: string): string {
   return `${y}-${m}-${day}`;
 }
 
+/** 店舗タイムゾーンの壁時計表示（例: 2026-05-24 18:09:36） */
+export function formatWallDateTimeInZone(d: Date, timeZone: string): string {
+  const tz = timeZone?.trim() || "Asia/Tokyo";
+  return d.toLocaleString("sv-SE", { timeZone: tz, hour12: false });
+}
+
 export function storeNowWallClock(timeZone: string): { dateYmd: string; timeHHMM: string; nowMs: number } {
   const now = new Date();
   const dateYmd = wallDateYmdInZone(now, timeZone);

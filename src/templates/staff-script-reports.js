@@ -72,6 +72,21 @@ function repYen(n) {
   return Number(n || 0).toLocaleString("ja-JP") + "円";
 }
 
+/** 店舗 settings.timezone（load 時に設定） */
+let repStoreTimeZone = "Asia/Tokyo";
+
+function formatRepStoreDateTime(iso) {
+  if (iso == null || iso === "") return "";
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const tz = repStoreTimeZone && String(repStoreTimeZone).trim() ? String(repStoreTimeZone).trim() : "Asia/Tokyo";
+    return d.toLocaleString("sv-SE", { timeZone: tz, hour12: false });
+  } catch (_) {
+    return String(iso);
+  }
+}
+
 function repSessionElapsedMinutes(openedAt) {
   if (!openedAt) return "";
   const t0 = new Date(openedAt).getTime();
@@ -478,6 +493,8 @@ async function reloadActiveDetailPanel() {
 async function refreshReportsCorrectionPolicy() {
   try {
     const d = await api("/stores/" + encodeURIComponent(STORE) + "/settings");
+    const tz = d.store && d.store.settings && d.store.settings.timezone;
+    if (tz && String(tz).trim()) repStoreTimeZone = String(tz).trim();
     const p = d.store && d.store.settings && d.store.settings.billCorrectionPolicy;
     if (p && typeof p === "object") {
       reportsBillCorrection = {
@@ -636,7 +653,7 @@ async function loadDiscounts(q) {
   for (const r of rows) {
     h +=
       "<tr><td style=\"padding:0.35rem;border-bottom:1px solid var(--border)\">" +
-      escapeHtml(String(r.settledAt || "")) +
+      escapeHtml(formatRepStoreDateTime(r.settledAt)) +
       "</td><td style=\"padding:0.35rem;border-bottom:1px solid var(--border)\">" +
       escapeHtml(r.tableName || "") +
       "</td><td style=\"padding:0.35rem;border-bottom:1px solid var(--border)\">" +
@@ -689,10 +706,7 @@ async function loadBills(q) {
     "<th style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">状態</th>" +
     "</tr></thead><tbody>";
   for (const b of bills) {
-    const settled =
-      b.settledAt != null
-        ? escapeHtml(String(b.settledAt).replace("T", " ").slice(0, 19))
-        : "";
+    const settled = b.settledAt != null ? escapeHtml(formatRepStoreDateTime(b.settledAt)) : "";
     const guests =
       b.guestCount != null
         ? Number(b.guestCount).toLocaleString("ja-JP") +
@@ -1316,7 +1330,7 @@ async function openBillModal(billId) {
         const who = e.staff && (e.staff.name || e.staff.email) ? (e.staff.name || e.staff.email) : "";
         h +=
           "<tr><td style=\"padding:0.25rem 0;border-bottom:1px solid var(--border)\">" +
-          escapeHtml(String(e.createdAt || "")) +
+          escapeHtml(formatRepStoreDateTime(e.createdAt)) +
           (who ? " · " + escapeHtml(who) : "") +
           "<br><strong>" +
           escapeHtml(e.kind) +

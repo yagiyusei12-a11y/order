@@ -55,15 +55,34 @@
         <button type="button" class="secondary" id="btnSeparate">別の会計で始める</button>
       </div>
       <div class="card" id="formCard">
-        <label class="lbl" for="guestCount">人数（延べ）</label>
-        <input id="guestCount" type="number" min="1" max="99" step="1" value="2" inputmode="numeric" />
-        <label class="lbl" for="childCount">うち子供の人数（任意）</label>
-        <input id="childCount" type="number" min="0" max="99" step="1" value="0" inputmode="numeric" />
+        <label class="lbl" for="guestCount">来店人数（延べ）</label>
+        <input
+          id="guestCount"
+          type="number"
+          min="1"
+          max="99"
+          step="1"
+          inputmode="numeric"
+          required
+          placeholder="人数を入力"
+          autocomplete="off"
+        />
+        <label class="lbl" for="childCount">うち子供の人数（任意・子供料金があるコース用）</label>
+        <input
+          id="childCount"
+          type="number"
+          min="0"
+          max="99"
+          step="1"
+          inputmode="numeric"
+          placeholder="0"
+          autocomplete="off"
+        />
         <label class="lbl">メニューの種類</label>
         <div class="course-list" id="courseRadios"></div>
         <button type="button" class="primary" id="btnStart">注文を始める</button>
         <p class="hint" id="hintText">
-          初めての方は人数とメニュー種類を選んでから始めてください。
+          初めての方は来店人数とメニュー種類を選んでから始めてください。
         </p>
       </div>
       <p id="err" role="alert"></p>
@@ -421,16 +440,26 @@
             err.style.display = "block";
             return;
           }
-          const gc = Number(document.getElementById("guestCount").value);
-          const childN = Number(document.getElementById("childCount").value);
-          if (!Number.isInteger(gc) || gc < 1 || gc > 99) {
-            err.textContent = "人数は1〜99の整数で入力してください";
+          const gcRaw = String(document.getElementById("guestCount").value || "").trim();
+          const childRaw = String(document.getElementById("childCount").value || "").trim();
+          if (!gcRaw) {
+            err.textContent = "来店人数（延べ）を入力してください";
             err.style.display = "block";
+            document.getElementById("guestCount").focus();
             return;
           }
-          if (!Number.isInteger(childN) || childN < 0 || childN > gc) {
-            err.textContent = "子供の人数は0〜人数の整数で入力してください";
+          const gc = Number(gcRaw);
+          const childN = childRaw === "" ? 0 : Number(childRaw);
+          if (!Number.isInteger(gc) || gc < 1 || gc > 99) {
+            err.textContent = "来店人数（延べ）は1〜99の整数で入力してください";
             err.style.display = "block";
+            document.getElementById("guestCount").focus();
+            return;
+          }
+          if (childRaw !== "" && (!Number.isInteger(childN) || childN < 0 || childN > gc)) {
+            err.textContent = "子供の人数は0〜来店人数の整数で入力してください（未入力は0人）";
+            err.style.display = "block";
+            document.getElementById("childCount").focus();
             return;
           }
           const picked = document.querySelector("input[name=\"coursePick\"]:checked");

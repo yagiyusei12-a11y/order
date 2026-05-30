@@ -269,6 +269,17 @@ export function isBillCorrectionAllowed(settings: StoreSettingsShape, key: BillC
   return p[key] === true;
 }
 
+/** お客向けメール・画面表示用の店舗名（印字用屋号があれば優先） */
+export function customerFacingStoreName(
+  storeName: string,
+  settings: Pick<StoreSettingsShape, "opsPrintLegalProfile">,
+): string {
+  const trade = settings.opsPrintLegalProfile?.issuerTradeName?.trim();
+  if (trade) return trade;
+  const n = String(storeName || "").trim();
+  return n || "店舗";
+}
+
 const GUEST_SERVE_LATER_DEFAULTS = {
   guestServeLaterBlockTitle: "後から提供",
   guestServeLaterSelectPlaceholder: "選択してください",

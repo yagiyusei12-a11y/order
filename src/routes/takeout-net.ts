@@ -23,7 +23,7 @@ import {
   isWallDateClosedByBusinessCalendar,
   isWallDateTimeWithinWeeklyHours,
 } from "../lib/store-order-gate.js";
-import { mergeStoreSettings } from "../lib/store-settings.js";
+import { customerFacingStoreName, mergeStoreSettings } from "../lib/store-settings.js";
 import { utcFromWallDateAndTime, wallDateYmdInZone } from "../lib/store-wall-time.js";
 import { prisma } from "../db.js";
 import { openOrReuseSessionForTable } from "../lib/open-table-session.js";
@@ -775,6 +775,7 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
 
       const confRow = await prisma.receptionConfig.findUnique({ where: { storeId: store.id } });
       const rc = (confRow?.data as Record<string, unknown>) || {};
+      const brandName = customerFacingStoreName(store.name, st);
 
       const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       const mailTo = emailRe.test(email) ? email : "";
@@ -785,9 +786,9 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
               req.log.warn({ storeId: store.id }, "takeout customer mail skipped: SMTP not configured");
               return;
             }
-            const subj = `【${store.name}】テイクアウト注文を受け付けました`;
+            const subj = `【${brandName}】テイクアウト注文を受け付けました`;
             const lines = [
-              `${store.name} のテイクアウト注文を受け付けました。`,
+              `${brandName} のテイクアウト注文を受け付けました。`,
               "",
               `注文ID: ${result.takeoutNetOrderId}`,
               `受取日時: ${pickupLabel}`,
@@ -826,7 +827,7 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
             const staffUrl = `${origin}/staff-app/${encodeURIComponent(store.id)}/takeout`;
             const noteLine = req.body?.note ? String(req.body.note).trim().slice(0, 500) : "";
             const staffLines = [
-              `【ネットテイクアウト】${store.name}`,
+              `【ネットテイクアウト】${brandName}`,
               "",
               `注文ID: ${result.takeoutNetOrderId}`,
               `受取日時: ${pickupLabel}`,
@@ -844,7 +845,7 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
             ];
             await sendNotifyEmailList(
               staffNotifyTo,
-              { subject: `【テイクアウト】${store.name} ${pickupLabel}`, text: staffLines.join("\n") },
+              { subject: `【テイクアウト】${brandName} ${pickupLabel}`, text: staffLines.join("\n") },
               { storeSettings: st },
             );
           } catch (e) {

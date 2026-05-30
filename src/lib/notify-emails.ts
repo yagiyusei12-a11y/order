@@ -32,6 +32,15 @@ export function netReserveStaffNotifyEmails(c: Record<string, unknown>): string[
   return [];
 }
 
+/** ネットテイクアウトの店舗通知。未設定なら netReserveNotifyEmails / NET_RESERVE_NOTIFY_EMAIL にフォールバック */
+export function takeoutNetStaffNotifyEmails(c: Record<string, unknown>): string[] {
+  const fromConfig = parseNotifyEmailList(c.takeoutNetNotifyEmails);
+  if (fromConfig.length > 0) return fromConfig;
+  const env = process.env.TAKEOUT_NET_NOTIFY_EMAIL?.trim();
+  if (env) return parseNotifyEmailList(env);
+  return netReserveStaffNotifyEmails(c);
+}
+
 export async function sendNotifyEmailList(
   recipients: string[],
   mail: { subject: string; text: string },

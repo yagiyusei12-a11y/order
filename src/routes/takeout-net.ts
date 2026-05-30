@@ -31,7 +31,9 @@ import {
   takeoutTablePrimaryPublicCode,
   takeoutTableWhereForStore,
 } from "../lib/takeout-table-code.js";
-import { sendMailSafe } from "../lib/mail.js";
+import { sendMailSafe, isMailConfigured } from "../lib/mail.js";
+import { sendNotifyEmailList, takeoutNetStaffNotifyEmails } from "../lib/notify-emails.js";
+import { staffRequestOrigin } from "../lib/guest-display-url.js";
 import { optionPriceDeltaTaxIncluded } from "../lib/order-line-tax.js";
 
 type EatMode = "dine_in" | "takeout";
@@ -747,28 +749,112 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
           },
         });
 
-        return { takeoutNetOrderId: netOrder.id, salesOrderId: salesOrder.id };
+        return {
+          takeoutNetOrderId: netOrder.id,
+          salesOrderId: salesOrder.id,
+          mailLines: resolvedLines.map((r) => ({
+            name: r.nameSnapshot,
+            qty: r.qty,
+            unitPrice: r.unitPrice,
+          })),
+        };
       });
 
-      const mailTo = String(email || "").trim();
-      if (mailTo.includes("@")) {
+      const pickupLabel = pickupAt.toLocaleString("ja-JP", {
+        timeZone: st.timezone,
+        year: "numeric",
+        month: "numeric",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const lineSummary = (result.mailLines || [])
+        .map((r) => `・${r.name} × ${r.qty}（¥${(r.unitPrice * r.qty).toLocaleString("ja-JP")}）`)
+        .join("\n");
+      const totalYen = (result.mailLines || []).reduce((acc, r) => acc + r.unitPrice * r.qty, 0);
+
+      const confRow = await prisma.receptionConfig.findUnique({ where: { storeId: store.id } });
+      const rc = (confRow?.data as Record<string, unknown>) || {};
+
+      const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const mailTo = emailRe.test(email) ? email : "";
+      if (mailTo) {
         void (async () => {
           try {
+            if (!isMailConfigured(st)) {
+              req.log.warn({ storeId: store.id }, "takeout customer mail skipped: SMTP not configured");
+              return;
+            }
             const subj = `【${store.name}】テイクアウト注文を受け付けました`;
-            const lines =
-              `注文ID: ${result.takeoutNetOrderId}\n` +
-              `受取日時: ${pickupAt.toLocaleString("ja-JP")}\n` +
-              `お名前: ${customerName}\n` +
-              `電話: ${phone}\n` +
-              `店舗で内容をご確認のうえ、受取時にお支払いください。\n`;
+            const lines = [
+              `${store.name} のテイクアウト注文を受け付けました。`,
+              "",
+              `注文ID: ${result.takeoutNetOrderId}`,
+              `受取日時: ${pickupLabel}`,
+              `お名前: ${customerName}`,
+              `電話: ${phone}`,
+              "",
+              "【ご注文内容】",
+              lineSummary || "（明細なし）",
+              "",
+              `合計（税込目安）: ¥${totalYen.toLocaleString("ja-JP")}`,
+              "",
+              "店舗で内容をご確認のうえ、受取時にお支払いください。",
+              "※このメールは送信専用です。",
+            ].join("\n");
             await sendMailSafe({ to: mailTo, subject: subj, text: lines }, { storeSettings: st });
           } catch (e) {
             req.log.warn({ err: e }, "takeout confirmation mail failed");
           }
         })();
+      } else if (email) {
+        req.log.info({ storeId: store.id, email }, "takeout customer mail skipped: invalid email");
       }
 
-      return { ok: true, ...result };
+      const staffNotifyTo = takeoutNetStaffNotifyEmails(rc);
+      if (staffNotifyTo.length > 0) {
+        void (async () => {
+          try {
+            if (!isMailConfigured(st)) {
+              req.log.warn(
+                { storeId: store.id, recipients: staffNotifyTo.length },
+                "takeout staff notify skipped: SMTP not configured",
+              );
+              return;
+            }
+            const origin = staffRequestOrigin(req);
+            const staffUrl = `${origin}/staff-app/${encodeURIComponent(store.id)}/takeout`;
+            const noteLine = req.body?.note ? String(req.body.note).trim().slice(0, 500) : "";
+            const staffLines = [
+              `【ネットテイクアウト】${store.name}`,
+              "",
+              `注文ID: ${result.takeoutNetOrderId}`,
+              `受取日時: ${pickupLabel}`,
+              `お名前: ${customerName}`,
+              `電話: ${phone}`,
+              `メール: ${email}`,
+              ...(noteLine ? [`備考: ${noteLine}`] : []),
+              "",
+              "【注文内容】",
+              lineSummary || "（明細なし）",
+              "",
+              `合計（税込目安）: ¥${totalYen.toLocaleString("ja-JP")}`,
+              "",
+              `テイクアウト管理: ${staffUrl}`,
+            ];
+            await sendNotifyEmailList(
+              staffNotifyTo,
+              { subject: `【テイクアウト】${store.name} ${pickupLabel}`, text: staffLines.join("\n") },
+              { storeSettings: st },
+            );
+          } catch (e) {
+            req.log.warn({ err: e }, "takeout staff notify mail failed");
+          }
+        })();
+      }
+
+      const { mailLines: _mailLines, ...resultOut } = result;
+      return { ok: true, ...resultOut };
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";
       if (msg === "BAD_QTY") return reply.code(400).send({ error: "qty must be integer >= 1" });

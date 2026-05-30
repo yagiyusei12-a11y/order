@@ -103,7 +103,7 @@ async function main() {
   const prevConf = await prisma.receptionConfig.findUnique({ where: { storeId } });
   const prevData =
     prevConf?.data && typeof prevConf.data === "object" && !Array.isArray(prevConf.data)
-      ? (prevConf.data as Record<string, unknown>)
+      ? prevConf.data
       : {};
   await prisma.receptionConfig.upsert({
     where: { storeId },

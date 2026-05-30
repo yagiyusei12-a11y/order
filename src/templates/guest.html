@@ -1701,6 +1701,7 @@
     let ordersCache = [];
     /** @type {{ id: string, name: string } | null} */
     let ordersSessionCourse = null;
+    let sessionGuestCount = 1;
     let activeGuestCatId = "";
     let courseIncludedOnly = false;
     let guestShowEatModeTaxNote = false;
@@ -1841,32 +1842,32 @@
       );
     }
 
-    function guestOptionSelectBounds(g) {
-      const minSelect = Math.max(0, Number(g.minSelect) || 0);
-      let maxSelect = Number(g.maxSelect);
-      if (!Number.isFinite(maxSelect) || maxSelect < 1) maxSelect = Math.max(minSelect, 1);
-      if (maxSelect < minSelect) maxSelect = minSelect;
-      return { minSelect, maxSelect };
-    }
-
-    function guestSetChoiceByMid(st, mid) {
-      const k = String(mid);
-      return (
-        (st.choices || []).find((c) => String(c.menuItemId) === k) ||
-        (st.fixedChoices || []).find((c) => String(c.menuItemId) === k) ||
-        null
-      );
-    }
-
-    function guestSetMergedPickIds(st, rootEl) {
-      const stepEl = rootEl.querySelector("[data-step-id=\"" + selEsc(st.id) + "\"]");
-      const userIds = stepEl
-        ? [...stepEl.querySelectorAll("input[type=checkbox][name^=\"p-\"]:checked")].map((x) => x.value)
-        : [];
-      const fixedIds = (st.fixedChoices || []).map((c) => String(c.menuItemId));
-      return [...new Set([...fixedIds, ...userIds])];
-    }
-
+    function guestOptionSelectBounds(g) {
+      const minSelect = Math.max(0, Number(g.minSelect) || 0);
+      let maxSelect = Number(g.maxSelect);
+      if (!Number.isFinite(maxSelect) || maxSelect < 1) maxSelect = Math.max(minSelect, 1);
+      if (maxSelect < minSelect) maxSelect = minSelect;
+      return { minSelect, maxSelect };
+    }
+
+    function guestSetChoiceByMid(st, mid) {
+      const k = String(mid);
+      return (
+        (st.choices || []).find((c) => String(c.menuItemId) === k) ||
+        (st.fixedChoices || []).find((c) => String(c.menuItemId) === k) ||
+        null
+      );
+    }
+
+    function guestSetMergedPickIds(st, rootEl) {
+      const stepEl = rootEl.querySelector("[data-step-id=\"" + selEsc(st.id) + "\"]");
+      const userIds = stepEl
+        ? [...stepEl.querySelectorAll("input[type=checkbox][name^=\"p-\"]:checked")].map((x) => x.value)
+        : [];
+      const fixedIds = (st.fixedChoices || []).map((c) => String(c.menuItemId));
+      return [...new Set([...fixedIds, ...userIds])];
+    }
+
     function guestChoiceOptionGroups(ch) {
       if (ch && ch.optionGroups && ch.optionGroups.length) return ch.optionGroups;
       const mid = ch && ch.menuItemId != null ? String(ch.menuItemId) : "";
@@ -1945,63 +1946,63 @@
       return html;
     }
 
-    function guestValidateSetStepPickCount(st, userPickCount) {
-      const pickable = (st.choices || []).length;
-      if (pickable === 0) return userPickCount === 0;
-      return userPickCount >= st.minPick && userPickCount <= st.maxPick;
-    }
-
+    function guestValidateSetStepPickCount(st, userPickCount) {
+      const pickable = (st.choices || []).length;
+      if (pickable === 0) return userPickCount === 0;
+      return userPickCount >= st.minPick && userPickCount <= st.maxPick;
+    }
+
 
     function guestSetStepUserPickCount(st, menuItemIds) {
       const fixedSet = new Set((st.fixedChoices || []).map((c) => String(c.menuItemId)));
       return (menuItemIds || []).filter((id) => !fixedSet.has(String(id))).length;
     }
 
-    function guestValidateSetComponentOptions(st, rootEl) {
-      for (const mid of guestSetMergedPickIds(st, rootEl)) {
-        const ch = guestSetChoiceByMid(st, mid);
-        if (!ch || !ch.optionGroups || !ch.optionGroups.length) continue;
-        for (const g of ch.optionGroups) {
-          const b = guestOptionSelectBounds(g);
-          const nm = "copt-" + st.id + "-" + mid + "-" + g.id;
-          const useRadio = b.maxSelect <= 1;
-          let picked = 0;
-          if (useRadio) {
-            const r = rootEl.querySelector("input[type=radio][name=\"" + selEsc(nm) + "\"]:checked");
-            picked = r && r.value ? 1 : 0;
-          } else {
-            picked = rootEl.querySelectorAll("input[type=checkbox][name=\"" + selEsc(nm) + "\"]:checked").length;
-          }
-          if (picked < b.minSelect || picked > b.maxSelect) {
-            toast(
-              (ch.name || "構成単品") +
-                " の「" +
-                g.name +
-                "」は " +
-                b.minSelect +
-                "〜" +
-                b.maxSelect +
-                " 個選んでください",
-            );
-            return false;
-          }
-        }
-      }
-      return true;
-    }
-
-    function wireGuestSetComponentOptionLimits(panel) {
-      panel.querySelectorAll('.opt-comp input[type="checkbox"][data-max]').forEach((inp) => {
-        inp.addEventListener("change", () => {
-          const maxP = Number(inp.getAttribute("data-max") || 1);
-          const boxes = panel.querySelectorAll('input[type="checkbox"][name="' + inp.name + '"]');
-          if ([...boxes].filter((b) => b.checked).length > maxP) {
-            inp.checked = false;
-            toast("このオプションは最大 " + maxP + " 個までです");
-          }
-        });
-      });
-    }
+    function guestValidateSetComponentOptions(st, rootEl) {
+      for (const mid of guestSetMergedPickIds(st, rootEl)) {
+        const ch = guestSetChoiceByMid(st, mid);
+        if (!ch || !ch.optionGroups || !ch.optionGroups.length) continue;
+        for (const g of ch.optionGroups) {
+          const b = guestOptionSelectBounds(g);
+          const nm = "copt-" + st.id + "-" + mid + "-" + g.id;
+          const useRadio = b.maxSelect <= 1;
+          let picked = 0;
+          if (useRadio) {
+            const r = rootEl.querySelector("input[type=radio][name=\"" + selEsc(nm) + "\"]:checked");
+            picked = r && r.value ? 1 : 0;
+          } else {
+            picked = rootEl.querySelectorAll("input[type=checkbox][name=\"" + selEsc(nm) + "\"]:checked").length;
+          }
+          if (picked < b.minSelect || picked > b.maxSelect) {
+            toast(
+              (ch.name || "構成単品") +
+                " の「" +
+                g.name +
+                "」は " +
+                b.minSelect +
+                "〜" +
+                b.maxSelect +
+                " 個選んでください",
+            );
+            return false;
+          }
+        }
+      }
+      return true;
+    }
+
+    function wireGuestSetComponentOptionLimits(panel) {
+      panel.querySelectorAll('.opt-comp input[type="checkbox"][data-max]').forEach((inp) => {
+        inp.addEventListener("change", () => {
+          const maxP = Number(inp.getAttribute("data-max") || 1);
+          const boxes = panel.querySelectorAll('input[type="checkbox"][name="' + inp.name + '"]');
+          if ([...boxes].filter((b) => b.checked).length > maxP) {
+            inp.checked = false;
+            toast("このオプションは最大 " + maxP + " 個までです");
+          }
+        });
+      });
+    }
     function guestTimeDiscountActive(item) {
       if (!item) return false;
       const orig = Number(item.originalTaxIncludedPrice);
@@ -2440,6 +2441,55 @@
       return sum;
     }
 
+    /** 確定済み注文に含まれる同一商品IDの合計 */
+    function totalOrderedQtyForMenuItem(menuItemId) {
+      const k = menuItemId != null && menuItemId !== "" ? String(menuItemId) : "";
+      if (!k) return 0;
+      let sum = 0;
+      for (const o of ordersCache || []) {
+        for (const ln of o.lines || []) {
+          if (ln.status === "cancelled") continue;
+          const ex = ln.lineExtra && typeof ln.lineExtra === "object" ? ln.lineExtra : null;
+          if (ex && ex.kind === "courseOptionPack") continue;
+          if (ln.menuItemId != null && String(ln.menuItemId) === k) sum += Number(ln.qty || 0);
+        }
+      }
+      return sum;
+    }
+
+    /** コース内単品の追加可能数（来店人数 − 確定済み − 他カート行） */
+    function maxCourseIncludedAddQty(item, excludeCartKey) {
+      const gc = Math.max(1, Number(sessionGuestCount || 1));
+      const ordered = totalOrderedQtyForMenuItem(item.id);
+      let inCartOther = 0;
+      for (const key of Object.keys(cart)) {
+        if (excludeCartKey && key === excludeCartKey) continue;
+        const line = cart[key];
+        if (line && String(line.menuItemId) === String(item.id)) inCartOther += Number(line.qty || 0);
+      }
+      return Math.max(0, gc - ordered - inCartOther);
+    }
+
+    function guestItemQtyAddCap(item, excludeCartKey, addDelta) {
+      const delta = Math.max(0, Number(addDelta || 0));
+      if (!item || delta <= 0) return 0;
+      let cap =
+        item.courseTier === "included" && !guestLoChargesIncludedAsPaid()
+          ? maxCourseIncludedAddQty(item, excludeCartKey)
+          : 99;
+      if (item.stockQty != null) {
+        let inCart = 0;
+        for (const key of Object.keys(cart)) {
+          if (excludeCartKey && key === excludeCartKey) continue;
+          const line = cart[key];
+          if (line && String(line.menuItemId) === String(item.id)) inCart += Number(line.qty || 0);
+        }
+        const stockRemain = Math.max(0, Number(item.stockQty) - inCart);
+        cap = Math.min(cap, stockRemain);
+      }
+      return cap;
+    }
+
     function guestCartLineSubtext(line) {
       const parts = [];
       const item =
@@ -2642,9 +2692,16 @@
           toast("在庫の上限です");
           return;
         }
-      } else if (item.stockQty != null) {
-        if (totalCartQtyForMenuItem(line.menuItemId) + delta > item.stockQty) {
-          toast("在庫の上限です");
+      } else {
+        const cap = guestItemQtyAddCap(item, cartKey, delta);
+        if (delta > cap) {
+          toast(
+            item.courseTier === "included" && !guestLoChargesIncludedAsPaid() && cap <= 0
+              ? "コースの人数分は注文済みです"
+              : item.courseTier === "included" && !guestLoChargesIncludedAsPaid()
+                ? "コース人数（" + sessionGuestCount + "名）または在庫の上限です"
+                : "在庫の上限です",
+          );
           return;
         }
       }
@@ -3369,10 +3426,14 @@
       const stockNum = typeof raw === "number" && Number.isFinite(raw) ? raw : null;
 
       function maxQtyThisAdd() {
-        if (stockNum == null) return 99;
+        const courseCap =
+          item.courseTier === "included" && !guestLoChargesIncludedAsPaid()
+            ? maxCourseIncludedAddQty(item, null)
+            : 99;
+        if (stockNum == null) return Math.min(99, courseCap);
         const remain = stockNum - totalCartQtyForMenuItem(item.id);
         if (remain <= 0) return 0;
-        return Math.min(99, remain);
+        return Math.min(99, remain, courseCap);
       }
 
       function refresh() {
@@ -4457,6 +4518,7 @@
         }
       }
       const gs = data.session;
+      sessionGuestCount = Math.max(1, parseInt(String((gs && gs.guestCount) || 1), 10) || 1);
       if (gs && gs.guestAlcoholAllowed === true) alcoholRestricted = false;
       else if (gs && gs.guestAlcoholAllowed === false) alcoholRestricted = true;
       hydrateGuestCartFromStorage();

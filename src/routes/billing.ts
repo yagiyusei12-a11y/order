@@ -22,12 +22,35 @@ import {
   startOfWallCalendarDayUtc,
   wallDateYmdInZone,
 } from "../lib/store-wall-time.js";
+import {
+  packChargeScopeFromDb,
+  parsePurchasedCourseOptionPackIds,
+} from "../lib/course-option-pack.js";
 import { prisma } from "../db.js";
 import { broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
 import { appendStaffAuditFromRequest } from "../lib/staff-audit.js";
 import { assertManagerRole } from "../lib/staff-role.js";
 import { isTakeoutTablePublicCode } from "../lib/takeout-table-code.js";
 import { firstSalesOrderByTime } from "../lib/first-sales-order.js";
+
+function isCourseOptionPackLineExtra(extra: unknown): extra is {
+  kind: "courseOptionPack";
+  chargeScope?: string;
+  courseOptionPackId?: string;
+  peopleCount?: number;
+} {
+  return (
+    extra != null &&
+    typeof extra === "object" &&
+    !Array.isArray(extra) &&
+    (extra as { kind?: string }).kind === "courseOptionPack"
+  );
+}
+
+function courseOptionPackNameWithPeople(nameSnapshot: string, peopleCount: number): string {
+  const base = String(nameSnapshot || "").replace(/（×\d+名）\s*$/, "");
+  return `${base}（×${peopleCount}名）`;
+}
 import { orderLineNetAfterLineDiscount, sumOrderLineNetsByTaxRate } from "../lib/report-line-tax.js";
 import { syncReceptionShiftSeatsForTable } from "../lib/reception-seat-state.js";
 import { applyPostSettleSessionStatusInTx } from "../lib/post-settle-session.js";
@@ -1997,6 +2020,21 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
             data: { stockQty: 0, isAvailable: false },
           });
         }
+      } else if (isCourseOptionPackLineExtra(line.lineExtra) && bill.sessionId) {
+        const packId = line.lineExtra.courseOptionPackId;
+        if (typeof packId === "string" && packId) {
+          const sess = await tx.diningSession.findUnique({ where: { id: bill.sessionId } });
+          if (sess) {
+            const cur = parsePurchasedCourseOptionPackIds(sess.purchasedCourseOptionPackIds);
+            const next = cur.filter((id) => id !== packId);
+            if (next.length !== cur.length) {
+              await tx.diningSession.update({
+                where: { id: sess.id },
+                data: { purchasedCourseOptionPackIds: next },
+              });
+            }
+          }
+        }
       }
 
       return next;
@@ -2030,9 +2068,45 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     });
     if (!line) return reply.code(404).send({ error: "order line not found for this bill" });
     if (line.status === "cancelled") return reply.code(400).send({ error: "order line already cancelled" });
+    const packExtra = isCourseOptionPackLineExtra(line.lineExtra) ? line.lineExtra : null;
     const diff = nextQty - line.qty;
     const staffUserId = staffUserIdFromReq(req);
     const updated = await prisma.$transaction(async (tx) => {
+      if (packExtra) {
+        const scope = packChargeScopeFromDb(packExtra.chargeScope);
+        if (scope !== "per_person_pick") {
+          throw new Error("PACK_QTY_LOCKED");
+        }
+        const gc = Math.max(1, bill.session!.guestCount ?? 1);
+        if (nextQty > gc) throw new Error("PACK_BAD_PEOPLE");
+        const nextExtra = {
+          ...packExtra,
+          peopleCount: nextQty,
+        };
+        const nameSnapshot = courseOptionPackNameWithPeople(line.nameSnapshot, nextQty);
+        const next = await tx.orderLine.update({
+          where: { id: line.id },
+          data: {
+            qty: nextQty,
+            nameSnapshot,
+            lineExtra: nextExtra as Prisma.InputJsonValue,
+          },
+        });
+        try {
+          await tx.billCorrectionEvent.create({
+            data: {
+              storeId: bill.storeId,
+              billId: bill.id,
+              kind: "line_qty_set",
+              payload: { lineId: line.id, fromQty: line.qty, toQty: nextQty, courseOptionPack: true } as Prisma.InputJsonValue,
+              ...(staffUserId ? { staffUserId } : {}),
+            },
+          });
+        } catch {
+          // ignore
+        }
+        return next;
+      }
       if (diff > 0 && line.menuItemId) {
         const it = await tx.menuItem.findUnique({ where: { id: line.menuItemId } });
         if (it && it.stockQty !== null && it.stockQty < diff) {
@@ -2071,8 +2145,17 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       return next;
     }).catch((e: Error) => {
       if (e.message === "BAD_STOCK") return null;
+      if (e.message === "PACK_QTY_LOCKED") return "PACK_QTY_LOCKED";
+      if (e.message === "PACK_BAD_PEOPLE") return "PACK_BAD_PEOPLE";
       throw e;
     });
+    if (updated === "PACK_QTY_LOCKED") {
+      return reply.code(400).send({ error: "このコース＋オプション行は数量変更できません（人数指定タイプのみ変更可）" });
+    }
+    if (updated === "PACK_BAD_PEOPLE") {
+      const gc = Math.max(1, bill.session!.guestCount ?? 1);
+      return reply.code(400).send({ error: `人数は1〜${gc}名の整数です` });
+    }
     if (!updated) return reply.code(400).send({ error: "insufficient stock" });
     broadcastOpsSessionUpdated(bill.storeId, bill.sessionId);
     const billPayload = await buildBillDetailPayload(req.params.storeId, bill.id);

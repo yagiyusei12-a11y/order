@@ -204,11 +204,18 @@
     }
   }
 
-  function buildCourseOptionPackRowsHtml(groupedPacks, ctx) {
+  function buildCourseOptionPackRowsHtml(groupedPacks, ctx, opts) {
     if (!groupedPacks.length) return "";
+    const bcOl = opts && opts.bcOl;
+    const readOnly = opts && opts.readOnly;
+    const guestCount = Math.max(1, Number((opts && opts.guestCount) || 1));
+    const olDis = readOnly || !bcOl ? " disabled title=\"店舗設定により明細の変更は無効です\"" : "";
     return groupedPacks
       .map((g) => {
         const ln = g.lines && g.lines[0];
+        const ex = ln && ln.lineExtra && typeof ln.lineExtra === "object" && !Array.isArray(ln.lineExtra) ? ln.lineExtra : null;
+        const scope = ex && ex.chargeScope ? String(ex.chargeScope) : "table_once";
+        const editablePick = scope === "per_person_pick" && bcOl && !readOnly;
         const taxRateForRow = ln && ln.taxRatePercent != null ? Number(ln.taxRatePercent) : 0;
         const showNet = ctx.storeSettings.menuPriceTaxMode === "exclusive";
         const dispTotal = showNet
@@ -219,8 +226,33 @@
           /^\[コース＋オプション\]\s*/,
           "",
         );
+        const unitDisp = showNet
+          ? netYenFromGross(Number(g.unitPrice || 0), taxRateForRow || ctx.storeSettings.taxRatePercent)
+          : Number(g.unitPrice || 0);
+        const qtyBlock = editablePick
+          ? "<div class=\"ops-line-actions\">" +
+            "<button type=\"button\" class=\"btn-ghost ops-act-btn\" data-pack-dec=\"" +
+            ctx.escapeHtml(g.key) +
+            "\"" +
+            olDis +
+            ">-</button>" +
+            "<span class=\"ops-qty-pill\" data-pack-group-qty>×" +
+            g.qty +
+            "</span>" +
+            "<button type=\"button\" class=\"btn-ghost ops-act-btn\" data-pack-inc=\"" +
+            ctx.escapeHtml(g.key) +
+            "\"" +
+            olDis +
+            ">+</button>" +
+            "<span class=\"muted\" style=\"font-size:0.68rem;margin-left:0.15rem\">1〜" +
+            guestCount +
+            "名</span>" +
+            "</div>"
+          : "";
         return (
-          '<tr class="ops-course-line-row ops-course-pack-line-row">' +
+          '<tr class="ops-course-line-row ops-course-pack-line-row"' +
+          (editablePick ? ' data-pack-group-key="' + ctx.escapeHtml(g.key) + '"' : "") +
+          ">" +
           "<td>" +
           '<div class="ops-line-name">' +
           '<span class="badge" style="margin-right:.35rem;background:#7c3aed;color:#fff;font-weight:900">コース＋</span>' +
@@ -229,8 +261,16 @@
           '<div class="ops-line-sub">' +
           ctx.escapeHtml(courseOptionPackLineSubtext(ln)) +
           "</div>" +
+          (editablePick
+            ? '<div class="ops-line-sub">' +
+              yen(unitDisp) +
+              " / 名</div>" +
+              qtyBlock
+            : "") +
           "</td>" +
-          '<td class="ops-line-total">' +
+          '<td class="ops-line-total"' +
+          (editablePick ? ' data-pack-group-total' : "") +
+          ">" +
           yen(dispTotal) +
           dispSuffix +
           "</td></tr>"
@@ -315,6 +355,99 @@
       if (qtyEl) qtyEl.textContent = "×" + Math.max(0, Number(qty || 0));
       if (totalEl) totalEl.textContent = yen(Number(unitPrice || 0) * Math.max(0, Number(qty || 0)));
     });
+  }
+
+  function updateCoursePackRowDraftUi(root, groupKey, qty, unitPrice) {
+    const scope = root && root.querySelectorAll ? root : document;
+    scope.querySelectorAll("[data-pack-group-key]").forEach((row) => {
+      if (!row || row.getAttribute("data-pack-group-key") !== groupKey) return;
+      const qtyEl = row.querySelector("[data-pack-group-qty]");
+      const totalEl = row.querySelector("[data-pack-group-total]");
+      if (qtyEl) qtyEl.textContent = "×" + Math.max(0, Number(qty || 0));
+      if (totalEl) totalEl.textContent = yen(Number(unitPrice || 0) * Math.max(0, Number(qty || 0)));
+    });
+  }
+
+  async function applyCoursePackQtyTarget(ctx, detail, groupKey, targetQty, session) {
+    const latest = await ctx.api(ctx.billPath(detail.id));
+    const groups = groupedCourseOptionPackLines(latest);
+    const gg = groups.find((x) => x.key === groupKey);
+    const currentQty = gg ? Number(gg.qty || 0) : 0;
+    const normalizedTarget = Math.max(0, Number(targetQty || 0));
+    if (!gg || currentQty === normalizedTarget) return latest;
+
+    const maxP = Math.max(1, Number(session && session.guestCount ? session.guestCount : 1));
+    if (normalizedTarget > maxP) {
+      throw new Error("人数は1〜" + maxP + "名です");
+    }
+
+    if (normalizedTarget > currentQty) {
+      const add = normalizedTarget - currentQty;
+      const line = gg.lines[0];
+      await ctx.api(ctx.billPath(latest.id) + "/order-lines/" + encodeURIComponent(line.id), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ qty: Number(line.qty || 0) + add }),
+      });
+    } else {
+      let need = currentQty - normalizedTarget;
+      const lines = [...gg.lines].sort((a, b) => Number(b.qty || 0) - Number(a.qty || 0));
+      for (const line of lines) {
+        if (need <= 0) break;
+        const q = Number(line.qty || 0);
+        if (need >= q) {
+          await ctx.api(ctx.billPath(latest.id) + "/order-lines/" + encodeURIComponent(line.id) + "/cancel", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ setStockZero: false }),
+          });
+          need -= q;
+        } else {
+          await ctx.api(ctx.billPath(latest.id) + "/order-lines/" + encodeURIComponent(line.id), {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ qty: q - need }),
+          });
+          need = 0;
+        }
+      }
+    }
+    return await ctx.api(ctx.billPath(latest.id));
+  }
+
+  function queueCoursePackQtyCommit(ctx, detail, group, targetQty, session, table) {
+    const key = "pack::" + groupedKeyForBill(detail.id, group.key);
+    const st = ctx.qtyState;
+    st.pendingGroupedQty.set(key, Math.max(0, Number(targetQty || 0)));
+    if (st.pendingGroupedTimer.has(key)) clearTimeout(st.pendingGroupedTimer.get(key));
+    const timer = setTimeout(async () => {
+      if (st.groupedFlushInFlight.has(key)) {
+        queueCoursePackQtyCommit(ctx, detail, group, st.pendingGroupedQty.get(key), session, table);
+        return;
+      }
+      st.groupedFlushInFlight.add(key);
+      const targetAtStart = st.pendingGroupedQty.get(key);
+      try {
+        const fresh = await applyCoursePackQtyTarget(ctx, detail, group.key, targetAtStart, session);
+        await ctx.hooks.afterGroupedQtyCommit(detail, session, table, fresh, group.key, targetAtStart);
+      } catch (e) {
+        ctx.log(String(e.message || e));
+        try {
+          const recovered = await ctx.api(ctx.billPath(detail.id));
+          await ctx.hooks.afterGroupedQtyCommit(detail, session, table, recovered, group.key, targetAtStart);
+        } catch (_) {}
+      } finally {
+        st.groupedFlushInFlight.delete(key);
+        const latestTarget = st.pendingGroupedQty.get(key);
+        if (latestTarget !== undefined && latestTarget !== targetAtStart) {
+          queueCoursePackQtyCommit(ctx, detail, group, latestTarget, session, table);
+        } else {
+          st.pendingGroupedTimer.delete(key);
+          st.pendingGroupedQty.delete(key);
+        }
+      }
+    }, 260);
+    st.pendingGroupedTimer.set(key, timer);
   }
 
   async function applyGroupedQtyTarget(ctx, detail, groupKey, targetQty) {
@@ -832,7 +965,11 @@ async function mountRegisterFlow(panel, ctx) {
           : "") +
         "</td></tr>"
       : "";
-  const coursePackRowsHtml = BillRegisterShared.buildCourseOptionPackRowsHtml(groupedPackLines, ctx);
+  const coursePackRowsHtml = BillRegisterShared.buildCourseOptionPackRowsHtml(groupedPackLines, ctx, {
+    bcOl,
+    readOnly,
+    guestCount: session.guestCount,
+  });
   const orderTableBody = courseRowHtml + coursePackRowsHtml + orderRows;
   const orderTableFallback =
     orderTableBody ||
@@ -1068,7 +1205,7 @@ async function mountRegisterFlow(panel, ctx) {
       const el = $(id);
       if (el) el.disabled = true;
     });
-    panel.querySelectorAll("[data-line-inc],[data-line-dec],[data-line-del]").forEach((b) => {
+    panel.querySelectorAll("[data-line-inc],[data-line-dec],[data-line-del],[data-pack-inc],[data-pack-dec]").forEach((b) => {
       b.disabled = true;
     });
   }
@@ -1545,6 +1682,39 @@ async function mountRegisterFlow(panel, ctx) {
       BillRegisterShared.queueGroupedQtyCommit(ctx, detail, g, 0, session, table);
     };
   });
+  panel.querySelectorAll("[data-pack-inc]").forEach((btn) => {
+    btn.onclick = async () => {
+      const key = btn.getAttribute("data-pack-inc") || "";
+      const g = groupedPackLines.find((x) => x.key === key);
+      if (!g) return;
+      const mapKey = "pack::" + BillRegisterShared.groupedKeyForBill(detail.id, g.key);
+      const draftQty = ctx.qtyState.pendingGroupedQty.has(mapKey)
+        ? ctx.qtyState.pendingGroupedQty.get(mapKey)
+        : Number(g.qty || 0);
+      const maxP = Math.max(1, Number(session.guestCount || 1));
+      const target = Math.min(maxP, Number(draftQty || 0) + 1);
+      BillRegisterShared.updateCoursePackRowDraftUi(panel, g.key, target, g.unitPrice);
+      BillRegisterShared.queueCoursePackQtyCommit(ctx, detail, g, target, session, table);
+    };
+  });
+  panel.querySelectorAll("[data-pack-dec]").forEach((btn) => {
+    btn.onclick = async () => {
+      const key = btn.getAttribute("data-pack-dec") || "";
+      const g = groupedPackLines.find((x) => x.key === key);
+      if (!g) return;
+      const mapKey = "pack::" + BillRegisterShared.groupedKeyForBill(detail.id, g.key);
+      const draftQty = ctx.qtyState.pendingGroupedQty.has(mapKey)
+        ? ctx.qtyState.pendingGroupedQty.get(mapKey)
+        : Number(g.qty || 0);
+      const target = Math.max(0, Number(draftQty || 0) - 1);
+      if (target === 0) {
+        const label = String(g.nameSnapshot || "コース＋オプション").replace(/^\[コース＋オプション\]\s*/, "");
+        if (!window.confirm("「" + label + "」を削除しますか？\n対象メニューの追加権も外れます。")) return;
+      }
+      BillRegisterShared.updateCoursePackRowDraftUi(panel, g.key, target, g.unitPrice);
+      BillRegisterShared.queueCoursePackQtyCommit(ctx, detail, g, target, session, table);
+    };
+  });
 }
 
   function renderCashKeypad() {
@@ -1609,8 +1779,11 @@ async function mountRegisterFlow(panel, ctx) {
     groupedKeyForBill,
     sourceTableBadgeHtml,
     updateGroupedRowDraftUi,
+    updateCoursePackRowDraftUi,
     applyGroupedQtyTarget,
+    applyCoursePackQtyTarget,
     queueGroupedQtyCommit,
+    queueCoursePackQtyCommit,
     mountRegisterFlow,
     mountPostPaymentAfterBox,
     runMergeSessionDialog,

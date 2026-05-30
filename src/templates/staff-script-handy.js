@@ -1149,7 +1149,7 @@ function renderSepCourseRadios(courses, store) {
   }
 }
 
-async function ensureSeparateModalData() {
+async function ensureHandyCoursesData() {
   if (handySeparateCoursesCache != null && handySeparateSettingsCache != null) return;
   const [cr, sr] = await Promise.all([
     api("/stores/" + encodeURIComponent(STORE) + "/courses"),
@@ -1157,6 +1157,341 @@ async function ensureSeparateModalData() {
   ]);
   handySeparateCoursesCache = cr.courses || [];
   handySeparateSettingsCache = (sr.store && sr.store.settings) || {};
+}
+
+/** @param {Record<string, unknown> | null | undefined} session */
+function handySessionCourseLabel(session) {
+  if (!session || !session.courseId) return "単品メニュー（コースなし）";
+  const cname =
+    session.course && typeof session.course === "object" && session.course.name
+      ? String(session.course.name)
+      : "コース";
+  const tier =
+    session.coursePriceTier && typeof session.coursePriceTier === "object"
+      ? session.coursePriceTier
+      : null;
+  if (tier && tier.durationMinutes != null) {
+    return cname + " · " + String(tier.durationMinutes) + "分";
+  }
+  return cname;
+}
+
+/** @param {Record<string, unknown> | null | undefined} session */
+function handyCourseSelectValue(session) {
+  if (!session || !session.courseId) return "";
+  const cid = String(session.courseId);
+  const tierId =
+    session.coursePriceTierId != null && String(session.coursePriceTierId).trim()
+      ? String(session.coursePriceTierId)
+      : session.coursePriceTier &&
+          typeof session.coursePriceTier === "object" &&
+          session.coursePriceTier.id
+        ? String(session.coursePriceTier.id)
+        : "";
+  if (tierId) return cid + "|" + tierId;
+  const course = (handySeparateCoursesCache || []).find((c) => c && c.id === cid);
+  if (course && Array.isArray(course.priceTiers) && course.priceTiers[0] && course.priceTiers[0].id) {
+    return cid + "|" + course.priceTiers[0].id;
+  }
+  return cid + "|";
+}
+
+/** @param {Record<string, unknown> | null | undefined} session */
+function parseHandyPurchasedPackIds(session) {
+  const raw = session && session.purchasedCourseOptionPackIds;
+  if (raw == null) return [];
+  if (Array.isArray(raw)) return raw.filter((x) => typeof x === "string" && x.length > 0);
+  return [];
+}
+
+function handyPackChargeTaxIncluded(extraPrice, extraPriceTaxMode, taxRatePercent) {
+  if (extraPriceTaxMode === "exclusive") {
+    return Math.round(Number(extraPrice || 0) * (1 + Number(taxRatePercent || 0) / 100));
+  }
+  return Number(extraPrice || 0);
+}
+
+/** @param {Record<string, unknown>} session */
+function populateHandyCourseSelect(session) {
+  const sel = document.getElementById("handySessCourse");
+  if (!sel) return;
+  const courses = handySeparateCoursesCache || [];
+  const store = handySeparateSettingsCache || {};
+  const courseMode = store.coursePriceTaxMode === "exclusive" ? "exclusive" : "inclusive";
+  const taxRatePercent = store.taxRatePercent != null ? Number(store.taxRatePercent) : 10;
+  const suffix = courseMode === "exclusive" ? "（税抜）" : "（税込）";
+  sel.innerHTML = "";
+  const none = document.createElement("option");
+  none.value = "";
+  none.textContent = "単品メニュー（コースなし）";
+  sel.appendChild(none);
+  for (const c of courses) {
+    const tiers = c.priceTiers || [];
+    for (const t of tiers) {
+      const opt = document.createElement("option");
+      opt.value = c.id + "|" + t.id;
+      const adultUnit =
+        courseMode === "exclusive"
+          ? netYenFromGross(t.pricePerPerson, taxRatePercent)
+          : Number(t.pricePerPerson);
+      opt.textContent =
+        String(c.name || "コース") +
+        " · " +
+        String(t.durationMinutes) +
+        "分 · " +
+        Number(adultUnit).toLocaleString("ja-JP") +
+        "円/人" +
+        suffix;
+      sel.appendChild(opt);
+    }
+  }
+  const v = handyCourseSelectValue(session);
+  if (v && [...sel.options].some((o) => o.value === v)) sel.value = v;
+  else sel.value = "";
+}
+
+/** @param {Record<string, unknown>} session */
+function renderHandyCoursePacks(session) {
+  const host = document.getElementById("handyCoursePacksHost");
+  if (!host) return;
+  host.innerHTML = "";
+  if (!session || !session.courseId || session.status !== "open") return;
+  const course = (handySeparateCoursesCache || []).find((c) => c && c.id === session.courseId);
+  if (!course || !Array.isArray(course.optionPacks) || !course.optionPacks.length) return;
+  const purchased = new Set(parseHandyPurchasedPackIds(session));
+  const unw = course.optionPacks.filter((p) => p && p.id && !purchased.has(p.id));
+  if (!unw.length) {
+    host.innerHTML =
+      "<p class=\"muted handy-hint\" style=\"margin:0.35rem 0 0\">追加できる＋オプションはありません（すべて追加済み、または未設定）。</p>";
+    return;
+  }
+  const store = handySeparateSettingsCache || {};
+  const taxRate = Number(store.taxRatePercent != null ? store.taxRatePercent : 10);
+  const gCount = Math.max(1, Number(session.guestCount || 1));
+  const title = document.createElement("p");
+  title.className = "handy-course-packs-title";
+  title.textContent = "＋オプション（コース対象を広げる）";
+  host.appendChild(title);
+  const hint = document.createElement("p");
+  hint.className = "muted handy-hint";
+  hint.style.margin = "0 0 0.45rem";
+  hint.textContent = "未追加のオプションのみ。追加すると伝票に計上され、注文できるメニューが増えます。";
+  host.appendChild(hint);
+  for (const p of unw) {
+    const scope = p.chargeScope || "table_once";
+    const tm = p.extraPriceTaxMode === "exclusive" ? "exclusive" : "inclusive";
+    const unitTi = handyPackChargeTaxIncluded(p.extraPrice, tm, taxRate);
+    if (scope === "per_person_pick") {
+      const row = document.createElement("div");
+      row.className = "handy-course-pack-row";
+      const name = document.createElement("div");
+      name.className = "handy-course-pack-name";
+      name.textContent = String(p.name || "オプション") + " · 一人 " + yen(unitTi) + "（税込）";
+      row.appendChild(name);
+      const pick = document.createElement("div");
+      pick.className = "handy-course-pack-pick";
+      const lbl = document.createElement("label");
+      lbl.textContent = "人数";
+      const inp = document.createElement("input");
+      inp.type = "number";
+      inp.min = "1";
+      inp.max = String(gCount);
+      inp.value = "1";
+      inp.dataset.handyPackPeople = String(p.id);
+      inp.inputMode = "numeric";
+      const span = document.createElement("span");
+      span.className = "muted";
+      span.textContent = "1〜" + gCount + "名";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn-primary handy-btn-inline";
+      btn.textContent = "追加";
+      btn.dataset.handyPackBuy = String(p.id);
+      btn.dataset.handyPackScope = "per_person_pick";
+      pick.appendChild(lbl);
+      pick.appendChild(inp);
+      pick.appendChild(span);
+      pick.appendChild(btn);
+      row.appendChild(pick);
+      host.appendChild(row);
+      continue;
+    }
+    let payTotal = unitTi;
+    let labelExtra = "（税込・卓1回）";
+    if (scope === "per_person_all") {
+      payTotal = unitTi * gCount;
+      labelExtra = "（税込・延べ" + gCount + "名分）";
+    }
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn-ghost handy-course-pack-btn";
+    btn.dataset.handyPackBuy = String(p.id);
+    btn.dataset.handyPackScope = String(scope);
+    btn.innerHTML =
+      escapeHtml(String(p.name || "オプション")) +
+      ' <span style="color:#c2410c">+' +
+      escapeHtml(yen(payTotal)) +
+      '</span> <span class="muted" style="font-size:0.72rem;font-weight:600">' +
+      escapeHtml(labelExtra) +
+      '</span><span class="muted" style="font-size:0.68rem;display:block;margin-top:0.2rem;font-weight:500">対象メニューが広がります</span>';
+    host.appendChild(btn);
+  }
+  host.querySelectorAll("[data-handy-pack-buy]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      purchaseHandyCoursePack(
+        btn.getAttribute("data-handy-pack-buy") || "",
+        btn.getAttribute("data-handy-pack-scope") || "table_once",
+        session,
+      ).catch((e) => log(String(e.message || e)));
+    });
+  });
+}
+
+async function renderHandyCourseSection() {
+  const section = document.getElementById("handyCourseSection");
+  const curEl = document.getElementById("handyCourseCurrent");
+  const sid = document.getElementById("handySession").value;
+  const sess = sid ? sessionsCache.find((x) => x.id === sid) : null;
+  if (!sess || sess.status !== "open") {
+    if (section) section.style.display = "none";
+    return;
+  }
+  if (section) section.style.display = "";
+  try {
+    await ensureHandyCoursesData();
+  } catch (e) {
+    if (curEl) curEl.textContent = "コース情報を読み込めませんでした。";
+    return;
+  }
+  populateHandyCourseSelect(sess);
+  if (curEl) {
+    const gc = Number(sess.guestCount || 0);
+    const cc = Number(sess.childCount || 0);
+    let people = gc > 0 ? gc + "名" : "";
+    if (cc > 0 && gc > 0) people = gc + "名（子" + cc + "）";
+    curEl.textContent =
+      "現在: " + handySessionCourseLabel(sess) + (people ? " · " + people : "");
+  }
+  renderHandyCoursePacks(sess);
+}
+
+async function applyHandySessionCourse() {
+  const sid = document.getElementById("handySession").value;
+  if (!sid) {
+    log("注文先の卓を選んでください");
+    return;
+  }
+  const sel = document.getElementById("handySessCourse");
+  const raw = sel ? sel.value : "";
+  let courseId = null;
+  let coursePriceTierId = undefined;
+  if (raw) {
+    const parts = raw.split("|");
+    courseId = parts[0] || null;
+    if (parts[1]) coursePriceTierId = parts[1];
+  }
+  const btn = document.getElementById("handyCourseApply");
+  if (btn) btn.disabled = true;
+  try {
+    await api(
+      "/stores/" +
+        encodeURIComponent(STORE) +
+        "/sessions/" +
+        encodeURIComponent(sid) +
+        "/course",
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(courseId ? { courseId, coursePriceTierId } : { courseId: null }),
+      },
+    );
+    log(courseId ? "コースを適用しました" : "コースを解除しました");
+    await loadSessions(sid);
+  } catch (e) {
+    log(String(e.message || e));
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function clearHandySessionCourse() {
+  if (
+    !confirm(
+      "コース料を伝票から外します（コース内単品として注文済みの単価は変わりません）。よろしいですか？",
+    )
+  ) {
+    return;
+  }
+  const sid = document.getElementById("handySession").value;
+  if (!sid) return;
+  const sel = document.getElementById("handySessCourse");
+  if (sel) sel.value = "";
+  const btn = document.getElementById("handyCourseClear");
+  if (btn) btn.disabled = true;
+  try {
+    await api(
+      "/stores/" +
+        encodeURIComponent(STORE) +
+        "/sessions/" +
+        encodeURIComponent(sid) +
+        "/course",
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ courseId: null }),
+      },
+    );
+    log("コースを解除しました");
+    await loadSessions(sid);
+  } catch (e) {
+    log(String(e.message || e));
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+/**
+ * @param {string} packId
+ * @param {string} scope
+ * @param {Record<string, unknown>} session
+ */
+async function purchaseHandyCoursePack(packId, scope, session) {
+  if (!packId || !session || !session.id) return;
+  const sid = String(session.id);
+  const body = { packId };
+  if (scope === "per_person_pick") {
+    const host = document.getElementById("handyCoursePacksHost");
+    const inp = host ? host.querySelector('[data-handy-pack-people="' + packId + '"]') : null;
+    const n = inp ? parseInt(String(inp.value || ""), 10) : NaN;
+    const maxP = Math.max(1, Number(session.guestCount || 1));
+    if (!Number.isInteger(n) || n < 1 || n > maxP) {
+      log("人数は1〜" + maxP + "の整数で");
+      return;
+    }
+    body.peopleCount = n;
+  }
+  try {
+    await api(
+      "/stores/" +
+        encodeURIComponent(STORE) +
+        "/sessions/" +
+        encodeURIComponent(sid) +
+        "/course-option-packs/purchase",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    );
+    log("＋オプションを追加しました");
+    await loadSessions(sid);
+  } catch (e) {
+    log(String(e.message || e));
+  }
+}
+
+async function ensureSeparateModalData() {
+  await ensureHandyCoursesData();
 }
 
 async function openSeparateBillModal() {
@@ -1266,6 +1601,7 @@ async function loadSessions(preferSessionId) {
   }
   updateHandySeparateBtn();
   refreshHandyCoursePricing();
+  renderHandyCourseSection().catch(() => {});
   renderItems();
   renderCart();
 }
@@ -1731,10 +2067,15 @@ if (handyStickySubmitEl) handyStickySubmitEl.onclick = () => submitOrder();
     sessSel.addEventListener("change", () => {
       updateHandySeparateBtn();
       refreshHandyCoursePricing();
+      renderHandyCourseSection().catch(() => {});
       renderItems();
       renderCart();
     });
   }
+  const courseApply = document.getElementById("handyCourseApply");
+  if (courseApply) courseApply.onclick = () => applyHandySessionCourse().catch((e) => log(String(e.message || e)));
+  const courseClear = document.getElementById("handyCourseClear");
+  if (courseClear) courseClear.onclick = () => clearHandySessionCourse().catch((e) => log(String(e.message || e)));
 })();
 
 (async () => {

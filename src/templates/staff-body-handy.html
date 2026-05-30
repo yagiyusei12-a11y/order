@@ -3,7 +3,7 @@
     <h2 class="page-title handy-page-title">口頭注文（ハンディ）</h2>
     <p class="muted handy-lead">
       電話・カウンター受付の代行注文です。先に<strong>卓・会計</strong>でセッションを開いてから、卓を選んで商品を追加してください。
-      オプション付き・セット商品は「＋」で内容を選んでからカートに入れます。
+      コースの適用・<strong>＋オプション</strong>の追加もここから行えます。オプション付き・セット商品は「＋」で内容を選んでからカートに入れます。
     </p>
 
     <div class="handy-layout">
@@ -25,6 +25,22 @@
           <div class="row handy-row-actions">
             <button type="button" class="btn-ghost handy-btn-inline" id="handyRefSess">セッション再読込</button>
           </div>
+        </section>
+
+        <section class="handy-card handy-section" id="handyCourseSection" style="display: none">
+          <div class="handy-section-head">
+            <span class="handy-section-title">コース・＋オプション</span>
+          </div>
+          <p id="handyCourseCurrent" class="muted handy-hint" style="margin-top: 0"></p>
+          <label for="handySessCourse">コース（時間パターン）</label>
+          <select id="handySessCourse" class="handy-field">
+            <option value="">読込中…</option>
+          </select>
+          <div class="row handy-row-actions handy-course-actions">
+            <button type="button" class="btn-primary handy-btn-inline" id="handyCourseApply">コースを適用</button>
+            <button type="button" class="btn-ghost handy-btn-inline handy-course-clear" id="handyCourseClear">コース解除</button>
+          </div>
+          <div id="handyCoursePacksHost" class="handy-course-packs"></div>
         </section>
 
         <section class="handy-card handy-section handy-eat-section">
@@ -280,6 +296,57 @@
 
   .handy-btn-inline {
     width: auto;
+  }
+
+  .handy-course-actions {
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.35rem;
+  }
+  .handy-course-clear {
+    border-color: #fecaca;
+    color: #b91c1c;
+    font-weight: 700;
+  }
+  .handy-course-packs {
+    margin-top: 0.35rem;
+  }
+  .handy-course-packs-title {
+    font-size: 0.78rem;
+    font-weight: 800;
+    margin: 0.5rem 0 0.35rem;
+    color: var(--text);
+  }
+  .handy-course-pack-row {
+    margin-bottom: 0.5rem;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid #fdba74;
+    border-radius: 10px;
+    background: #fff7ed;
+  }
+  .handy-course-pack-name {
+    font-size: 0.82rem;
+    font-weight: 700;
+    margin-bottom: 0.3rem;
+  }
+  .handy-course-pack-btn {
+    width: 100%;
+    text-align: left;
+    font-weight: 700;
+    border-color: #fdba74;
+    margin-bottom: 0.35rem;
+  }
+  .handy-course-pack-pick {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    align-items: center;
+    font-size: 0.78rem;
+  }
+  .handy-course-pack-pick input[type="number"] {
+    width: 3.25rem;
+    margin-bottom: 0;
+    padding: 0.35rem;
   }
 
   .handy-section-head {

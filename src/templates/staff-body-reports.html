@@ -24,6 +24,7 @@
     税区分の列は<strong>注文明細の税込（行割引後）</strong>の合計で、伝票全体割引は含みません。
     <strong>CSV</strong>は期間の開始・終了が両方必要です（最大366日・明細10万件まで）。個人情報が含まれます。
     コースの請求額と単品想定の比較は <a href="/staff-app/__STORE_PATH__/reports/course-value">コース vs 単品試算</a> ページをご利用ください。
+    過去日付の売上を追記する場合は<strong>伝票一覧</strong>タブの「過去の売上を追加」（マネージャー）を使います。
     スタッフログインのアカウントが<strong>この URL の店舗（例: harunoyukoto）</strong>向けである必要があります。
   </p>
 
@@ -123,7 +124,7 @@
     <div class="card">
       <div class="row" style="align-items:center;justify-content:space-between;gap:0.5rem;flex-wrap:wrap">
         <strong style="font-size:0.9rem">伝票一覧</strong>
-        <div class="row" style="gap:0.45rem;flex-wrap:wrap">
+        <div class="row" style="gap:0.45rem;flex-wrap:wrap;align-items:center">
           <span class="muted" style="font-size:0.78rem">状態</span>
           <select id="repBillStatus" style="min-width:10rem">
             <option value="settled">精算済み</option>
@@ -132,6 +133,7 @@
           </select>
           <span class="muted" style="font-size:0.78rem">決済</span>
           <input id="repMethodCode" type="text" placeholder="methodCode（任意）" style="min-width:12rem" />
+          <button type="button" class="btn-primary" id="btnRepManualBill" style="width:auto;display:none">過去の売上を追加</button>
         </div>
       </div>
       <div id="repBills" style="margin-top:0.65rem;min-height:2.5rem"></div>
@@ -140,6 +142,7 @@
   </div>
 
   <div id="repBillModal" style="display:none"></div>
+  <div id="repManualBillModal" style="display:none"></div>
   <div id="log"></div>
 
   <style>

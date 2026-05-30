@@ -757,6 +757,11 @@ async function refreshReportsCorrectionPolicy() {
         reopenSettledForRegister: p.reopenSettledForRegister !== false,
       };
     }
+    const manualBtn = document.getElementById("btnRepManualBill");
+    if (manualBtn) {
+      manualBtn.style.display =
+        managerReportsAllowed() && reportsBillCorrection.enabled ? "" : "none";
+    }
   } catch (_) {}
 }
 
@@ -1019,6 +1024,134 @@ async function loadBills(q) {
 
 function managerReportsAllowed() {
   return typeof window !== "undefined" && window.STAFF_ROLE === "manager";
+}
+
+async function openManualBillModal() {
+  if (!managerReportsAllowed()) {
+    log("マネージャーのみ利用できます");
+    return;
+  }
+  if (!reportsBillCorrection.enabled) {
+    log("店舗設定で伝票修正が無効のため、手動追加できません");
+    return;
+  }
+  const host = document.getElementById("repManualBillModal");
+  if (!host) return;
+  const pmRes = await api("/stores/" + encodeURIComponent(STORE) + "/payment-methods").catch(() => []);
+  const methods = Array.isArray(pmRes) ? pmRes : [];
+  if (!methods.length) {
+    log("有効な決済方法がありません");
+    return;
+  }
+  const backdrop = document.createElement("div");
+  backdrop.style.cssText =
+    "position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:1rem;";
+  const panel = document.createElement("div");
+  panel.style.cssText =
+    "background:#fafafa;color:var(--text);width:100%;max-width:min(28rem,96vw);border-radius:12px;border:1px solid var(--border);box-shadow:0 8px 32px rgba(0,0,0,.2);padding:1rem;";
+  const now = new Date();
+  const defaultDt = dtLocalValue(now);
+  let methodOpts = "";
+  for (const m of methods) {
+    methodOpts +=
+      "<option value=\"" +
+      escapeHtml(m.code) +
+      "\">" +
+      escapeHtml(m.labelJa || m.code) +
+      "</option>";
+  }
+  panel.innerHTML =
+    "<strong style=\"font-size:1rem\">過去の売上伝票を追加</strong>" +
+    "<p class=\"muted\" style=\"font-size:0.75rem;margin:0.45rem 0 0.75rem;line-height:1.45\">" +
+    "精算済み伝票として登録し、レポート（確定売上）に反映します。卓・セッションは紐づきません。レジ現金台帳には連携しません。</p>" +
+    "<label for=\"repManualSettledAt\" style=\"font-size:0.78rem;display:block;margin-bottom:0.2rem\">精算日時</label>" +
+    "<input id=\"repManualSettledAt\" type=\"datetime-local\" value=\"" +
+    escapeHtml(defaultDt) +
+    "\" style=\"width:100%;margin-bottom:0.55rem\" />" +
+    "<label for=\"repManualTotal\" style=\"font-size:0.78rem;display:block;margin-bottom:0.2rem\">売上金額（円）</label>" +
+    "<input id=\"repManualTotal\" type=\"number\" min=\"1\" step=\"1\" inputmode=\"numeric\" placeholder=\"例: 8500\" style=\"width:100%;margin-bottom:0.55rem\" />" +
+    "<label for=\"repManualMethod\" style=\"font-size:0.78rem;display:block;margin-bottom:0.2rem\">決済方法</label>" +
+    "<select id=\"repManualMethod\" style=\"width:100%;margin-bottom:0.55rem\">" +
+    methodOpts +
+    "</select>" +
+    "<label for=\"repManualLabel\" style=\"font-size:0.78rem;display:block;margin-bottom:0.2rem\">メモ（任意・伝票ラベル）</label>" +
+    "<input id=\"repManualLabel\" type=\"text\" placeholder=\"例: 現金売上・POS取込漏れ\" style=\"width:100%;margin-bottom:0.55rem\" />" +
+    "<label for=\"repManualNote\" style=\"font-size:0.78rem;display:block;margin-bottom:0.2rem\">決済メモ（任意）</label>" +
+    "<input id=\"repManualNote\" type=\"text\" placeholder=\"例: レジ締め後に判明\" style=\"width:100%;margin-bottom:0.75rem\" />" +
+    "<div class=\"row\" style=\"gap:0.45rem;flex-wrap:wrap\">" +
+    "<button type=\"button\" class=\"btn-primary\" id=\"repManualSubmit\" style=\"width:auto\">追加する</button>" +
+    "<button type=\"button\" class=\"btn-ghost\" id=\"repManualCancel\" style=\"width:auto\">キャンセル</button>" +
+    "</div>" +
+    "<p id=\"repManualErr\" class=\"muted\" style=\"color:#b91c1c;font-size:0.78rem;margin:0.55rem 0 0;display:none\"></p>";
+  backdrop.appendChild(panel);
+  host.innerHTML = "";
+  host.style.display = "block";
+  host.appendChild(backdrop);
+
+  function close() {
+    host.innerHTML = "";
+    host.style.display = "none";
+  }
+  panel.querySelector("#repManualCancel").onclick = close;
+  backdrop.addEventListener("click", (ev) => {
+    if (ev.target === backdrop) close();
+  });
+  panel.querySelector("#repManualSubmit").onclick = async () => {
+    const errEl = panel.querySelector("#repManualErr");
+    const settledLocal = panel.querySelector("#repManualSettledAt").value;
+    const total = parseInt(String(panel.querySelector("#repManualTotal").value || ""), 10);
+    const methodCode = panel.querySelector("#repManualMethod").value;
+    const label = String(panel.querySelector("#repManualLabel").value || "").trim();
+    const note = String(panel.querySelector("#repManualNote").value || "").trim();
+    const settledIso = parseDtLocalToIso(settledLocal);
+    if (!settledIso) {
+      errEl.textContent = "精算日時を入力してください";
+      errEl.style.display = "block";
+      return;
+    }
+    if (!Number.isInteger(total) || total < 1) {
+      errEl.textContent = "売上金額は1円以上の整数で入力してください";
+      errEl.style.display = "block";
+      return;
+    }
+    errEl.style.display = "none";
+    const btn = panel.querySelector("#repManualSubmit");
+    btn.disabled = true;
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/bills/manual-settled", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          settledAt: settledIso,
+          totalAmount: total,
+          label: label || undefined,
+          note: note || undefined,
+          payments: [{ methodCode, amount: total, note: note || undefined }],
+        }),
+      });
+      close();
+      log("過去の売上伝票を追加しました");
+      const fromEl = document.getElementById("repFrom");
+      const toEl = document.getElementById("repTo");
+      if (fromEl && toEl && settledLocal) {
+        const d = new Date(settledLocal);
+        if (Number.isFinite(d.getTime())) {
+          const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+          const dayEnd = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 0, 0);
+          fromEl.value = dtLocalValue(dayStart);
+          toEl.value = dtLocalValue(dayEnd);
+        }
+      }
+      setReportsTab("bills");
+      const stSel = document.getElementById("repBillStatus");
+      if (stSel) stSel.value = "settled";
+      await runAll();
+    } catch (e) {
+      errEl.textContent = String(e.message || e);
+      errEl.style.display = "block";
+      btn.disabled = false;
+    }
+  };
 }
 
 async function openBillModal(billId) {
@@ -1893,6 +2026,13 @@ const btnCsvLines = document.getElementById("btnCsvLines");
 if (btnCsvLines) {
   btnCsvLines.onclick = () => {
     downloadReportCsv("lines").catch((e) => log(String(e.message || e)));
+  };
+}
+
+const btnRepManualBill = document.getElementById("btnRepManualBill");
+if (btnRepManualBill) {
+  btnRepManualBill.onclick = () => {
+    openManualBillModal().catch((e) => log(String(e.message || e)));
   };
 }
 

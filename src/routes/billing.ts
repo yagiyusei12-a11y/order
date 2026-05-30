@@ -561,6 +561,139 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     return bill;
   });
 
+  /**
+   * 過去日付の確定売上伝票を手動追加（セッションなし・レポート集計用）
+   * マネージャーのみ。レジ現金台帳には自動連携しない。
+   */
+  app.post<{
+    Params: { storeId: string };
+    Body: {
+      settledAt?: unknown;
+      totalAmount?: unknown;
+      label?: unknown;
+      note?: unknown;
+      payments?: unknown;
+    };
+  }>("/stores/:storeId/bills/manual-settled", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    const st0 = mergeStoreSettings(store.settings);
+    if (!assertManagerRole(reply, req.user)) return;
+    if (!st0.billCorrectionPolicy.enabled) {
+      return reply.code(403).send({ error: "店舗設定により伝票の手動追加は無効です（設定 → レポート）" });
+    }
+
+    const body = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+    const settledRaw = typeof body.settledAt === "string" ? body.settledAt.trim() : "";
+    if (!settledRaw) return reply.code(400).send({ error: "精算日時（settledAt）が必要です" });
+    const settledAt = new Date(settledRaw);
+    if (!Number.isFinite(settledAt.getTime())) {
+      return reply.code(400).send({ error: "精算日時の形式が不正です" });
+    }
+    if (settledAt.getTime() > Date.now() + 60_000) {
+      return reply.code(400).send({ error: "精算日時に未来は指定できません" });
+    }
+
+    const total = body.totalAmount;
+    if (typeof total !== "number" || !Number.isInteger(total) || total < 1) {
+      return reply.code(400).send({ error: "売上金額（totalAmount）は1円以上の整数で指定してください" });
+    }
+
+    const paymentsRaw = body.payments;
+    if (!Array.isArray(paymentsRaw) || paymentsRaw.length === 0) {
+      return reply.code(400).send({ error: "決済（payments）を1件以上指定してください" });
+    }
+
+    const enabledRows = await prisma.storePaymentMethod.findMany({
+      where: { storeId: store.id, enabled: true },
+      include: { definition: true },
+    });
+    const enabledCodes = new Set(enabledRows.map((r) => r.definition.code));
+
+    const payLines: { methodCode: string; amount: number; note?: string }[] = [];
+    let paySum = 0;
+    for (const row of paymentsRaw) {
+      if (!row || typeof row !== "object" || Array.isArray(row)) {
+        return reply.code(400).send({ error: "payments の形式が不正です" });
+      }
+      const o = row as Record<string, unknown>;
+      const methodCode = typeof o.methodCode === "string" ? o.methodCode.trim() : "";
+      const amount = o.amount;
+      if (!methodCode || !enabledCodes.has(methodCode)) {
+        return reply.code(400).send({ error: `有効な決済方法ではありません: ${methodCode || "?"}` });
+      }
+      if (typeof amount !== "number" || !Number.isInteger(amount) || amount < 1) {
+        return reply.code(400).send({ error: "決済金額は1円以上の整数で指定してください" });
+      }
+      const note = typeof o.note === "string" && o.note.trim() ? o.note.trim() : undefined;
+      payLines.push({ methodCode, amount, note });
+      paySum += amount;
+    }
+    if (paySum !== total) {
+      return reply.code(400).send({ error: `決済合計（${paySum}円）が売上金額（${total}円）と一致しません` });
+    }
+
+    const userLabel = typeof body.label === "string" ? body.label.trim() : "";
+    const memo = typeof body.note === "string" ? body.note.trim() : "";
+    const label = userLabel ? `手入力:${userLabel}` : "手入力";
+
+    const staffUserId = staffUserIdFromReq(req);
+
+    const created = await prisma.$transaction(async (tx) => {
+      const bill = await tx.bill.create({
+        data: {
+          storeId: store.id,
+          sessionId: null,
+          label,
+          totalAmount: total,
+          status: "settled",
+          createdAt: settledAt,
+          settledAt,
+        },
+      });
+      const createdPayments = [];
+      for (const p of payLines) {
+        const pay = await tx.payment.create({
+          data: {
+            billId: bill.id,
+            methodCode: p.methodCode,
+            amount: p.amount,
+            note: p.note ?? (memo || null),
+          },
+        });
+        createdPayments.push(pay);
+      }
+      try {
+        await tx.billCorrectionEvent.create({
+          data: {
+            storeId: store.id,
+            billId: bill.id,
+            kind: "manual_settled_create",
+            payload: {
+              settledAt: settledAt.toISOString(),
+              totalAmount: total,
+              label,
+              payments: payLines,
+            } as Prisma.InputJsonValue,
+            ...(staffUserId ? { staffUserId } : {}),
+          },
+        });
+      } catch {
+        // ignore
+      }
+      return { bill, payments: createdPayments };
+    });
+
+    await appendStaffAuditFromRequest(req, store.id, staffUserId, "manual_settled_bill_create", {
+      billId: created.bill.id,
+      settledAt: settledAt.toISOString(),
+      totalAmount: total,
+    });
+
+    const payload = await buildBillDetailPayload(store.id, created.bill.id);
+    return payload ?? created.bill;
+  });
+
   app.get<{
     Params: { storeId: string; billId: string };
   }>("/stores/:storeId/bills/:billId", async (req, reply) => {

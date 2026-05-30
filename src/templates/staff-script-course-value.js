@@ -86,7 +86,7 @@ function cvApplyPreset(name) {
 function renderCvSummary(summary, rowCount) {
   const el = document.getElementById("cvSummary");
   if (!summary || !rowCount) {
-    el.innerHTML = "<span class=\"muted\">該当するコース伝票がありません。</span>";
+    el.innerHTML = "<span class=\"muted\">該当する確定伝票がありません。</span>";
     return;
   }
   el.innerHTML =
@@ -137,16 +137,26 @@ function renderCvLineDetails(lines) {
   return h;
 }
 
-function renderCvBills(rows) {
-  const el = document.getElementById("cvBills");
+function renderCvBillRows(rows, opts) {
+  const openOnly = opts && opts.openOnly;
   if (!rows || !rows.length) {
-    el.innerHTML = "<span class=\"muted\">該当するコース伝票がありません。</span>";
-    return;
+    return openOnly
+      ? "<span class=\"muted\">現在、コース利用中の未精算伝票はありません。</span>"
+      : "<span class=\"muted\">該当する確定伝票がありません。</span>";
   }
   let h = "";
   for (const r of rows) {
+    const isOpen = r.billStatus === "open";
+    const when = isOpen
+      ? r.openedAt
+        ? "開始 " + cvEsc(r.openedAt)
+        : "利用中"
+      : r.settledAt
+        ? cvEsc(r.settledAt)
+        : "";
     const title =
-      (r.settledAt ? cvEsc(r.settledAt) + " · " : "") +
+      (isOpen ? '<span class="cv-open-badge">利用中</span>' : "") +
+      (when ? when + " · " : "") +
       (r.tableName ? cvEsc(r.tableName) : "—") +
       (r.courseName ? " · " + cvEsc(r.courseName) : "") +
       " · " +
@@ -154,10 +164,16 @@ function renderCvBills(rows) {
       "名" +
       (Number(r.childCount || 0) > 0 ? "（子" + r.childCount + "）" : "");
     h +=
-      "<details class=\"cv-bill-row\">" +
+      "<details class=\"cv-bill-row" +
+      (isOpen ? " cv-open" : "") +
+      "\"" +
+      (isOpen ? " open" : "") +
+      ">" +
       "<summary><strong>" +
       title +
-      "</strong> — 請求 <strong>" +
+      "</strong> — " +
+      (isOpen ? "見込" : "請求") +
+      " <strong>" +
       cvYen(r.actualTotal) +
       "</strong> / 単品想定 <strong>" +
       cvYen(r.alaCarteTotal) +
@@ -172,11 +188,39 @@ function renderCvBills(rows) {
       " · 注文明細（請求） " +
       cvYen(r.orderLinesActual) +
       (r.label ? " · ラベル " + cvEsc(r.label) : "") +
+      (isOpen ? " · 注文が増えると変わります" : "") +
       "</span>" +
       renderCvLineDetails(r.lineDetails || []) +
       "</div></details>";
   }
-  el.innerHTML = h;
+  return h;
+}
+
+function renderCvOpenSection(openRows, openSummary) {
+  const sumEl = document.getElementById("cvOpenSummary");
+  const billsEl = document.getElementById("cvOpenBills");
+  const wrap = document.getElementById("cvOpenWrap");
+  if (!openRows || !openRows.length) {
+    if (sumEl) sumEl.innerHTML = "";
+    if (billsEl) billsEl.innerHTML = "<span class=\"muted\">現在、コース利用中の未精算伝票はありません。</span>";
+    return;
+  }
+  if (sumEl && openSummary) {
+    sumEl.innerHTML =
+      "<span class=\"muted\">" +
+      Number(openSummary.count || 0).toLocaleString("ja-JP") +
+      "卓 · 見込合計 " +
+      cvYen(openSummary.actualTotal) +
+      " / 単品想定 " +
+      cvYen(openSummary.alaCarteTotal) +
+      " · 差 <strong class=\"" +
+      cvDiffClass(openSummary.diff) +
+      "\">" +
+      cvDiffLabel(openSummary.diff) +
+      "</strong></span>";
+  }
+  if (billsEl) billsEl.innerHTML = renderCvBillRows(openRows, { openOnly: true });
+  if (wrap) wrap.style.display = "";
 }
 
 async function loadCourseValue() {
@@ -184,10 +228,21 @@ async function loadCourseValue() {
   const q = cvRangeQuery();
   try {
     const res = await api("/stores/" + encodeURIComponent(STORE) + "/reports/course-value?" + q);
+    renderCvOpenSection(res.openRows || [], res.openSummary);
     renderCvSummary(res.summary, (res.rows || []).length);
-    renderCvBills(res.rows || []);
-    cvLog((res.rows || []).length + " 件を表示しました。");
+    const billsEl = document.getElementById("cvBills");
+    if (billsEl) billsEl.innerHTML = renderCvBillRows(res.rows || [], { openOnly: false });
+    const openN = (res.openRows || []).length;
+    const settledN = (res.rows || []).length;
+    cvLog(
+      (openN ? "利用中 " + openN + " 件 · " : "") +
+        "確定 " +
+        settledN +
+        " 件を表示しました。",
+    );
   } catch (e) {
+    document.getElementById("cvOpenSummary").innerHTML = "";
+    document.getElementById("cvOpenBills").innerHTML = "";
     document.getElementById("cvSummary").innerHTML = "";
     document.getElementById("cvBills").innerHTML = "<span class=\"muted\">読み込みに失敗しました。</span>";
     cvLog(String(e.message || e));

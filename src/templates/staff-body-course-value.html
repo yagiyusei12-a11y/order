@@ -1,8 +1,8 @@
 <main>
   <h2 class="page-title">コース vs 単品試算</h2>
   <p class="muted" style="margin-top:-0.35rem;margin-bottom:1rem;line-height:1.5">
-    <strong>コースを頼んだ確定伝票</strong>について、実際の請求額と「同じ注文を単品メニュー定価で頼んだ場合」の試算を並べます。
-    確定日時（<code>settledAt</code>）基準・最大200伝票。0円だったコース内単品は<strong>現在のメニュー定価</strong>で試算します（割引・時間帯価格は反映されません）。
+    <strong>コースを頼んだ伝票</strong>について、実際の請求額と「同じ注文を単品メニュー定価で頼んだ場合」の試算を並べます。
+    <strong>利用中（未精算）</strong>の卓は期間に関係なく常に上部に表示します。確定伝票は精算完了日時（<code>settledAt</code>）基準・最大200件。0円だったコース内単品は<strong>現在のメニュー定価</strong>で試算します（割引・時間帯価格は反映されません）。
     差額が<strong>プラス</strong>ならコースの方がお得、<strong>マイナス</strong>なら単品の方が安かった試算です。
     <a href="/staff-app/__STORE_PATH__/reports">← 売上レポート</a>
   </p>
@@ -26,13 +26,19 @@
     </div>
   </div>
 
+  <div class="card" style="margin-top:1rem" id="cvOpenWrap">
+    <strong style="font-size:0.9rem">利用中（未精算）</strong>
+    <div id="cvOpenSummary" style="margin-top:0.45rem;font-size:0.82rem"></div>
+    <div id="cvOpenBills" style="margin-top:0.55rem;min-height:1.5rem"><span class="muted">読み込み中…</span></div>
+  </div>
+
   <div class="card" style="margin-top:1rem">
-    <strong style="font-size:0.9rem">期間サマリ</strong>
+    <strong style="font-size:0.9rem">期間サマリ（確定のみ）</strong>
     <div id="cvSummary" style="margin-top:0.65rem;min-height:2rem"><span class="muted">期間を選んで更新してください。</span></div>
   </div>
 
   <div class="card" style="margin-top:1rem">
-    <strong style="font-size:0.9rem">伝票一覧</strong>
+    <strong style="font-size:0.9rem">確定伝票一覧</strong>
     <div id="cvBills" style="margin-top:0.65rem;min-height:2.5rem"></div>
   </div>
 
@@ -69,4 +75,16 @@
   .cv-lines-table th:first-child,
   .cv-lines-table td:first-child { text-align: left; }
   .cv-repriced { font-size: 0.68rem; color: #7c3aed; font-weight: 700; margin-left: 0.25rem; }
+  .cv-open-badge {
+    display: inline-block;
+    font-size: 0.65rem;
+    font-weight: 800;
+    padding: 0.12rem 0.4rem;
+    border-radius: 999px;
+    background: #dbeafe;
+    color: #1d4ed8;
+    margin-right: 0.35rem;
+    vertical-align: middle;
+  }
+  .cv-bill-row.cv-open summary { background: #f8fafc; }
 </style>

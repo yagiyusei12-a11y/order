@@ -1018,11 +1018,11 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * reports: コース伝票の請求額 vs 単品想定（確定=settledAt基準）
+   * reports: コース伝票の請求額 vs 単品想定（確定=settledAt基準 + 利用中=open）
    */
   app.get<{
     Params: { storeId: string };
-    Querystring: { from?: string; to?: string };
+    Querystring: { from?: string; to?: string; includeOpen?: string };
   }>("/stores/:storeId/reports/course-value", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
     if (!store) return reply.code(404).send({ error: "store not found" });
@@ -1034,14 +1034,17 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     } catch (e) {
       return reply.code(400).send({ error: String((e as Error).message || e) });
     }
+    const includeOpen = req.query.includeOpen !== "0" && req.query.includeOpen !== "false";
 
     const storeTax = {
       taxRatePercent: stSet.taxRatePercent,
       menuPriceTaxMode: stSet.menuPriceTaxMode === "exclusive" ? ("exclusive" as const) : ("inclusive" as const),
     };
 
-    const rows: {
+    type CourseValueRow = {
       billId: string;
+      billStatus: "open" | "settled";
+      openedAt: string | null;
       settledAt: string | null;
       label: string | null;
       tableName: string | null;
@@ -1061,86 +1064,114 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
         alaCarteLineTotal: number;
         repriced: boolean;
       }[];
-    }[] = [];
+    };
 
-    let cursor: string | undefined;
-    for (;;) {
-      const batch = await prisma.bill.findMany({
-        where: {
-          storeId: store.id,
-          status: "settled",
-          session: { courseId: { not: null } },
-          ...(settledAtRange.gte || settledAtRange.lt ? { settledAt: settledAtRange } : {}),
-        },
-        take: 50,
-        orderBy: [{ settledAt: "desc" }, { id: "desc" }],
-        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    const billSelect = {
+      id: true,
+      label: true,
+      totalAmount: true,
+      discountJson: true,
+      settledAt: true,
+      session: {
         select: {
           id: true,
-          label: true,
-          totalAmount: true,
-          discountJson: true,
-          settledAt: true,
-          session: {
+          openedAt: true,
+          guestCount: true,
+          childCount: true,
+          courseId: true,
+          course: { select: { name: true } },
+          coursePriceTier: {
             select: {
               id: true,
-              guestCount: true,
-              childCount: true,
-              courseId: true,
-              course: { select: { name: true } },
-              coursePriceTier: {
+              durationMinutes: true,
+              pricePerPerson: true,
+              childPricePerPerson: true,
+            },
+          },
+          table: { select: { name: true, publicCode: true } },
+          orders: {
+            include: {
+              lines: {
                 select: {
                   id: true,
-                  durationMinutes: true,
-                  pricePerPerson: true,
-                  childPricePerPerson: true,
-                },
-              },
-              table: { select: { name: true, publicCode: true } },
-              orders: {
-                include: {
-                  lines: {
-                    select: {
-                      id: true,
-                      nameSnapshot: true,
-                      qty: true,
-                      unitPrice: true,
-                      status: true,
-                      menuItemId: true,
-                      lineExtra: true,
-                      eatMode: true,
-                      taxRatePercent: true,
-                      discountJson: true,
-                    },
-                  },
+                  nameSnapshot: true,
+                  qty: true,
+                  unitPrice: true,
+                  status: true,
+                  menuItemId: true,
+                  lineExtra: true,
+                  eatMode: true,
+                  taxRatePercent: true,
+                  discountJson: true,
                 },
               },
             },
           },
         },
-      });
-      if (batch.length === 0) break;
+      },
+    } as const;
 
+    type BillBatchRow = {
+      id: string;
+      label: string | null;
+      totalAmount: number;
+      discountJson: unknown;
+      settledAt: Date | null;
+      session: {
+        id: string;
+        openedAt: Date;
+        guestCount: number;
+        childCount: number;
+        courseId: string | null;
+        course: { name: string } | null;
+        coursePriceTier: {
+          id: string;
+          durationMinutes: number;
+          pricePerPerson: number;
+          childPricePerPerson: number | null;
+        } | null;
+        table: { name: string; publicCode: string | null } | null;
+        orders: {
+          lines: {
+            id: string;
+            nameSnapshot: string;
+            qty: number;
+            unitPrice: number;
+            status: string;
+            menuItemId: string | null;
+            lineExtra: unknown;
+            eatMode: string;
+            taxRatePercent: number;
+            discountJson: unknown;
+          }[];
+        }[];
+      } | null;
+    };
+
+    async function menuByIdForBills(bills: BillBatchRow[]): Promise<Map<string, MenuItemForAlaCarte>> {
       const menuIds = new Set<string>();
-      for (const b of batch) {
+      for (const b of bills) {
         for (const o of b.session?.orders ?? []) {
           for (const l of o.lines) {
             if (l.menuItemId) menuIds.add(l.menuItemId);
           }
         }
       }
-      const menuRows =
-        menuIds.size > 0
-          ? await prisma.menuItem.findMany({
-              where: { id: { in: [...menuIds] } },
-              select: { id: true, price: true, priceTaxMode: true, sellKind: true },
-            })
-          : [];
-      const menuById = new Map<string, MenuItemForAlaCarte>(
-        menuRows.map((m) => [m.id, m]),
-      );
+      if (menuIds.size === 0) return new Map();
+      const menuRows = await prisma.menuItem.findMany({
+        where: { id: { in: [...menuIds] } },
+        select: { id: true, price: true, priceTaxMode: true, sellKind: true },
+      });
+      return new Map(menuRows.map((m) => [m.id, m]));
+    }
 
-      for (const b of batch) {
+    function rowsFromBills(
+      bills: BillBatchRow[],
+      menuById: Map<string, MenuItemForAlaCarte>,
+      billStatus: "open" | "settled",
+    ): CourseValueRow[] {
+      const out: CourseValueRow[] = [];
+      for (const b of bills) {
         const sess = b.session;
         if (!sess?.courseId || !sess.coursePriceTier) continue;
         const allLines: OrderLineForAlaCarte[] = [];
@@ -1154,8 +1185,8 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
               status: l.status,
               menuItemId: l.menuItemId,
               lineExtra: l.lineExtra,
-              eatMode: (l as { eatMode?: string }).eatMode ?? "dine_in",
-              taxRatePercent: (l as { taxRatePercent?: number }).taxRatePercent ?? stSet.taxRatePercent,
+              eatMode: l.eatMode ?? "dine_in",
+              taxRatePercent: l.taxRatePercent ?? stSet.taxRatePercent,
               discountJson: l.discountJson,
             });
           }
@@ -1175,8 +1206,10 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
         });
         const actualTotal = b.totalAmount;
         const alaCarteTotal = est.alaCarteTotal;
-        rows.push({
+        out.push({
           billId: b.id,
+          billStatus,
+          openedAt: sess.openedAt ? formatWallDateTimeInZone(sess.openedAt, tz) : null,
           settledAt: b.settledAt ? formatWallDateTimeInZone(b.settledAt, tz) : null,
           label: b.label,
           tableName: sess.table
@@ -1193,29 +1226,73 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
           lineDetails: est.lineDetails,
         });
       }
-
-      cursor = batch[batch.length - 1]!.id;
-      if (batch.length < 50) break;
-      if (rows.length >= 200) break;
+      return out;
     }
 
-    const summary = rows.reduce(
-      (acc, r) => {
-        acc.count += 1;
-        acc.actualTotal += r.actualTotal;
-        acc.alaCarteTotal += r.alaCarteTotal;
-        acc.diff += r.diff;
-        return acc;
-      },
-      { count: 0, actualTotal: 0, alaCarteTotal: 0, diff: 0 },
-    );
+    function summarize(rows: CourseValueRow[]) {
+      return rows.reduce(
+        (acc, r) => {
+          acc.count += 1;
+          acc.actualTotal += r.actualTotal;
+          acc.alaCarteTotal += r.alaCarteTotal;
+          acc.diff += r.diff;
+          return acc;
+        },
+        { count: 0, actualTotal: 0, alaCarteTotal: 0, diff: 0 },
+      );
+    }
+
+    let openRows: CourseValueRow[] = [];
+    if (includeOpen) {
+      const openBills = await prisma.bill.findMany({
+        where: {
+          storeId: store.id,
+          status: "open",
+          session: { courseId: { not: null }, status: "open" },
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: 50,
+        select: billSelect,
+      });
+      const openMenu = await menuByIdForBills(openBills as BillBatchRow[]);
+      openRows = rowsFromBills(openBills as BillBatchRow[], openMenu, "open");
+    }
+
+    const settledRows: CourseValueRow[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const batch = await prisma.bill.findMany({
+        where: {
+          storeId: store.id,
+          status: "settled",
+          session: { courseId: { not: null } },
+          ...(settledAtRange.gte || settledAtRange.lt ? { settledAt: settledAtRange } : {}),
+        },
+        take: 50,
+        orderBy: [{ settledAt: "desc" }, { id: "desc" }],
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        select: billSelect,
+      });
+      if (batch.length === 0) break;
+      const menuById = await menuByIdForBills(batch as BillBatchRow[]);
+      settledRows.push(...rowsFromBills(batch as BillBatchRow[], menuById, "settled"));
+      cursor = batch[batch.length - 1]!.id;
+      if (batch.length < 50) break;
+      if (settledRows.length >= 200) break;
+    }
+
+    const openSummary = summarize(openRows);
+    const summary = summarize(settledRows.slice(0, 200));
 
     return {
       storeId: store.id,
       timeZone: tz,
       range: { from: req.query.from ?? null, to: req.query.to ?? null },
+      includeOpen,
+      openRows,
+      openSummary,
       summary,
-      rows: rows.slice(0, 200),
+      rows: settledRows.slice(0, 200),
     };
   });
 

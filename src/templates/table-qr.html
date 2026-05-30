@@ -99,7 +99,31 @@
         .replace(/"/g, "&quot;");
     }
 
+    const TABLE_GUEST_TOKEN_KEY = "tableQrGuestToken_v1:" + code;
+
+    function readStoredGuestToken() {
+      try {
+        const t = localStorage.getItem(TABLE_GUEST_TOKEN_KEY);
+        return t && typeof t === "string" ? t : "";
+      } catch (_) {
+        return "";
+      }
+    }
+
+    function saveGuestToken(token) {
+      try {
+        if (token) localStorage.setItem(TABLE_GUEST_TOKEN_KEY, String(token));
+      } catch (_) {}
+    }
+
+    function clearStoredGuestToken() {
+      try {
+        localStorage.removeItem(TABLE_GUEST_TOKEN_KEY);
+      } catch (_) {}
+    }
+
     function goGuest(token) {
+      saveGuestToken(token);
       location.replace("/guest-app/" + encodeURIComponent(token));
     }
 
@@ -198,11 +222,25 @@
               ? [j.session]
               : [];
 
+        if (tryResumeStoredSession(openList)) return;
+        if (readStoredGuestToken()) clearStoredGuestToken();
+
         function sessionMenuSummary(s) {
           if (s && s.course && s.course.id) {
             return "「" + String(s.course.name || "コース") + "」コース";
           }
           return "単品メニュー";
+        }
+
+        function tryResumeStoredSession(sessions) {
+          const t = readStoredGuestToken();
+          if (!t || !Array.isArray(sessions) || sessions.length === 0) return false;
+          const hit = sessions.find(function (s) {
+            return s.guestToken === t;
+          });
+          if (!hit) return false;
+          goGuest(t);
+          return true;
         }
 
         function pickedOpenSession() {
@@ -345,6 +383,7 @@
         }
 
         function showExistingSessionChoice(freshOpenList) {
+          if (tryResumeStoredSession(freshOpenList)) return;
           openList = freshOpenList.slice();
           choiceCard.style.display = "block";
           formCard.style.display = "none";

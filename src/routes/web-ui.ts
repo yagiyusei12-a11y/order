@@ -400,6 +400,17 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
     });
   });
 
+  app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/reports/course-value", async (req, reply) => {
+    if (!(await assertStaffStore(req, reply))) return;
+    return staffHtml(
+      reply,
+      req.params.storeId,
+      "コース vs 単品試算",
+      "staff-body-course-value.html",
+      "staff-script-course-value.js",
+    );
+  });
+
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/cash-drawer", async (req, reply) => {
     if (!(await assertStaffStore(req, reply))) return;
     return staffHtml(reply, req.params.storeId, "レジ現金", "staff-body-cash-drawer.html", "staff-script-cash-drawer.js");

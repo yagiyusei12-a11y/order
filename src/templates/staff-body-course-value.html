@@ -1,0 +1,72 @@
+<main>
+  <h2 class="page-title">コース vs 単品試算</h2>
+  <p class="muted" style="margin-top:-0.35rem;margin-bottom:1rem;line-height:1.5">
+    <strong>コースを頼んだ確定伝票</strong>について、実際の請求額と「同じ注文を単品メニュー定価で頼んだ場合」の試算を並べます。
+    確定日時（<code>settledAt</code>）基準・最大200伝票。0円だったコース内単品は<strong>現在のメニュー定価</strong>で試算します（割引・時間帯価格は反映されません）。
+    差額が<strong>プラス</strong>ならコースの方がお得、<strong>マイナス</strong>なら単品の方が安かった試算です。
+    <a href="/staff-app/__STORE_PATH__/reports">← 売上レポート</a>
+  </p>
+
+  <div class="card">
+    <div class="row" style="align-items:flex-end;gap:0.75rem;flex-wrap:wrap">
+      <div style="min-width:220px;flex:1">
+        <label for="cvFrom">開始（日時）</label>
+        <input id="cvFrom" type="datetime-local" />
+      </div>
+      <div style="min-width:220px;flex:1">
+        <label for="cvTo">終了（日時）</label>
+        <input id="cvTo" type="datetime-local" />
+      </div>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+        <button type="button" class="btn-ghost" data-cv-preset="thisMonth">今月</button>
+        <button type="button" class="btn-ghost" data-cv-preset="lastMonth">先月</button>
+        <button type="button" class="btn-ghost" data-cv-preset="clear">期間クリア</button>
+      </div>
+      <button type="button" class="btn-primary" id="btnCvLoad">更新</button>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:1rem">
+    <strong style="font-size:0.9rem">期間サマリ</strong>
+    <div id="cvSummary" style="margin-top:0.65rem;min-height:2rem"><span class="muted">期間を選んで更新してください。</span></div>
+  </div>
+
+  <div class="card" style="margin-top:1rem">
+    <strong style="font-size:0.9rem">伝票一覧</strong>
+    <div id="cvBills" style="margin-top:0.65rem;min-height:2.5rem"></div>
+  </div>
+
+  <div id="log" class="muted" style="margin-top:0.75rem;font-size:0.82rem" role="status"></div>
+</main>
+<style>
+  .cv-diff-pos { color: #15803d; font-weight: 800; }
+  .cv-diff-neg { color: #b91c1c; font-weight: 800; }
+  .cv-bill-row summary {
+    cursor: pointer;
+    list-style: none;
+    padding: 0.55rem 0.35rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .cv-bill-row summary::-webkit-details-marker { display: none; }
+  .cv-bill-row summary::before {
+    content: "▸ ";
+    color: var(--muted);
+    font-size: 0.75rem;
+  }
+  .cv-bill-row[open] summary::before { content: "▾ "; }
+  .cv-lines-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+    margin: 0.35rem 0 0.65rem;
+  }
+  .cv-lines-table th,
+  .cv-lines-table td {
+    padding: 0.35rem 0.4rem;
+    border-bottom: 1px solid var(--border);
+    text-align: right;
+  }
+  .cv-lines-table th:first-child,
+  .cv-lines-table td:first-child { text-align: left; }
+  .cv-repriced { font-size: 0.68rem; color: #7c3aed; font-weight: 700; margin-left: 0.25rem; }
+</style>

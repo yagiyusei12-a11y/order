@@ -687,10 +687,7 @@ async function syncSeatToSessions(storeId: string, seatId: string, next: SeatSta
     }
     return;
   }
-  if (next === "empty" || next === "vacant") {
-    await closeTableSessionsForReceptionMapClear(storeId, seatId);
-    return;
-  }
+  // empty/vacant によるセッション切断は cleaning→empty の明示操作のみ（updateSeats 内）で行う
 }
 
 export async function registerReception(app: FastifyInstance): Promise<void> {
@@ -814,8 +811,12 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         })
         .filter((row): row is { code: string; name: string; capacity: number; mergeWith: string[]; seatType: string } => row !== null);
 
+      const liveShiftKey = buildTodayShiftKey(stSet.timezone, lunchEnd);
+
       return {
         config: conf ? conf.data : { override: false, manualWait: 30 },
+        isLiveShift,
+        liveShiftKey,
         callReserved: Boolean(st?.callReserved),
         callType: st?.callType ?? "",
         entryQueue: (st?.entryQueue ?? []) as unknown,
@@ -1019,6 +1020,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         // 旧 api.php / index.html 互換: updateSeats は payload に seats が入る
         let seats = Array.isArray(b.seats) ? (b.seats as unknown[]) : (Array.isArray(b.payload) ? (b.payload as unknown[]) : null);
         const waiting = Array.isArray(b.waiting) ? (b.waiting as unknown[]) : null;
+        const isLiveShift = isCurrentReceptionShiftKey(shiftKey, stSetEv.timezone, lunchEndEv);
         const ifShiftUpdatedAt = typeof b.ifShiftUpdatedAt === "number" ? b.ifShiftUpdatedAt : null;
         const prevShift = await prisma.receptionShift.findUnique({
           where: { storeId_shiftKey: { storeId: store.id, shiftKey } },
@@ -1058,7 +1060,11 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
                 seatId: id,
               });
             }
-            if (prev === "cleaning" && (next === "empty" || next === "vacant")) {
+            if (
+              isLiveShift &&
+              prev === "cleaning" &&
+              (next === "empty" || next === "vacant")
+            ) {
               await closeTableSessionsForReceptionMapClear(store.id, id);
               // スタッフがバッシング完了で空席に戻した操作は常に白（empty）。予約ブロックは GET /state の applyReservationBlocksToSeats で近い枠のみ反映。
               r.status = "empty";
@@ -1089,17 +1095,19 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           });
         }
 
-        // セッション同期（席データ内の status/current を利用）
-        const syncSeats = (seats ?? []) as unknown[];
-        for (const row of syncSeats) {
-          if (!row || typeof row !== "object" || Array.isArray(row)) continue;
-          const r = row as Record<string, unknown>;
-          const id = typeof r.id === "string" ? r.id : "";
-          const st = typeof r.status === "string" ? r.status : "";
-          const cur = typeof r.current === "number" ? r.current : 0;
-          if (!id) continue;
-          if (st === "occupied" || st === "cleaning" || st === "vacant" || st === "empty" || st === "guiding") {
-            await syncSeatToSessions(store.id, id, st as SeatStatus, cur);
+        // セッション同期は「いまの営業シフト」のみ（別日・別シフト閲覧時の updateSeats で全席セッション切断しない）
+        if (isLiveShift) {
+          const syncSeats = (seats ?? []) as unknown[];
+          for (const row of syncSeats) {
+            if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+            const r = row as Record<string, unknown>;
+            const id = typeof r.id === "string" ? r.id : "";
+            const st = typeof r.status === "string" ? r.status : "";
+            const cur = typeof r.current === "number" ? r.current : 0;
+            if (!id) continue;
+            if (st === "occupied" || st === "cleaning" || st === "guiding") {
+              await syncSeatToSessions(store.id, id, st as SeatStatus, cur);
+            }
           }
         }
 

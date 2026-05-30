@@ -18,6 +18,9 @@ let lastResList = [];
 let mapDrag = null;
 let receptionLoadSeq = 0;
 let receptionPollTimer = null;
+/** 表示中 shiftKey が「いまの営業シフト」か（GET /state の isLiveShift） */
+let receptionIsLiveShift = true;
+let receptionLiveShiftKey = "";
 /** @type {import("socket.io-client").Socket | null} */
 let receptionSocket = null;
 let receptionSocketInitPromise = null;
@@ -232,6 +235,39 @@ function getMasterIds() {
     .sort((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id));
   out.push(...rest.map((x) => x.id));
   return out;
+}
+
+function receptionShiftKeyLabel(key) {
+  const m = /^(\d{4}-\d{2}-\d{2})_(lunch|dinner)$/.exec(String(key || "").trim());
+  if (!m) return String(key || "");
+  const shift = m[2] === "lunch" ? "ランチ" : "ディナー";
+  return `${m[1]} ${shift}`;
+}
+
+function updateReceptionViewModeBanner() {
+  const bar = document.getElementById("receptionViewOnlyBar");
+  const map = document.getElementById("map");
+  if (!bar) return;
+  if (receptionIsLiveShift) {
+    bar.classList.remove("is-on");
+    bar.textContent = "";
+    if (map) map.classList.remove("view-only");
+    return;
+  }
+  bar.classList.add("is-on");
+  const viewing = receptionShiftKeyLabel(currentShiftKey);
+  const live = receptionLiveShiftKey ? receptionShiftKeyLabel(receptionLiveShiftKey) : "いまの営業シフト";
+  bar.textContent =
+    `閲覧モード（${viewing}）— 席の操作は ${live} でのみ有効です。操作する場合は「当日」ボタンで戻してください。`;
+  if (map) map.classList.add("view-only");
+}
+
+function guardReceptionSeatOps() {
+  if (receptionIsLiveShift) return true;
+  alert(
+    "表示中の日付・シフトはいまの営業シフトではありません。席の操作はできません。「当日」ボタンでいまのシフトに戻してから操作してください。",
+  );
+  return false;
 }
 
 function changeViewShift() {
@@ -848,6 +884,7 @@ async function submitBulkCsv() {
 }
 
 async function markArrived(resId) {
+  if (!guardReceptionSeatOps()) return;
   initAudio();
   const res = await fetch(API_URL + "/state?shiftKey=" + encodeURIComponent(currentShiftKey) + "&t=" + Date.now());
   const data = await res.json();
@@ -975,6 +1012,9 @@ async function loadData() {
       return;
     }
     if (seq !== receptionLoadSeq) return;
+    receptionIsLiveShift = data.isLiveShift !== false;
+    receptionLiveShiftKey = typeof data.liveShiftKey === "string" ? data.liveShiftKey : "";
+    updateReceptionViewModeBanner();
     tableMaster = Array.isArray(data.tableMaster) ? data.tableMaster : [];
     configCache = data.config && typeof data.config === "object" ? { ...data.config } : {};
     if (data.config) {
@@ -1059,7 +1099,7 @@ async function loadData() {
         needsUpdate = true;
       }
     });
-    if (needsUpdate) { fetch(API_URL + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "updateSeats", shiftKey: currentShiftKey, payload: shiftData.seats }) }); }
+    if (needsUpdate && receptionIsLiveShift) { fetch(API_URL + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "updateSeats", shiftKey: currentShiftKey, payload: shiftData.seats }) }); }
 
     seatStates = {};
     shiftData.seats.forEach((s) => seatStates[s.id] = { ...s });
@@ -1374,6 +1414,7 @@ function render(waiting, resList) {
 }
 
 async function toggleSeat(id) {
+  if (!guardReceptionSeatOps()) return;
   initAudio();
   const res = await fetch(API_URL + "/state?shiftKey=" + encodeURIComponent(currentShiftKey) + "&t=" + Date.now()); const data = await res.json();
   const shiftData = getSafeShiftData(data, currentShiftKey);
@@ -1418,6 +1459,7 @@ async function toggleSeat(id) {
 }
 
 async function startOrder(i, sid) {
+  if (!guardReceptionSeatOps()) return;
   const res = await fetch(API_URL + "/state?shiftKey=" + encodeURIComponent(currentShiftKey) + "&t=" + Date.now()), data = await res.json();
   const shiftData = getSafeShiftData(data, currentShiftKey);
   const ifShiftUpdatedAt = Number(shiftData?.updatedAt || 0) || 0;

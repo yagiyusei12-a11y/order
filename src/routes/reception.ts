@@ -121,6 +121,16 @@ function applyReservationBlocksToSeats(input: {
     if (!("hasFutureRes" in o)) o.hasFutureRes = false;
   }
 
+  function seatRowForReservationId(sid: string): Record<string, unknown> | undefined {
+    const direct = seatById.get(sid);
+    if (direct) return direct;
+    const want = displayTableCode(sid);
+    for (const [id, seat] of seatById) {
+      if (id === sid || displayTableCode(id) === want) return seat;
+    }
+    return undefined;
+  }
+
   // 旧ロジック:
   // - 予約確定で同日同シフト
   // - time が無い→ブロック
@@ -161,7 +171,7 @@ function applyReservationBlocksToSeats(input: {
     for (const sidRaw of seatsArr) {
       const sid = typeof sidRaw === "string" ? sidRaw : "";
       if (!sid) continue;
-      const seat = seatById.get(sid);
+      const seat = seatRowForReservationId(sid);
       if (!seat) continue;
       if (hasFuture) seat.hasFutureRes = true;
       if (blockSeat) {
@@ -173,12 +183,71 @@ function applyReservationBlocksToSeats(input: {
   return seats;
 }
 
+function guestSeatTypePriorityList(c: Record<string, unknown>): string[] {
+  const raw = c.receptionGuestSeatTypePriority;
+  if (!Array.isArray(raw)) return [];
+  return raw.map((x) => normalizeSeatTypeLabel(x)).filter(Boolean);
+}
+
+function assignmentTypePriorityScore(
+  ids: string[],
+  byCode: Map<string, { seatType: string }>,
+  priorityList: string[],
+): number {
+  let s = 0;
+  for (const id of ids) {
+    const st = normalizeSeatTypeLabel(byCode.get(id)?.seatType);
+    let idx = -1;
+    for (let i = 0; i < priorityList.length; i++) {
+      if (priorityList[i] === st) {
+        idx = i;
+        break;
+      }
+    }
+    if (idx >= 0) s += idx;
+    else if (!st) s += 10000;
+    else s += 5000;
+  }
+  return s;
+}
+
+/** 受付・一括編集の席表記（T22, store-c01 等）を卓マスタ publicCode に揃える */
+function resolveReservationSeatIds(tables: { publicCode: string }[], inputs: string[]): string[] {
+  const labelToCode = new Map<string, string>();
+  for (const t of tables) {
+    const pc = String(t.publicCode ?? "").trim();
+    if (!pc) continue;
+    const label = displayTableCode(pc);
+    const prev = labelToCode.get(label);
+    if (!prev || pc.length > prev.length) labelToCode.set(label, pc);
+    labelToCode.set(pc, pc);
+    labelToCode.set(pc.toLowerCase(), pc);
+  }
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of inputs) {
+    const t = String(raw ?? "").trim();
+    if (!t) continue;
+    let resolved = labelToCode.get(t) || labelToCode.get(t.toLowerCase());
+    if (!resolved) {
+      const label = displayTableCode(t);
+      resolved = labelToCode.get(label) || t;
+    }
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    out.push(resolved);
+  }
+  return out;
+}
+
 function pickReservationSeats(input: {
-  tables: { code: string; capacity: number; mergeWith: string[] }[];
+  tables: { code: string; capacity: number; mergeWith: string[]; seatType?: string }[];
   used: Set<string>;
   num: number;
   maxMergeSize?: number;
   allOrNothingGroups?: string[][];
+  /** receptionGuestSeatTypePriority（ネット予約の自動割当・空き判定） */
+  seatTypePriority?: string[];
   /**
    * ネット予約の自動席割りでは、mergeAllOrNothingGroups が mergeWith 上つながらない卓を1グループに含むと
    * 連結条件と両立せず席が選べないことがある（例: 掘りごたつ島を1グループ化）。手動受付は reception-front 側。
@@ -189,9 +258,17 @@ function pickReservationSeats(input: {
   const maxMergeSize = Math.max(1, Number.isFinite(Number(input.maxMergeSize)) ? Math.floor(Number(input.maxMergeSize)) : 10);
   const allOrNothingGroups = Array.isArray(input.allOrNothingGroups) ? input.allOrNothingGroups : [];
   const skipAon = input.skipAllOrNothingGroups === true;
+  const seatTypePriority = Array.isArray(input.seatTypePriority)
+    ? input.seatTypePriority.map((x) => normalizeSeatTypeLabel(x)).filter(Boolean)
+    : [];
 
-  const byCode = new Map<string, { code: string; capacity: number; mergeWith: string[] }>();
-  for (const t of tables) byCode.set(t.code, t);
+  const byCode = new Map<string, { code: string; capacity: number; mergeWith: string[]; seatType: string }>();
+  for (const t of tables) {
+    byCode.set(t.code, {
+      ...t,
+      seatType: normalizeSeatTypeLabel(t.seatType),
+    });
+  }
 
   const freeCodes = tables.map((t) => t.code).filter((c) => c && !used.has(c));
   const freeSet = new Set(freeCodes);
@@ -302,11 +379,23 @@ function pickReservationSeats(input: {
             const ids = chosen.slice().sort();
             const key = ids.join(",");
             const bestKey = bestIds ? bestIds.join(",") : "";
-            if (
-              cap < bestCap ||
-              (cap === bestCap && ids.length < bestLen) ||
-              (cap === bestCap && ids.length === bestLen && key.localeCompare(bestKey) < 0)
-            ) {
+            let better = false;
+            if (!bestIds) {
+              better = true;
+            } else if (cap < bestCap) {
+              better = true;
+            } else if (cap === bestCap && seatTypePriority.length) {
+              const sc = assignmentTypePriorityScore(ids, byCode, seatTypePriority);
+              const sb = assignmentTypePriorityScore(bestIds, byCode, seatTypePriority);
+              if (sc < sb) better = true;
+              else if (sc === sb && ids.length < bestLen) better = true;
+              else if (sc === sb && ids.length === bestLen && key.localeCompare(bestKey) < 0) better = true;
+            } else if (cap === bestCap && ids.length < bestLen) {
+              better = true;
+            } else if (cap === bestCap && ids.length === bestLen && key.localeCompare(bestKey) < 0) {
+              better = true;
+            }
+            if (better) {
               bestIds = ids;
               bestCap = cap;
               bestLen = ids.length;
@@ -429,20 +518,63 @@ function filterNetSlotsNotPast(dateYmd: string, slotTimes: string[], timezone: s
   });
 }
 
+async function assertReservationSeatsFree(input: {
+  storeId: string;
+  resKey: string;
+  shiftKeys: string[];
+  seatIds: string[];
+}): Promise<string | null> {
+  const shiftKeys = [...new Set(input.shiftKeys.filter(Boolean))];
+  const seatIds = [...new Set(input.seatIds.filter(Boolean))];
+  if (!shiftKeys.length || !seatIds.length) return null;
+  const conflict = await prisma.receptionReservationSeat.findFirst({
+    where: {
+      storeId: input.storeId,
+      shiftKey: { in: shiftKeys },
+      seatId: { in: seatIds },
+      NOT: { resKey: input.resKey },
+    },
+    select: { seatId: true, resKey: true },
+  });
+  if (!conflict) return null;
+  return `席 ${displayTableCode(conflict.seatId)} は別の予約（${conflict.resKey}）で使用中です`;
+}
+
 async function syncReservationSeatLocks(input: {
   storeId: string;
   resKey: string;
-  shiftKey: string;
+  date: string;
+  shift: string;
+  time?: string;
   seats: string[];
   status: string | null | undefined;
 }): Promise<void> {
-  const { storeId, resKey, shiftKey, seats, status } = input;
+  const { storeId, resKey, date, shift, seats, status } = input;
+  const time = typeof input.time === "string" ? input.time.trim() : "";
   await prisma.receptionReservationSeat.deleteMany({ where: { storeId, resKey } });
   if (status === "キャンセル") return;
   const uniqueSeats = [...new Set(seats.filter((s) => typeof s === "string" && s))];
   if (uniqueSeats.length === 0) return;
+
+  const legacyKey = legacyDaypartShiftKey(date, shift === "dinner" ? "dinner" : "lunch");
+  const isNet = resKey.startsWith("N");
+  const slotKey = isNet && time ? netReserveSlotKey(date, time) : null;
+  const shiftKeys = slotKey ? [slotKey, legacyKey] : [legacyKey];
+  const conflictMsg = await assertReservationSeatsFree({ storeId, resKey, shiftKeys, seatIds: uniqueSeats });
+  if (conflictMsg) throw new Error(conflictMsg);
+
+  if (slotKey) {
+    const rows: { storeId: string; shiftKey: string; seatId: string; resKey: string }[] = [];
+    for (const seatId of uniqueSeats) {
+      rows.push({ storeId, shiftKey: slotKey, seatId, resKey });
+      rows.push({ storeId, shiftKey: legacyKey, seatId, resKey });
+    }
+    await prisma.receptionReservationSeat.createMany({ data: rows });
+    return;
+  }
+
   await prisma.receptionReservationSeat.createMany({
-    data: uniqueSeats.map((seatId) => ({ storeId, resKey, shiftKey, seatId })),
+    data: uniqueSeats.map((seatId) => ({ storeId, resKey, shiftKey: legacyKey, seatId })),
   });
 }
 
@@ -800,15 +932,37 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         const resId = res && typeof res.resId === "string" ? res.resId : "";
         const date = res && typeof res.date === "string" ? res.date : "";
         const shift = res && typeof res.shift === "string" ? res.shift : "";
+        const time = res && typeof res.time === "string" ? res.time : "";
         const status = res && typeof res.status === "string" ? res.status : null;
         if (!resId || !date || !shift) return reply.code(400).send({ error: "reservation needs resId/date/shift" });
-        await prisma.receptionReservation.upsert({
-          where: { storeId_resKey: { storeId: store.id, resKey: resId } },
-          create: { storeId: store.id, resKey: resId, data: res as never, date, shift, status },
-          update: { data: res as never, date, shift, status },
+        const tableRows = await prisma.table.findMany({
+          where: { storeId: store.id, active: true },
+          select: { publicCode: true },
         });
-        const seats = Array.isArray((res as any)?.seats) ? ((res as any).seats as unknown[]).filter((x) => typeof x === "string") as string[] : [];
-        await syncReservationSeatLocks({ storeId: store.id, resKey: resId, shiftKey: `${date}_${shift}`, seats, status });
+        const rawSeats = Array.isArray(res?.seats)
+          ? (res.seats as unknown[]).filter((x) => typeof x === "string") as string[]
+          : [];
+        const seats = resolveReservationSeatIds(tableRows, rawSeats);
+        const nextRes = { ...res, seats };
+        try {
+          await prisma.receptionReservation.upsert({
+            where: { storeId_resKey: { storeId: store.id, resKey: resId } },
+            create: { storeId: store.id, resKey: resId, data: nextRes as never, date, shift, status },
+            update: { data: nextRes as never, date, shift, status },
+          });
+          await syncReservationSeatLocks({
+            storeId: store.id,
+            resKey: resId,
+            date,
+            shift,
+            time,
+            seats,
+            status,
+          });
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          return reply.code(409).send({ error: msg || "seat lock failed" });
+        }
         return receptionMutationNotify(store.id);
       }
       if (type === "deleteReservation") {
@@ -820,21 +974,43 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
       }
       if (type === "bulkUpdateReservations") {
         const arr = Array.isArray(b.reservations) ? (b.reservations as unknown[]) : [];
+        const tableRows = await prisma.table.findMany({
+          where: { storeId: store.id, active: true },
+          select: { publicCode: true },
+        });
         for (const row of arr) {
           if (!row || typeof row !== "object" || Array.isArray(row)) continue;
           const r = row as Record<string, unknown>;
           const resId = typeof r.resId === "string" ? r.resId : "";
           const date = typeof r.date === "string" ? r.date : "";
           const shift = typeof r.shift === "string" ? r.shift : "";
+          const time = typeof r.time === "string" ? r.time : "";
           const status = typeof r.status === "string" ? r.status : null;
           if (!resId || !date || !shift) continue;
-          await prisma.receptionReservation.upsert({
-            where: { storeId_resKey: { storeId: store.id, resKey: resId } },
-            create: { storeId: store.id, resKey: resId, data: r as never, date, shift, status },
-            update: { data: r as never, date, shift, status },
-          });
-          const seats = Array.isArray((r as any)?.seats) ? ((r as any).seats as unknown[]).filter((x) => typeof x === "string") as string[] : [];
-          await syncReservationSeatLocks({ storeId: store.id, resKey: resId, shiftKey: `${date}_${shift}`, seats, status });
+          const rawSeats = Array.isArray(r.seats)
+            ? (r.seats as unknown[]).filter((x) => typeof x === "string") as string[]
+            : [];
+          const seats = resolveReservationSeatIds(tableRows, rawSeats);
+          r.seats = seats;
+          try {
+            await prisma.receptionReservation.upsert({
+              where: { storeId_resKey: { storeId: store.id, resKey: resId } },
+              create: { storeId: store.id, resKey: resId, data: r as never, date, shift, status },
+              update: { data: r as never, date, shift, status },
+            });
+            await syncReservationSeatLocks({
+              storeId: store.id,
+              resKey: resId,
+              date,
+              shift,
+              time,
+              seats,
+              status,
+            });
+          } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            return reply.code(409).send({ error: msg || "seat lock failed" });
+          }
         }
         return receptionMutationNotify(store.id);
       }
@@ -1015,6 +1191,8 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
     const maxMergeSize = Number.isFinite(Number(c.maxMergeSize)) ? Number(c.maxMergeSize) : 10;
     const allOrNothingGroups = Array.isArray(c.mergeAllOrNothingGroups) ? c.mergeAllOrNothingGroups : [];
     const n = Math.floor(partySize);
+    const seatTypePriority =
+      seatTypeMode === "require_select" ? [] : guestSeatTypePriorityList(c as Record<string, unknown>);
     const allowedTypes = await distinctSeatTypesForNetReserve(store.id);
     const allowedTypeSet = new Set(allowedTypes);
     if (seatTypeMode === "require_select" && seatTypeNorm && !allowedTypeSet.has(seatTypeNorm)) {
@@ -1036,6 +1214,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         code: t.publicCode,
         capacity: Number(t.capacity || 2),
         mergeWith: Array.isArray(t.mergeWith) ? t.mergeWith.filter((x) => typeof x === "string") as string[] : [],
+        seatType: normalizeSeatTypeLabel(t.seatType),
       }));
       const out: { time: string; available: boolean }[] = [];
       for (const time of slotTimes) {
@@ -1047,6 +1226,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           maxMergeSize,
           allOrNothingGroups,
           skipAllOrNothingGroups: true,
+          seatTypePriority,
         });
         out.push({ time, available: seats !== null });
       }
@@ -1081,6 +1261,8 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
     const daysAhead = Number.isFinite(Number(c.netReserveDaysAhead)) ? Number(c.netReserveDaysAhead) : 30;
     const enableNote = c.netReserveEnableNote === undefined ? true : Boolean(c.netReserveEnableNote);
     const seatTypeMode = netReserveSeatTypeMode(c as Record<string, unknown>);
+    const seatTypePriority =
+      seatTypeMode === "require_select" ? [] : guestSeatTypePriorityList(c as Record<string, unknown>);
     const seatTypeBodyRaw = typeof req.body?.seatType === "string" ? req.body.seatType.trim() : "";
     const seatTypeBody = normalizeSeatTypeLabel(seatTypeBodyRaw);
     const allowedTypes = await distinctSeatTypesForNetReserve(store.id);
@@ -1167,6 +1349,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
             code: t.publicCode,
             capacity: Number(t.capacity || 2),
             mergeWith: Array.isArray(t.mergeWith) ? t.mergeWith.filter((x) => typeof x === "string") as string[] : [],
+            seatType: normalizeSeatTypeLabel(t.seatType),
           }));
           const maxMergeSize = Number.isFinite(Number(c.maxMergeSize)) ? Number(c.maxMergeSize) : 10;
           const allOrNothingGroups = Array.isArray(c.mergeAllOrNothingGroups) ? c.mergeAllOrNothingGroups : [];
@@ -1177,6 +1360,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
             maxMergeSize,
             allOrNothingGroups,
             skipAllOrNothingGroups: true,
+            seatTypePriority,
           });
           if (!seats) return { ok: false as const };
 

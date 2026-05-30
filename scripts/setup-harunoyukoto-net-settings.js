@@ -100,6 +100,11 @@ async function main() {
   // 貸し切りは手動で席を選ぶ運用とし、ここでは空にする（ネット予約はサーバ側で AON を無視済み）。
 
   // Store constraints into ReceptionConfig.data (merged)
+  const prevConf = await prisma.receptionConfig.findUnique({ where: { storeId } });
+  const prevData =
+    prevConf?.data && typeof prevConf.data === "object" && !Array.isArray(prevConf.data)
+      ? (prevConf.data as Record<string, unknown>)
+      : {};
   await prisma.receptionConfig.upsert({
     where: { storeId },
     create: {
@@ -110,13 +115,19 @@ async function main() {
         manualWait: 30,
         maxMergeSize: 10,
         mergeAllOrNothingGroups: [],
+        netReserveSeatTypeMode: "any",
+        receptionGuestSeatTypePriority: ["半個室", "掘りごたつ", "カウンター"],
       },
     },
     update: {
       data: {
-        ...(await prisma.receptionConfig.findUnique({ where: { storeId } }))?.data,
+        ...prevData,
         maxMergeSize: 10,
         mergeAllOrNothingGroups: [],
+        netReserveSeatTypeMode: "any",
+        receptionGuestSeatTypePriority: Array.isArray(prevData.receptionGuestSeatTypePriority)
+          ? prevData.receptionGuestSeatTypePriority
+          : ["半個室", "掘りごたつ", "カウンター"],
       },
     },
   });

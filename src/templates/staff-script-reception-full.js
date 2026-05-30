@@ -112,13 +112,15 @@ function parseSeatsFromBulkEditInput(raw) {
     .map((s) => s.trim().toUpperCase())
     .filter(Boolean)
     .map((trimmed) => {
+      let id = trimmed;
       if (/^\d+$/.test(trimmed)) {
         const num = parseInt(trimmed, 10);
-        if (num >= 1 && num <= 10) return "C" + num;
-        if (num >= 21) return "T" + num;
+        if (num >= 1 && num <= 10) id = "C" + num;
+        else if (num >= 21) id = "T" + num;
       }
-      return trimmed;
-    });
+      return resolveSeatStateId(id) || id;
+    })
+    .filter(Boolean);
 }
 
 function seatTypeLine(id) {
@@ -828,8 +830,21 @@ async function submitBulkCsv() {
     });
     finalData.push(obj);
   });
-  await fetch(API_URL + "/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "bulkUpdateReservations", reservations: finalData }) });
-  closeCsvModal(); loadData();
+  try {
+    const res = await fetch(API_URL + "/event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "bulkUpdateReservations", reservations: finalData }),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error(j.error || "保存に失敗しました");
+    }
+    closeCsvModal();
+    loadData();
+  } catch (e) {
+    alert(String(e.message || e));
+  }
 }
 
 async function markArrived(resId) {

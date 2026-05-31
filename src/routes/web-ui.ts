@@ -5,6 +5,7 @@ import { templatePath } from "../lib/paths.js";
 import { displayTableCode } from "../lib/table-display-code.js";
 import { verifyGuestDisplayKey } from "../lib/guest-display-auth.js";
 import { guestDisplayPublicUrl, staffRequestOrigin } from "../lib/guest-display-url.js";
+import { buildMenuPrintHtml } from "../lib/menu-print-html.js";
 import { prisma } from "../db.js";
 import QRCode from "qrcode";
 
@@ -338,6 +339,13 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
     if (!store) return reply.code(404).type("text/plain; charset=utf-8").send("store not found");
     const body = html("reserve-front.html").replace(/__STORE_ID_JS__/g, JSON.stringify(req.params.storeId));
     return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(body);
+  });
+
+  /** 印刷用メニュー表（公開・ログイン不要。DB の商品名・税込価格・画像） */
+  app.get<{ Params: { storeId: string } }>("/menu-print/:storeId", async (req, reply) => {
+    const page = await buildMenuPrintHtml(req.params.storeId);
+    if (!page) return reply.code(404).type("text/plain; charset=utf-8").send("store not found");
+    return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(page);
   });
 
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/handy", async (req, reply) => {

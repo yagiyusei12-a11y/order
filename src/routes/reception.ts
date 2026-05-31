@@ -494,7 +494,16 @@ async function listAllDistinctTableSeatTypes(storeId: string): Promise<string[]>
 }
 
 async function distinctSeatTypesForNetReserve(storeId: string): Promise<string[]> {
-  return listAllDistinctTableSeatTypes(storeId);
+  const rows = await prisma.table.findMany({
+    where: { storeId, active: true },
+    select: { publicCode: true, seatType: true },
+  });
+  const set = new Set<string>();
+  for (const r of netReserveBookableTableRows(rows)) {
+    const st = normalizeSeatTypeLabel(r.seatType);
+    if (st) set.add(st);
+  }
+  return [...set].sort((a, b) => a.localeCompare(b, "ja"));
 }
 
 /** ネット予約の卓候補: 従来の C/T 形式または席種別が設定されている卓 */
@@ -503,6 +512,25 @@ function isNetReserveTableRow(t: { publicCode: string; seatType?: string | null 
   if (!pc) return false;
   const st = normalizeSeatTypeLabel(t.seatType);
   return rxNetBookableTableCode.test(pc) || Boolean(st);
+}
+
+/** カウンター卓（C01 形式・legacy 1–10 番・seatType=カウンター）。ネット予約の自動割当対象外 */
+function isCounterTableRow(t: { publicCode: string; seatType?: string | null }): boolean {
+  if (normalizeSeatTypeLabel(t.seatType) === "カウンター") return true;
+  const pc = String(t.publicCode ?? "").trim();
+  if (!pc) return false;
+  if (/^(?:[A-Za-z0-9_-]+[-_])?C\d+$/i.test(pc)) return true;
+  if (/^\d+$/.test(pc)) {
+    const n = parseInt(pc, 10);
+    if (Number.isFinite(n) && n >= 1 && n <= 10) return true;
+  }
+  return false;
+}
+
+function netReserveBookableTableRows<T extends { publicCode: string; seatType?: string | null }>(
+  tables: T[],
+): T[] {
+  return tables.filter((t) => isNetReserveTableRow(t) && !isCounterTableRow(t));
 }
 
 function filterNetSlotsNotPast(dateYmd: string, slotTimes: string[], timezone: string): string[] {
@@ -1203,6 +1231,9 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
       seatTypeMode === "require_select" ? [] : guestSeatTypePriorityList(c as Record<string, unknown>);
     const allowedTypes = await distinctSeatTypesForNetReserve(store.id);
     const allowedTypeSet = new Set(allowedTypes);
+    if (seatTypeMode === "require_select" && seatTypeNorm === "カウンター") {
+      return reply.code(400).send({ error: "counter seats not available for net reservation" });
+    }
     if (seatTypeMode === "require_select" && seatTypeNorm && !allowedTypeSet.has(seatTypeNorm)) {
       return reply.code(400).send({ error: "invalid seatType" });
     }
@@ -1213,7 +1244,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         select: { publicCode: true, capacity: true, mergeWith: true, seatType: true },
         orderBy: { sortOrder: "asc" },
       });
-      const bookable = tables.filter((t) => isNetReserveTableRow(t));
+      const bookable = netReserveBookableTableRows(tables);
       const filtered =
         seatTypeMode === "require_select"
           ? bookable.filter((t) => normalizeSeatTypeLabel(t.seatType) === seatTypeNorm)
@@ -1275,6 +1306,9 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
     const seatTypeBody = normalizeSeatTypeLabel(seatTypeBodyRaw);
     const allowedTypes = await distinctSeatTypesForNetReserve(store.id);
     const allowedTypeSet = new Set(allowedTypes);
+    if (seatTypeMode === "require_select" && seatTypeBody === "カウンター") {
+      return reply.code(400).send({ error: "counter seats not available for net reservation" });
+    }
     if (seatTypeMode === "require_select") {
       if (!seatTypeBody) return reply.code(400).send({ error: "seatType required" });
       if (!allowedTypeSet.has(seatTypeBody)) return reply.code(400).send({ error: "invalid seatType" });
@@ -1348,7 +1382,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
 
           const used = await collectUsedSeatsForNetReservation(tx, store.id, date, time, lunchHr);
 
-          const bookable = tables.filter((t) => isNetReserveTableRow(t));
+          const bookable = netReserveBookableTableRows(tables);
           const filtered =
             seatTypeMode === "require_select"
               ? bookable.filter((t) => normalizeSeatTypeLabel(t.seatType) === seatTypeBody)

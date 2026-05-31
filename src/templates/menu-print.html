@@ -6,176 +6,371 @@
   <title>__STORE_NAME__ メニュー</title>
   <style>
     :root {
-      --ink: #1f1a17;
-      --muted: #5c534c;
-      --line: #ddd5cc;
+      --ink: #2a211c;
+      --muted: #6b5f56;
+      --line: #d4c4b0;
       --accent: #5d4037;
-      --bg: #fdfaf5;
-      --card: #fff;
+      --gold: #a67c52;
+      --paper: #faf6f0;
+      --paper-deep: #f3ebe1;
     }
     * { box-sizing: border-box; }
+    html { background: #e8e0d6; }
     body {
       margin: 0;
-      font-family: "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+      font-family: "Yu Mincho", "Hiragino Mincho ProN", "MS PMincho", "Hiragino Sans", serif;
       color: var(--ink);
-      background: var(--bg);
-      line-height: 1.45;
+      line-height: 1.5;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
+
+    /* ── 画面上のツールバー ── */
     .toolbar {
       position: sticky;
       top: 0;
-      z-index: 10;
+      z-index: 20;
       display: flex;
       flex-wrap: wrap;
       gap: 0.65rem;
       align-items: center;
       justify-content: space-between;
       padding: 0.65rem 1rem;
-      background: rgba(253, 250, 245, 0.95);
-      border-bottom: 1px solid var(--line);
-      backdrop-filter: blur(6px);
+      background: rgba(42, 33, 28, 0.92);
+      color: #f5efe8;
+      font-family: "Hiragino Sans", "Yu Gothic UI", sans-serif;
     }
-    .toolbar p { margin: 0; font-size: 0.82rem; color: var(--muted); }
+    .toolbar p { margin: 0; font-size: 0.82rem; opacity: 0.9; }
     .btn-print {
-      border: none;
-      background: var(--accent);
+      border: 1px solid var(--gold);
+      background: transparent;
       color: #fff;
-      font-weight: 800;
-      padding: 0.55rem 1.1rem;
-      border-radius: 999px;
+      font-weight: 700;
+      padding: 0.5rem 1.15rem;
+      border-radius: 2px;
       cursor: pointer;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
+      letter-spacing: 0.08em;
     }
-    .wrap {
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 1.25rem 1rem 3rem;
-    }
-    .header {
-      text-align: center;
-      margin-bottom: 1.75rem;
-      padding-bottom: 1rem;
-      border-bottom: 2px solid var(--accent);
-    }
-    .header h1 {
-      margin: 0 0 0.35rem;
-      font-size: clamp(1.6rem, 4vw, 2.2rem);
-      letter-spacing: 0.14em;
-      color: var(--accent);
-    }
-    .header .sub {
-      margin: 0;
-      font-size: 0.88rem;
-      color: var(--muted);
-    }
-    .cat { margin-bottom: 2rem; break-inside: avoid; }
-    .cat-title {
-      margin: 0 0 0.85rem;
-      font-size: 1.15rem;
-      color: var(--accent);
-      border-left: 4px solid var(--accent);
-      padding-left: 0.55rem;
-    }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-      gap: 0.85rem;
-    }
-    .item {
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      overflow: hidden;
+    .btn-print:hover { background: rgba(166, 124, 82, 0.25); }
+
+    /* ── A4 シート ── */
+    .menu-book {
+      padding: 1.5rem 0 3rem;
       display: flex;
       flex-direction: column;
-      break-inside: avoid;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-    }
-    .img-wrap {
-      aspect-ratio: 4 / 3;
-      background: #f0ebe4;
-      display: flex;
       align-items: center;
-      justify-content: center;
-      overflow: hidden;
+      gap: 1.5rem;
     }
-    .img-wrap img {
+    .a4-chapter {
+      width: 210mm;
+      min-height: 297mm;
+      background: var(--paper);
+      padding: 14mm 13mm 12mm;
+      position: relative;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+    }
+    .a4-chapter:not(.chapter-first) {
+      margin-top: 0;
+    }
+
+    /* ── 表紙（1ページ目） ── */
+    .menu-cover {
+      text-align: center;
+      padding: 6mm 0 10mm;
+      margin-bottom: 4mm;
+    }
+    .cover-eyebrow {
+      margin: 0 0 0.35rem;
+      font-size: 0.72rem;
+      letter-spacing: 0.45em;
+      color: var(--gold);
+      font-family: "Hiragino Sans", sans-serif;
+    }
+    .cover-title {
+      margin: 0 0 0.5rem;
+      font-size: 1.85rem;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      color: var(--accent);
+    }
+    .cover-note {
+      margin: 0;
+      font-size: 0.72rem;
+      color: var(--muted);
+      font-family: "Hiragino Sans", sans-serif;
+    }
+    .cover-rule {
+      width: 48mm;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--gold), transparent);
+      margin: 8mm auto 0;
+    }
+
+    /* ── 章見出し ── */
+    .chapter-head {
+      text-align: center;
+      margin-bottom: 7mm;
+      padding-bottom: 4mm;
+      border-bottom: 1px solid var(--line);
+    }
+    .chapter-first .chapter-head {
+      margin-top: 0;
+    }
+    .chapter-en {
+      margin: 0 0 0.15rem;
+      font-size: 0.65rem;
+      letter-spacing: 0.35em;
+      color: var(--gold);
+      font-family: "Hiragino Sans", sans-serif;
+    }
+    .chapter-ja {
+      margin: 0 0 0.35rem;
+      font-size: 1.45rem;
+      font-weight: 600;
+      letter-spacing: 0.35em;
+      color: var(--accent);
+    }
+    .chapter-lead {
+      margin: 0;
+      font-size: 0.72rem;
+      color: var(--muted);
+      font-family: "Hiragino Sans", sans-serif;
+    }
+
+    /* ── サブカテゴリ ── */
+    .subcat {
+      margin-bottom: 5mm;
+      break-inside: avoid;
+    }
+    .subcat-title {
+      margin: 0 0 2.5mm;
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--accent);
+      letter-spacing: 0.06em;
+      padding-left: 2.5mm;
+      border-left: 2px solid var(--gold);
+      font-family: "Hiragino Sans", "Yu Gothic UI", sans-serif;
+    }
+
+    /* ── 料理・ドリンク：2段組リスト ── */
+    .list-cols {
+      column-count: 2;
+      column-gap: 5mm;
+    }
+    .subcat-list .menu-row {
+      break-inside: avoid;
+      margin-bottom: 2.2mm;
+    }
+    .menu-row {
+      display: flex;
+      gap: 2mm;
+      align-items: flex-start;
+    }
+    .menu-row.has-photo .row-body {
+      min-width: 0;
+    }
+    .photo-sm {
+      width: 11mm;
+      height: 11mm;
+      flex-shrink: 0;
+      border-radius: 1px;
+      overflow: hidden;
+      background: var(--paper-deep);
+      border: 1px solid var(--line);
+    }
+    .photo-sm img {
       width: 100%;
       height: 100%;
       object-fit: cover;
       display: block;
     }
-    .no-img {
-      font-size: 2rem;
-      opacity: 0.35;
+    .photo-empty {
+      background: linear-gradient(135deg, var(--paper-deep), #ebe3d9);
     }
-    .meta {
-      padding: 0.55rem 0.65rem 0.7rem;
-      flex: 1;
+    .row-body { flex: 1; min-width: 0; }
+    .row-line {
       display: flex;
-      flex-direction: column;
-      gap: 0.2rem;
-    }
-    .name {
-      margin: 0;
-      font-size: 0.88rem;
-      font-weight: 800;
+      align-items: baseline;
+      gap: 1mm;
       line-height: 1.35;
     }
-    .desc {
-      margin: 0;
-      font-size: 0.72rem;
-      color: var(--muted);
-      line-height: 1.35;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
+    .row-name {
+      font-size: 0.76rem;
+      flex-shrink: 1;
+      min-width: 0;
     }
-    .price {
-      margin: 0.15rem 0 0;
-      font-size: 0.95rem;
-      font-weight: 900;
+    .row-dots {
+      flex: 1;
+      border-bottom: 1px dotted var(--line);
+      min-width: 2mm;
+      margin-bottom: 0.15em;
+      opacity: 0.85;
+    }
+    .row-price {
+      flex-shrink: 0;
+      font-size: 0.76rem;
+      font-weight: 700;
       color: var(--accent);
       font-variant-numeric: tabular-nums;
+      font-family: "Hiragino Sans", sans-serif;
     }
-    .footer {
-      margin-top: 2rem;
-      padding-top: 0.75rem;
-      border-top: 1px dashed var(--line);
-      font-size: 0.75rem;
+    .row-desc {
+      margin: 0.5mm 0 0;
+      font-size: 0.62rem;
       color: var(--muted);
-      text-align: center;
+      line-height: 1.35;
+      font-family: "Hiragino Sans", sans-serif;
     }
+
+    /* ドリンク章は写真なし・コンパクト */
+    .chapter-drink .list-cols {
+      column-gap: 6mm;
+    }
+    .chapter-drink .row-name,
+    .chapter-drink .row-price {
+      font-size: 0.74rem;
+    }
+    .chapter-drink .subcat {
+      margin-bottom: 4mm;
+    }
+
+    /* ── 定食：写真付きカード ── */
+    .teishoku-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 4mm;
+    }
+    .teishoku-card {
+      break-inside: avoid;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .photo-lg {
+      aspect-ratio: 4 / 3;
+      background: var(--paper-deep);
+      overflow: hidden;
+    }
+    .photo-lg img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .teishoku-card .photo-empty {
+      width: 100%;
+      height: 100%;
+      min-height: 28mm;
+      background: linear-gradient(160deg, #ebe3d9, #f5efe8);
+    }
+    .card-body {
+      padding: 2.5mm 3mm 3mm;
+    }
+    .card-name {
+      margin: 0 0 1mm;
+      font-size: 0.78rem;
+      font-weight: 600;
+      line-height: 1.35;
+      color: var(--ink);
+    }
+    .card-desc {
+      margin: 0 0 1.5mm;
+      font-size: 0.62rem;
+      color: var(--muted);
+      line-height: 1.35;
+      font-family: "Hiragino Sans", sans-serif;
+    }
+    .card-price {
+      margin: 0;
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+      font-family: "Hiragino Sans", sans-serif;
+    }
+
+    /* ── 章フッター ── */
+    .chapter-foot {
+      margin-top: 8mm;
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.6rem;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+      font-family: "Hiragino Sans", sans-serif;
+      border-top: 1px solid var(--line);
+      padding-top: 2mm;
+    }
+
+    .book-footer {
+      width: 210mm;
+      text-align: center;
+      font-size: 0.72rem;
+      color: var(--muted);
+      font-family: "Hiragino Sans", sans-serif;
+      padding: 0 1rem 2rem;
+    }
+
+    /* ── 印刷 ── */
     @media print {
+      html { background: #fff; }
       .toolbar { display: none !important; }
-      body { background: #fff; }
-      .wrap { max-width: none; padding: 0; }
-      .grid {
-        grid-template-columns: repeat(3, 1fr);
-        gap: 0.55rem;
+      .menu-book {
+        padding: 0;
+        gap: 0;
       }
-      .item { box-shadow: none; }
-      .cat { page-break-inside: avoid; }
-      @page { size: A4; margin: 10mm; }
+      .a4-chapter {
+        width: auto;
+        min-height: auto;
+        box-shadow: none;
+        margin: 0;
+        page-break-after: always;
+        break-after: page;
+      }
+      .a4-chapter:last-child {
+        page-break-after: auto;
+        break-after: auto;
+      }
+      .list-cols {
+        column-count: 2;
+      }
+      .subcat {
+        break-inside: avoid-page;
+      }
+      .teishoku-card {
+        break-inside: avoid;
+      }
+      @page {
+        size: A4 portrait;
+        margin: 0;
+      }
+    }
+
+    @media screen and (max-width: 800px) {
+      .a4-chapter {
+        width: 100%;
+        min-height: auto;
+        padding: 1rem;
+      }
+      .list-cols { column-count: 1; }
+      .teishoku-grid { grid-template-columns: 1fr; }
+      .chapter-foot { position: static; margin-top: 1.5rem; }
     }
   </style>
 </head>
 <body>
   <div class="toolbar">
-    <p>__TAX_NOTE__ 更新: __GENERATED_AT__</p>
+    <p>__TAX_NOTE__　更新: __GENERATED_AT__　｜　A4・料理 / ドリンク / 定食の3章構成</p>
     <button type="button" class="btn-print" onclick="window.print()">印刷 / PDF保存</button>
   </div>
-  <div class="wrap">
-    <header class="header">
-      <h1>__STORE_NAME__</h1>
-      <p class="sub">__TAX_NOTE__</p>
-    </header>
-    __MENU_SECTIONS__
-    <footer class="footer">
-      写真・価格は予告なく変更する場合があります。<br />
-      コース・飲み放題プランは別途ご案内します。
-    </footer>
+  <div class="menu-book">
+    __MENU_CHAPTERS__
   </div>
+  <p class="book-footer">
+    写真・価格は予告なく変更する場合があります。コース・飲み放題プランは別途ご案内します。
+  </p>
 </body>
 </html>

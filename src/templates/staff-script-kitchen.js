@@ -47,6 +47,8 @@ let kitKitchenDataInitialized = false;
 /** @type {Set<string>} */
 let kitPrevFilteredQueuedIds = new Set();
 let kitPrevFilterSig = "";
+/** @type {Set<string>} 店舗設定 kitchenDrinkStationIds */
+let kitDrinkStationIds = new Set();
 
 const KIT_COOK_UI_MS = 250;
 /** ページ遷移後も残す（タブを閉じるまで）。店舗ごとに分離 */
@@ -242,9 +244,37 @@ async function playCookTimerCompleteSound() {
 }
 
 /** 新規注文（キッチン絞り込みに合う queued 行が増えたとき） */
-function playNewKitchenOrderSound() {
+function isKitchenLineDrink(ln) {
+  const sid = ln && ln.kitchenStationId;
+  return Boolean(sid && kitDrinkStationIds.has(sid));
+}
+
+/** 調理場フィルタがドリンク調理場のみか */
+function isKitchenFilterDrinkOnly(st) {
+  if (!st || !st.stas || st.stas.length === 0) return false;
+  for (const id of st.stas) {
+    if (id === "__none__") return false;
+    if (!kitDrinkStationIds.has(id)) return false;
+  }
+  return true;
+}
+
+/**
+ * @param {{ cats: string[]; stas: string[] }} st
+ * @param {Array<Record<string, unknown>>} newLines
+ * @returns {"order"|"orderDrink"}
+ */
+function resolveKitchenNewOrderSoundKey(st, newLines) {
+  if (isKitchenFilterDrinkOnly(st)) return "orderDrink";
+  if (newLines.length > 0 && newLines.every(isKitchenLineDrink)) return "orderDrink";
+  return "order";
+}
+
+/** @param {"order"|"orderDrink"} eventKey */
+function playNewKitchenOrderSound(eventKey) {
+  const key = eventKey === "orderDrink" ? "orderDrink" : "order";
   if (window.__staffNotificationSounds && typeof window.__staffNotificationSounds.play === "function") {
-    void window.__staffNotificationSounds.play("order");
+    void window.__staffNotificationSounds.play(key);
   }
 }
 
@@ -1833,6 +1863,8 @@ async function refreshKitIntervalFromServer() {
         .slice(0, 24);
       kitDisplayCache.courseBadgeText = bt || "□放題□";
       kitDisplayCache.emphasizeCourseTableQty = s.kitchenEmphasizeCourseTableQty !== false;
+      const drinkIds = Array.isArray(s.kitchenDrinkStationIds) ? s.kitchenDrinkStationIds : [];
+      kitDrinkStationIds = new Set(drinkIds.filter((x) => typeof x === "string" && x.trim()));
       if (window.__staffNotificationSounds) window.__staffNotificationSounds.applySettings(s);
     }
   } catch (_) {}
@@ -1858,11 +1890,13 @@ async function refreshKitchen() {
       kitPrevFilterSig = sig;
       kitPrevFilteredQueuedIds = new Set(nextIds);
     } else {
-      for (const id of nextIds) {
-        if (!kitPrevFilteredQueuedIds.has(id)) {
-          void playNewKitchenOrderSound();
-          break;
-        }
+      const newLines = [];
+      for (const ln of passingQueued) {
+        const id = kitchenPatchLineId(ln);
+        if (id && !kitPrevFilteredQueuedIds.has(id)) newLines.push(ln);
+      }
+      if (newLines.length > 0) {
+        void playNewKitchenOrderSound(resolveKitchenNewOrderSoundKey(st, newLines));
       }
       kitPrevFilteredQueuedIds = new Set(nextIds);
     }

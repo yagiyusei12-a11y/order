@@ -17,7 +17,7 @@ export type StaffSoundBuiltinPresetId =
 /** @deprecated 互換用。実際の preset は builtin/file/custom_* */
 export type StaffSoundPresetId = StaffSoundBuiltinPresetId | string;
 
-export type StaffNotificationSoundEventKey = "order" | "hallReady" | "bashing" | "call";
+export type StaffNotificationSoundEventKey = "order" | "orderDrink" | "hallReady" | "bashing" | "call";
 
 export type StaffNotificationSoundEventSettings = {
   enabled: boolean;
@@ -57,6 +57,7 @@ export { customSoundPresetId };
 
 export const DEFAULT_STAFF_NOTIFICATION_SOUNDS: StaffNotificationSoundsSettings = {
   order: { enabled: true, preset: "builtin_kitchen_order", repeatSec: 0 },
+  orderDrink: { enabled: true, preset: "builtin_reception_mid", repeatSec: 0 },
   hallReady: { enabled: true, preset: "file_30_nekketsu_win", repeatSec: 30 },
   bashing: { enabled: true, preset: "builtin_reception_low", repeatSec: 180 },
   call: { enabled: true, preset: "builtin_call", repeatSec: 5 },
@@ -87,6 +88,7 @@ export function mergeStaffNotificationSounds(
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return d;
   const o = raw as Record<string, unknown>;
   d.order = mergeEvent(o.order, DEFAULT_STAFF_NOTIFICATION_SOUNDS.order, customSounds);
+  d.orderDrink = mergeEvent(o.orderDrink, DEFAULT_STAFF_NOTIFICATION_SOUNDS.orderDrink, customSounds);
   d.hallReady = mergeEvent(o.hallReady, DEFAULT_STAFF_NOTIFICATION_SOUNDS.hallReady, customSounds);
   d.bashing = mergeEvent(o.bashing, DEFAULT_STAFF_NOTIFICATION_SOUNDS.bashing, customSounds);
   d.call = mergeEvent(o.call, DEFAULT_STAFF_NOTIFICATION_SOUNDS.call, customSounds);

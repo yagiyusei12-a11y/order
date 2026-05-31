@@ -831,6 +831,7 @@ async function loadAll() {
     api("/stores/" + encodeURIComponent(STORE) + "/staff-users"),
     api("/stores/" + encodeURIComponent(STORE) + "/payment-methods?all=1"),
     api("/stores/" + encodeURIComponent(STORE) + "/time-windows"),
+    loadKitchenStationsForSettings(),
   ]);
   document.getElementById("stName").value = st.store.name || "";
   document.getElementById("stId").value = st.store.id || "";
@@ -924,6 +925,7 @@ async function loadAll() {
   const keq = document.getElementById("stKitEmphasizeQty");
   if (keq) keq.checked = s.kitchenEmphasizeCourseTableQty !== false;
   renderStaffSoundCustomList(s.staffNotificationCustomSounds);
+  renderKitchenDrinkStationPick(s.kitchenDrinkStationIds);
   renderStaffSoundSettingsPanel(s.staffNotificationSounds, s.staffNotificationCustomSounds);
   if (window.__staffNotificationSounds) {
     window.__staffNotificationSounds.applySettings(s);
@@ -1698,7 +1700,13 @@ const STAFF_SOUND_EVENT_META = [
   {
     key: "order",
     title: "注文時",
-    desc: "キッチン画面で、絞り込みに合う新規注文（queued）が増えたときに1回鳴ります。",
+    desc: "キッチン画面で、絞り込みに合う新規注文（queued）が増えたときに1回鳴ります（料理・その他）。",
+    showRepeat: false,
+  },
+  {
+    key: "orderDrink",
+    title: "注文時（ドリンク）",
+    desc: "キッチン画面で、ドリンク調理場の新規注文、または調理場フィルタがドリンクのみのときに鳴ります。",
     showRepeat: false,
   },
   {
@@ -1756,6 +1764,57 @@ function staffSoundPresetOptionsHtml(selected) {
     .join("");
 }
 
+/** @type {Array<{ id: string; name: string }>} */
+let settingsKitStationsCache = [];
+
+async function loadKitchenStationsForSettings() {
+  try {
+    const d = await api("/stores/" + encodeURIComponent(STORE) + "/kitchen-stations?all=1");
+    settingsKitStationsCache = (d.stations || [])
+      .filter((st) => st && typeof st.id === "string" && st.id)
+      .map((st) => ({ id: st.id, name: String(st.name != null ? st.name : st.id) }));
+  } catch (_) {
+    settingsKitStationsCache = [];
+  }
+}
+
+function renderKitchenDrinkStationPick(selectedIds) {
+  const box = document.getElementById("stKitchenDrinkStations");
+  if (!box) return;
+  const sel = new Set(Array.isArray(selectedIds) ? selectedIds : []);
+  if (!settingsKitStationsCache.length) {
+    box.innerHTML =
+      '<p class="muted" style="font-size:0.78rem;margin:0">調理場マスタがありません。<a href="/staff-app/' +
+      encodeURIComponent(STORE) +
+      '/menu">メニュー管理</a>で追加してください。</p>';
+    return;
+  }
+  box.innerHTML = settingsKitStationsCache
+    .map(
+      (st) =>
+        '<label class="row" style="margin:0.2rem 0;align-items:center;gap:0.4rem;font-size:0.85rem">' +
+        '<input type="checkbox" data-kitchen-drink-sta="' +
+        escapeHtml(st.id) +
+        '"' +
+        (sel.has(st.id) ? " checked" : "") +
+        " />" +
+        escapeHtml(st.name) +
+        "</label>"
+    )
+    .join("");
+}
+
+function collectKitchenDrinkStationIdsFromForm() {
+  const ids = [];
+  document.querySelectorAll("[data-kitchen-drink-sta]").forEach((inp) => {
+    if (inp.checked) {
+      const id = inp.getAttribute("data-kitchen-drink-sta");
+      if (id) ids.push(id);
+    }
+  });
+  return ids;
+}
+
 function renderStaffSoundCustomList(customSounds) {
   const box = document.getElementById("stSoundCustomList");
   if (!box) return;
@@ -1793,6 +1852,7 @@ function renderStaffSoundCustomList(customSounds) {
         staffNotificationCustomSounds: list,
         staffNotificationSounds: {
           order: { enabled: true, preset, repeatSec: 0 },
+          orderDrink: tmp.orderDrink || { enabled: true, preset: "builtin_reception_mid", repeatSec: 0 },
           hallReady: tmp.hallReady,
           bashing: tmp.bashing,
           call: tmp.call,
@@ -1883,6 +1943,7 @@ function renderStaffSoundSettingsPanel(sounds, customSounds) {
       const enabled = card && card.querySelector("[data-sound-enabled=\"" + key + "\"]");
       const tmp = {
         order: { enabled: true, preset: "builtin_kitchen_order", repeatSec: 0 },
+        orderDrink: { enabled: true, preset: "builtin_reception_mid", repeatSec: 0 },
         hallReady: { enabled: true, preset: "file_30_nekketsu_win", repeatSec: 30 },
         bashing: { enabled: true, preset: "builtin_reception_low", repeatSec: 180 },
         call: { enabled: true, preset: "builtin_call", repeatSec: 5 },
@@ -2206,11 +2267,12 @@ if (btnSaveStaffSounds) {
     log("");
     if (!requireManagerForSettings()) return;
     const staffNotificationSounds = collectStaffSoundSettingsFromForm();
+    const kitchenDrinkStationIds = collectKitchenDrinkStationIdsFromForm();
     try {
       await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ settings: { staffNotificationSounds } }),
+        body: JSON.stringify({ settings: { staffNotificationSounds, kitchenDrinkStationIds } }),
       });
       log("通知音設定を保存しました");
       await loadAll();

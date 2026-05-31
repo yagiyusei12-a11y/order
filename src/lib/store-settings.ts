@@ -127,6 +127,8 @@ export type StoreSettingsShape = {
   kitchenCourseBadgeText: string;
   /** キッチン：コース卓の卓×数量を強調（赤）する */
   kitchenEmphasizeCourseTableQty: boolean;
+  /** キッチン：ドリンク調理場として扱う KitchenStation.id（通知音 orderDrink の判定） */
+  kitchenDrinkStationIds: string[];
   /** ゲストメニュー・カートに金額を表示する */
   guestShowMenuPrices: boolean;
   /** 価格入力モード: 税込 / 税抜 */
@@ -403,6 +405,7 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     kitchenShowCourseBadge: true,
     kitchenCourseBadgeText: "□放題□",
     kitchenEmphasizeCourseTableQty: true,
+    kitchenDrinkStationIds: [],
     guestShowMenuPrices: true,
     menuPriceTaxMode: "inclusive",
     coursePriceTaxMode: "inclusive",
@@ -740,6 +743,19 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
   }
   if (typeof o.mailFrom === "string") {
     d.mailFrom = o.mailFrom.trim().slice(0, 320);
+  }
+  if (Array.isArray(o.kitchenDrinkStationIds)) {
+    const seen = new Set<string>();
+    const ids: string[] = [];
+    for (const x of o.kitchenDrinkStationIds) {
+      if (typeof x !== "string") continue;
+      const id = x.trim();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      ids.push(id);
+      if (ids.length >= 32) break;
+    }
+    d.kitchenDrinkStationIds = ids;
   }
   d.staffNotificationCustomSounds = mergeStaffNotificationCustomSounds(o.staffNotificationCustomSounds);
   d.staffNotificationSounds = mergeStaffNotificationSounds(

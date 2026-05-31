@@ -47,6 +47,7 @@
 
   const DEFAULTS = {
     order: { enabled: true, preset: "builtin_kitchen_order", repeatSec: 0 },
+    orderDrink: { enabled: true, preset: "builtin_reception_mid", repeatSec: 0 },
     hallReady: { enabled: true, preset: "file_30_nekketsu_win", repeatSec: 30 },
     bashing: { enabled: true, preset: "builtin_reception_low", repeatSec: 180 },
     call: { enabled: true, preset: "builtin_call", repeatSec: 5 },
@@ -84,6 +85,7 @@
     const next = JSON.parse(JSON.stringify(DEFAULTS));
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return next;
     next.order = mergeEvent(raw.order, DEFAULTS.order);
+    next.orderDrink = mergeEvent(raw.orderDrink, DEFAULTS.orderDrink);
     next.hallReady = mergeEvent(raw.hallReady, DEFAULTS.hallReady);
     next.bashing = mergeEvent(raw.bashing, DEFAULTS.bashing);
     next.call = mergeEvent(raw.call, DEFAULTS.call);
@@ -270,7 +272,7 @@
   }
 
   /**
-   * @param {"order"|"hallReady"|"bashing"|"call"} eventKey
+   * @param {"order"|"orderDrink"|"hallReady"|"bashing"|"call"} eventKey
    */
   async function play(eventKey) {
     const c = cfg[eventKey];
@@ -283,7 +285,7 @@
   }
 
   /**
-   * @param {"order"|"hallReady"|"bashing"|"call"} eventKey
+   * @param {"order"|"orderDrink"|"hallReady"|"bashing"|"call"} eventKey
    */
   function getRepeatMs(eventKey) {
     const c = cfg[eventKey];

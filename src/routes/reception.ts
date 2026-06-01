@@ -25,7 +25,9 @@ import {
 import { displayTableCode, tableDisplayLabel } from "../lib/table-display-code.js";
 import { isMailConfigured, sendMailSafe } from "../lib/mail.js";
 import {
+  netReserveGuestEmailFromData,
   netReserveStaffNotifyEmails,
+  sendNetReserveCancelNotifications,
   sendNotifyEmailList,
 } from "../lib/notify-emails.js";
 import { staffRequestOrigin } from "../lib/guest-display-url.js";
@@ -47,6 +49,56 @@ import {
   normalizeReceptionSeatStatus,
 } from "../lib/reception-seat-status.js";
 import { broadcastReceptionUpdated } from "../lib/ops-seat-socket.js";
+
+function netReserveReservationPrevStatus(
+  row: { status: string | null; data: unknown } | null,
+): string {
+  if (!row) return "";
+  const data =
+    row.data && typeof row.data === "object" && !Array.isArray(row.data)
+      ? (row.data as Record<string, unknown>)
+      : {};
+  const fromData = typeof data.status === "string" ? data.status : "";
+  return fromData || row.status || "";
+}
+
+async function maybeNotifyNetReserveCancelled(
+  store: { id: string; name: string; settings: unknown },
+  resId: string,
+  prevStatus: string,
+  res: Record<string, unknown>,
+  status: string | null,
+  receptionUrl: string,
+  log?: { warn: (obj: object, msg: string) => void },
+): Promise<void> {
+  if (!resId.startsWith("N") || status !== "キャンセル" || prevStatus === "キャンセル") return;
+  const stSet = mergeStoreSettings(store.settings);
+  const conf = await prisma.receptionConfig.findUnique({ where: { storeId: store.id } });
+  const c = (conf?.data as Record<string, unknown>) || {};
+  try {
+    await sendNetReserveCancelNotifications(
+      {
+        storeId: store.id,
+        storeName: store.name,
+        resKey: resId,
+        date: typeof res.date === "string" ? res.date : "",
+        time: typeof res.time === "string" ? res.time : "",
+        name: typeof res.name === "string" ? res.name : "",
+        num: typeof res.num === "number" ? res.num : Number(res.num) || 0,
+        note: typeof res.note === "string" ? res.note : "",
+        seatType: typeof res.seatType === "string" ? res.seatType : "",
+        storedPhone: typeof res.phone === "string" ? res.phone : "",
+        emailForMail: netReserveGuestEmailFromData(res),
+        receptionConfig: c,
+        storeSettings: stSet,
+        receptionUrl,
+      },
+      log,
+    );
+  } catch (err: unknown) {
+    log?.warn({ err, storeId: store.id, resId }, "net reserve cancel mail failed");
+  }
+}
 
 function receptionMutationNotify(storeId: string): { status: "success" } {
   broadcastReceptionUpdated(storeId);
@@ -973,6 +1025,10 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           : [];
         const seats = resolveReservationSeatIds(tableRows, rawSeats);
         const nextRes = { ...res, seats };
+        const prevRow = await prisma.receptionReservation.findUnique({
+          where: { storeId_resKey: { storeId: store.id, resKey: resId } },
+        });
+        const prevStatus = netReserveReservationPrevStatus(prevRow);
         try {
           await prisma.receptionReservation.upsert({
             where: { storeId_resKey: { storeId: store.id, resKey: resId } },
@@ -992,6 +1048,17 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           const msg = e instanceof Error ? e.message : String(e);
           return reply.code(409).send({ error: msg || "seat lock failed" });
         }
+        const origin = staffRequestOrigin(req);
+        const receptionUrl = `${origin}/staff-app/${encodeURIComponent(store.id)}/reception`;
+        await maybeNotifyNetReserveCancelled(
+          store,
+          resId,
+          prevStatus,
+          nextRes,
+          status,
+          receptionUrl,
+          req.log,
+        );
         return receptionMutationNotify(store.id);
       }
       if (type === "deleteReservation") {
@@ -1007,6 +1074,8 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           where: { storeId: store.id, active: true },
           select: { publicCode: true },
         });
+        const bulkOrigin = staffRequestOrigin(req);
+        const bulkReceptionUrl = `${bulkOrigin}/staff-app/${encodeURIComponent(store.id)}/reception`;
         for (const row of arr) {
           if (!row || typeof row !== "object" || Array.isArray(row)) continue;
           const r = row as Record<string, unknown>;
@@ -1021,6 +1090,10 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
             : [];
           const seats = resolveReservationSeatIds(tableRows, rawSeats);
           r.seats = seats;
+          const prevRow = await prisma.receptionReservation.findUnique({
+            where: { storeId_resKey: { storeId: store.id, resKey: resId } },
+          });
+          const prevStatus = netReserveReservationPrevStatus(prevRow);
           try {
             await prisma.receptionReservation.upsert({
               where: { storeId_resKey: { storeId: store.id, resKey: resId } },
@@ -1040,6 +1113,15 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
             const msg = e instanceof Error ? e.message : String(e);
             return reply.code(409).send({ error: msg || "seat lock failed" });
           }
+          await maybeNotifyNetReserveCancelled(
+            store,
+            resId,
+            prevStatus,
+            r,
+            status,
+            bulkReceptionUrl,
+            req.log,
+          );
         }
         return receptionMutationNotify(store.id);
       }
@@ -1576,10 +1658,6 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
       ? (data.seats as unknown[]).filter((x) => typeof x === "string") as string[]
       : [];
     const seatType = typeof data.seatType === "string" ? data.seatType : "";
-    const emailForMail =
-      typeof data.email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email.trim())
-        ? data.email.trim()
-        : "";
 
     const nextData = { ...data, status: "キャンセル" };
 
@@ -1602,61 +1680,17 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
       return reply.code(409).send({ error: msg || "cancel failed" });
     }
 
-    const stSet = mergeStoreSettings(store.settings);
-    const conf = await prisma.receptionConfig.findUnique({ where: { storeId: store.id } });
-    const c = (conf?.data as Record<string, unknown>) || {};
-
-    if (emailForMail) {
-      const mailLines = [
-        `${store.name} のネット予約をキャンセルしました。`,
-        "",
-        `予約番号: ${resKey}`,
-        `日付: ${date}`,
-        `時間: ${time}`,
-        `お名前: ${name}`,
-        `人数: ${num}名`,
-        ...(note ? [`備考: ${note}`] : []),
-        ...(seatType ? [`席種別: ${seatType}`] : []),
-        "",
-        "※このメールは送信専用です。",
-      ];
-      void sendMailSafe(
-        {
-          to: emailForMail,
-          subject: `【予約キャンセル】${store.name} ${date} ${time}`,
-          text: mailLines.join("\n"),
-        },
-        { storeSettings: stSet },
-      ).catch((err: unknown) => req.log.warn({ err }, "net reserve cancel mail failed"));
-    }
-
-    const staffNotifyTo = netReserveStaffNotifyEmails(c);
-    if (staffNotifyTo.length > 0 && isMailConfigured(stSet)) {
-      const origin = staffRequestOrigin(req);
-      const receptionUrl = `${origin}/staff-app/${encodeURIComponent(store.id)}/reception`;
-      const staffLines = [
-        `【ネット予約キャンセル】${store.name}`,
-        "",
-        `予約番号: ${resKey}`,
-        `日付: ${date}`,
-        `時間: ${time}`,
-        `お名前: ${name}`,
-        `電話: ${storedPhone}`,
-        `人数: ${num}名`,
-        ...(seatType ? [`席種別: ${seatType}`] : []),
-        ...(note ? [`備考: ${note}`] : []),
-        "",
-        `受付画面: ${receptionUrl}`,
-      ];
-      void sendNotifyEmailList(
-        staffNotifyTo,
-        {
-          subject: `【予約キャンセル】${date} ${time} ${name}様`,
-          text: staffLines.join("\n"),
-        },
-        { storeSettings: stSet },
-      ).catch((err: unknown) => req.log.warn({ err }, "net reserve cancel staff notify failed"));
-    }
+    const origin = staffRequestOrigin(req);
+    const receptionUrl = `${origin}/staff-app/${encodeURIComponent(store.id)}/reception`;
+    await maybeNotifyNetReserveCancelled(
+      store,
+      resKey,
+      status,
+      nextData,
+      "キャンセル",
+      receptionUrl,
+      req.log,
+    );
 
     broadcastReceptionUpdated(store.id);
     return { ok: true, resId: resKey, cancelled: true };

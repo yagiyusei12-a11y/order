@@ -569,11 +569,25 @@
             seatLabels: out.seatLabels,
           });
           renderReserveHistory();
-          showMsg(
-            "ok",
-            `予約を受け付けました。\n予約番号: ${out.resId || "—"}${typeLine}` +
-              (email ? "\n確認メールをお送りしました。" : ""),
+          document.getElementById("msg").innerHTML = "";
+          const mailNote = email ? "\n確認メールをお送りしました。" : "";
+          alert(
+            "予約が完了しました。\n\n" +
+              "予約番号: " +
+              (out.resId || "—") +
+              typeLine +
+              mailNote +
+              "\n\n予約履歴画面に移動します。",
           );
+          setHistoryPanelOpen(true);
+          const historyPanel = document.getElementById("historyPanel");
+          if (historyPanel) {
+            try {
+              historyPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+            } catch (_) {
+              historyPanel.scrollIntoView();
+            }
+          }
         } catch (e) {
           showMsg("err", String(e.message || e));
         }

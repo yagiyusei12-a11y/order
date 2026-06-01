@@ -574,6 +574,13 @@ function buildOpsRegisterMountContext(session, table, detailPreloaded) {
         renderMiniSessions();
         await refreshRegisterFlow(session, table, freshDetail, undefined);
       },
+      async refreshAfterPayment(freshDetail) {
+        applyBillDetailToCaches(freshDetail);
+        selectedTableId = table.id;
+        renderGrid();
+        renderMiniSessions();
+        await refreshRegisterFlow(session, table, freshDetail, undefined);
+      },
     },
   };
 }

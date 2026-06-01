@@ -377,11 +377,24 @@ body.native-pos .page-title {
 }
 
 .ops-register-layout__register select,
-.ops-register-layout__register input[type="text"] {
+.ops-register-layout__register input[type="text"],
+.ops-register-layout__register input[type="number"] {
   width: 100%;
   padding: 0.35rem 0.45rem;
   margin-bottom: 0.2rem;
   font-size: 0.88rem;
+}
+
+.ops-register-layout__register .ops-pay-amount-row {
+  margin-bottom: 0.15rem;
+}
+
+.ops-register-layout__register .ops-pay-amount-input {
+  flex: 1;
+  min-width: 6rem;
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0;
 }
 
 .ops-register-layout__register #cashArea {

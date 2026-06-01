@@ -1692,6 +1692,10 @@ async function openBillModal(billId) {
         async afterGroupedQtyCommit() {
           await refreshBillInPlace();
         },
+        async refreshAfterPayment(freshDetail) {
+          detail = freshDetail;
+          await refreshBillInPlace();
+        },
       },
     };
   }

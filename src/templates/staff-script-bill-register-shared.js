@@ -726,6 +726,41 @@ function bindOpsCourseOptionPackButtons(panel, ctx, session, table) {
   });
 }
 
+function buildRegisterPaidPaymentsHtml(detail, escapeHtml, yenFn) {
+  const pays = (detail.payments || []).filter((p) => p && !p.voidedAt);
+  if (!pays.length) return "";
+  const paidTotal = Number(
+    detail.paidTotal != null ? detail.paidTotal : pays.reduce((s, p) => s + Number(p.amount || 0), 0)
+  );
+  const remainder = Number(detail.remainder || 0);
+  let html =
+    "<div class=\"ops-paid-payments\" style=\"margin:0.55rem 0 0.65rem;padding:0.55rem 0.65rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px\">" +
+    "<div class=\"muted\" style=\"font-size:0.72rem;margin-bottom:0.35rem;font-weight:700\">入金済み</div>" +
+    "<ul style=\"margin:0;padding:0;list-style:none;font-size:0.84rem\">";
+  for (const p of pays) {
+    const lab = (p.labelJa && String(p.labelJa).trim()) || p.methodCode || "";
+    html +=
+      "<li class=\"row\" style=\"justify-content:space-between;gap:0.5rem;margin:0.15rem 0\"><span>" +
+      escapeHtml(String(lab)) +
+      "</span><strong>" +
+      yenFn(p.amount) +
+      "</strong></li>";
+  }
+  html +=
+    "</ul>" +
+    "<div class=\"row ops-total-row\" style=\"margin-top:0.35rem;padding-top:0.35rem;border-top:1px solid #e2e8f0\"><span class=\"muted\">入金合計</span><strong>" +
+    yenFn(paidTotal) +
+    "</strong></div>";
+  if (remainder > 0) {
+    html +=
+      "<div class=\"row ops-total-row\" style=\"margin-top:0.25rem\"><span class=\"muted\">残り</span><strong style=\"color:#b45309;font-size:1.05rem\">" +
+      yenFn(remainder) +
+      "</strong></div>";
+  }
+  html += "</div>";
+  return html;
+}
+
 function mountPostPaymentAfterBox(panel, ctx, detail, change) {
   const afterBox = panel.querySelector("#afterPayment");
   if (!afterBox) return;
@@ -1118,24 +1153,39 @@ async function mountRegisterFlow(panel, ctx) {
     taxDetailHtml +
     "<div class=\"row ops-total-row ops-total-main\"><span class=\"muted\">請求金額</span><strong>" +
     BillRegisterShared.yen(detail.totalAmount) +
-    "</strong></div>";
-  const paymentFormHtml =
-    "<label>支払い方法</label><select id=\"payMethod\">" +
-    methods +
-    "</select>" +
-    (ctx.opsTwoColumn
-      ? "<div id=\"cashArea\" class=\"ops-cash-summary\" style=\"display:none\">" +
-        "<p style=\"margin:0.2rem 0;font-size:0.82rem\">受取 <strong id=\"cashReceivedSummary\">—</strong></p>" +
-        "<p style=\"margin:0.15rem 0;font-size:0.95rem;font-weight:800\">お釣り <strong id=\"cashChangeSummary\">0円</strong></p>" +
-        "</div>"
-      : "<div id=\"cashArea\" style=\"display:none\">" +
-        "<label>現金 受取額</label><input id=\"cashReceived\" type=\"text\" inputmode=\"numeric\" value=\"\" />" +
-        cashKeypadHtml +
-        "<p class=\"muted\" style=\"margin-top:0.45rem\">お釣り: <strong id=\"cashChange\">0円</strong></p>" +
-        "</div>") +
-    "<button type=\"button\" class=\"btn-primary\" id=\"btnConfirmPayment\" style=\"margin-top:0.65rem\"" +
-    ((readOnly || !bcPay) ? " disabled title=\"店舗設定により入金の追加は無効です\"" : "") +
-    ">確定</button>";
+    "</strong></div>" +
+    buildRegisterPaidPaymentsHtml(detail, ctx.escapeHtml, BillRegisterShared.yen);
+  const canAddPayment = !readOnly && bcPay && remainder > 0;
+  const paymentFormHtml = canAddPayment
+    ? "<label>支払い方法</label><select id=\"payMethod\">" +
+      methods +
+      "</select>" +
+      "<label style=\"margin-top:0.55rem\">今回の入金額</label>" +
+      "<div class=\"row ops-pay-amount-row\" style=\"gap:0.35rem;align-items:center;flex-wrap:wrap;margin-bottom:0.15rem\">" +
+      "<input id=\"payAmount\" type=\"number\" min=\"1\" max=\"" +
+      remainder +
+      "\" step=\"1\" value=\"" +
+      remainder +
+      "\" inputmode=\"numeric\" class=\"ops-pay-amount-input\" />" +
+      "<button type=\"button\" class=\"btn-ghost\" id=\"btnPayAmountFillRemainder\" style=\"width:auto;font-size:0.78rem;padding:0.35rem 0.55rem\">残りすべて</button>" +
+      "</div>" +
+      "<p class=\"muted\" style=\"font-size:0.72rem;margin:0 0 0.5rem;line-height:1.45\">商品券などで一部だけ入金したあと、残りを別の方法で入金できます。</p>" +
+      (ctx.opsTwoColumn
+        ? "<div id=\"cashArea\" class=\"ops-cash-summary\" style=\"display:none\">" +
+          "<p style=\"margin:0.2rem 0;font-size:0.82rem\">受取 <strong id=\"cashReceivedSummary\">—</strong></p>" +
+          "<p style=\"margin:0.15rem 0;font-size:0.95rem;font-weight:800\">お釣り <strong id=\"cashChangeSummary\">0円</strong></p>" +
+          "</div>"
+        : "<div id=\"cashArea\" style=\"display:none\">" +
+          "<label>現金 受取額</label><input id=\"cashReceived\" type=\"text\" inputmode=\"numeric\" value=\"\" />" +
+          cashKeypadHtml +
+          "<p class=\"muted\" style=\"margin-top:0.45rem\">お釣り: <strong id=\"cashChange\">0円</strong></p>" +
+          "</div>") +
+      "<button type=\"button\" class=\"btn-primary\" id=\"btnConfirmPayment\" style=\"margin-top:0.65rem\">入金を記録</button>"
+    : remainder <= 0 && !readOnly && bcPay
+      ? "<p class=\"muted\" style=\"font-size:0.82rem;margin:0.35rem 0 0\">入金済みです。</p>"
+      : !bcPay && !readOnly
+        ? "<p class=\"muted\" style=\"font-size:0.82rem;margin:0.35rem 0 0\">店舗設定により入金の追加は無効です。</p>"
+        : "";
   const registerHtml =
     "<div id=\"opsPaymentSummary\">" +
     paymentSummaryHtml +
@@ -1153,8 +1203,8 @@ async function mountRegisterFlow(panel, ctx) {
       "<div id=\"opsCashKeypadPane\" class=\"ops-cash-keypad-pane\" hidden>" +
       "<div class=\"ops-cash-keypad-pane__head\">" +
       "<span class=\"ops-cash-keypad-pane__title\">現金</span>" +
-      "<span class=\"ops-cash-keypad-pane__bill\">請求 " +
-      BillRegisterShared.yen(detail.totalAmount) +
+      "<span class=\"ops-cash-keypad-pane__bill\" id=\"opsCashKeypadBillLabel\">今回 " +
+      BillRegisterShared.yen(remainder) +
       "</span></div>" +
       "<label for=\"cashReceived\">受取額</label>" +
       "<input id=\"cashReceived\" type=\"text\" inputmode=\"numeric\" class=\"ops-cash-received-input\" value=\"\" autocomplete=\"off\" />" +
@@ -1198,8 +1248,12 @@ async function mountRegisterFlow(panel, ctx) {
     Array.isArray(ctx.storeSettings.opsRegisterMethodCodes) ? ctx.storeSettings.opsRegisterMethodCodes : []
   );
 
+  const payAmountEl = $("payAmount");
+  const btnPayAmountFillRemainder = $("btnPayAmountFillRemainder");
+
   if (readOnly) {
     if (methodEl) methodEl.disabled = true;
+    if (payAmountEl) payAmountEl.disabled = true;
     if (cashArea) cashArea.style.display = "none";
     ["btnMoveTable", "btnMergeSession", "btnEndSession", "btnOpsSessCounts", "btnOpsSessCourseApply", "btnOpsSessCourseClear"].forEach((id) => {
       const el = $(id);
@@ -1210,14 +1264,27 @@ async function mountRegisterFlow(panel, ctx) {
     });
   }
 
+  const readPayAmount = () => {
+    if (!payAmountEl) return remainder;
+    const raw = parseInt(String(payAmountEl.value || ""), 10);
+    if (!Number.isInteger(raw) || raw < 1) return 0;
+    return raw;
+  };
+  const updateKeypadBillLabel = () => {
+    const lab = panel.querySelector("#opsCashKeypadBillLabel");
+    const payAmt = readPayAmount() || remainder;
+    if (lab) lab.textContent = "今回 " + BillRegisterShared.yen(payAmt);
+  };
   const updateCash = () => {
+    const payAmt = readPayAmount() || remainder;
     const received = Number((recvEl && recvEl.value) || 0);
-    const change = received - remainder;
+    const change = received - payAmt;
     if (changeEl) changeEl.textContent = BillRegisterShared.yen(change);
     const sumRecv = $("cashReceivedSummary");
     const sumChg = $("cashChangeSummary");
     if (sumRecv) sumRecv.textContent = received > 0 ? BillRegisterShared.yen(received) : "—";
     if (sumChg) sumChg.textContent = BillRegisterShared.yen(change);
+    updateKeypadBillLabel();
   };
   const syncCashPaymentUi = () => {
     const isCash = methodEl && registerCodes.has(methodEl.value);
@@ -1243,6 +1310,16 @@ async function mountRegisterFlow(panel, ctx) {
   if (methodEl && !readOnly) {
     methodEl.onchange = syncCashPaymentUi;
     syncCashPaymentUi();
+  }
+  if (payAmountEl && !readOnly) {
+    payAmountEl.oninput = updateCash;
+    updateKeypadBillLabel();
+  }
+  if (btnPayAmountFillRemainder && payAmountEl && !readOnly) {
+    btnPayAmountFillRemainder.onclick = () => {
+      payAmountEl.value = String(remainder);
+      updateCash();
+    };
   }
   if (recvEl) recvEl.oninput = updateCash;
 
@@ -1607,23 +1684,33 @@ async function mountRegisterFlow(panel, ctx) {
       ctx.log("支払い方法を選択してください");
       return;
     }
+    const payAmount = readPayAmount();
+    if (!Number.isInteger(payAmount) || payAmount < 1) {
+      ctx.log("入金額は1円以上の整数で入力してください");
+      return;
+    }
+    if (payAmount > remainder) {
+      ctx.log("入金額が残り（" + BillRegisterShared.yen(remainder) + "）を超えています");
+      return;
+    }
     const isCash = registerCodes.has(methodEl.value);
     let note = null;
     let change = 0;
     if (isCash) {
       const received = Number((recvEl && recvEl.value) || 0);
-      if (!Number.isInteger(received) || received < remainder) {
-        ctx.log("現金受取額が不足しています");
+      if (!Number.isInteger(received) || received < payAmount) {
+        ctx.log("現金受取額が今回の入金額（" + BillRegisterShared.yen(payAmount) + "）未満です");
         return;
       }
-      change = received - remainder;
+      change = received - payAmount;
       note = "received:" + received + ",change:" + change;
     }
+    btnConfirmPayment.disabled = true;
     try {
       await ctx.api(ctx.billPath(detail.id) + "/payments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lines: [{ methodCode: methodEl.value, amount: remainder, note }] }),
+        body: JSON.stringify({ lines: [{ methodCode: methodEl.value, amount: payAmount, note }] }),
       });
       if (isCash) ctx.hooks.tryOpenDrawer();
       const refreshed = await ctx.api(ctx.billPath(detail.id));
@@ -1638,9 +1725,20 @@ async function mountRegisterFlow(panel, ctx) {
           });
         }
         mountPostPaymentAfterBox(panel, ctx, refreshed, change);
+      } else {
+        ctx.log("入金を記録しました（残り " + BillRegisterShared.yen(remAfter) + "）");
+        if (ctx.hooks.refreshAfterPayment) {
+          await ctx.hooks.refreshAfterPayment(refreshed);
+        } else if (ctx.hooks.renderDetail) {
+          if (ctx.hooks.loadAll) await ctx.hooks.loadAll();
+          if (ctx.hooks.setSelectedTableId) ctx.hooks.setSelectedTableId(table.id);
+          await ctx.hooks.renderDetail();
+        }
       }
     } catch (e) {
       ctx.log(String(e.message || e));
+    } finally {
+      btnConfirmPayment.disabled = false;
     }
   };
   function confirmOpsRemoveOrderLine(g) {

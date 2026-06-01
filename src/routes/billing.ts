@@ -522,15 +522,15 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     Querystring: { all?: string };
   }>("/stores/:storeId/payment-methods", async (req, reply) => {
     const all = req.query.all === "1" || req.query.all === "true";
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    const presetMap = mergeStoreSettings(store.settings).paymentMethodPresetAmounts;
+    const presetFor = (code: string) => presetMap[code] ?? [];
     const rows = await prisma.storePaymentMethod.findMany({
       where: { storeId: req.params.storeId, ...(all ? {} : { enabled: true }) },
       include: { definition: true },
       orderBy: { sortOrder: "asc" },
     });
-    if (rows.length === 0) {
-      const s = await prisma.store.findUnique({ where: { id: req.params.storeId } });
-      if (!s) return reply.code(404).send({ error: "store not found" });
-    }
     if (all) {
       return {
         paymentMethods: rows.map((r) => ({
@@ -539,6 +539,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
           labelJa: r.definition.labelJa,
           enabled: r.enabled,
           sortOrder: r.sortOrder,
+          presetAmounts: presetFor(r.definition.code),
         })),
       };
     }
@@ -546,6 +547,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       code: r.definition.code,
       labelJa: r.definition.labelJa,
       sortOrder: r.sortOrder,
+      presetAmounts: presetFor(r.definition.code),
     }));
   });
 

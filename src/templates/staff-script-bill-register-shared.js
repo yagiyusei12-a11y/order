@@ -1179,7 +1179,9 @@ async function mountRegisterFlow(panel, ctx) {
       methods +
       "</select>" +
       "<label style=\"margin-top:0.55rem\">今回の入金額</label>" +
-      "<div class=\"row ops-pay-amount-row\" style=\"gap:0.35rem;align-items:center;flex-wrap:wrap;margin-bottom:0.15rem\">" +
+      "<div id=\"opsPayAmountPresetBox\" class=\"ops-pay-preset-box\" hidden>" +
+      "<div class=\"ops-pay-preset-grid\" id=\"opsPayAmountPresetGrid\"></div></div>" +
+      "<div id=\"opsPayAmountManualRow\" class=\"row ops-pay-amount-row\" style=\"gap:0.35rem;align-items:center;flex-wrap:wrap;margin-bottom:0.15rem\">" +
       "<input id=\"payAmount\" type=\"number\" min=\"1\" max=\"" +
       remainder +
       "\" step=\"1\" value=\"" +
@@ -1187,6 +1189,7 @@ async function mountRegisterFlow(panel, ctx) {
       "\" inputmode=\"numeric\" class=\"ops-pay-amount-input\" />" +
       "<button type=\"button\" class=\"btn-ghost\" id=\"btnPayAmountFillRemainder\" style=\"width:auto;font-size:0.78rem;padding:0.35rem 0.55rem\">残りすべて</button>" +
       "</div>" +
+      "<button type=\"button\" class=\"btn-ghost\" id=\"btnPayAmountManualToggle\" hidden style=\"width:auto;font-size:0.72rem;padding:0.25rem 0.45rem;margin:-0.15rem 0 0.35rem\">金額を直接入力</button>" +
       "<p class=\"muted\" style=\"font-size:0.72rem;margin:0 0 0.5rem;line-height:1.45\">商品券などで一部だけ入金したあと、残りを別の方法で入金できます。</p>" +
       (ctx.opsTwoColumn
         ? "<div id=\"cashArea\" class=\"ops-cash-summary\" style=\"display:none\">" +
@@ -1265,9 +1268,34 @@ async function mountRegisterFlow(panel, ctx) {
   const registerCodes = new Set(
     Array.isArray(ctx.storeSettings.opsRegisterMethodCodes) ? ctx.storeSettings.opsRegisterMethodCodes : []
   );
+  /** @type {Record<string, number[]>} */
+  const methodPresetMap = {};
+  for (const pm of ctx.paymentMethods || []) {
+    if (pm && pm.code && Array.isArray(pm.presetAmounts) && pm.presetAmounts.length) {
+      methodPresetMap[pm.code] = pm.presetAmounts.filter((n) => Number.isInteger(n) && n > 0);
+    }
+  }
+  let payAmountManualMode = false;
 
   const payAmountEl = $("payAmount");
   const btnPayAmountFillRemainder = $("btnPayAmountFillRemainder");
+  const btnPayAmountManualToggle = $("btnPayAmountManualToggle");
+  const payAmountManualRow = $("opsPayAmountManualRow");
+  const payAmountPresetBox = $("opsPayAmountPresetBox");
+  const payAmountPresetGrid = $("opsPayAmountPresetGrid");
+
+  const highlightPresetAmount = (amt) => {
+    panel.querySelectorAll(".ops-pay-preset-btn").forEach((b) => {
+      const isRemainder = b.hasAttribute("data-pay-remainder");
+      const n = isRemainder ? remainder : Number(b.getAttribute("data-pay-preset-amount") || 0);
+      b.classList.toggle("ops-pay-preset-btn--active", n === amt);
+    });
+  };
+  const setPayAmount = (amt) => {
+    if (payAmountEl) payAmountEl.value = String(amt);
+    highlightPresetAmount(amt);
+    updateCash();
+  };
 
   if (readOnly) {
     if (methodEl) methodEl.disabled = true;
@@ -1325,18 +1353,80 @@ async function mountRegisterFlow(panel, ctx) {
       }
     }
   };
-  if (methodEl && !readOnly) {
-    methodEl.onchange = syncCashPaymentUi;
+  const syncPayMethodUi = () => {
+    const code = methodEl && methodEl.value ? String(methodEl.value) : "";
+    const presets = code && methodPresetMap[code] ? methodPresetMap[code] : [];
+    const hasPresets = presets.length > 0;
+    if (payAmountPresetBox) payAmountPresetBox.hidden = !hasPresets;
+    if (btnPayAmountManualToggle) {
+      btnPayAmountManualToggle.hidden = !hasPresets;
+      btnPayAmountManualToggle.textContent = payAmountManualMode ? "金額を選択" : "金額を直接入力";
+    }
+    if (payAmountManualRow) {
+      payAmountManualRow.style.display = !hasPresets || payAmountManualMode ? "" : "none";
+    }
+    if (hasPresets && payAmountPresetGrid) {
+      payAmountPresetGrid.innerHTML = "";
+      for (const amt of presets) {
+        const disabled = amt > remainder;
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "btn-ghost ops-pay-preset-btn";
+        btn.setAttribute("data-pay-preset-amount", String(amt));
+        btn.textContent = BillRegisterShared.yen(amt);
+        if (disabled) {
+          btn.disabled = true;
+          btn.classList.add("ops-pay-preset-btn--disabled");
+        }
+        btn.onclick = () => setPayAmount(amt);
+        payAmountPresetGrid.appendChild(btn);
+      }
+      if (remainder > 0 && presets.indexOf(remainder) < 0) {
+        const remBtn = document.createElement("button");
+        remBtn.type = "button";
+        remBtn.className = "btn-ghost ops-pay-preset-btn ops-pay-preset-btn--remainder";
+        remBtn.setAttribute("data-pay-remainder", "1");
+        remBtn.textContent = "残り " + BillRegisterShared.yen(remainder);
+        remBtn.onclick = () => setPayAmount(remainder);
+        payAmountPresetGrid.appendChild(remBtn);
+      }
+      if (!payAmountManualMode) {
+        let defaultAmt = 0;
+        if (presets.indexOf(remainder) >= 0) defaultAmt = remainder;
+        else {
+          const fits = presets.filter((a) => a <= remainder);
+          if (fits.length) defaultAmt = fits[fits.length - 1];
+        }
+        if (defaultAmt > 0) setPayAmount(defaultAmt);
+        else if (payAmountEl) payAmountEl.value = "";
+      }
+    } else if (payAmountEl && (!payAmountEl.value || Number(payAmountEl.value) < 1)) {
+      payAmountEl.value = String(remainder);
+      updateCash();
+    }
     syncCashPaymentUi();
+  };
+  if (methodEl && !readOnly) {
+    methodEl.onchange = () => {
+      payAmountManualMode = false;
+      syncPayMethodUi();
+    };
+    syncPayMethodUi();
   }
   if (payAmountEl && !readOnly) {
-    payAmountEl.oninput = updateCash;
+    payAmountEl.oninput = () => {
+      highlightPresetAmount(readPayAmount());
+      updateCash();
+    };
     updateKeypadBillLabel();
   }
   if (btnPayAmountFillRemainder && payAmountEl && !readOnly) {
-    btnPayAmountFillRemainder.onclick = () => {
-      payAmountEl.value = String(remainder);
-      updateCash();
+    btnPayAmountFillRemainder.onclick = () => setPayAmount(remainder);
+  }
+  if (btnPayAmountManualToggle && !readOnly) {
+    btnPayAmountManualToggle.onclick = () => {
+      payAmountManualMode = !payAmountManualMode;
+      syncPayMethodUi();
     };
   }
   if (recvEl) recvEl.oninput = updateCash;

@@ -20,6 +20,21 @@ export function isValidIanaTimeZone(z: string): boolean {
   }
 }
 
+/** 支払い方法ごとのレジ選択金額（円）を正規化 */
+export function normalizePaymentMethodPresetAmounts(raw: unknown): number[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<number>();
+  const out: number[] = [];
+  for (const x of raw) {
+    if (typeof x !== "number" || !Number.isInteger(x) || x < 1) continue;
+    if (seen.has(x)) continue;
+    seen.add(x);
+    out.push(x);
+    if (out.length >= 24) break;
+  }
+  return out.sort((a, b) => a - b);
+}
+
 /** 伝票訂正（支払い・割引・明細・取消など）の店舗ポリシー。API で強制（レポート／会計オペ共通） */
 export type BillCorrectionPolicy = {
   /** false なら下位フラグに関わらず訂正系APIを拒否 */
@@ -200,6 +215,8 @@ export type StoreSettingsShape = {
   }[];
   /** 会計画面で「レジ機能（現金の受取額/お釣り）」を有効にする支払い方法コード */
   opsRegisterMethodCodes: string[];
+  /** 支払い方法コード → レジで選べる入金額（円）。空なら手入力 */
+  paymentMethodPresetAmounts: Record<string, number[]>;
   /** true のとき、会計の入金（対象 methodCode）をレジ現金台帳に自動追記する */
   cashDrawerAutoFromPayments: boolean;
   /** 台帳連携の対象とする支払い方法コード（空配列は未指定扱いで cash のみ） */
@@ -435,6 +452,7 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     takeoutNetPriceDisplayMode: "inclusive",
     opsDiscountPresets: [],
     opsRegisterMethodCodes: [],
+    paymentMethodPresetAmounts: {},
     cashDrawerAutoFromPayments: false,
     cashDrawerAutoMethodCodes: ["cash"],
     opsReceiptPrintFields: { ...DEFAULT_OPS_RECEIPT_PRINT_FIELDS },
@@ -614,6 +632,23 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
       .map((x) => x.trim())
       .filter(Boolean);
     d.opsRegisterMethodCodes = [...new Set(codes)].slice(0, 30);
+  }
+  if (o.paymentMethodPresetAmounts && typeof o.paymentMethodPresetAmounts === "object" && !Array.isArray(o.paymentMethodPresetAmounts)) {
+    const src = o.paymentMethodPresetAmounts as Record<string, unknown>;
+    const next: Record<string, number[]> = { ...d.paymentMethodPresetAmounts };
+    for (const [key, val] of Object.entries(src)) {
+      if (typeof key !== "string") continue;
+      const code = key.trim();
+      if (!code) continue;
+      if (val === null) {
+        delete next[code];
+        continue;
+      }
+      const amounts = normalizePaymentMethodPresetAmounts(val);
+      if (amounts.length) next[code] = amounts;
+      else delete next[code];
+    }
+    d.paymentMethodPresetAmounts = next;
   }
   if (typeof o.cashDrawerAutoFromPayments === "boolean") {
     d.cashDrawerAutoFromPayments = o.cashDrawerAutoFromPayments;

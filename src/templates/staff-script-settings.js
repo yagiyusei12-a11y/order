@@ -964,6 +964,10 @@ async function loadAll() {
   const exTa = document.getElementById("stBizOpenExceptions");
   if (exTa) exTa.value = (Array.isArray(s.businessOpenExceptionDates) ? s.businessOpenExceptionDates : []).join("\n");
   const registerCodes = new Set(Array.isArray(s.opsRegisterMethodCodes) ? s.opsRegisterMethodCodes : []);
+  const presetAmountsMap =
+    s.paymentMethodPresetAmounts && typeof s.paymentMethodPresetAmounts === "object" && !Array.isArray(s.paymentMethodPresetAmounts)
+      ? s.paymentMethodPresetAmounts
+      : {};
   const stCdAuto = document.getElementById("stCashDrawerAutoFromPayments");
   if (stCdAuto) stCdAuto.checked = s.cashDrawerAutoFromPayments === true;
   const stCdCodes = document.getElementById("stCashDrawerAutoMethodCodes");
@@ -1174,6 +1178,18 @@ async function loadAll() {
     codeEl.style.fontSize = "0.72rem";
     codeEl.textContent = "コード: " + m.code + "（変更不可）";
 
+    const presetLab = document.createElement("span");
+    presetLab.className = "muted";
+    presetLab.style.fontSize = "0.7rem";
+    presetLab.textContent = "レジの選択肢（円・カンマ区切り・空で手入力）";
+    const presetInp = document.createElement("input");
+    presetInp.type = "text";
+    presetInp.style.margin = "0";
+    presetInp.style.fontSize = "0.82rem";
+    presetInp.placeholder = "例: 500,1000,1500";
+    presetInp.value = Array.isArray(presetAmountsMap[m.code]) ? presetAmountsMap[m.code].join(", ") : "";
+    presetInp.title = "会計画面で選べる入金額。空欄なら数字入力";
+
     const enabled = document.createElement("input");
     enabled.type = "checkbox";
     enabled.checked = m.enabled;
@@ -1213,15 +1229,21 @@ async function loadAll() {
             sortOrder: so,
           }),
         });
-        // レジ機能フラグ（店舗 settings）も保存
+        // レジ機能・選択金額（店舗 settings）も保存
         try {
           const nextSet = new Set(registerCodes);
           if (reg.checked) nextSet.add(m.code);
           else nextSet.delete(m.code);
+          const nextPresetMap = { ...presetAmountsMap };
+          const presets = parsePaymentPresetAmountsText(presetInp.value);
+          if (presets.length) nextPresetMap[m.code] = presets;
+          else delete nextPresetMap[m.code];
           await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ settings: { opsRegisterMethodCodes: [...nextSet] } }),
+            body: JSON.stringify({
+              settings: { opsRegisterMethodCodes: [...nextSet], paymentMethodPresetAmounts: nextPresetMap },
+            }),
           });
         } catch (e2) {
           log(String(e2 && e2.message ? e2.message : e2));
@@ -1259,6 +1281,8 @@ async function loadAll() {
 
     mid.appendChild(labInp);
     mid.appendChild(codeEl);
+    mid.appendChild(presetLab);
+    mid.appendChild(presetInp);
 
     const lab = document.createElement("label");
     lab.className = "row";
@@ -1308,6 +1332,23 @@ async function loadAll() {
 
   renderTimeWindows(twRes.timeWindows || []);
   renderStaffSidebarEditor();
+}
+
+function parsePaymentPresetAmountsText(raw) {
+  const parts = String(raw || "").split(/[,、\s]+/);
+  const seen = new Set();
+  const out = [];
+  for (const part of parts) {
+    const t = part.trim();
+    if (!t) continue;
+    const n = parseInt(t, 10);
+    if (!Number.isInteger(n) || n < 1 || seen.has(n)) continue;
+    seen.add(n);
+    out.push(n);
+    if (out.length >= 24) break;
+  }
+  out.sort((a, b) => a - b);
+  return out;
 }
 
 function newPresetId() {

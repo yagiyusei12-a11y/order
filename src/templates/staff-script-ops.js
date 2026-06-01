@@ -2495,7 +2495,6 @@ function renderMiniSessions() {
 }
 
 async function ensurePaymentMethods() {
-  if (paymentMethodsCache.length) return;
   const rows = await api("/stores/" + encodeURIComponent(STORE) + "/payment-methods");
   paymentMethodsCache = Array.isArray(rows) ? rows : [];
 }

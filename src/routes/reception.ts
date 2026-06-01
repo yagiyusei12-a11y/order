@@ -1418,6 +1418,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
             seats,
             note,
             ...(seatTypeMode === "require_select" && seatTypeBody ? { seatType: seatTypeBody } : {}),
+            ...(emailForMail ? { email: emailForMail } : {}),
           };
 
           await tx.receptionReservation.upsert({
@@ -1521,6 +1522,144 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
       }
     }
     return reply.code(409).send({ error: "no available seats" });
+  });
+
+  /**
+   * ネット予約のキャンセル（お客様・予約履歴から）。予約番号＋予約時の電話番号で本人確認。
+   */
+  app.post<{
+    Params: { storeId: string; resId: string };
+    Body: { phone?: unknown };
+  }>("/reception/:storeId/net/reservations/:resId/cancel", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+
+    const resKey = typeof req.params.resId === "string" ? req.params.resId.trim() : "";
+    if (!resKey || !resKey.startsWith("N")) {
+      return reply.code(400).send({ error: "invalid reservation id" });
+    }
+
+    const phoneNorm = normalizeReceptionPhone(req.body?.phone);
+    if (!phoneNorm.ok) return reply.code(400).send({ error: "phone required" });
+
+    const row = await prisma.receptionReservation.findUnique({
+      where: { storeId_resKey: { storeId: store.id, resKey } },
+    });
+    if (!row) {
+      return reply.code(404).send({ error: "reservation not found or phone mismatch" });
+    }
+
+    const data =
+      row.data && typeof row.data === "object" && !Array.isArray(row.data)
+        ? (row.data as Record<string, unknown>)
+        : {};
+    const storedPhone = typeof data.phone === "string" ? data.phone : "";
+    if (normalizePhoneDigits(storedPhone) !== normalizePhoneDigits(phoneNorm.phone)) {
+      return reply.code(404).send({ error: "reservation not found or phone mismatch" });
+    }
+
+    const status = typeof data.status === "string" ? data.status : row.status || "";
+    if (status === "キャンセル") {
+      return { ok: true, resId: resKey, alreadyCancelled: true };
+    }
+    if (status === "来店済み") {
+      return reply.code(400).send({ error: "already visited; cannot cancel online" });
+    }
+
+    const date = typeof data.date === "string" ? data.date : row.date;
+    const shift = typeof data.shift === "string" ? data.shift : row.shift;
+    const time = typeof data.time === "string" ? data.time : "";
+    const name = typeof data.name === "string" ? data.name : "";
+    const num = typeof data.num === "number" ? data.num : Number(data.num) || 0;
+    const note = typeof data.note === "string" ? data.note : "";
+    const seats = Array.isArray(data.seats)
+      ? (data.seats as unknown[]).filter((x) => typeof x === "string") as string[]
+      : [];
+    const seatType = typeof data.seatType === "string" ? data.seatType : "";
+    const emailForMail =
+      typeof data.email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email.trim())
+        ? data.email.trim()
+        : "";
+
+    const nextData = { ...data, status: "キャンセル" };
+
+    try {
+      await prisma.receptionReservation.update({
+        where: { storeId_resKey: { storeId: store.id, resKey } },
+        data: { data: nextData as never, status: "キャンセル" },
+      });
+      await syncReservationSeatLocks({
+        storeId: store.id,
+        resKey,
+        date,
+        shift,
+        time,
+        seats,
+        status: "キャンセル",
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return reply.code(409).send({ error: msg || "cancel failed" });
+    }
+
+    const stSet = mergeStoreSettings(store.settings);
+    const conf = await prisma.receptionConfig.findUnique({ where: { storeId: store.id } });
+    const c = (conf?.data as Record<string, unknown>) || {};
+
+    if (emailForMail) {
+      const mailLines = [
+        `${store.name} のネット予約をキャンセルしました。`,
+        "",
+        `予約番号: ${resKey}`,
+        `日付: ${date}`,
+        `時間: ${time}`,
+        `お名前: ${name}`,
+        `人数: ${num}名`,
+        ...(note ? [`備考: ${note}`] : []),
+        ...(seatType ? [`席種別: ${seatType}`] : []),
+        "",
+        "※このメールは送信専用です。",
+      ];
+      void sendMailSafe(
+        {
+          to: emailForMail,
+          subject: `【予約キャンセル】${store.name} ${date} ${time}`,
+          text: mailLines.join("\n"),
+        },
+        { storeSettings: stSet },
+      ).catch((err: unknown) => req.log.warn({ err }, "net reserve cancel mail failed"));
+    }
+
+    const staffNotifyTo = netReserveStaffNotifyEmails(c);
+    if (staffNotifyTo.length > 0 && isMailConfigured(stSet)) {
+      const origin = staffRequestOrigin(req);
+      const receptionUrl = `${origin}/staff-app/${encodeURIComponent(store.id)}/reception`;
+      const staffLines = [
+        `【ネット予約キャンセル】${store.name}`,
+        "",
+        `予約番号: ${resKey}`,
+        `日付: ${date}`,
+        `時間: ${time}`,
+        `お名前: ${name}`,
+        `電話: ${storedPhone}`,
+        `人数: ${num}名`,
+        ...(seatType ? [`席種別: ${seatType}`] : []),
+        ...(note ? [`備考: ${note}`] : []),
+        "",
+        `受付画面: ${receptionUrl}`,
+      ];
+      void sendNotifyEmailList(
+        staffNotifyTo,
+        {
+          subject: `【予約キャンセル】${date} ${time} ${name}様`,
+          text: staffLines.join("\n"),
+        },
+        { storeSettings: stSet },
+      ).catch((err: unknown) => req.log.warn({ err }, "net reserve cancel staff notify failed"));
+    }
+
+    broadcastReceptionUpdated(store.id);
+    return { ok: true, resId: resKey, cancelled: true };
   });
 }
 

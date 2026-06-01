@@ -2557,7 +2557,6 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     Params: { storeId: string; billId: string; paymentId: string };
     Body: { reason?: string };
   }>("/stores/:storeId/bills/:billId/payments/:paymentId/void", async (req, reply) => {
-    if (!assertManagerRole(reply, req.user)) return;
     const st7 = await mergedSettingsForStore(req.params.storeId);
     if (!st7) return reply.code(404).send({ error: "store not found" });
     if (forbidBillCorrection(reply, st7, "payments", "店舗設定により入金の取消は無効です")) return;
@@ -2566,6 +2565,8 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     });
     if (!bill) return reply.code(404).send({ error: "bill not found" });
     if (bill.status === "void") return reply.code(400).send({ error: "bill is void" });
+    // 精算済み伝票の入金取消は店長のみ（レジ途中の open 伝票は入金追加と同じくスタッフ可）
+    if (bill.status === "settled" && !assertManagerRole(reply, req.user)) return;
     const staffUserId = staffUserIdFromReq(req);
     const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 200) : null;
 

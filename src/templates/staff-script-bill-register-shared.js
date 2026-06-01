@@ -726,9 +726,10 @@ function bindOpsCourseOptionPackButtons(panel, ctx, session, table) {
   });
 }
 
-function buildRegisterPaidPaymentsHtml(detail, escapeHtml, yenFn) {
+function buildRegisterPaidPaymentsHtml(detail, escapeHtml, yenFn, opts) {
   const pays = (detail.payments || []).filter((p) => p && !p.voidedAt);
   if (!pays.length) return "";
+  const allowVoid = Boolean(opts && opts.allowVoid);
   const paidTotal = Number(
     detail.paidTotal != null ? detail.paidTotal : pays.reduce((s, p) => s + Number(p.amount || 0), 0)
   );
@@ -739,12 +740,23 @@ function buildRegisterPaidPaymentsHtml(detail, escapeHtml, yenFn) {
     "<ul style=\"margin:0;padding:0;list-style:none;font-size:0.84rem\">";
   for (const p of pays) {
     const lab = (p.labelJa && String(p.labelJa).trim()) || p.methodCode || "";
+    const voidBtn =
+      allowVoid && p.id
+        ? "<button type=\"button\" class=\"btn-ghost ops-paid-void-btn\" data-void-pay=\"" +
+          escapeHtml(String(p.id)) +
+          "\" style=\"width:auto;font-size:0.72rem;padding:0.2rem 0.45rem;color:#b91c1c;border-color:#fecaca\">取消</button>"
+        : "";
     html +=
-      "<li class=\"row\" style=\"justify-content:space-between;gap:0.5rem;margin:0.15rem 0\"><span>" +
+      "<li class=\"row\" style=\"justify-content:space-between;gap:0.5rem;align-items:center;margin:0.15rem 0\">" +
+      "<span style=\"flex:1;min-width:0\">" +
       escapeHtml(String(lab)) +
-      "</span><strong>" +
+      "</span>" +
+      "<span class=\"row\" style=\"gap:0.35rem;align-items:center;flex-shrink:0\">" +
+      "<strong>" +
       yenFn(p.amount) +
-      "</strong></li>";
+      "</strong>" +
+      voidBtn +
+      "</span></li>";
   }
   html +=
     "</ul>" +
@@ -756,6 +768,10 @@ function buildRegisterPaidPaymentsHtml(detail, escapeHtml, yenFn) {
       "<div class=\"row ops-total-row\" style=\"margin-top:0.25rem\"><span class=\"muted\">残り</span><strong style=\"color:#b45309;font-size:1.05rem\">" +
       yenFn(remainder) +
       "</strong></div>";
+  }
+  if (allowVoid) {
+    html +=
+      "<p class=\"muted\" style=\"font-size:0.68rem;margin:0.45rem 0 0;line-height:1.4\">取消するとその入金だけ取り消され、残りの請求に戻ります。</p>";
   }
   html += "</div>";
   return html;
@@ -1154,7 +1170,9 @@ async function mountRegisterFlow(panel, ctx) {
     "<div class=\"row ops-total-row ops-total-main\"><span class=\"muted\">請求金額</span><strong>" +
     BillRegisterShared.yen(detail.totalAmount) +
     "</strong></div>" +
-    buildRegisterPaidPaymentsHtml(detail, ctx.escapeHtml, BillRegisterShared.yen);
+    buildRegisterPaidPaymentsHtml(detail, ctx.escapeHtml, BillRegisterShared.yen, {
+      allowVoid: !readOnly && bcPay && detail.status === "open",
+    });
   const canAddPayment = !readOnly && bcPay && remainder > 0;
   const paymentFormHtml = canAddPayment
     ? "<label>支払い方法</label><select id=\"payMethod\">" +
@@ -1322,6 +1340,40 @@ async function mountRegisterFlow(panel, ctx) {
     };
   }
   if (recvEl) recvEl.oninput = updateCash;
+
+  panel.querySelectorAll("[data-void-pay]").forEach((btn) => {
+    if (readOnly || !bcPay) return;
+    btn.onclick = async () => {
+      const pid = btn.getAttribute("data-void-pay");
+      if (!pid) return;
+      if (!confirm("この入金を取り消しますか？金額は残りの請求に戻ります。")) return;
+      const reason = prompt("取消理由（任意）", "") || "";
+      btn.disabled = true;
+      try {
+        const out = await ctx.api(
+          ctx.billPath(detail.id) + "/payments/" + encodeURIComponent(pid) + "/void",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reason }),
+          }
+        );
+        const refreshed = out && out.bill ? out.bill : await ctx.api(ctx.billPath(detail.id));
+        ctx.log("入金を取り消しました");
+        if (ctx.hooks.refreshAfterPayment) {
+          await ctx.hooks.refreshAfterPayment(refreshed);
+        } else if (ctx.hooks.renderDetail) {
+          if (ctx.hooks.loadAll) await ctx.hooks.loadAll();
+          if (ctx.hooks.setSelectedTableId) ctx.hooks.setSelectedTableId(table.id);
+          await ctx.hooks.renderDetail();
+        }
+      } catch (e) {
+        ctx.log(String(e.message || e));
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  });
 
   const btnMoveTable = $("btnMoveTable");
   if (btnMoveTable) {

@@ -135,13 +135,6 @@
       } catch (_) {}
     }
 
-    function loadRecentReserveAt() {
-      const store = loadDeviceStore();
-      const first = store.items[0];
-      const at = first && typeof first.bookedAt === "number" ? first.bookedAt : null;
-      return at != null && Number.isFinite(at) ? at : null;
-    }
-
     function appendReserveHistory(entry) {
       const store = loadDeviceStore();
       const item = {
@@ -165,10 +158,20 @@
       saveDeviceStore({ v: 1, items: withoutDup.slice(0, RESERVE_HISTORY_MAX) });
     }
 
+    /** 直近5分以内に、この端末で有効な予約（キャンセル済・過去分は除く）があるか */
     function shouldConfirmDuplicateReserve() {
-      const at = loadRecentReserveAt();
-      if (at == null) return false;
-      return Date.now() - at < RECENT_RESERVE_WINDOW_MS;
+      const store = loadDeviceStore();
+      const now = Date.now();
+      for (const item of store.items) {
+        if (!item || !item.resId) continue;
+        if (item.status === "cancelled") continue;
+        if (reserveHistoryIsPast(item.date, item.time)) continue;
+        const at = typeof item.bookedAt === "number" ? item.bookedAt : null;
+        if (at != null && Number.isFinite(at) && now - at < RECENT_RESERVE_WINDOW_MS) {
+          return true;
+        }
+      }
+      return false;
     }
 
     function fmtReserveDateLabel(ymd) {

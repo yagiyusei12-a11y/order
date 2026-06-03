@@ -42,6 +42,7 @@ import {
   guestLastOrderPolicyIsSinglesOnlyMode,
 } from "../lib/guest-last-order.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
+import { liveSessionSuggestedTotal } from "../lib/session-live-total.js";
 import { displayTableCode } from "../lib/table-display-code.js";
 import { mergeTwoOpenSessionsTx } from "../lib/session-merge.js";
 import {
@@ -1826,17 +1827,41 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       orderBy: { createdAt: "desc" },
       include: { lines: true },
     });
+    const storeRow = await prisma.store.findUnique({
+      where: { id: session.storeId },
+      select: { settings: true },
+    });
+    const stSet = mergeStoreSettings(storeRow?.settings);
     const billingSessionRow = await prisma.diningSession.findUnique({
       where: { id: listBilling.ctx.billingSessionId },
       select: {
+        courseId: true,
+        guestCount: true,
+        childCount: true,
+        coursePriceTier: {
+          select: { durationMinutes: true, pricePerPerson: true, childPricePerPerson: true },
+        },
+        bill: { select: { status: true, discountJson: true } },
         course: { select: { id: true, name: true } },
       },
     });
+    const currentOrderTotal =
+      stSet.guestShowMenuPrices && billingSessionRow
+        ? liveSessionSuggestedTotal({
+            courseId: billingSessionRow.courseId,
+            guestCount: billingSessionRow.guestCount,
+            childCount: billingSessionRow.childCount,
+            coursePriceTier: billingSessionRow.coursePriceTier,
+            orders,
+            bill: billingSessionRow.bill,
+          })
+        : null;
     return {
       orders,
       sessionCourse: billingSessionRow?.course
         ? { id: billingSessionRow.course.id, name: billingSessionRow.course.name }
         : null,
+      ...(currentOrderTotal != null ? { currentOrderTotal } : {}),
     };
   });
 

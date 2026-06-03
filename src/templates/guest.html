@@ -657,6 +657,34 @@
     .guest-history-addbtn:active {
       opacity: 0.88;
     }
+    .guest-history-total {
+      margin: 0 0 0.85rem;
+      padding: 0.75rem 0.85rem;
+      border-radius: 12px;
+      border: 1px solid rgba(249, 115, 22, 0.45);
+      background: rgba(249, 115, 22, 0.12);
+    }
+    .guest-history-total-label {
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 0.2rem;
+    }
+    .guest-history-total-amount {
+      display: block;
+      font-size: 1.35rem;
+      font-weight: 900;
+      color: #fb923c;
+      letter-spacing: 0.02em;
+    }
+    .guest-history-total-note {
+      display: block;
+      margin-top: 0.25rem;
+      font-size: 0.68rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
 
     #err {
       margin: 0.65rem;
@@ -1701,6 +1729,8 @@
     let ordersCache = [];
     /** @type {{ id: string, name: string } | null} */
     let ordersSessionCourse = null;
+    /** @type {number | null} */
+    let ordersCurrentTotal = null;
     let sessionGuestCount = 1;
     let activeGuestCatId = "";
     let courseIncludedOnly = false;
@@ -3121,10 +3151,38 @@
       closeHistorySheet();
     }
 
+    function appendHistoryCurrentTotal(body) {
+      const box = document.createElement("div");
+      box.className = "guest-history-total";
+      const label = document.createElement("span");
+      label.className = "guest-history-total-label";
+      label.textContent = "現在のご注文金額";
+      box.appendChild(label);
+      const amount = document.createElement("span");
+      amount.className = "guest-history-total-amount";
+      if (!guestShowMenuPrices) {
+        amount.textContent = "お会計時にご案内";
+        amount.style.fontSize = "1rem";
+      } else if (ordersCurrentTotal != null && Number.isFinite(Number(ordersCurrentTotal))) {
+        amount.textContent = fmtMoney(Number(ordersCurrentTotal));
+      } else {
+        amount.textContent = fmtMoney(0);
+      }
+      box.appendChild(amount);
+      if (guestShowMenuPrices) {
+        const note = document.createElement("span");
+        note.className = "guest-history-total-note";
+        note.textContent = "コース料・確定済みのご注文の合計です（税込・割引反映）。カート内は含みません。";
+        box.appendChild(note);
+      }
+      body.appendChild(box);
+    }
+
     function renderHistorySheetBody() {
       const body = document.getElementById("historySheetBody");
       if (!body) return;
       body.innerHTML = "";
+      appendHistoryCurrentTotal(body);
       if (ordersSessionCourse && ordersSessionCourse.name) {
         const courseRow = document.createElement("p");
         courseRow.className = "muted";
@@ -4754,6 +4812,10 @@
       ordersSessionCourse =
         data.sessionCourse && data.sessionCourse.name
           ? { id: String(data.sessionCourse.id || ""), name: String(data.sessionCourse.name || "") }
+          : null;
+      ordersCurrentTotal =
+        data.currentOrderTotal != null && Number.isFinite(Number(data.currentOrderTotal))
+          ? Number(data.currentOrderTotal)
           : null;
       renderDeferredKitchenPanel();
       if (document.getElementById("historySheet") && document.getElementById("historySheet").classList.contains("is-open")) {

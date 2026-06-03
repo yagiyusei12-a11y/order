@@ -13,7 +13,11 @@ import {
 import { resolveCourseAndTierForSession } from "../lib/course-tier-resolve.js";
 import { recomputeOpenBillTotalForSession } from "../lib/recompute-session-bill.js";
 import { mergeTwoOpenSessionsTx } from "../lib/session-merge.js";
-import { moveOrderLinesBetweenSessionsTx, type LineMoveSpec } from "../lib/move-session-order-lines.js";
+import {
+  moveOrderLinesBetweenSessionsTx,
+  transferSessionCourseBetweenSessionsTx,
+  type LineMoveSpec,
+} from "../lib/move-session-order-lines.js";
 import { broadcastOpsSessionUpdatedMany, broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
 import {
   packChargeScopeFromDb,
@@ -757,6 +761,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       lineIds?: unknown;
       orderIds?: unknown;
       lineMoves?: unknown;
+      transferCourse?: unknown;
     };
   }>("/stores/:storeId/sessions/:sessionId/move-order-lines", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
@@ -770,6 +775,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
     const sourceSessionId = req.params.sessionId;
     const rawBody = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
     const createSeparateBill = rawBody.createSeparateBill === true;
+    const transferCourse = rawBody.transferCourse === true;
     let targetSessionId: string | null =
       typeof rawBody.targetSessionId === "string" && rawBody.targetSessionId.trim()
         ? rawBody.targetSessionId.trim()
@@ -832,8 +838,8 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       }
     }
 
-    if (specs.length === 0) {
-      return reply.code(400).send({ error: "lineIds, orderIds, or lineMoves required" });
+    if (specs.length === 0 && !transferCourse) {
+      return reply.code(400).send({ error: "lineIds, orderIds, lineMoves, or transferCourse required" });
     }
 
     if (!targetSessionId) {
@@ -845,11 +851,11 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
         storeId: store.id,
         guestCount: sourceSession.guestCount,
         childCount: sourceSession.childCount,
-        courseId: sourceSession.courseId,
-        coursePriceTierId: sourceSession.coursePriceTierId,
+        courseId: null,
+        coursePriceTierId: null,
         mode: "reuseIfOpen",
         skipReuse: true,
-        requireCourseWhenStarting: st.requireCourseWhenStartingSession,
+        requireCourseWhenStarting: false,
       });
       if (!opened.ok) {
         return reply.code(400).send({
@@ -864,7 +870,12 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
 
     try {
       await prisma.$transaction(async (tx) => {
-        await moveOrderLinesBetweenSessionsTx(tx, store.id, sourceSessionId, targetSessionId!, specs);
+        if (specs.length > 0) {
+          await moveOrderLinesBetweenSessionsTx(tx, store.id, sourceSessionId, targetSessionId!, specs);
+        }
+        if (transferCourse) {
+          await transferSessionCourseBetweenSessionsTx(tx, store.id, sourceSessionId, targetSessionId!);
+        }
       });
     } catch (e) {
       const code = e instanceof Error ? e.message : "";
@@ -894,6 +905,12 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       }
       if (code === "MOVE_BAD_QTY") {
         return reply.code(400).send({ error: "数量が不正です" });
+      }
+      if (code === "MOVE_NO_COURSE") {
+        return reply.code(400).send({ error: "移動元にコースが設定されていません" });
+      }
+      if (code === "MOVE_TARGET_HAS_COURSE") {
+        return reply.code(400).send({ error: "移動先にはすでにコースが設定されています" });
       }
       throw e;
     }

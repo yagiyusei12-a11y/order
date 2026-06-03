@@ -4,6 +4,66 @@ import { recomputeOpenBillTotalForSession } from "./recompute-session-bill.js";
 export type LineMoveSpec = { lineId: string; qty?: number };
 
 /**
+ * セッションに紐づくコース（料金ティア）を別会計へ移す。コースオプション明細は lineMoves で別途移動。
+ */
+export async function transferSessionCourseBetweenSessionsTx(
+  tx: Prisma.TransactionClient,
+  storeId: string,
+  sourceSessionId: string,
+  targetSessionId: string,
+): Promise<void> {
+  if (sourceSessionId === targetSessionId) throw new Error("MOVE_SAME_SESSION");
+
+  const source = await tx.diningSession.findFirst({
+    where: { id: sourceSessionId, storeId },
+    include: { bill: true, table: true },
+  });
+  const target = await tx.diningSession.findFirst({
+    where: { id: targetSessionId, storeId },
+    include: { bill: true, table: true },
+  });
+  if (!source || !target) throw new Error("MOVE_SESSION_NOT_FOUND");
+  if (source.status !== "open" || target.status !== "open") throw new Error("MOVE_SESSION_NOT_OPEN");
+  if (target.mergedIntoSessionId) throw new Error("MOVE_TARGET_MERGED_CHILD");
+  if (source.tableId !== target.tableId) throw new Error("MOVE_DIFFERENT_TABLE");
+  if (source.bill?.status !== "open") throw new Error("MOVE_BILL_NOT_OPEN");
+  if (target.bill && target.bill.status !== "open") throw new Error("MOVE_BILL_NOT_OPEN");
+  if (!source.courseId) throw new Error("MOVE_NO_COURSE");
+  if (target.courseId) throw new Error("MOVE_TARGET_HAS_COURSE");
+
+  if (!target.bill) {
+    await tx.bill.create({
+      data: {
+        storeId,
+        sessionId: target.id,
+        totalAmount: 0,
+        status: "open",
+        label: target.table?.name ?? null,
+      },
+    });
+  }
+
+  await tx.diningSession.update({
+    where: { id: target.id },
+    data: {
+      courseId: source.courseId,
+      coursePriceTierId: source.coursePriceTierId,
+    },
+  });
+  await tx.diningSession.update({
+    where: { id: source.id },
+    data: {
+      courseId: null,
+      coursePriceTierId: null,
+      purchasedCourseOptionPackIds: [],
+    },
+  });
+
+  await recomputeOpenBillTotalForSession(tx, storeId, sourceSessionId);
+  await recomputeOpenBillTotalForSession(tx, storeId, targetSessionId);
+}
+
+/**
  * 同一卓の別セッション間で注文明細を移動する（レジの「別会計へ」）。
  * qty 省略時はその行の全数量。
  */

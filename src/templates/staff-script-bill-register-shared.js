@@ -117,6 +117,19 @@
     return out;
   }
 
+  const SESSION_COURSE_SPLIT_KEY = "__SESSION_COURSE__";
+
+  function splitSelectCheckboxHtml(ctx, groupKey, bcOl) {
+    if (!bcOl) return "";
+    return (
+      "<label style=\"display:flex;align-items:flex-start;gap:0.35rem;margin-bottom:0.35rem;font-size:0.72rem;font-weight:600\">" +
+      "<input type=\"checkbox\" class=\"ops-split-select-cb\" data-group-key=\"" +
+      ctx.escapeHtml(groupKey) +
+      "\" style=\"margin-top:0.15rem\" />" +
+      "<span>別会計へ</span></label>"
+    );
+  }
+
   function isCourseOptionPackLine(line) {
     try {
       const ex = line && line.lineExtra;
@@ -250,10 +263,11 @@
             "</div>"
           : "";
         return (
-          '<tr class="ops-course-line-row ops-course-pack-line-row"' +
-          (editablePick ? ' data-pack-group-key="' + ctx.escapeHtml(g.key) + '"' : "") +
-          ">" +
+          '<tr class="ops-course-line-row ops-course-pack-line-row" data-pack-group-key="' +
+          ctx.escapeHtml(g.key) +
+          '">' +
           "<td>" +
+          splitSelectCheckboxHtml(ctx, g.key, bcOl) +
           '<div class="ops-line-name">' +
           '<span class="badge" style="margin-right:.35rem;background:#7c3aed;color:#fff;font-weight:900">コース＋</span>' +
           ctx.escapeHtml(displayName) +
@@ -938,13 +952,7 @@ async function mountRegisterFlow(panel, ctx) {
           ctx.escapeHtml(g.key) +
           "\">" +
           "<td>" +
-          (bcOl
-            ? "<label style=\"display:flex;align-items:flex-start;gap:0.35rem;margin-bottom:0.35rem;font-size:0.72rem;font-weight:600\">" +
-              "<input type=\"checkbox\" class=\"ops-split-select-cb\" data-group-key=\"" +
-              ctx.escapeHtml(g.key) +
-              "\" style=\"margin-top:0.15rem\" />" +
-              "<span>別会計へ</span></label>"
-            : "") +
+          splitSelectCheckboxHtml(ctx, g.key, bcOl) +
           "<div class=\"ops-line-name\">" +
           (g.eatMode === "takeout" ? "<span class=\"badge\" style=\"margin-right:.35rem;background:#0ea5e9\">テイクアウト</span>" : "") +
           (g.lines && g.lines[0] ? BillRegisterShared.sourceTableBadgeHtml(g.lines[0].sourceTableId, ctx.tables, ctx.escapeHtml, ctx.displayTableCode) : "") +
@@ -997,6 +1005,7 @@ async function mountRegisterFlow(panel, ctx) {
     detail.courseLine && Number(detail.courseLine.lineTotal) > 0
       ? "<tr class=\"ops-course-line-row\">" +
         "<td>" +
+        splitSelectCheckboxHtml(ctx, SESSION_COURSE_SPLIT_KEY, bcOl) +
         "<div class=\"ops-line-name\">" +
         "<span class=\"badge\" style=\"margin-right:.35rem;background:#7c3aed;color:#fff;font-weight:900\">コース</span>" +
         ctx.escapeHtml(detail.courseLine.name) +
@@ -1145,7 +1154,7 @@ async function mountRegisterFlow(panel, ctx) {
     "<button type=\"button\" class=\"btn-ghost\" id=\"btnOpsAdminOpen\" style=\"font-weight:800;border-color:#94a3b8\" aria-expanded=\"false\">開く</button>" +
     "</div>" +
     (bcOl
-      ? "<p class=\"muted\" style=\"font-size:0.68rem;margin:0.35rem 0 0;line-height:1.35\">別会計: 商品にチェック → 移動する数量を指定（同じ商品が複数でも分割可）</p>"
+      ? "<p class=\"muted\" style=\"font-size:0.68rem;margin:0.35rem 0 0;line-height:1.35\">別会計: 商品・コース・コースオプションにチェック → 移動する数量を指定（同じ商品が複数でも分割可）</p>"
       : "") +
     "</div>";
   const paymentSummaryHtml =
@@ -1655,8 +1664,12 @@ async function mountRegisterFlow(panel, ctx) {
           if (k) selectedKeys.push(k);
         });
       }
-      const selectedGroups = groupedLines.filter((g) => selectedKeys.includes(g.key));
-      if (!selectedGroups.length) {
+      const transferCourse = selectedKeys.includes(SESSION_COURSE_SPLIT_KEY);
+      const lineKeys = selectedKeys.filter((k) => k !== SESSION_COURSE_SPLIT_KEY);
+      const selectedGroups = groupedLines
+        .filter((g) => lineKeys.includes(g.key))
+        .concat(groupedPackLines.filter((g) => lineKeys.includes(g.key)));
+      if (!selectedGroups.length && !transferCourse) {
         ctx.log("別会計へ移す明細にチェックしてください");
         return;
       }
@@ -1677,7 +1690,16 @@ async function mountRegisterFlow(panel, ctx) {
             );
           })
           .join("");
-      const qtyRowsHtml = selectedGroups
+      const qtyRowsHtml =
+        (transferCourse
+          ? "<div class=\"row\" style=\"justify-content:space-between;align-items:center;gap:0.5rem;padding:0.45rem 0;border-bottom:1px solid #eee\">" +
+            "<span style=\"font-size:0.86rem;font-weight:600\">" +
+            "<span class=\"badge\" style=\"margin-right:.35rem;background:#7c3aed;color:#fff;font-weight:900\">コース</span>" +
+            ctx.escapeHtml((detail.courseLine && detail.courseLine.name) || "コース料") +
+            " <span class=\"muted\" style=\"font-weight:400\">（人数計算）</span></span>" +
+            "</div>"
+          : "") +
+        selectedGroups
         .map((g) => {
           const maxQ = Math.max(1, Number(g.qty || 0));
           const qtyField =
@@ -1737,7 +1759,7 @@ async function mountRegisterFlow(panel, ctx) {
           const moveQ = Math.max(1, Math.min(g.qty, Math.floor(rawQ)));
           lineMoves.push.apply(lineMoves, buildLineMovesFromGroup(g, moveQ));
         }
-        if (!lineMoves.length) {
+        if (!lineMoves.length && !transferCourse) {
           ctx.log("移動する数量を確認してください");
           return;
         }
@@ -1750,9 +1772,11 @@ async function mountRegisterFlow(panel, ctx) {
             "/sessions/" +
             encodeURIComponent(session.id) +
             "/move-order-lines";
-          const body = dest
-            ? { targetSessionId: dest, lineMoves }
-            : { createSeparateBill: true, lineMoves };
+          const body = {
+            ...(dest ? { targetSessionId: dest } : { createSeparateBill: true }),
+            ...(lineMoves.length ? { lineMoves } : {}),
+            ...(transferCourse ? { transferCourse: true } : {}),
+          };
           out = await ctx.api(base, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -2016,6 +2040,8 @@ async function mountRegisterFlow(panel, ctx) {
     buildCourseOptionPackRowsHtml,
     courseOptionPackLineSubtext,
     buildLineMovesFromGroup,
+    SESSION_COURSE_SPLIT_KEY,
+    splitSelectCheckboxHtml,
     groupedKeyForBill,
     sourceTableBadgeHtml,
     updateGroupedRowDraftUi,

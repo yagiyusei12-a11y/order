@@ -762,6 +762,8 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       orderIds?: unknown;
       lineMoves?: unknown;
       transferCourse?: unknown;
+      transferCourseGuests?: unknown;
+      transferCourseChildren?: unknown;
     };
   }>("/stores/:storeId/sessions/:sessionId/move-order-lines", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
@@ -776,6 +778,24 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
     const rawBody = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
     const createSeparateBill = rawBody.createSeparateBill === true;
     const transferCourse = rawBody.transferCourse === true;
+    let transferCourseGuests: number | null = null;
+    let transferCourseChildren = 0;
+    if (transferCourse) {
+      const gRaw = rawBody.transferCourseGuests;
+      if (gRaw !== undefined && gRaw !== null) {
+        if (typeof gRaw !== "number" || !Number.isInteger(gRaw) || gRaw < 1) {
+          return reply.code(400).send({ error: "transferCourseGuests must be integer >= 1" });
+        }
+        transferCourseGuests = gRaw;
+      }
+      const cRaw = rawBody.transferCourseChildren;
+      if (cRaw !== undefined && cRaw !== null) {
+        if (typeof cRaw !== "number" || !Number.isInteger(cRaw) || cRaw < 0) {
+          return reply.code(400).send({ error: "transferCourseChildren must be non-negative integer" });
+        }
+        transferCourseChildren = cRaw;
+      }
+    }
     let targetSessionId: string | null =
       typeof rawBody.targetSessionId === "string" && rawBody.targetSessionId.trim()
         ? rawBody.targetSessionId.trim()
@@ -842,6 +862,32 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "lineIds, orderIds, lineMoves, or transferCourse required" });
     }
 
+    if (transferCourse) {
+      if (transferCourseGuests === null) {
+        transferCourseGuests = sourceSession.guestCount;
+      }
+      if (transferCourseGuests > sourceSession.guestCount) {
+        return reply.code(400).send({ error: "移動人数が会計の人数を超えています" });
+      }
+      if (transferCourseChildren > sourceSession.childCount) {
+        return reply.code(400).send({ error: "移動する子供人数が会計の子供人数を超えています" });
+      }
+      if (transferCourseChildren > transferCourseGuests) {
+        return reply.code(400).send({ error: "子供人数は移動人数以下にしてください" });
+      }
+      const partial = transferCourseGuests < sourceSession.guestCount;
+      if (partial && sourceSession.guestCount - transferCourseGuests < 1) {
+        return reply.code(400).send({ error: "移動後に会計の人数が0になるため、この人数は移せません" });
+      }
+    }
+
+    const newBillGuestCount =
+      transferCourse && transferCourseGuests != null ? transferCourseGuests : sourceSession.guestCount;
+    const newBillChildCount =
+      transferCourse && transferCourseGuests != null
+        ? transferCourseChildren
+        : sourceSession.childCount;
+
     if (!targetSessionId) {
       if (!createSeparateBill) {
         return reply.code(400).send({ error: "targetSessionId or createSeparateBill required" });
@@ -849,8 +895,8 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       const opened = await openSessionForTable({
         tableId: sourceSession.tableId,
         storeId: store.id,
-        guestCount: sourceSession.guestCount,
-        childCount: sourceSession.childCount,
+        guestCount: newBillGuestCount,
+        childCount: newBillChildCount,
         courseId: null,
         coursePriceTierId: null,
         mode: "reuseIfOpen",
@@ -873,8 +919,18 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
         if (specs.length > 0) {
           await moveOrderLinesBetweenSessionsTx(tx, store.id, sourceSessionId, targetSessionId!, specs);
         }
-        if (transferCourse) {
-          await transferSessionCourseBetweenSessionsTx(tx, store.id, sourceSessionId, targetSessionId!);
+        if (transferCourse && transferCourseGuests != null) {
+          await transferSessionCourseBetweenSessionsTx(
+            tx,
+            store.id,
+            sourceSessionId,
+            targetSessionId!,
+            transferCourseGuests,
+            transferCourseChildren,
+            {
+              targetGuestCountsAlreadySet: createSeparateBill,
+            },
+          );
         }
       });
     } catch (e) {
@@ -911,6 +967,15 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       }
       if (code === "MOVE_TARGET_HAS_COURSE") {
         return reply.code(400).send({ error: "移動先にはすでにコースが設定されています" });
+      }
+      if (code === "MOVE_TARGET_COURSE_MISMATCH") {
+        return reply.code(400).send({ error: "移動先のコースが移動元と異なります" });
+      }
+      if (code === "MOVE_BAD_COURSE_GUESTS" || code === "MOVE_BAD_COURSE_CHILDREN") {
+        return reply.code(400).send({ error: "コースの移動人数が不正です" });
+      }
+      if (code === "MOVE_COURSE_GUESTS_TOO_MANY") {
+        return reply.code(400).send({ error: "移動後に会計の人数が0になるため、この人数は移せません" });
       }
       throw e;
     }

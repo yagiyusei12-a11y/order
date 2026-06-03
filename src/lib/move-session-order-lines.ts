@@ -4,13 +4,16 @@ import { recomputeOpenBillTotalForSession } from "./recompute-session-bill.js";
 export type LineMoveSpec = { lineId: string; qty?: number };
 
 /**
- * セッションに紐づくコース（料金ティア）を別会計へ移す。コースオプション明細は lineMoves で別途移動。
+ * セッションのコース料（人数分）を別会計へ移す。全員分のときはコース設定ごと移し、一部のときは人数を按分する。
  */
 export async function transferSessionCourseBetweenSessionsTx(
   tx: Prisma.TransactionClient,
   storeId: string,
   sourceSessionId: string,
   targetSessionId: string,
+  moveGuests: number,
+  moveChildren: number = 0,
+  opts?: { targetGuestCountsAlreadySet?: boolean },
 ): Promise<void> {
   if (sourceSessionId === targetSessionId) throw new Error("MOVE_SAME_SESSION");
 
@@ -29,7 +32,18 @@ export async function transferSessionCourseBetweenSessionsTx(
   if (source.bill?.status !== "open") throw new Error("MOVE_BILL_NOT_OPEN");
   if (target.bill && target.bill.status !== "open") throw new Error("MOVE_BILL_NOT_OPEN");
   if (!source.courseId) throw new Error("MOVE_NO_COURSE");
-  if (target.courseId) throw new Error("MOVE_TARGET_HAS_COURSE");
+
+  const srcG = source.guestCount;
+  const srcC = source.childCount;
+  const mg = Math.floor(moveGuests);
+  let mc = Math.min(Math.floor(moveChildren), mg);
+  if (mc > srcC) mc = srcC;
+  if (mg < 1 || mg > srcG) throw new Error("MOVE_BAD_COURSE_GUESTS");
+  if (mc < 0 || mc > mg) throw new Error("MOVE_BAD_COURSE_CHILDREN");
+
+  if (target.courseId && target.courseId !== source.courseId) {
+    throw new Error("MOVE_TARGET_COURSE_MISMATCH");
+  }
 
   if (!target.bill) {
     await tx.bill.create({
@@ -43,21 +57,56 @@ export async function transferSessionCourseBetweenSessionsTx(
     });
   }
 
-  await tx.diningSession.update({
-    where: { id: target.id },
-    data: {
-      courseId: source.courseId,
-      coursePriceTierId: source.coursePriceTierId,
-    },
-  });
-  await tx.diningSession.update({
-    where: { id: source.id },
-    data: {
-      courseId: null,
-      coursePriceTierId: null,
-      purchasedCourseOptionPackIds: [],
-    },
-  });
+  const fullTransfer = mg >= srcG;
+  const countsPreloaded = opts?.targetGuestCountsAlreadySet === true;
+
+  if (fullTransfer) {
+    await tx.diningSession.update({
+      where: { id: target.id },
+      data: {
+        courseId: source.courseId,
+        coursePriceTierId: source.coursePriceTierId,
+        ...(countsPreloaded
+          ? {}
+          : {
+              guestCount: target.guestCount + mg,
+              childCount: target.childCount + mc,
+            }),
+      },
+    });
+    await tx.diningSession.update({
+      where: { id: source.id },
+      data: {
+        courseId: null,
+        coursePriceTierId: null,
+        purchasedCourseOptionPackIds: [],
+      },
+    });
+  } else {
+    const remainG = srcG - mg;
+    if (remainG < 1) throw new Error("MOVE_COURSE_GUESTS_TOO_MANY");
+
+    await tx.diningSession.update({
+      where: { id: target.id },
+      data: {
+        courseId: target.courseId ?? source.courseId,
+        coursePriceTierId: target.coursePriceTierId ?? source.coursePriceTierId,
+        ...(countsPreloaded
+          ? {}
+          : {
+              guestCount: target.guestCount + mg,
+              childCount: target.childCount + mc,
+            }),
+      },
+    });
+    await tx.diningSession.update({
+      where: { id: source.id },
+      data: {
+        guestCount: remainG,
+        childCount: srcC - mc,
+      },
+    });
+  }
 
   await recomputeOpenBillTotalForSession(tx, storeId, sourceSessionId);
   await recomputeOpenBillTotalForSession(tx, storeId, targetSessionId);

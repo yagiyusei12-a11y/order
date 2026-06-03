@@ -1012,7 +1012,9 @@ async function mountRegisterFlow(panel, ctx) {
         "</div>" +
         "<div class=\"ops-line-sub\">コース料（" +
         (ctx.storeSettings.coursePriceTaxMode === "exclusive" ? "税抜" : "税込") +
-        "・人数計算）</div>" +
+        "・" +
+        Math.max(1, Number(session.guestCount || 1)) +
+        "名分）</div>" +
         "</td>" +
         "<td class=\"ops-line-total\">" +
         BillRegisterShared.yen(
@@ -1690,14 +1692,38 @@ async function mountRegisterFlow(panel, ctx) {
             );
           })
           .join("");
+      const sessionGc = Math.max(1, Number(session.guestCount || 1));
       const qtyRowsHtml =
         (transferCourse
-          ? "<div class=\"row\" style=\"justify-content:space-between;align-items:center;gap:0.5rem;padding:0.45rem 0;border-bottom:1px solid #eee\">" +
-            "<span style=\"font-size:0.86rem;font-weight:600\">" +
-            "<span class=\"badge\" style=\"margin-right:.35rem;background:#7c3aed;color:#fff;font-weight:900\">コース</span>" +
-            ctx.escapeHtml((detail.courseLine && detail.courseLine.name) || "コース料") +
-            " <span class=\"muted\" style=\"font-weight:400\">（人数計算）</span></span>" +
-            "</div>"
+          ? (() => {
+              const courseMaxMove = sessionGc;
+              const courseQtyField =
+                courseMaxMove > 1
+                  ? "<label style=\"display:flex;align-items:center;gap:0.4rem;font-size:0.82rem;white-space:nowrap\">" +
+                    "移動人数" +
+                    "<input type=\"number\" class=\"move-split-qty\" data-group-key=\"" +
+                    ctx.escapeHtml(SESSION_COURSE_SPLIT_KEY) +
+                    "\" min=\"1\" max=\"" +
+                    courseMaxMove +
+                    "\" step=\"1\" value=\"1\" style=\"width:4rem;padding:0.35rem;border-radius:6px;border:1px solid var(--border)\" />" +
+                    "<span class=\"muted\">/ " +
+                    courseMaxMove +
+                    "</span></label>"
+                  : "<input type=\"hidden\" class=\"move-split-qty\" data-group-key=\"" +
+                    ctx.escapeHtml(SESSION_COURSE_SPLIT_KEY) +
+                    "\" value=\"1\" />";
+              return (
+                "<div class=\"row\" style=\"justify-content:space-between;align-items:center;gap:0.5rem;padding:0.45rem 0;border-bottom:1px solid #eee\">" +
+                "<span style=\"font-size:0.86rem;font-weight:600\">" +
+                "<span class=\"badge\" style=\"margin-right:.35rem;background:#7c3aed;color:#fff;font-weight:900\">コース</span>" +
+                ctx.escapeHtml((detail.courseLine && detail.courseLine.name) || "コース料") +
+                " <span class=\"muted\" style=\"font-weight:400\">（" +
+                courseMaxMove +
+                "名分）</span></span>" +
+                courseQtyField +
+                "</div>"
+              );
+            })()
           : "") +
         selectedGroups
         .map((g) => {
@@ -1732,7 +1758,7 @@ async function mountRegisterFlow(panel, ctx) {
       box.innerHTML =
         "<div class=\"card\" style=\"max-width:440px;padding:1.1rem;background:#fff;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.12)\">" +
         "<p style=\"margin:0 0 0.55rem;font-weight:900\">選択明細を別会計へ</p>" +
-        "<p class=\"muted\" style=\"margin:0 0 0.65rem;font-size:0.82rem;line-height:1.45\">同じ商品がまとまって表示されていても、移動する個数だけ別会計に分けられます。</p>" +
+        "<p class=\"muted\" style=\"margin:0 0 0.65rem;font-size:0.82rem;line-height:1.45\">同じ商品がまとまって表示されていても、移動する個数だけ別会計に分けられます。コースは人数分を指定して按分できます。</p>" +
         "<div style=\"margin:0 0 0.75rem\">" +
         qtyRowsHtml +
         "</div>" +
@@ -1763,6 +1789,14 @@ async function mountRegisterFlow(panel, ctx) {
           ctx.log("移動する数量を確認してください");
           return;
         }
+        let transferCourseGuests = sessionGc;
+        if (transferCourse) {
+          const courseInp = Array.from(box.querySelectorAll(".move-split-qty")).find(
+            (el) => el.getAttribute("data-group-key") === SESSION_COURSE_SPLIT_KEY,
+          );
+          const rawCourseQ = courseInp ? Number(courseInp.value) : 1;
+          transferCourseGuests = Math.max(1, Math.min(sessionGc, Math.floor(rawCourseQ)));
+        }
         try {
           /** @type {{ targetSessionId?: string }} */
           let out;
@@ -1775,7 +1809,9 @@ async function mountRegisterFlow(panel, ctx) {
           const body = {
             ...(dest ? { targetSessionId: dest } : { createSeparateBill: true }),
             ...(lineMoves.length ? { lineMoves } : {}),
-            ...(transferCourse ? { transferCourse: true } : {}),
+            ...(transferCourse
+              ? { transferCourse: true, transferCourseGuests: transferCourseGuests }
+              : {}),
           };
           out = await ctx.api(base, {
             method: "POST",

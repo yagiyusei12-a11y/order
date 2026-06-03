@@ -409,6 +409,100 @@
       cursor: not-allowed;
       box-shadow: none;
     }
+    footer.go-cart.has-pending-order {
+      border-top-color: rgba(249, 115, 22, 0.55);
+      box-shadow: 0 -8px 28px rgba(249, 115, 22, 0.18);
+    }
+    footer.go-cart.has-pending-order .count {
+      color: #fdba74;
+      font-weight: 700;
+    }
+    footer.go-cart.has-pending-order button.submit:not(:disabled) {
+      padding: 0.82rem 1.5rem;
+      font-size: 0.98rem;
+      animation: guestSubmitPulse 1.6s ease-in-out infinite;
+      box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.55), 0 6px 22px rgba(249, 115, 22, 0.45);
+    }
+    @keyframes guestSubmitPulse {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.45), 0 6px 22px rgba(249, 115, 22, 0.45); }
+      50% { transform: scale(1.03); box-shadow: 0 0 0 6px rgba(249, 115, 22, 0), 0 8px 26px rgba(249, 115, 22, 0.55); }
+    }
+    .cart-pending-hint {
+      margin: 0 0 0.65rem;
+      padding: 0.55rem 0.65rem;
+      border-radius: 10px;
+      background: rgba(249, 115, 22, 0.12);
+      border: 1px solid rgba(251, 146, 60, 0.35);
+      color: #fdba74;
+      font-size: 0.78rem;
+      font-weight: 700;
+      line-height: 1.45;
+    }
+    .guest-sheet.has-pending-order .guest-sheet-bar .submit:not(:disabled) {
+      animation: guestSubmitPulse 1.6s ease-in-out infinite;
+      box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.55), 0 6px 22px rgba(249, 115, 22, 0.45);
+    }
+
+    .order-done-dialog {
+      position: fixed;
+      inset: 0;
+      z-index: 250;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 1.25rem;
+      background: rgba(0, 0, 0, 0.62);
+    }
+    .order-done-dialog.is-open {
+      display: flex;
+    }
+    .order-done-card {
+      width: 100%;
+      max-width: 18rem;
+      padding: 1.35rem 1.25rem 1.15rem;
+      border-radius: 16px;
+      background: var(--surface2);
+      border: 1px solid var(--line);
+      text-align: center;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+    }
+    .order-done-icon {
+      width: 3rem;
+      height: 3rem;
+      margin: 0 auto 0.75rem;
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.45rem;
+      font-weight: 900;
+      color: #fff;
+      background: linear-gradient(180deg, #34d399, #059669);
+      box-shadow: 0 6px 18px rgba(5, 150, 105, 0.35);
+    }
+    .order-done-card h2 {
+      margin: 0 0 0.45rem;
+      font-size: 1.15rem;
+      font-weight: 900;
+    }
+    .order-done-card p {
+      margin: 0 0 1rem;
+      font-size: 0.82rem;
+      line-height: 1.5;
+      color: var(--muted);
+    }
+    .order-done-card .submit {
+      width: 100%;
+      padding: 0.72rem 1rem;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(180deg, #fb923c, var(--accent));
+      color: #fff;
+      font: inherit;
+      font-weight: 800;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
 
     .toast {
       position: fixed;
@@ -1341,6 +1435,15 @@
   </footer>
   <div class="toast" id="toast"></div>
 
+  <div id="orderDoneDialog" class="order-done-dialog" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="orderDoneTitle">
+    <div class="order-done-card">
+      <div class="order-done-icon" aria-hidden="true">✓</div>
+      <h2 id="orderDoneTitle">注文しました</h2>
+      <p>キッチンへ送信しました。しばらくお待ちください。</p>
+      <button type="button" class="submit" id="orderDoneOkBtn">OK</button>
+    </div>
+  </div>
+
   <div id="detailSheet" aria-hidden="true"></div>
 
   <div id="cartSheet" class="guest-sheet" aria-hidden="true">
@@ -1349,6 +1452,7 @@
       <button type="button" class="detail-close" id="cartSheetCloseBtn" aria-label="閉じる">×</button>
       <div class="detail-scroll guest-sheet-pad" style="padding-top: 2.25rem">
         <h2 class="detail-title" id="cartSheetTitle">カート</h2>
+        <p id="cartSheetPendingHint" class="cart-pending-hint" hidden>カートに入れただけでは注文は確定しません。「注文する」を押してください。</p>
         <div id="cartSheetBody" class="guest-cart-lines"></div>
       </div>
       <div class="guest-sheet-bar">
@@ -2170,11 +2274,37 @@
       const lines = Object.values(cart).filter((x) => x.qty > 0);
       const count = lines.reduce((s, x) => s + x.qty, 0);
       const sum = lines.reduce((s, x) => s + x.unitPrice * x.qty, 0);
-      document.getElementById("cartCount").textContent = "カート " + count + "点";
+      const hasPending = count > 0 && !guestSubmitBlockedByLastOrder();
+      const cartCountEl = document.getElementById("cartCount");
+      if (cartCountEl) {
+        cartCountEl.textContent = hasPending
+          ? "カート " + count + "点 · まだ注文されていません"
+          : "カート " + count + "点";
+      }
       document.getElementById("cartSum").textContent = cartSumLabel(sum);
       document.getElementById("submit").disabled = count === 0 || guestSubmitBlockedByLastOrder();
+      const cartFooter = document.getElementById("cartFooter");
+      if (cartFooter) cartFooter.classList.toggle("has-pending-order", hasPending);
+      const cartSheet = document.getElementById("cartSheet");
+      if (cartSheet) cartSheet.classList.toggle("has-pending-order", hasPending);
+      const cartHint = document.getElementById("cartSheetPendingHint");
+      if (cartHint) cartHint.hidden = !hasPending;
       syncCartSheetIfOpen();
       persistGuestCart();
+    }
+
+    function showOrderDoneDialog() {
+      const dlg = document.getElementById("orderDoneDialog");
+      if (!dlg) return;
+      dlg.classList.add("is-open");
+      dlg.setAttribute("aria-hidden", "false");
+    }
+
+    function closeOrderDoneDialog() {
+      const dlg = document.getElementById("orderDoneDialog");
+      if (!dlg) return;
+      dlg.classList.remove("is-open");
+      dlg.setAttribute("aria-hidden", "true");
     }
 
     function toast(t) {
@@ -4869,7 +4999,7 @@
         for (const k of Object.keys(cart)) delete cart[k];
         renderCart();
         closeCartSheet();
-        toast("注文を送信しました");
+        showOrderDoneDialog();
         await loadOrders();
         await loadMenu();
       } catch (e) {
@@ -4916,6 +5046,15 @@
     document.getElementById("cartSheetOrderBtn").onclick = () => {
       document.getElementById("submit").click();
     };
+
+    const orderDoneOkBtn = document.getElementById("orderDoneOkBtn");
+    if (orderDoneOkBtn) orderDoneOkBtn.onclick = () => closeOrderDoneDialog();
+    const orderDoneDialog = document.getElementById("orderDoneDialog");
+    if (orderDoneDialog) {
+      orderDoneDialog.onclick = (ev) => {
+        if (ev.target === orderDoneDialog) closeOrderDoneDialog();
+      };
+    }
 
     document.getElementById("btnSaveProfile").onclick = async () => {
       try {

@@ -138,158 +138,59 @@
       font-family: "Hiragino Sans", sans-serif;
     }
 
-    /* ── サブカテゴリ ── */
-    .subcat {
-      margin-bottom: 5mm;
-      break-inside: avoid;
+    /* ── 価格表 ── */
+    .menu-table-wrap {
+      overflow-x: auto;
     }
-    .subcat-title {
-      margin: 0 0 2.5mm;
-      font-size: 0.88rem;
-      font-weight: 600;
-      color: var(--accent);
-      letter-spacing: 0.06em;
-      padding-left: 2.5mm;
-      border-left: 2px solid var(--gold);
-      font-family: "Hiragino Sans", "Yu Gothic UI", sans-serif;
-    }
-
-    /* ── 料理・ドリンク：2段組リスト ── */
-    .list-cols {
-      column-count: 2;
-      column-gap: 5mm;
-    }
-    .subcat-list .menu-row {
-      break-inside: avoid;
-      margin-bottom: 2.2mm;
-    }
-    .menu-row {
-      display: flex;
-      gap: 2mm;
-      align-items: flex-start;
-    }
-    .menu-row.has-photo .row-body {
-      min-width: 0;
-    }
-    .photo-sm {
-      width: 11mm;
-      height: 11mm;
-      flex-shrink: 0;
-      border-radius: 1px;
-      overflow: hidden;
-      background: var(--paper-deep);
-      border: 1px solid var(--line);
-    }
-    .photo-sm img {
+    .menu-price-table {
       width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
+      border-collapse: collapse;
+      font-family: "Hiragino Sans", "Yu Gothic UI", sans-serif;
+      font-size: 0.72rem;
+      line-height: 1.4;
     }
-    .photo-empty {
-      background: linear-gradient(135deg, var(--paper-deep), #ebe3d9);
-    }
-    .row-body { flex: 1; min-width: 0; }
-    .row-line {
-      display: flex;
-      align-items: baseline;
-      gap: 1mm;
-      line-height: 1.35;
-    }
-    .row-name {
-      font-size: 0.76rem;
-      flex-shrink: 1;
-      min-width: 0;
-    }
-    .row-dots {
-      flex: 1;
-      border-bottom: 1px dotted var(--line);
-      min-width: 2mm;
-      margin-bottom: 0.15em;
-      opacity: 0.85;
-    }
-    .row-price {
-      flex-shrink: 0;
-      font-size: 0.76rem;
+    .menu-price-table thead th {
+      text-align: left;
       font-weight: 700;
       color: var(--accent);
-      font-variant-numeric: tabular-nums;
-      font-family: "Hiragino Sans", sans-serif;
-    }
-    .row-desc {
-      margin: 0.5mm 0 0;
-      font-size: 0.62rem;
-      color: var(--muted);
-      line-height: 1.35;
-      font-family: "Hiragino Sans", sans-serif;
-    }
-
-    /* ドリンク章は写真なし・コンパクト */
-    .chapter-drink .list-cols {
-      column-gap: 6mm;
-    }
-    .chapter-drink .row-name,
-    .chapter-drink .row-price {
-      font-size: 0.74rem;
-    }
-    .chapter-drink .subcat {
-      margin-bottom: 4mm;
-    }
-
-    /* ── 定食：写真付きカード ── */
-    .teishoku-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 4mm;
-    }
-    .teishoku-card {
-      break-inside: avoid;
-      background: #fff;
-      border: 1px solid var(--line);
-      border-radius: 2px;
-      overflow: hidden;
-    }
-    .photo-lg {
-      aspect-ratio: 4 / 3;
       background: var(--paper-deep);
-      overflow: hidden;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      padding: 2mm 2.5mm;
+      white-space: nowrap;
     }
-    .photo-lg img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
+    .menu-price-table tbody td {
+      vertical-align: top;
+      padding: 1.8mm 2.5mm;
+      border-bottom: 1px solid rgba(212, 196, 176, 0.55);
     }
-    .teishoku-card .photo-empty {
-      width: 100%;
-      height: 100%;
-      min-height: 28mm;
-      background: linear-gradient(160deg, #ebe3d9, #f5efe8);
+    .menu-price-table tbody tr:nth-child(even) td {
+      background: rgba(255, 255, 255, 0.45);
     }
-    .card-body {
-      padding: 2.5mm 3mm 3mm;
+    .menu-price-table .col-cat {
+      width: 22%;
+      color: var(--muted);
+      font-size: 0.68rem;
     }
-    .card-name {
-      margin: 0 0 1mm;
-      font-size: 0.78rem;
+    .menu-price-table .col-name {
+      width: 46%;
       font-weight: 600;
-      line-height: 1.35;
       color: var(--ink);
     }
-    .card-desc {
-      margin: 0 0 1.5mm;
-      font-size: 0.62rem;
-      color: var(--muted);
-      line-height: 1.35;
-      font-family: "Hiragino Sans", sans-serif;
+    .menu-price-table .col-net,
+    .menu-price-table .col-incl {
+      width: 16%;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
     }
-    .card-price {
-      margin: 0;
-      font-size: 0.88rem;
+    .menu-price-table .col-incl {
       font-weight: 700;
       color: var(--accent);
-      font-variant-numeric: tabular-nums;
-      font-family: "Hiragino Sans", sans-serif;
+    }
+    .menu-price-table thead .col-net,
+    .menu-price-table thead .col-incl {
+      text-align: right;
     }
 
     /* ── 章フッター ── */
@@ -334,13 +235,13 @@
         page-break-after: auto;
         break-after: auto;
       }
-      .list-cols {
-        column-count: 2;
+      .menu-price-table {
+        font-size: 8pt;
       }
-      .subcat {
-        break-inside: avoid-page;
+      .menu-price-table thead {
+        display: table-header-group;
       }
-      .teishoku-card {
+      .menu-price-table tr {
         break-inside: avoid;
       }
       @page {
@@ -355,15 +256,14 @@
         min-height: auto;
         padding: 1rem;
       }
-      .list-cols { column-count: 1; }
-      .teishoku-grid { grid-template-columns: 1fr; }
+      .menu-price-table { font-size: 0.68rem; }
       .chapter-foot { position: static; margin-top: 1.5rem; }
     }
   </style>
 </head>
 <body>
   <div class="toolbar">
-    <p>__TAX_NOTE__　更新: __GENERATED_AT__　｜　A4・料理 / ドリンク / 定食の3章構成</p>
+    <p>__TAX_NOTE__　更新: __GENERATED_AT__　｜　A4・料理 / ドリンク / 定食の3章・カテゴリ / 商品名 / 税抜 / 税込</p>
     <button type="button" class="btn-print" onclick="window.print()">印刷 / PDF保存</button>
   </div>
   <div class="menu-book">

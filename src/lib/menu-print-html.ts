@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { prisma } from "../db.js";
-import { taxIncludedFromNet } from "./order-line-tax.js";
+import { baseNetFromStoredPrice, taxIncludedFromNet } from "./order-line-tax.js";
 import { templatePath } from "./paths.js";
 import { customerFacingStoreName, mergeStoreSettings } from "./store-settings.js";
 
@@ -8,9 +8,8 @@ type MenuChapterKind = "food" | "drink" | "teishoku";
 
 type MenuItemRow = {
   name: string;
-  price: number;
-  imageUrl: string | null;
-  description: string | null;
+  priceNet: number;
+  priceIncl: number;
 };
 
 type MenuSubCategory = {
@@ -30,15 +29,16 @@ function formatYen(n: number): string {
   return "¥" + Math.max(0, Math.round(n)).toLocaleString("ja-JP");
 }
 
-function taxIncludedMenuPrice(
-  price: number,
+function menuItemNetAndIncl(
+  storedPrice: number,
   priceTaxMode: string,
   defaultMode: "inclusive" | "exclusive",
   taxRatePercent: number,
-): number {
+): { net: number; incl: number } {
   const mode = priceTaxMode === "exclusive" ? "exclusive" : defaultMode;
-  if (mode === "exclusive") return taxIncludedFromNet(price, taxRatePercent);
-  return price;
+  const net = baseNetFromStoredPrice(storedPrice, mode, taxRatePercent);
+  const incl = taxIncludedFromNet(net, taxRatePercent);
+  return { net, incl };
 }
 
 /** カテゴリ名から印刷用の大区分（料理 / ドリンク / 定食）を判定 */
@@ -72,68 +72,34 @@ const CHAPTER_META: Record<
   },
 };
 
-function renderPhoto(imageUrl: string | null, size: "sm" | "md" | "lg"): string {
-  const cls = `photo photo-${size}`;
-  if (imageUrl) {
-    return `<div class="${cls}"><img src="${escapeHtml(imageUrl)}" alt="" loading="lazy" /></div>`;
-  }
-  return `<div class="${cls} photo-empty" aria-hidden="true"></div>`;
+function renderTableRow(categoryName: string, item: MenuItemRow): string {
+  return (
+    `<tr>` +
+    `<td class="col-cat">${escapeHtml(categoryName)}</td>` +
+    `<td class="col-name">${escapeHtml(item.name)}</td>` +
+    `<td class="col-net">${escapeHtml(formatYen(item.priceNet))}</td>` +
+    `<td class="col-incl">${escapeHtml(formatYen(item.priceIncl))}</td>` +
+    `</tr>`
+  );
 }
 
-function renderListRow(item: MenuItemRow, showPhoto: boolean): string {
-  const photo = showPhoto ? renderPhoto(item.imageUrl, "sm") : "";
-  const desc =
-    item.description && item.description.trim()
-      ? `<p class="row-desc">${escapeHtml(item.description.trim())}</p>`
-      : "";
+function renderChapterTable(subs: MenuSubCategory[]): string {
+  const rows = subs
+    .flatMap((sub) => sub.items.map((it) => renderTableRow(sub.name, it)))
+    .join("");
+  if (!rows) return "";
   return (
-    `<div class="menu-row${showPhoto ? " has-photo" : ""}">` +
-    photo +
-    `<div class="row-body">` +
-    `<div class="row-line">` +
-    `<span class="row-name">${escapeHtml(item.name)}</span>` +
-    `<span class="row-dots" aria-hidden="true"></span>` +
-    `<span class="row-price">${escapeHtml(formatYen(item.price))}</span>` +
-    `</div>` +
-    desc +
-    `</div>` +
+    `<div class="menu-table-wrap">` +
+    `<table class="menu-price-table">` +
+    `<thead><tr>` +
+    `<th class="col-cat">カテゴリ</th>` +
+    `<th class="col-name">商品名</th>` +
+    `<th class="col-net">税抜</th>` +
+    `<th class="col-incl">税込</th>` +
+    `</tr></thead>` +
+    `<tbody>${rows}</tbody>` +
+    `</table>` +
     `</div>`
-  );
-}
-
-function renderTeishokuCard(item: MenuItemRow): string {
-  const desc =
-    item.description && item.description.trim()
-      ? `<p class="card-desc">${escapeHtml(item.description.trim())}</p>`
-      : "";
-  return (
-    `<article class="teishoku-card">` +
-    renderPhoto(item.imageUrl, "lg") +
-    `<div class="card-body">` +
-    `<h4 class="card-name">${escapeHtml(item.name)}</h4>` +
-    desc +
-    `<p class="card-price">${escapeHtml(formatYen(item.price))}</p>` +
-    `</div>` +
-    `</article>`
-  );
-}
-
-function renderSubCategory(sub: MenuSubCategory, kind: MenuChapterKind): string {
-  if (!sub.items.length) return "";
-  if (kind === "teishoku") {
-    return (
-      `<section class="subcat subcat-teishoku">` +
-      `<h3 class="subcat-title">${escapeHtml(sub.name)}</h3>` +
-      `<div class="teishoku-grid">${sub.items.map(renderTeishokuCard).join("")}</div>` +
-      `</section>`
-    );
-  }
-  const showPhoto = kind === "food";
-  return (
-    `<section class="subcat subcat-list">` +
-    `<h3 class="subcat-title">${escapeHtml(sub.name)}</h3>` +
-    `<div class="list-cols">${sub.items.map((it) => renderListRow(it, showPhoto)).join("")}</div>` +
-    `</section>`
   );
 }
 
@@ -162,7 +128,7 @@ function renderChapter(
     `<h2 class="chapter-ja">${escapeHtml(meta.ja)}</h2>` +
     `<p class="chapter-lead">${escapeHtml(meta.lead)}</p>` +
     `</header>` +
-    subs.map((s) => renderSubCategory(s, kind)).join("") +
+    renderChapterTable(subs) +
     `<footer class="chapter-foot">` +
     `<span>${escapeHtml(opts.storeTitle)}</span>` +
     `<span>${escapeHtml(meta.ja)}</span>` +
@@ -178,7 +144,7 @@ export async function buildMenuPrintHtml(storeId: string): Promise<string | null
   const st = mergeStoreSettings(store.settings);
   const storeTitle = customerFacingStoreName(store.name, st);
   const defaultTaxMode = st.menuPriceTaxMode === "exclusive" ? "exclusive" : "inclusive";
-  const taxNote = `表示価格は税込（${st.taxRatePercent}%）`;
+  const taxNote = `税抜・税込（消費税 ${st.taxRatePercent}%）`;
 
   const categories = await prisma.menuCategory.findMany({
     where: { storeId: store.id, visibleToGuest: true },
@@ -189,10 +155,8 @@ export async function buildMenuPrintHtml(storeId: string): Promise<string | null
         orderBy: { sortOrder: "asc" },
         select: {
           name: true,
-          description: true,
           price: true,
           priceTaxMode: true,
-          imageUrl: true,
         },
       },
     },
@@ -207,13 +171,12 @@ export async function buildMenuPrintHtml(storeId: string): Promise<string | null
   for (const cat of categories) {
     const items: MenuItemRow[] = [];
     for (const it of cat.items) {
-      const incl = taxIncludedMenuPrice(it.price, it.priceTaxMode, defaultTaxMode, st.taxRatePercent);
+      const { net, incl } = menuItemNetAndIncl(it.price, it.priceTaxMode, defaultTaxMode, st.taxRatePercent);
       if (incl <= 0) continue;
       items.push({
         name: it.name,
-        price: incl,
-        imageUrl: it.imageUrl,
-        description: it.description,
+        priceNet: net,
+        priceIncl: incl,
       });
     }
     if (!items.length) continue;

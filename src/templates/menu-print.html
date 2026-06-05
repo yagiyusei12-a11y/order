@@ -160,7 +160,7 @@
       white-space: nowrap;
     }
     .menu-price-table tbody td {
-      vertical-align: top;
+      vertical-align: middle;
       padding: 1.8mm 2.5mm;
       border-bottom: 1px solid rgba(212, 196, 176, 0.55);
     }
@@ -168,18 +168,46 @@
       background: rgba(255, 255, 255, 0.45);
     }
     .menu-price-table .col-cat {
-      width: 22%;
+      width: 18%;
       color: var(--muted);
       font-size: 0.68rem;
+      vertical-align: top;
+    }
+    .menu-price-table .col-photo {
+      width: 14mm;
+      padding: 1.5mm 1mm;
+    }
+    .menu-price-table .col-photo img {
+      width: 12mm;
+      height: 12mm;
+      object-fit: cover;
+      border-radius: 1px;
+      border: 1px solid var(--line);
+      display: block;
+      background: #fff;
+    }
+    .menu-price-table .col-photo .photo-empty {
+      display: block;
+      width: 12mm;
+      height: 12mm;
+      border-radius: 1px;
+      border: 1px solid var(--line);
+      background: linear-gradient(135deg, var(--paper-deep), #ebe3d9);
+    }
+    .chapter-teishoku .menu-price-table .col-photo img,
+    .chapter-teishoku .menu-price-table .col-photo .photo-empty {
+      width: 16mm;
+      height: 12mm;
     }
     .menu-price-table .col-name {
-      width: 46%;
+      width: 38%;
       font-weight: 600;
       color: var(--ink);
+      vertical-align: top;
     }
     .menu-price-table .col-net,
     .menu-price-table .col-incl {
-      width: 16%;
+      width: 14%;
       text-align: right;
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
@@ -263,7 +291,7 @@
 </head>
 <body>
   <div class="toolbar">
-    <p>__TAX_NOTE__　更新: __GENERATED_AT__　｜　A4・料理 / ドリンク / 定食の3章・カテゴリ / 商品名 / 税抜 / 税込</p>
+    <p>__TAX_NOTE__　更新: __GENERATED_AT__　｜　A4・料理 / ドリンク / 定食・カテゴリ / 画像 / 商品名 / 税抜 / 税込</p>
     <button type="button" class="btn-print" onclick="window.print()">印刷 / PDF保存</button>
   </div>
   <div class="menu-book">

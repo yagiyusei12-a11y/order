@@ -10,6 +10,7 @@ type MenuItemRow = {
   name: string;
   priceNet: number;
   priceIncl: number;
+  imageUrl: string | null;
 };
 
 type MenuSubCategory = {
@@ -72,10 +73,22 @@ const CHAPTER_META: Record<
   },
 };
 
+function renderPhotoCell(imageUrl: string | null, itemName: string): string {
+  if (imageUrl) {
+    return (
+      `<td class="col-photo">` +
+      `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(itemName)}" loading="lazy" />` +
+      `</td>`
+    );
+  }
+  return `<td class="col-photo"><span class="photo-empty" aria-hidden="true"></span></td>`;
+}
+
 function renderTableRow(categoryName: string, item: MenuItemRow): string {
   return (
     `<tr>` +
     `<td class="col-cat">${escapeHtml(categoryName)}</td>` +
+    renderPhotoCell(item.imageUrl, item.name) +
     `<td class="col-name">${escapeHtml(item.name)}</td>` +
     `<td class="col-net">${escapeHtml(formatYen(item.priceNet))}</td>` +
     `<td class="col-incl">${escapeHtml(formatYen(item.priceIncl))}</td>` +
@@ -93,6 +106,7 @@ function renderChapterTable(subs: MenuSubCategory[]): string {
     `<table class="menu-price-table">` +
     `<thead><tr>` +
     `<th class="col-cat">カテゴリ</th>` +
+    `<th class="col-photo">画像</th>` +
     `<th class="col-name">商品名</th>` +
     `<th class="col-net">税抜</th>` +
     `<th class="col-incl">税込</th>` +
@@ -157,6 +171,7 @@ export async function buildMenuPrintHtml(storeId: string): Promise<string | null
           name: true,
           price: true,
           priceTaxMode: true,
+          imageUrl: true,
         },
       },
     },
@@ -177,6 +192,7 @@ export async function buildMenuPrintHtml(storeId: string): Promise<string | null
         name: it.name,
         priceNet: net,
         priceIncl: incl,
+        imageUrl: it.imageUrl,
       });
     }
     if (!items.length) continue;

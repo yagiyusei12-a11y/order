@@ -122,7 +122,14 @@ export async function computeDefaultSeatsForShift(storeId: string): Promise<Deri
     where: { storeId, status: { in: ["open", "bashing_waiting", "merged"] } },
     select: { id: true, tableId: true, status: true, guestCount: true, openedAt: true },
   });
-  const sessByTableId = new Map(sessions.map((s) => [s.tableId, s]));
+  const sessByTableId = new Map<string, (typeof sessions)[number]>();
+  const sessionPriority = (status: string) => (status === "open" ? 3 : status === "merged" ? 2 : 1);
+  for (const s of sessions) {
+    const prev = sessByTableId.get(s.tableId);
+    if (!prev || sessionPriority(s.status) > sessionPriority(prev.status)) {
+      sessByTableId.set(s.tableId, s);
+    }
+  }
   const out: DerivedSeatRow[] = [];
   for (const t of tables) {
     const pc = String(t.publicCode ?? "").trim();
@@ -268,6 +275,9 @@ export async function closeTableSessionsForReceptionMapClear(
     select: { id: true, status: true },
   });
   if (!sessions.length) return;
+
+  const stillOpen = sessions.some((s) => s.status === "open");
+  if (stillOpen) return;
 
   for (const sess of sessions) {
     await prisma.$transaction(async (tx) => {

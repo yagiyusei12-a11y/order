@@ -243,10 +243,12 @@ function openSessionsAtTable(tableId) {
 function pickSessionForTable(table) {
   const atTable = sessionsAtTable(table.id);
   const openSorted = openSessionsAtTable(table.id);
-  if (openSorted.length > 1) {
-    return openSorted.find((x) => x.id === selectedSessionIdOverride) || openSorted[0];
+  if (openSorted.length >= 1) {
+    if (selectedSessionIdOverride && openSorted.some((x) => x.id === selectedSessionIdOverride)) {
+      return openSorted.find((x) => x.id === selectedSessionIdOverride) || openSorted[0];
+    }
+    return openSorted[0];
   }
-  if (openSorted.length === 1) return openSorted[0];
   return (
     atTable.find((x) => x.status === "merged") ||
     atTable.find((x) => x.status === "bashing_waiting") ||
@@ -2715,7 +2717,9 @@ async function renderDetail() {
   }
   if (opsPostPaymentHold && opsPostPaymentHold.tableId === table.id) {
     const holdSession = sessionsCache.find((s) => s.id === opsPostPaymentHold.sessionId);
-    if (holdSession) {
+    const holdDone =
+      holdSession && (holdSession.status === "bashing_waiting" || holdSession.status === "closed");
+    if (holdSession && !(holdDone && openSorted.length > 0)) {
       await refreshRegisterFlow(holdSession, table, opsPostPaymentHold.detail, "");
       return;
     }

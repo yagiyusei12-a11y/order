@@ -3,6 +3,7 @@ import { isTakeoutTablePublicCode } from "./takeout-table-code.js";
 
 /**
  * 会計完了後のセッション状態遷移。
+ * 同一卓に他の利用中セッション（別会計）がある場合はバッシング待ちにせず終了する。
  * 親セッションに加え、他卓合算（status=merged）の子セッションもバッシング待ちへ揃える。
  */
 export async function applyPostSettleSessionStatusInTx(
@@ -30,10 +31,25 @@ export async function applyPostSettleSessionStatusInTx(
   }
 
   if (sess.status === "open") {
-    await tx.diningSession.update({
-      where: { id: sess.id },
-      data: { status: "bashing_waiting" },
+    const otherOpenOnTable = await tx.diningSession.count({
+      where: {
+        storeId,
+        tableId: sess.tableId,
+        status: "open",
+        id: { not: billingSessionId },
+      },
     });
+    if (otherOpenOnTable > 0) {
+      await tx.diningSession.update({
+        where: { id: sess.id },
+        data: { status: "closed", closedAt: new Date() },
+      });
+    } else {
+      await tx.diningSession.update({
+        where: { id: sess.id },
+        data: { status: "bashing_waiting" },
+      });
+    }
     sessionIds.push(sess.id);
     tableIds.push(sess.tableId);
   }

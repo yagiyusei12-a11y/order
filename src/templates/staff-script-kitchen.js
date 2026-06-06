@@ -1029,6 +1029,15 @@ function summaryViewSignature(lines, st) {
   }
 }
 
+function isSetParentLineExtra(lineExtra) {
+  return (
+    lineExtra != null &&
+    typeof lineExtra === "object" &&
+    !Array.isArray(lineExtra) &&
+    /** @type {Record<string, unknown>} */ (lineExtra).kind === "set"
+  );
+}
+
 /**
  * 調理済タップ直後に一覧へ反映（通信完了を待たない）。
  * セット内訳行は kitDonePartIds を更新し、該当行だけ done にする。
@@ -1052,7 +1061,7 @@ function applyKitLineDoneOptimistic(lineIds, componentMenuItemId) {
       if (lnId.includes("::") && lnId.endsWith("::" + comp)) {
         return { ...ln, status: "done", readyAt: nowIso };
       }
-      if (!ln.isSetComponent && ln.lineExtra && typeof ln.lineExtra === "object") {
+      if (!ln.isSetComponent && isSetParentLineExtra(ln.lineExtra)) {
         const extra = { ...(/** @type {Record<string, unknown>} */ (ln.lineExtra)) };
         const prev = Array.isArray(extra.kitDonePartIds)
           ? extra.kitDonePartIds.filter((x) => typeof x === "string")
@@ -1061,10 +1070,13 @@ function applyKitLineDoneOptimistic(lineIds, componentMenuItemId) {
         extra.kitDonePartIds = [...prev].sort();
         return { ...ln, lineExtra: extra };
       }
+      // 単品は menuItemId が comp に入っていても行ごと done
+      if (!ln.isSetComponent) {
+        return { ...ln, status: "done", readyAt: nowIso };
+      }
       return ln;
     }
 
-    if (comp && ln.menuItemId && String(ln.menuItemId) !== comp) return ln;
     return { ...ln, status: "done", readyAt: nowIso };
   };
 
@@ -1096,6 +1108,19 @@ async function runKitLineDone(lineId, componentMenuItemId) {
   kitLineDoneInFlight.add(key);
   try {
     await setLine(lineId, "done", componentMenuItemId);
+  } finally {
+    kitLineDoneInFlight.delete(key);
+  }
+}
+
+async function runKitSummaryTableDone(lineIds, summaryComponentMenuItemId) {
+  const uniq = [...new Set((lineIds || []).map((id) => String(id)).filter(Boolean))];
+  if (uniq.length === 0) return;
+  const key = "summary:" + uniq.join(",") + "|" + String(summaryComponentMenuItemId || "");
+  if (kitLineDoneInFlight.has(key)) return;
+  kitLineDoneInFlight.add(key);
+  try {
+    await setLinesDone(uniq, summaryComponentMenuItemId);
   } finally {
     kitLineDoneInFlight.delete(key);
   }
@@ -1453,7 +1478,8 @@ function renderKitList() {
           byTable,
           cookTimerSec: normCookTimerSec(ln.cookTimerSec),
           cookTimerSec2: normCookTimerSec(ln.cookTimerSec2),
-          summaryComponentMenuItemId: ln.menuItemId ? String(ln.menuItemId) : "",
+          summaryComponentMenuItemId:
+            ln.isSetComponent && ln.menuItemId ? String(ln.menuItemId) : "",
           menuImageUrl: ln.imageUrl ?? null,
           menuRecipe: ln.recipe ?? null,
           menuSellKind: ln.sellKind ?? null,
@@ -1618,20 +1644,13 @@ function renderKitList() {
           escapeHtml(t + " ×" + info.qty) +
           "</span>";
         b.innerHTML = badgePart + tableQtyHtml + " を調理済みにする";
-        b.onclick = async () => {
-          const prevText = b.textContent;
-          b.disabled = true;
-          b.textContent = "処理中…";
-          try {
-            await setLinesDone(info.lineIds, g.summaryComponentMenuItemId || "");
-          } finally {
-            if (b.isConnected) {
-              b.disabled = false;
-              // 復元は innerHTML を保つ
-              b.innerHTML = badgePart + tableQtyHtml + " を調理済みにする";
-            }
-          }
-        };
+        const tableLineIds = info.lineIds;
+        const summaryComp = g.summaryComponentMenuItemId || "";
+        bindKitDoneButton(b, (btn) => {
+          btn.disabled = true;
+          btn.textContent = "処理中…";
+          void runKitSummaryTableDone(tableLineIds, summaryComp);
+        });
         cell.appendChild(b);
         const hasMenuItem = Boolean(sampleLn && sampleLn.menuItemId);
         const stockoutTargetsSet = Boolean(sampleLn && sampleLn.isSetComponent);

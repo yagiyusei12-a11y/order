@@ -1526,7 +1526,7 @@ function renderKitList() {
         b.style.color = "#c2410c";
         b.style.width = "100%";
         b.style.boxSizing = "border-box";
-        b.style.fontSize = "0.68rem";
+        b.classList.add("kit-done-btn");
         const sampleLn = info.lineIds.map((id) => lineByPatchId.get(String(id))).find((x) => x);
         const isHodaiTable = Boolean(sampleLn && orderGroupIsCourseTable({ lines: [sampleLn] }));
         const badgePart =
@@ -1822,7 +1822,7 @@ function renderKitList() {
       }
       if (ln.status === "queued" || ln.status === "cooking") {
         const b2 = document.createElement("button");
-        b2.className = "btn-ghost";
+        b2.className = "btn-ghost kit-done-btn";
         b2.textContent = "調理済";
         b2.onclick = () =>
           setLine(kitchenPatchLineId(ln), "done", ln.isSetComponent ? ln.menuItemId : "");

@@ -70,6 +70,21 @@
     body.kit-list-fullscreen #kit.kit-layout-normal {
       min-height: calc(100dvh - 4.25rem);
     }
+    body.kit-list-fullscreen .kit-cook-btn,
+    body.kit-list-fullscreen .kit-line-actions-timers button,
+    body.kit-list-fullscreen .kit-summary-timers-row button {
+      min-height: 3.25rem;
+      font-size: 1.05rem !important;
+      padding: 0.65rem 0.85rem !important;
+    }
+    body.kit-list-fullscreen .kit-done-btn,
+    body.kit-list-fullscreen .kit-line-actions-status button,
+    body.kit-list-fullscreen .kit-summary-done-row button,
+    body.kit-list-fullscreen .kit-summary-table-btns .btn-ghost {
+      min-height: 3.55rem;
+      font-size: 1.12rem !important;
+      padding: 0.82rem 0.9rem !important;
+    }
     /* 通常表示: 注文をタイル状に詰めて表示 */
     #kit.kit-layout-normal {
       display: grid;
@@ -388,56 +403,73 @@
       max-height: none;
       overflow: visible;
     }
-    /* タイマーと調理済を縦に分離（誤タップ防止） */
+    /* タイマーと調理済を縦に分離（誤タップ防止）・タップしやすい大きさ */
     .kit-line-actions-wrap {
       display: flex;
       flex-direction: column;
-      gap: 0.45rem;
-      margin-top: 0.32rem;
+      gap: 0.55rem;
+      margin-top: 0.4rem;
     }
     .kit-line-actions-timers {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.28rem;
-      align-items: center;
+      gap: 0.4rem;
+      align-items: stretch;
     }
-    .kit-line-actions-timers button {
-      padding: 0.22rem 0.42rem !important;
-      font-size: 0.68rem !important;
-      min-height: 0;
-      line-height: 1.2;
+    .kit-cook-btn,
+    .kit-line-actions-timers button,
+    .kit-summary-timers-row button {
+      padding: 0.55rem 0.75rem !important;
+      font-size: 0.92rem !important;
+      font-weight: 800 !important;
+      min-height: 2.85rem;
+      line-height: 1.25;
       width: auto !important;
+      flex: 1 1 calc(50% - 0.25rem);
+      min-width: 5.5rem;
+      border-radius: 8px;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
     }
     .kit-line-actions-status {
       display: flex;
       flex-direction: column;
-      gap: 0.3rem;
+      gap: 0.4rem;
     }
     .kit-line-actions-wrap.kit-line-actions-has-timers .kit-line-actions-status {
-      padding-top: 0.48rem;
+      padding-top: 0.55rem;
       border-top: 1px dashed #94a3b8;
-      margin-top: 0.08rem;
+      margin-top: 0.1rem;
     }
-    .kit-line-actions-status button {
-      padding: 0.36rem 0.5rem !important;
-      font-size: 0.74rem !important;
+    .kit-done-btn,
+    .kit-line-actions-status button,
+    .kit-summary-done-row button,
+    .kit-summary-table-btns .btn-ghost {
+      padding: 0.72rem 0.85rem !important;
+      font-size: 1rem !important;
+      font-weight: 800 !important;
       line-height: 1.25;
+      min-height: 3.15rem;
       width: 100% !important;
       box-sizing: border-box;
+      border-radius: 8px;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
     }
     .kit-summary-action-stack {
       display: flex;
       flex-direction: column;
-      gap: 0.45rem;
-      margin-top: 0.35rem;
+      gap: 0.55rem;
+      margin-top: 0.4rem;
     }
     .kit-summary-timers-row {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.35rem;
+      gap: 0.4rem;
+      align-items: stretch;
     }
     .kit-summary-done-row {
-      padding-top: 0.48rem;
+      padding-top: 0.55rem;
       border-top: 1px dashed #94a3b8;
     }
     .kit-summary-done-row .row {

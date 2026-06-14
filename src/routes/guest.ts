@@ -647,6 +647,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
           id: session.course.id,
           name: session.course.name,
           kind: session.course.kind,
+          includedItemsUnlimited: session.course.includedItemsUnlimited !== false,
           durationMinutes: tier.durationMinutes,
           pricePerPerson: tier.pricePerPerson,
           childPricePerPerson: tier.childPricePerPerson,
@@ -654,7 +655,9 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
           restrictedToMenuItems: false,
           pricingHint:
             includedSingleIds.size > 0
-              ? "コース対象の単品はコース料に含まれます。対象外の単品・セットは追加料金です。"
+              ? session.course.includedItemsUnlimited !== false
+                ? "コース対象の単品は制限時間内コース料に含まれます（数量上限なし）。対象外は追加料金です。"
+                : "コース対象の単品は来店人数までコース料に含まれます。対象外の単品・セットは追加料金です。"
               : "コース対象の単品が未設定のため、メニュー表記上はすべて追加料金扱いです。",
           ...(courseOptionPacksOut && courseOptionPacksOut.length > 0
             ? { optionPacks: courseOptionPacksOut }

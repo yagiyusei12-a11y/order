@@ -821,6 +821,36 @@ function render() {
       }
     });
 
+    const guestCapLab = document.createElement("label");
+    guestCapLab.style.cssText =
+      "display:flex;align-items:flex-start;gap:0.4rem;margin-top:0.45rem;font-size:0.82rem;cursor:pointer;line-height:1.4";
+    const guestCapCb = document.createElement("input");
+    guestCapCb.type = "checkbox";
+    guestCapCb.checked = c.includedItemsUnlimited === false;
+    guestCapCb.style.transform = "scale(1.12)";
+    guestCapCb.style.marginTop = "0.15rem";
+    const guestCapTxt = document.createElement("span");
+    guestCapTxt.textContent =
+      "コース内商品を来店人数までに制限する（オフ＝食べ放題・制限時間内は数量上限なし）";
+    guestCapLab.appendChild(guestCapCb);
+    guestCapLab.appendChild(guestCapTxt);
+    guestCapCb.addEventListener("change", async () => {
+      log("");
+      const capByGuest = guestCapCb.checked;
+      try {
+        await api("/stores/" + encodeURIComponent(STORE) + "/courses/" + encodeURIComponent(c.id), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ includedItemsUnlimited: !capByGuest }),
+        });
+        c.includedItemsUnlimited = !capByGuest;
+        await loadAll();
+      } catch (e) {
+        guestCapCb.checked = c.includedItemsUnlimited === false;
+        log(String(e.message || e));
+      }
+    });
+
     const labTiers = document.createElement("div");
     labTiers.className = "muted";
     labTiers.style.fontSize = "0.72rem";
@@ -932,6 +962,7 @@ function render() {
     actions.appendChild(labName);
     actions.appendChild(nm);
     actions.appendChild(guestVisLab);
+    actions.appendChild(guestCapLab);
     actions.appendChild(labTiers);
     actions.appendChild(tierBox);
     actions.appendChild(addTierBtn);

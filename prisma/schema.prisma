@@ -260,6 +260,8 @@ model Course {
   active      Boolean           @default(true)
   /// false のとき卓QR（お客様）では選べず、レジ・ハンディ・スタッフ卓操作のみ
   visibleToGuest Boolean        @default(true)
+  /// true=食べ放題等（コース内単品に来店人数上限なし）。false=来店人数まで
+  includedItemsUnlimited Boolean @default(true)
   store       Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
   sessions    DiningSession[]
   includedItems CourseMenuItem[]

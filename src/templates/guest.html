@@ -1836,6 +1836,8 @@
     /** @type {number | null} */
     let ordersCurrentTotal = null;
     let sessionGuestCount = 1;
+    /** コース内単品に来店人数上限をかけるか（false=食べ放題・時間内数量上限なし） */
+    let sessionCourseIncludedGuestCap = false;
     let activeGuestCatId = "";
     let courseIncludedOnly = false;
     let guestShowEatModeTaxNote = false;
@@ -1896,6 +1898,16 @@
 
     function guestLoChargesIncludedAsPaid() {
       return guestLastOrderPastLocal && guestLoPolicy === "singles_paid_only";
+    }
+
+    /** コース内商品に「来店人数まで」の数量上限を適用するか */
+    function guestCourseIncludedQtyCapped(item) {
+      return (
+        item &&
+        item.courseTier === "included" &&
+        !guestLoChargesIncludedAsPaid() &&
+        sessionCourseIncludedGuestCap
+      );
     }
 
     function guestLoSetBlockedToast() {
@@ -2634,7 +2646,7 @@
       const delta = Math.max(0, Number(addDelta || 0));
       if (!item || delta <= 0) return 0;
       let cap =
-        item.courseTier === "included" && !guestLoChargesIncludedAsPaid()
+        guestCourseIncludedQtyCapped(item)
           ? maxCourseIncludedAddQty(item, excludeCartKey)
           : 99;
       if (item.stockQty != null) {
@@ -2856,9 +2868,9 @@
         const cap = guestItemQtyAddCap(item, cartKey, delta);
         if (delta > cap) {
           toast(
-            item.courseTier === "included" && !guestLoChargesIncludedAsPaid() && cap <= 0
+            guestCourseIncludedQtyCapped(item) && cap <= 0
               ? "コースの人数分は注文済みです"
-              : item.courseTier === "included" && !guestLoChargesIncludedAsPaid()
+              : guestCourseIncludedQtyCapped(item)
                 ? "コース人数（" + sessionGuestCount + "名）または在庫の上限です"
                 : "在庫の上限です",
           );
@@ -3614,10 +3626,9 @@
       const stockNum = typeof raw === "number" && Number.isFinite(raw) ? raw : null;
 
       function maxQtyThisAdd() {
-        const courseCap =
-          item.courseTier === "included" && !guestLoChargesIncludedAsPaid()
-            ? maxCourseIncludedAddQty(item, null)
-            : 99;
+        const courseCap = guestCourseIncludedQtyCapped(item)
+          ? maxCourseIncludedAddQty(item, null)
+          : 99;
         if (stockNum == null) return Math.min(99, courseCap);
         const remain = stockNum - totalCartQtyForMenuItem(item.id);
         if (remain <= 0) return 0;
@@ -3637,9 +3648,11 @@
             ? "在庫がありません"
             : atMax && stockNum != null
               ? "在庫の上限です"
-              : atMax
-                ? "これ以上は選べません"
-                : "";
+              : atMax && guestCourseIncludedQtyCapped(item)
+                ? "コース人数（" + sessionGuestCount + "名）の上限です"
+                : atMax
+                  ? "これ以上は選べません"
+                  : "";
         syncDetailAddPrice(panel, getUnitPrice(), qty);
       }
 
@@ -3651,11 +3664,21 @@
       plus.onclick = () => {
         const cap = maxQtyThisAdd();
         if (cap <= 0) {
-          toast("在庫がありません");
+          toast(
+            guestCourseIncludedQtyCapped(item) && stockNum == null
+              ? "コースの人数分は注文済みです"
+              : "在庫がありません",
+          );
           return;
         }
         if (qty >= cap) {
-          toast(stockNum != null ? "在庫の上限です" : "これ以上は選べません");
+          toast(
+            guestCourseIncludedQtyCapped(item) && stockNum == null
+              ? "コース人数（" + sessionGuestCount + "名）の上限です"
+              : stockNum != null
+                ? "在庫の上限です"
+                : "これ以上は選べません",
+          );
           return;
         }
         qty += 1;
@@ -4707,6 +4730,9 @@
       }
       const gs = data.session;
       sessionGuestCount = Math.max(1, parseInt(String((gs && gs.guestCount) || 1), 10) || 1);
+      sessionCourseIncludedGuestCap = Boolean(
+        gs && gs.course && gs.course.includedItemsUnlimited === false,
+      );
       if (gs && gs.guestAlcoholAllowed === true) alcoholRestricted = false;
       else if (gs && gs.guestAlcoholAllowed === false) alcoholRestricted = true;
       hydrateGuestCartFromStorage();

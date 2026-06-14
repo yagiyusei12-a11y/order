@@ -1915,6 +1915,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       kind: string;
       priceTiers: unknown;
       visibleToGuest?: boolean;
+      includedItemsUnlimited?: boolean;
       menuItemIds?: unknown;
       includedMenuLinks?: unknown;
       optionPacks?: unknown;
@@ -1951,6 +1952,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     }
 
     const visibleToGuest = req.body?.visibleToGuest !== false;
+    const includedItemsUnlimited = req.body?.includedItemsUnlimited !== false;
 
     const course = await prisma.$transaction(async (tx) => {
       const c = await tx.course.create({
@@ -1959,6 +1961,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
           name,
           kind,
           visibleToGuest,
+          includedItemsUnlimited,
         },
       });
       await tx.coursePriceTier.createMany({
@@ -2019,6 +2022,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       kind?: string;
       active?: boolean;
       visibleToGuest?: boolean;
+      includedItemsUnlimited?: boolean;
       menuItemIds?: unknown;
       includedMenuLinks?: unknown;
       priceTiers?: unknown;
@@ -2034,6 +2038,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       kind?: string;
       active?: boolean;
       visibleToGuest?: boolean;
+      includedItemsUnlimited?: boolean;
     } = {};
     if (typeof req.body?.name === "string") {
       const n = req.body.name.trim();
@@ -2050,6 +2055,9 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     }
     if (typeof req.body?.visibleToGuest === "boolean") {
       data.visibleToGuest = req.body.visibleToGuest;
+    }
+    if (typeof req.body?.includedItemsUnlimited === "boolean") {
+      data.includedItemsUnlimited = req.body.includedItemsUnlimited;
     }
 
     const bodyObj = req.body && typeof req.body === "object" ? req.body : null;

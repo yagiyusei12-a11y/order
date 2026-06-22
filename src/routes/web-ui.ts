@@ -5,6 +5,8 @@ import { templatePath } from "../lib/paths.js";
 import { displayTableCode } from "../lib/table-display-code.js";
 import { verifyGuestDisplayKey } from "../lib/guest-display-auth.js";
 import { guestDisplayPublicUrl, staffRequestOrigin } from "../lib/guest-display-url.js";
+import { verifyGamesHubKey } from "../lib/games-hub-auth.js";
+import { gamesHubPublicUrl } from "../lib/games-hub-url.js";
 import { buildMenuPrintHtml } from "../lib/menu-print-html.js";
 import { prisma } from "../db.js";
 import QRCode from "qrcode";
@@ -259,6 +261,67 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
     return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(body);
   });
 
+  app.get<{ Params: { storeId: string }; Querystring: { key?: string } }>(
+    "/games/:storeId",
+    async (req, reply) => {
+      const storeId = req.params.storeId;
+      const key = typeof req.query.key === "string" ? req.query.key.trim() : "";
+      if (!verifyGamesHubKey(storeId, key)) {
+        return reply.code(403).type("text/plain; charset=utf-8").send("invalid games hub key");
+      }
+      const store = await prisma.store.findUnique({
+        where: { id: storeId },
+        select: { name: true },
+      });
+      if (!store) return reply.code(404).type("text/plain; charset=utf-8").send("store not found");
+      const body = html("games-hub.html")
+        .replace("__STORE_ID_JS__", JSON.stringify(storeId))
+        .replace("__HUB_KEY_JS__", JSON.stringify(key))
+        .replace("__STORE_NAME_HTML__", escapeHtml(store.name));
+      return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(body);
+    },
+  );
+
+  app.get<{
+    Params: { storeId: string; slug: string };
+    Querystring: { key?: string; token?: string };
+  }>("/games/:storeId/play/:slug", async (req, reply) => {
+    const storeId = req.params.storeId;
+    const key = typeof req.query.key === "string" ? req.query.key.trim() : "";
+    if (!verifyGamesHubKey(storeId, key)) {
+      return reply.code(403).type("text/plain; charset=utf-8").send("invalid games hub key");
+    }
+    const store = await prisma.store.findUnique({
+      where: { id: storeId },
+      select: { name: true },
+    });
+    if (!store) return reply.code(404).type("text/plain; charset=utf-8").send("store not found");
+    const token =
+      typeof req.query.token === "string" && req.query.token.trim()
+        ? req.query.token.trim()
+        : "";
+    const body = html("games-play.html")
+      .replace("__STORE_ID_JS__", JSON.stringify(storeId))
+      .replace("__HUB_KEY_JS__", JSON.stringify(key))
+      .replace("__GAME_SLUG_JS__", JSON.stringify(req.params.slug))
+      .replace("__GUEST_TOKEN_JS__", JSON.stringify(token))
+      .replace("__STORE_NAME_HTML__", escapeHtml(store.name));
+    return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(body);
+  });
+
+  app.get<{ Params: { slug: string } }>("/games-modules/:slug.js", async (req, reply) => {
+    const slug = req.params.slug.replace(/[^a-z0-9-]/gi, "");
+    const file = `games-module-${slug}.js`;
+    const path = templatePath(file);
+    if (!existsSync(path)) {
+      return reply.code(404).type("text/plain; charset=utf-8").send("module not found");
+    }
+    return reply
+      .type("application/javascript; charset=utf-8")
+      .header("Cache-Control", "public, max-age=3600")
+      .send(createReadStream(path));
+  });
+
   const staffHtml = (
     reply: FastifyReply,
     storeId: string,
@@ -447,6 +510,39 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
     if (!(await assertStaffStore(req, reply))) return;
     return staffHtml(reply, req.params.storeId, "設定", "staff-body-settings.html", "staff-script-settings.js");
   });
+
+  app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/games", async (req, reply) => {
+    if (!(await assertStaffStore(req, reply))) return;
+    const storeId = req.params.storeId;
+    const hubUrl = gamesHubPublicUrl(staffRequestOrigin(req), storeId);
+    return staffHtml(reply, storeId, "ゲーム・占い", "staff-body-games.html", "staff-script-games.js", undefined, {
+      __GAMES_HUB_URL__: escapeHtml(hubUrl),
+    });
+  });
+
+  /** ゲームハブ URL の QR（SVG）。スタッフ Cookie 認証必須。 */
+  app.get<{ Params: { storeId: string } }>(
+    "/staff-app/:storeId/games-hub-qr.svg",
+    async (req, reply) => {
+      if (!(await assertStaffStore(req, reply))) return;
+      const url = gamesHubPublicUrl(staffRequestOrigin(req), req.params.storeId);
+      try {
+        const svg = await QRCode.toString(url, {
+          type: "svg",
+          margin: 1,
+          width: 128,
+          errorCorrectionLevel: "M",
+          color: { dark: "#1a1d24ff", light: "#ffffffff" },
+        });
+        return reply
+          .type("image/svg+xml; charset=utf-8")
+          .header("Cache-Control", "private, max-age=300")
+          .send(svg);
+      } catch {
+        return reply.code(500).type("text/plain; charset=utf-8").send("qr failed");
+      }
+    },
+  );
 
   /** 客面ディスプレイ URL の QR（SVG）。スタッフ Cookie 認証必須。 */
   app.get<{ Params: { storeId: string } }>(

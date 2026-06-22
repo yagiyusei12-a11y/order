@@ -22,7 +22,7 @@ const LINE_STATUSES = ["queued", "cooking", "done", "served"] as const;
 function isKitchenExcludedBillingLine(lineExtra: unknown): boolean {
   if (lineExtra == null || typeof lineExtra !== "object" || Array.isArray(lineExtra)) return false;
   const kind = (lineExtra as { kind?: unknown }).kind;
-  return kind === "customLine" || kind === "courseOptionPack";
+  return kind === "customLine" || kind === "courseOptionPack" || kind === "gameFee";
 }
 
 /** ホール提供待ち API（lineStatus=hall_wait）で明細行を出すか */

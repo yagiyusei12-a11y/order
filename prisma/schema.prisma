@@ -32,6 +32,7 @@ model Store {
   receptionReservations ReceptionReservation[]
   staffAuditLogs   StaffAuditLog[]
   cashDrawerEntries CashDrawerEntry[]
+  storeGames       StoreGame[]
   createdAt        DateTime             @default(now())
 }
 
@@ -400,6 +401,7 @@ model MenuItem {
   timeDiscounts     MenuItemTimeDiscount[]
   setSteps          MenuSetStep[]   @relation("MenuSetOfItem")
   setChoiceAsComponent MenuSetChoice[] @relation("MenuSetChoiceComponent")
+  storeGameRewards  StoreGame[]     @relation("StoreGameReward")
 
   @@index([categoryId])
   @@index([kitchenStationId])
@@ -512,11 +514,65 @@ model DiningSession {
   purchasedCourseOptionPackIds Json @default("[]")
   orders          SalesOrder[]
   bill       Bill?
+  gamePlays       GamePlay[]
 
   @@index([storeId])
   @@index([tableId])
   @@index([customerId])
   @@index([mergedIntoSessionId])
+}
+
+/// 店舗のゲーム・占い定義（POP ハブから公開）
+model StoreGame {
+  id                    String     @id @default(cuid())
+  storeId               String
+  sortOrder             Int        @default(0)
+  enabled               Boolean    @default(true)
+  /// paid=88円等の有料ゲーム, fortune=占いのみ
+  kind                  String
+  /// クライアント実装識別子（omikuji, lucky-stop 等）
+  slug                  String
+  title                 String
+  description           String?
+  iconEmoji             String?
+  /// 有料ゲームの参加費（税込円）
+  playPriceYen          Int        @default(88)
+  /// 成功時に厨房へ送る MenuItem（有料のみ）
+  rewardMenuItemId      String?
+  /// random | skill
+  winMode               String     @default("random")
+  /// winMode=random の当選率（0〜100）
+  winProbabilityPercent Int        @default(30)
+  /// ゲーム固有パラメータ JSON
+  configJson            Json       @default("{}")
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+  store                 Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  rewardMenuItem        MenuItem?  @relation("StoreGameReward", fields: [rewardMenuItemId], references: [id], onDelete: SetNull)
+  plays                 GamePlay[]
+
+  @@unique([storeId, slug])
+  @@index([storeId])
+  @@index([rewardMenuItemId])
+}
+
+/// 1プレイ = 1課金（有料ゲーム）
+model GamePlay {
+  id                 String        @id @default(cuid())
+  storeGameId        String
+  billingSessionId   String
+  status             String        @default("started")
+  feeOrderLineId     String?
+  rewardOrderLineId  String?
+  guestDeviceId      String?
+  completedAt        DateTime?
+  createdAt          DateTime      @default(now())
+  storeGame          StoreGame     @relation(fields: [storeGameId], references: [id], onDelete: Cascade)
+  billingSession     DiningSession @relation(fields: [billingSessionId], references: [id], onDelete: Cascade)
+
+  @@index([storeGameId])
+  @@index([billingSessionId])
+  @@index([status])
 }
 
 /// 受付：設定（店舗ごとに1行）

@@ -4749,6 +4749,11 @@
         }
       }
       syncGuestServeLaterCopyFromStore(data.store);
+      try {
+        if (data.store && data.store.id && TOKEN) {
+          localStorage.setItem("gamesHubGuestToken_v1:" + data.store.id, TOKEN);
+        }
+      } catch (_) {}
       guestShowMenuPrices = !(data.store && data.store.showMenuPrices === false);
       menuPriceTaxMode = (data.store && data.store.menuPriceTaxMode) || "inclusive";
       coursePriceTaxMode = (data.store && data.store.coursePriceTaxMode) || menuPriceTaxMode || "inclusive";

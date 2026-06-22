@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>プレイ — __STORE_NAME_HTML__</title>
+  <style>
+    :root { --bg:#0f1419; --card:#161c24; --text:#e8eef4; --muted:#8b9aab; --accent:#c9a227; --line:#2a3340; --ok:#6ee7a0; --bad:#ffb4b4; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; padding:1rem 1rem calc(1rem + env(safe-area-inset-bottom)); }
+    .wrap { max-width:26rem; margin:0 auto; }
+    .back { color:var(--muted); font-size:0.82rem; text-decoration:none; display:inline-block; margin-bottom:0.75rem; }
+    h1 { font-size:1.15rem; margin:0 0 0.75rem; }
+    .panel { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:1rem; min-height:10rem; }
+    button.primary {
+      width:100%; padding:0.75rem; border:none; border-radius:10px; background:var(--accent); color:#1a1408;
+      font-weight:800; font-size:0.95rem; cursor:pointer; margin-top:0.75rem;
+    }
+    button.primary:disabled { opacity:0.45; cursor:not-allowed; }
+    #msg { margin-top:0.75rem; font-size:0.88rem; line-height:1.5; }
+    #msg.win { color:var(--ok); }
+    #msg.lose { color:var(--bad); }
+    #err { color:var(--bad); font-size:0.85rem; margin-top:0.5rem; display:none; }
+    #gameRoot { min-height:8rem; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:0.5rem; }
+    .timer-display { font-size:2.5rem; font-weight:900; font-variant-numeric:tabular-nums; }
+    .fortune-result { font-size:1.5rem; font-weight:900; }
+    .fortune-text { color:var(--muted); font-size:0.88rem; line-height:1.55; max-width:18rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <a class="back" id="backLink" href="#">← 一覧へ</a>
+    <h1 id="gameTitle">…</h1>
+    <div class="panel">
+      <div id="gameRoot"><p class="fortune-text">読み込み中…</p></div>
+      <button type="button" class="primary" id="btnAction" style="display:none">スタート</button>
+    </div>
+    <p id="msg"></p>
+    <p id="err" role="alert"></p>
+  </div>
+  <script>
+    const STORE_ID = __STORE_ID_JS__;
+    const HUB_KEY = __HUB_KEY_JS__;
+    const GAME_SLUG = __GAME_SLUG_JS__;
+    const GUEST_TOKEN = __GUEST_TOKEN_JS__;
+    const TOKEN_KEY = "gamesHubGuestToken_v1:" + STORE_ID;
+
+    let gameMeta = null;
+    let playId = null;
+    let moduleApi = null;
+
+    function esc(s) {
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    }
+
+    function hubUrl() {
+      return "/games/" + encodeURIComponent(STORE_ID) + "?key=" + encodeURIComponent(HUB_KEY);
+    }
+
+    function getToken() {
+      if (GUEST_TOKEN) return GUEST_TOKEN;
+      try { return localStorage.getItem(TOKEN_KEY) || ""; } catch (_) { return ""; }
+    }
+
+    async function api(path, opts) {
+      const r = await fetch(path, {
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", ...(opts && opts.headers ? opts.headers : {}) },
+        method: opts && opts.method ? opts.method : "GET",
+        body: opts && opts.body ? JSON.stringify(opts.body) : undefined,
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || j.message || "error");
+      return j;
+    }
+
+    function showErr(msg) {
+      const el = document.getElementById("err");
+      el.style.display = "block";
+      el.textContent = msg;
+    }
+
+    function showMsg(text, cls) {
+      const el = document.getElementById("msg");
+      el.textContent = text;
+      el.className = cls || "";
+    }
+
+    async function loadModule(slug) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = "/games-modules/" + encodeURIComponent(slug) + ".js";
+        s.onload = () => {
+          const mod = window.__gameModules && window.__gameModules[slug];
+          if (!mod) reject(new Error("module not registered"));
+          else resolve(mod);
+        };
+        s.onerror = () => reject(new Error("module load failed"));
+        document.head.appendChild(s);
+      });
+    }
+
+    async function startPaidGame() {
+      const token = getToken();
+      if (!token) throw new Error("卓のQRを読み取ってからプレイしてください");
+      const res = await api("/guest/" + encodeURIComponent(token) + "/games/" + encodeURIComponent(gameMeta.id) + "/start", {
+        method: "POST",
+        body: {},
+      });
+      playId = res.playId;
+      return res;
+    }
+
+    async function completePaidGame(payload) {
+      const token = getToken();
+      if (!token || !playId) throw new Error("session error");
+      return api("/guest/" + encodeURIComponent(token) + "/games/plays/" + encodeURIComponent(playId) + "/complete", {
+        method: "POST",
+        body: payload || {},
+      });
+    }
+
+    async function main() {
+      document.getElementById("backLink").href = hubUrl();
+      try {
+        const meta = await api("/games/api/" + encodeURIComponent(STORE_ID) + "/meta?key=" + encodeURIComponent(HUB_KEY));
+        gameMeta = (meta.games || []).find((g) => g.slug === GAME_SLUG);
+        if (!gameMeta) throw new Error("ゲームが見つかりません");
+        document.getElementById("gameTitle").textContent = gameMeta.title;
+        const mod = await loadModule(GAME_SLUG);
+        moduleApi = mod;
+        const ctx = {
+          game: gameMeta,
+          root: document.getElementById("gameRoot"),
+          btn: document.getElementById("btnAction"),
+          showMsg,
+          showErr,
+          startPaidGame,
+          completePaidGame,
+        };
+        mod.mount(ctx);
+      } catch (e) {
+        document.getElementById("gameRoot").innerHTML = "";
+        showErr(e instanceof Error ? e.message : "読み込み失敗");
+      }
+    }
+    void main();
+  </script>
+</body>
+</html>

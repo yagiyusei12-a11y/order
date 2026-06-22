@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>ゲーム・占い — __STORE_NAME_HTML__</title>
+  <style>
+    :root { --bg:#0f1419; --card:#161c24; --text:#e8eef4; --muted:#8b9aab; --accent:#c9a227; --line:#2a3340; --ok:#6ee7a0; --bad:#ffb4b4; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; padding:1rem 1rem calc(1rem + env(safe-area-inset-bottom)); }
+    .wrap { max-width:28rem; margin:0 auto; }
+    h1 { font-size:1.25rem; margin:0 0 0.25rem; }
+    .sub { color:var(--muted); font-size:0.85rem; margin:0 0 1rem; line-height:1.5; }
+    .banner { background:#1e2735; border:1px solid var(--line); border-radius:10px; padding:0.75rem 0.85rem; margin-bottom:1rem; font-size:0.82rem; line-height:1.5; }
+    .banner.ok { border-color:#3d6b4a; background:#152019; color:var(--ok); }
+    .banner.warn { border-color:#6b5a3d; background:#1a1812; color:#f0d090; }
+    .grid { display:flex; flex-direction:column; gap:0.65rem; }
+    .card {
+      display:flex; gap:0.75rem; align-items:flex-start; background:var(--card); border:1px solid var(--line);
+      border-radius:12px; padding:0.85rem 0.9rem; cursor:pointer; text-decoration:none; color:inherit;
+    }
+    .card:active { opacity:0.85; }
+    .emoji { font-size:1.75rem; line-height:1; flex-shrink:0; }
+    .card-body { flex:1; min-width:0; }
+    .card-title { font-weight:800; font-size:1rem; margin:0 0 0.2rem; }
+    .card-desc { margin:0; font-size:0.78rem; color:var(--muted); line-height:1.45; }
+    .badge { display:inline-block; font-size:0.68rem; font-weight:800; padding:0.15rem 0.45rem; border-radius:999px; margin-left:0.35rem; vertical-align:middle; }
+    .badge.paid { background:#3d2f14; color:#f0c060; }
+    .badge.fortune { background:#2a2040; color:#c4b5fd; }
+    .meta { font-size:0.72rem; color:var(--muted); margin-top:0.35rem; }
+    #loading { text-align:center; color:var(--muted); padding:2rem 0; }
+    #err { color:var(--bad); font-size:0.85rem; margin-top:0.75rem; display:none; }
+    .link-btn { display:inline-block; margin-top:0.5rem; color:var(--accent); font-weight:700; font-size:0.82rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>__STORE_NAME_HTML__</h1>
+    <p class="sub">店内ゲーム・占いコーナー</p>
+    <div id="sessionBanner" class="banner warn" style="display:none"></div>
+    <p id="loading">読み込み中…</p>
+    <div id="grid" class="grid" style="display:none"></div>
+    <p id="err" role="alert"></p>
+  </div>
+  <script>
+    const STORE_ID = __STORE_ID_JS__;
+    const HUB_KEY = __HUB_KEY_JS__;
+    const TOKEN_KEY = "gamesHubGuestToken_v1:" + STORE_ID;
+
+    function esc(s) {
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    }
+
+    function getToken() {
+      try {
+        const q = new URLSearchParams(location.search).get("token");
+        if (q && q.trim()) {
+          localStorage.setItem(TOKEN_KEY, q.trim());
+          return q.trim();
+        }
+        return localStorage.getItem(TOKEN_KEY) || "";
+      } catch (_) { return ""; }
+    }
+
+    function playUrl(slug) {
+      const t = getToken();
+      let u = "/games/" + encodeURIComponent(STORE_ID) + "/play/" + encodeURIComponent(slug) + "?key=" + encodeURIComponent(HUB_KEY);
+      if (t) u += "&token=" + encodeURIComponent(t);
+      return u;
+    }
+
+    async function api(path) {
+      const r = await fetch(path, { credentials: "same-origin" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || j.message || "error");
+      return j;
+    }
+
+    async function refreshSessionBanner() {
+      const el = document.getElementById("sessionBanner");
+      const token = getToken();
+      if (!token) {
+        el.style.display = "block";
+        el.className = "banner warn";
+        el.innerHTML =
+          "有料ゲーム（88円等）をプレイするには、<strong>お席のモバイルオーダー用QR</strong>を読み取ってからお試しください。" +
+          '<br><span class="meta">占いはQRなしで遊べます。</span>';
+        return;
+      }
+      try {
+        const s = await api(
+          "/games/api/" + encodeURIComponent(STORE_ID) + "/session?key=" + encodeURIComponent(HUB_KEY) +
+          "&token=" + encodeURIComponent(token),
+        );
+        el.style.display = "block";
+        el.className = "banner ok";
+        el.textContent = "卓「" + (s.tableName || "—") + "」の会計に紐付け済み";
+      } catch (_) {
+        el.style.display = "block";
+        el.className = "banner warn";
+        el.innerHTML =
+          "卓との連携が切れています。お席のQRを再度読み取ってください。" +
+          '<br><button type="button" class="link-btn" id="clearToken">連携を解除</button>';
+        document.getElementById("clearToken")?.addEventListener("click", () => {
+          try { localStorage.removeItem(TOKEN_KEY); } catch (_) {}
+          location.reload();
+        });
+      }
+    }
+
+    async function main() {
+      const errEl = document.getElementById("err");
+      try {
+        await refreshSessionBanner();
+        const meta = await api("/games/api/" + encodeURIComponent(STORE_ID) + "/meta?key=" + encodeURIComponent(HUB_KEY));
+        const games = Array.isArray(meta.games) ? meta.games : [];
+        document.getElementById("loading").style.display = "none";
+        const grid = document.getElementById("grid");
+        grid.style.display = "flex";
+        if (games.length === 0) {
+          grid.innerHTML = '<p class="sub">現在公開中のゲームはありません。</p>';
+          return;
+        }
+        grid.innerHTML = games.map((g) => {
+          const kind = g.kind === "fortune" ? "fortune" : "paid";
+          const badge = kind === "fortune"
+            ? '<span class="badge fortune">占い</span>'
+            : '<span class="badge paid">' + esc(String(g.playPriceYen || 88)) + '円</span>';
+          const reward = g.rewardMenuItem && g.rewardMenuItem.name
+            ? '<div class="meta">成功で「' + esc(g.rewardMenuItem.name) + '」プレゼント</div>'
+            : "";
+          return (
+            '<a class="card" href="' + esc(playUrl(g.slug)) + '">' +
+            '<span class="emoji">' + esc(g.iconEmoji || (kind === "fortune" ? "🔮" : "🎮")) + '</span>' +
+            '<div class="card-body">' +
+            '<p class="card-title">' + esc(g.title) + badge + '</p>' +
+            (g.description ? '<p class="card-desc">' + esc(g.description) + '</p>' : "") +
+            reward +
+            '</div></a>'
+          );
+        }).join("");
+      } catch (e) {
+        document.getElementById("loading").style.display = "none";
+        errEl.style.display = "block";
+        errEl.textContent = e instanceof Error ? e.message : "読み込みに失敗しました";
+      }
+    }
+    void main();
+  </script>
+</body>
+</html>

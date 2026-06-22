@@ -1,0 +1,90 @@
+(function () {
+  window.__gameModules = window.__gameModules || {};
+  window.__gameModules["lucky-stop"] = {
+    mount(ctx) {
+      const { game, root, btn, showMsg, showErr, startPaidGame, completePaidGame } = ctx;
+      const cfg = game.configJson && typeof game.configJson === "object" ? game.configJson : {};
+      const targetMs = typeof cfg.targetMs === "number" ? cfg.targetMs : 3000;
+      const price = game.playPriceYen || 88;
+
+      let running = false;
+      let startAt = 0;
+      let raf = 0;
+      let phase = "idle";
+
+      function render(ms) {
+        root.innerHTML =
+          '<p class="fortune-text">ちょうど ' + (targetMs / 1000).toFixed(1) + ' 秒で止めよう！</p>' +
+          '<div class="timer-display" id="timerVal">' + (ms / 1000).toFixed(2) + '</div>' +
+          '<p class="fortune-text">参加費 ' + price + '円（卓の会計に追加）</p>';
+      }
+
+      function tick() {
+        if (!running) return;
+        const elapsed = Date.now() - startAt;
+        const el = document.getElementById("timerVal");
+        if (el) el.textContent = (elapsed / 1000).toFixed(2);
+        raf = requestAnimationFrame(tick);
+      }
+
+      render(0);
+      btn.style.display = "block";
+      btn.textContent = "スタート（" + price + "円）";
+
+      btn.onclick = async () => {
+        showErr("");
+        showMsg("", "");
+        if (phase === "idle") {
+          btn.disabled = true;
+          try {
+            await startPaidGame();
+            phase = "ready";
+            btn.textContent = "スタート！";
+            showMsg("参加費を会計に追加しました。タイマーを止めてください。", "");
+          } catch (e) {
+            showErr(e instanceof Error ? e.message : "開始できませんでした");
+          }
+          btn.disabled = false;
+          return;
+        }
+        if (phase === "ready") {
+          phase = "running";
+          running = true;
+          startAt = Date.now();
+          btn.textContent = "ストップ！";
+          tick();
+          return;
+        }
+        if (phase === "running") {
+          running = false;
+          cancelAnimationFrame(raf);
+          const resultMs = Date.now() - startAt;
+          render(resultMs);
+          phase = "done";
+          btn.disabled = true;
+          btn.textContent = "判定中…";
+          try {
+            const res = await completePaidGame({ resultMs });
+            if (res.won) {
+              showMsg("成功！「" + (res.rewardName || "特典") + "」を厨房へ送りました。", "win");
+            } else {
+              showMsg("残念！またチャレンジできます（" + price + "円）。", "lose");
+            }
+            btn.textContent = "一覧へ戻る";
+            btn.disabled = false;
+            btn.onclick = () => {
+              const back = document.getElementById("backLink");
+              if (back && back.href) location.href = back.href;
+              else history.back();
+            };
+          } catch (e) {
+            showErr(e instanceof Error ? e.message : "判定に失敗しました");
+            btn.textContent = "ストップ！";
+            btn.disabled = false;
+            phase = "running";
+          }
+        }
+      };
+    },
+  };
+})();

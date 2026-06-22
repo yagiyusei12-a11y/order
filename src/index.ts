@@ -12,6 +12,7 @@ import { registerPublicApi } from "./routes/public-api.js";
 import { registerReception } from "./routes/reception.js";
 import { registerTakeoutNet } from "./routes/takeout-net.js";
 import { registerGuestDisplayApi } from "./routes/guest-display.js";
+import { registerGames } from "./routes/games.js";
 import { registerWebUi } from "./routes/web-ui.js";
 import { Server as SocketIOServer } from "socket.io";
 import { prisma } from "./db.js";
@@ -51,7 +52,8 @@ async function main(): Promise<void> {
       req.url.startsWith("/auth/") ||
       req.url.startsWith("/public/") ||
       req.url.startsWith("/guest/") ||
-      req.url.startsWith("/guest-display/");
+      req.url.startsWith("/guest-display/") ||
+      req.url.startsWith("/games/");
     if (isJsonApi) {
       return reply.code(status).send({ error: msg });
     }
@@ -64,6 +66,7 @@ async function main(): Promise<void> {
   await app.register(registerGuest);
   await app.register(registerTakeoutNet);
   await app.register(registerGuestDisplayApi);
+  await app.register(registerGames);
   /** 子スコープに限定し、ゲストAPIに JWT を要求しない */
   await app.register(async (scope) => {
     await registerProtectedStaffRoutes(scope);

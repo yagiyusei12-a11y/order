@@ -80,20 +80,7 @@ function renderBusyStopGrid() {
         stop.type = "button";
         stop.className = "btn-primary btn-stop";
         stop.textContent = "停止する";
-        stop.onclick = () => {
-          if (
-            !window.confirm(
-              "「" +
-                String(st.name || "") +
-                "」の混雑停止を開始しますか？\n対象商品（" +
-                targetN +
-                "件）がゲストから注文できなくなります。",
-            )
-          ) {
-            return;
-          }
-          void setBusyStop(String(st.id), true, stop);
-        };
+        stop.onclick = () => void setBusyStop(String(st.id), true, stop);
         actions.appendChild(stop);
       }
     }

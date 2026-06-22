@@ -2120,6 +2120,61 @@
       return Boolean(findBusyStoppedCartLine());
     }
 
+    function cartLineDisplayName(line) {
+      const defIt =
+        line && line.menuItemId != null && line.menuItemId !== ""
+          ? menuItemById.get(String(line.menuItemId))
+          : null;
+      return String(line.name || (defIt && defIt.name) || "商品");
+    }
+
+    function cartLinesPartitionByBusyStop() {
+      const orderable = [];
+      const stopped = [];
+      for (const line of Object.values(cart)) {
+        if (!(line.qty > 0)) continue;
+        if (cartLineBusyStopped(line)) stopped.push(line);
+        else orderable.push(line);
+      }
+      return { orderable, stopped };
+    }
+
+    function formatBusyStoppedNamesForMessage(stoppedLines) {
+      const names = stoppedLines.map(cartLineDisplayName);
+      if (!names.length) return "";
+      return names.map((n) => "「" + n + "」").join("");
+    }
+
+    function buildPartialBusyStopOrderMessage(stoppedLines) {
+      return (
+        formatBusyStoppedNamesForMessage(stoppedLines) +
+        "の商品が現在混雑防止のため、一時的に注文停止となりました。それ以外のご注文となります。"
+      );
+    }
+
+    function cartOrderableSubmitBlockedByLastOrder(orderableLines) {
+      if (!guestLastOrderPastLocal) return false;
+      if (guestLoPolicy === "allow_all") return false;
+      if (guestLoPolicy === "block_all") return true;
+      const lines = orderableLines || cartLinesPartitionByBusyStop().orderable;
+      return lines.some((x) => x.sellKind === "set");
+    }
+
+    function cartLineToOrderPayload(line) {
+      const o = { menuItemId: line.menuItemId, qty: line.qty };
+      if (line.sellKind === "set" && line.setSelections) o.setSelections = line.setSelections;
+      if (line.optionSelections && line.optionSelections.length) o.optionSelections = line.optionSelections;
+      if (line.serveLaterDeferStepIds && line.serveLaterDeferStepIds.length) {
+        o.serveLaterDeferStepIds = line.serveLaterDeferStepIds;
+        if (line.serveLaterDeferPairDrinkDessert) o.serveLaterDeferPairDrinkDessert = true;
+      } else if (line.serveLaterDeferStepId) o.serveLaterDeferStepId = line.serveLaterDeferStepId;
+      if (line.setComponentOptionSelections && line.setComponentOptionSelections.length) {
+        o.setComponentOptionSelections = line.setComponentOptionSelections;
+      }
+      if (line.eatMode) o.eatMode = line.eatMode;
+      return o;
+    }
+
     function applyGuestBusyStopState(stoppedIds, message, options) {
       guestStoppedStationIds = new Set((stoppedIds || []).map((x) => String(x)));
       if (message) guestBusyStopMessageText = String(message);
@@ -2476,21 +2531,26 @@
 
     function renderCart() {
       const lines = Object.values(cart).filter((x) => x.qty > 0);
+      const { orderable, stopped } = cartLinesPartitionByBusyStop();
       const count = lines.reduce((s, x) => s + x.qty, 0);
+      const orderableQty = orderable.reduce((s, x) => s + x.qty, 0);
       const sum = lines.reduce((s, x) => s + x.unitPrice * x.qty, 0);
-      const hasPending = count > 0 && !guestSubmitBlockedByLastOrder();
+      const hasPending = orderableQty > 0 && !cartOrderableSubmitBlockedByLastOrder(orderable);
       const cartCountEl = document.getElementById("cartCount");
-      const busyBlocked = cartHasBusyStoppedLines();
       if (cartCountEl) {
         let cartLabel = hasPending
           ? "カート " + count + "点 · まだ注文されていません"
           : "カート " + count + "点";
-        if (busyBlocked) cartLabel += " · 停止中の商品あり";
+        if (stopped.length > 0 && orderable.length > 0) {
+          cartLabel += " · 一部の商品は注文停止中";
+        } else if (stopped.length > 0 && orderable.length === 0) {
+          cartLabel += " · 注文できる商品がありません";
+        }
         cartCountEl.textContent = cartLabel;
       }
       document.getElementById("cartSum").textContent = cartSumLabel(sum);
       document.getElementById("submit").disabled =
-        count === 0 || guestSubmitBlockedByLastOrder() || busyBlocked;
+        orderableQty === 0 || cartOrderableSubmitBlockedByLastOrder(orderable);
       const cartFooter = document.getElementById("cartFooter");
       if (cartFooter) cartFooter.classList.toggle("has-pending-order", hasPending);
       const cartSheet = document.getElementById("cartSheet");
@@ -2971,6 +3031,14 @@
         body.appendChild(p);
         return;
       }
+      const { orderable, stopped } = cartLinesPartitionByBusyStop();
+      if (stopped.length > 0 && orderable.length > 0) {
+        const note = document.createElement("p");
+        note.className = "muted";
+        note.style.cssText = "margin:0 0 0.65rem;font-size:0.8rem;line-height:1.45;color:#9a3412";
+        note.textContent = buildPartialBusyStopOrderMessage(stopped);
+        body.appendChild(note);
+      }
       for (const line of lines) {
         const wrap = document.createElement("div");
         wrap.className = "guest-cart-line";
@@ -3001,7 +3069,7 @@
           warnEl.className = "guest-cart-line-sub";
           warnEl.style.color = "#b91c1c";
           warnEl.style.fontWeight = "700";
-          warnEl.textContent = guestBusyStopMessageText;
+          warnEl.textContent = "混雑防止のため、この商品は今回の注文に含まれません";
           wrap.appendChild(warnEl);
         }
         const act = document.createElement("div");
@@ -5180,34 +5248,26 @@
         toast(guestOrderGateMessage || "ただいま注文を受け付けておりません");
         return;
       }
-      if (guestSubmitBlockedByLastOrder()) {
+      const { orderable, stopped } = cartLinesPartitionByBusyStop();
+      if (cartOrderableSubmitBlockedByLastOrder(orderable)) {
         toast(guestLoIsSinglesOnlyMode() ? guestLoSetBlockedToast() : "ラストオーダーの時間を過ぎています");
         return;
       }
-      const lines = Object.values(cart)
-        .filter((x) => x.qty > 0)
-        .map((x) => {
-          const o = { menuItemId: x.menuItemId, qty: x.qty };
-          if (x.sellKind === "set" && x.setSelections) o.setSelections = x.setSelections;
-          if (x.optionSelections && x.optionSelections.length) o.optionSelections = x.optionSelections;
-          if (x.serveLaterDeferStepIds && x.serveLaterDeferStepIds.length) {
-            o.serveLaterDeferStepIds = x.serveLaterDeferStepIds;
-            if (x.serveLaterDeferPairDrinkDessert) o.serveLaterDeferPairDrinkDessert = true;
-          } else if (x.serveLaterDeferStepId) o.serveLaterDeferStepId = x.serveLaterDeferStepId;
-          if (x.setComponentOptionSelections && x.setComponentOptionSelections.length) o.setComponentOptionSelections = x.setComponentOptionSelections;
-          if (x.eatMode) o.eatMode = x.eatMode;
-          return o;
-        });
-      if (lines.length === 0) return;
-      const busyLine = findBusyStoppedCartLine();
-      if (busyLine) {
-        toast(guestBusyStopMessageText);
+      if (orderable.length === 0) {
+        if (stopped.length > 0) {
+          toast("現在、カートの商品はすべて注文停止中です");
+        }
         return;
       }
+      if (stopped.length > 0) {
+        const msg = buildPartialBusyStopOrderMessage(stopped);
+        if (!confirm(msg + "\n\n注文を送信しますか？")) return;
+      }
+      const lines = orderable.map((x) => cartLineToOrderPayload(x));
+      const orderedKeys = orderable.map((x) => x.cartKey).filter(Boolean);
+      if (lines.length === 0) return;
       if (alcoholRestricted) {
-        const bad = Object.values(cart)
-          .filter((x) => x.qty > 0)
-          .find((line) => cartLineBlocksAlcohol(line));
+        const bad = orderable.find((line) => cartLineBlocksAlcohol(line));
         if (bad) {
           toast("酒類が含まれているため送信できません");
           return;
@@ -5221,8 +5281,10 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ lines, guestDeviceId: getOrCreateDeviceId() }),
         });
-        clearGuestCartStorage();
-        for (const k of Object.keys(cart)) delete cart[k];
+        for (const ck of orderedKeys) {
+          if (cart[ck]) delete cart[ck];
+        }
+        persistGuestCart();
         renderCart();
         closeCartSheet();
         showOrderDoneDialog();
@@ -5237,7 +5299,7 @@
           document.getElementById("err").textContent = msg;
         }
       } finally {
-        btn.disabled = Object.values(cart).reduce((s, x) => s + (x.qty || 0), 0) === 0;
+        renderCart();
       }
     };
 

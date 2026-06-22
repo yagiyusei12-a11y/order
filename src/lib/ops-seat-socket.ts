@@ -23,6 +23,16 @@ export type OpsSessionUpdatedPayload = {
   sessionId: string;
 };
 
+export type GuestBusyStopUpdatedPayload = {
+  stoppedStationIds: string[];
+  message: string;
+};
+
+export type GuestSessionAlcoholUpdatedPayload = {
+  billingSessionId: string;
+  guestAlcoholAllowed: boolean | null;
+};
+
 /** `registerOpsSeatSocket` 内で Socket.IO サーバーを登録する */
 export function bindOpsSocketServer(io: Server): void {
   opsSocketServer = io;
@@ -42,6 +52,33 @@ export function broadcastReceptionUpdated(storeId: string): void {
   const sid = storeId.trim();
   if (!opsSocketServer || !sid) return;
   opsSocketServer.to(storeRoom(sid)).emit("reception:updated", { storeId: sid, at: Date.now() });
+}
+
+/** 混雑停止の開始・解除（ゲスト注文画面） */
+export function broadcastGuestBusyStopUpdated(
+  storeId: string,
+  payload: GuestBusyStopUpdatedPayload,
+): void {
+  const sid = storeId.trim();
+  if (!opsSocketServer || !sid) return;
+  opsSocketServer.to(storeRoom(sid)).emit("guest:busy-stop-updated", {
+    stoppedStationIds: payload.stoppedStationIds,
+    message: payload.message,
+  });
+}
+
+/** スタッフが卓の飲酒可否を変更したとき（ゲスト注文画面） */
+export function broadcastGuestSessionAlcoholUpdated(
+  storeId: string,
+  payload: GuestSessionAlcoholUpdatedPayload,
+): void {
+  const sid = storeId.trim();
+  const billingSessionId = payload.billingSessionId.trim();
+  if (!opsSocketServer || !sid || !billingSessionId) return;
+  opsSocketServer.to(storeRoom(sid)).emit("guest:alcohol-updated", {
+    billingSessionId,
+    guestAlcoholAllowed: payload.guestAlcoholAllowed,
+  });
 }
 
 export function broadcastOpsSessionUpdatedMany(
@@ -104,6 +141,22 @@ function authenticateGuestDisplaySocket(socket: Socket): string | null {
   return storeId;
 }
 
+async function authenticateGuestOrderSocket(
+  socket: Socket,
+): Promise<{ storeId: string; sessionId: string } | null> {
+  const auth = socket.handshake.auth;
+  if (!isRecord(auth)) return null;
+  const token = typeof auth.guestToken === "string" ? auth.guestToken.trim() : "";
+  if (!token) return null;
+  const sess = await prisma.diningSession.findUnique({
+    where: { guestToken: token },
+    select: { id: true, storeId: true, status: true },
+  });
+  if (!sess) return null;
+  if (sess.status !== "open" && sess.status !== "merged") return null;
+  return { storeId: sess.storeId, sessionId: sess.id };
+}
+
 function isRecord(v: unknown): v is Record<string, unknown> {
   return v != null && typeof v === "object" && !Array.isArray(v);
 }
@@ -145,6 +198,15 @@ export function registerOpsSeatSocket(io: Server, app: FastifyInstance): void {
       socket.data.storeId = displayStoreId;
       socket.data.staffUserId = "";
       socket.data.clientRole = "guest-display";
+      next();
+      return;
+    }
+    const guestOrder = await authenticateGuestOrderSocket(socket);
+    if (guestOrder) {
+      socket.data.storeId = guestOrder.storeId;
+      socket.data.staffUserId = "";
+      socket.data.clientRole = "guest-order";
+      socket.data.guestSessionId = guestOrder.sessionId;
       next();
       return;
     }

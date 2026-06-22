@@ -2046,6 +2046,71 @@
       "こちらの商品は混雑防止の為、一時的にご注文頂けません。";
     /** @type {Set<string>} */
     let guestStoppedStationIds = new Set();
+    /** 請求セッション ID（飲酒可否のプッシュ通知照合用） */
+    let guestBillingSessionId = null;
+    let guestLiveSocket = null;
+    let guestLiveSocketInit = null;
+
+    function loadGuestSocketIoClient() {
+      return new Promise((resolve, reject) => {
+        if (typeof io !== "undefined") return resolve(io);
+        const existing = document.querySelector('script[data-guest-socket-io="1"]');
+        if (existing) {
+          existing.addEventListener("load", () =>
+            typeof io !== "undefined" ? resolve(io) : reject(new Error("socket.io client missing")),
+          );
+          existing.addEventListener("error", () => reject(new Error("socket.io script failed")));
+          return;
+        }
+        const s = document.createElement("script");
+        s.src = "/socket.io/socket.io.js";
+        s.async = true;
+        s.dataset.guestSocketIo = "1";
+        s.onload = () =>
+          typeof io !== "undefined" ? resolve(io) : reject(new Error("socket.io client missing"));
+        s.onerror = () => reject(new Error("socket.io script failed"));
+        document.head.appendChild(s);
+      });
+    }
+
+    function onGuestBusyStopPush(stoppedIds, message) {
+      const prevIds = [...guestStoppedStationIds];
+      applyGuestBusyStopState(stoppedIds, message);
+      const prevSet = new Set(prevIds.map(String));
+      const newlyStopped = (stoppedIds || []).some((id) => !prevSet.has(String(id)));
+      if (newlyStopped) toast(guestBusyStopMessageText);
+    }
+
+    function connectGuestLiveSocket() {
+      if (!TOKEN) return;
+      if (guestLiveSocketInit) return guestLiveSocketInit;
+      guestLiveSocketInit = loadGuestSocketIoClient()
+        .then((ioLib) => {
+          if (guestLiveSocket) return;
+          guestLiveSocket = ioLib({
+            path: "/socket.io",
+            withCredentials: true,
+            transports: ["websocket", "polling"],
+            auth: { guestToken: TOKEN },
+          });
+          guestLiveSocket.on("guest:busy-stop-updated", (payload) => {
+            if (!payload || typeof payload !== "object") return;
+            const ids = Array.isArray(payload.stoppedStationIds) ? payload.stoppedStationIds : [];
+            onGuestBusyStopPush(ids, payload.message);
+          });
+          guestLiveSocket.on("guest:alcohol-updated", (payload) => {
+            if (!payload || typeof payload !== "object" || !guestBillingSessionId) return;
+            if (String(payload.billingSessionId) !== String(guestBillingSessionId)) return;
+            applyGuestAlcoholState(payload.guestAlcoholAllowed);
+          });
+          guestLiveSocket.on("connect", () => {
+            void pollGuestBusyStopFromServer();
+            void pollGuestAlcoholFromServer();
+          });
+        })
+        .catch(() => {});
+      return guestLiveSocketInit;
+    }
 
     function guestRefBlockedByBusyStop(ref) {
       if (!ref || ref.busyStopTarget !== true) return false;
@@ -2188,16 +2253,10 @@
     async function pollGuestBusyStopFromServer() {
       try {
         const data = await api("/guest/" + encodeURIComponent(TOKEN) + "/busy-stop-status");
-        const prevIds = [...guestStoppedStationIds];
-        const nextIds = Array.isArray(data.stoppedStationIds) ? data.stoppedStationIds : [];
-        const prevKey = prevIds.map(String).sort().join(",");
-        const nextKey = nextIds.map(String).sort().join(",");
-        applyGuestBusyStopState(nextIds, data.message);
-        if (prevKey !== nextKey) {
-          const prevSet = new Set(prevIds.map(String));
-          const newlyStopped = nextIds.some((id) => !prevSet.has(String(id)));
-          if (newlyStopped) toast(guestBusyStopMessageText);
-        }
+        onGuestBusyStopPush(
+          Array.isArray(data.stoppedStationIds) ? data.stoppedStationIds : [],
+          data.message,
+        );
       } catch (_) {}
     }
     function guestItemSoldOut(item) {
@@ -4997,6 +5056,7 @@
         }
       }
       const gs = data.session;
+      guestBillingSessionId = gs && gs.id ? String(gs.id) : null;
       sessionGuestCount = Math.max(1, parseInt(String((gs && gs.guestCount) || 1), 10) || 1);
       sessionCourseIncludedGuestCap = Boolean(
         gs && gs.course && gs.course.includedItemsUnlimited === false,
@@ -5420,8 +5480,7 @@
         await ensureSafetyGate();
         await loadMenu();
         await loadOrders();
-        setInterval(() => void pollGuestAlcoholFromServer(), 12000);
-        setInterval(() => void pollGuestBusyStopFromServer(), 12000);
+        connectGuestLiveSocket();
       } catch (e) {
         document.getElementById("err").style.display = "block";
         document.getElementById("err").textContent = String(e.message || e);

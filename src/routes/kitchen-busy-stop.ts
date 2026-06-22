@@ -2,8 +2,19 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import {
   busyStopStationsNeedingAlert,
+  GUEST_BUSY_STOP_MESSAGE,
   listKitchenBusyStopStatus,
+  loadBusyStoppedStationIdSet,
 } from "../lib/kitchen-busy-stop.js";
+import { broadcastGuestBusyStopUpdated } from "../lib/ops-seat-socket.js";
+
+async function notifyGuestBusyStopChanged(storeId: string): Promise<void> {
+  const stoppedStationIds = await loadBusyStoppedStationIdSet(storeId);
+  broadcastGuestBusyStopUpdated(storeId, {
+    stoppedStationIds: [...stoppedStationIds],
+    message: GUEST_BUSY_STOP_MESSAGE,
+  });
+}
 
 export async function registerKitchenBusyStop(app: FastifyInstance): Promise<void> {
   /** 混雑停止画面：調理場ごとの状態 */
@@ -96,6 +107,7 @@ export async function registerKitchenBusyStop(app: FastifyInstance): Promise<voi
         where: { id: row.id },
         data: { busyStoppedAt: new Date() },
       });
+      await notifyGuestBusyStopChanged(req.params.storeId);
       return {
         id: updated.id,
         name: updated.name,
@@ -116,6 +128,7 @@ export async function registerKitchenBusyStop(app: FastifyInstance): Promise<voi
         where: { id: row.id },
         data: { busyStoppedAt: null },
       });
+      await notifyGuestBusyStopChanged(req.params.storeId);
       return {
         id: updated.id,
         name: updated.name,

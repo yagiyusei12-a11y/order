@@ -18,7 +18,7 @@ import {
   transferSessionCourseBetweenSessionsTx,
   type LineMoveSpec,
 } from "../lib/move-session-order-lines.js";
-import { broadcastOpsSessionUpdatedMany, broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
+import { broadcastOpsSessionUpdatedMany, broadcastOpsSessionUpdated, broadcastGuestSessionAlcoholUpdated } from "../lib/ops-seat-socket.js";
 import {
   packChargeScopeFromDb,
   purchaseCourseOptionPackErrorToHttp,
@@ -266,6 +266,10 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
         where: { id: billingId },
         data: { guestAlcoholAllowed: v },
         include: { table: true, course: true },
+      });
+      broadcastGuestSessionAlcoholUpdated(req.params.storeId, {
+        billingSessionId: billingId,
+        guestAlcoholAllowed: v,
       });
       return updated;
     }

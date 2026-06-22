@@ -237,16 +237,42 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
 
   app.patch<{
     Params: { storeId: string; sessionId: string };
-    Body: { guestCount?: number; childCount?: number };
+    Body: { guestCount?: number; childCount?: number; guestAlcoholAllowed?: boolean | null };
   }>("/stores/:storeId/sessions/:sessionId", async (req, reply) => {
     const session = await prisma.diningSession.findFirst({
       where: { id: req.params.sessionId, storeId: req.params.storeId },
     });
     if (!session) return reply.code(404).send({ error: "session not found" });
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const hasCount = body.guestCount !== undefined || body.childCount !== undefined;
+    const hasAlcohol = body.guestAlcoholAllowed !== undefined;
+    if (!hasCount && !hasAlcohol) {
+      return reply.code(400).send({ error: "guestCount, childCount, or guestAlcoholAllowed required" });
+    }
+
+    if (hasAlcohol) {
+      const v = body.guestAlcoholAllowed;
+      if (v !== null && typeof v !== "boolean") {
+        return reply.code(400).send({ error: "guestAlcoholAllowed must be boolean or null" });
+      }
+      const billingId = session.mergedIntoSessionId ?? session.id;
+      const billing = await prisma.diningSession.findFirst({
+        where: { id: billingId, storeId: req.params.storeId },
+      });
+      if (!billing || billing.status !== "open") {
+        return reply.code(400).send({ error: "only open billing sessions can update guest alcohol" });
+      }
+      const updated = await prisma.diningSession.update({
+        where: { id: billingId },
+        data: { guestAlcoholAllowed: v },
+        include: { table: true, course: true },
+      });
+      return updated;
+    }
+
     if (session.status !== "open") {
       return reply.code(400).send({ error: "only open sessions can be updated" });
     }
-    const body = req.body && typeof req.body === "object" ? req.body : {};
     let nextGuest = session.guestCount;
     let nextChild = session.childCount;
     if (body.guestCount !== undefined) {
@@ -265,9 +291,6 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
     }
     if (nextChild > nextGuest) {
       return reply.code(400).send({ error: "childCount must not exceed guestCount" });
-    }
-    if (body.guestCount === undefined && body.childCount === undefined) {
-      return reply.code(400).send({ error: "guestCount or childCount required" });
     }
     const updated = await prisma.$transaction(async (tx) => {
       const u = await tx.diningSession.update({

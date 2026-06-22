@@ -37,6 +37,32 @@ body.native-pos .page-title {
   letter-spacing: 0.06em;
 }
 
+#btnAlcoholMode.ops-alcohol-mode--active {
+  border-color: #c2410c;
+  background: #fff7ed;
+  color: #9a3412;
+  font-weight: 800;
+}
+
+.table-cell .meta.alcohol-ok {
+  font-weight: 800;
+  color: #166534;
+}
+
+.table-cell .meta.alcohol-deny {
+  font-weight: 800;
+  color: #b91c1c;
+}
+
+.table-cell .meta.alcohol-unknown {
+  font-weight: 700;
+  color: #64748b;
+}
+
+.table-grid.ops-alcohol-grid .table-cell.busy {
+  cursor: pointer;
+}
+
 /* OPS 全画面モーダル内：会計UI 2カラム */
 .ops-detail-modal__body.detail-panel {
   display: flex;

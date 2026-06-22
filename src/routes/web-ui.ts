@@ -361,7 +361,20 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
 
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/kitchen", async (req, reply) => {
     if (!(await assertStaffStore(req, reply))) return;
-    return staffHtml(reply, req.params.storeId, "キッチン", "staff-body-kitchen.html", "staff-script-kitchen.js");
+    return staffHtml(reply, req.params.storeId, "キッチン", "staff-body-kitchen.html", "staff-script-kitchen.js", {
+      prependFile: "staff-script-busy-stop-alerts.js",
+    });
+  });
+
+  app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/busy-stop", async (req, reply) => {
+    if (!(await assertStaffStore(req, reply))) return;
+    return staffHtml(
+      reply,
+      req.params.storeId,
+      "混雑停止",
+      "staff-body-busy-stop.html",
+      "staff-script-busy-stop.js",
+    );
   });
 
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/hall-ready", async (req, reply) => {
@@ -371,7 +384,8 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
       req.params.storeId,
       "調理済・提供",
       "staff-body-hall-ready.html",
-      "staff-script-hall-ready.js"
+      "staff-script-hall-ready.js",
+      { prependFile: "staff-script-busy-stop-alerts.js" },
     );
   });
 

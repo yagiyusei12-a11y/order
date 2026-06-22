@@ -169,6 +169,16 @@
 
     <div class="bulk-field" style="margin-bottom:0.65rem">
       <label class="row" style="align-items:center;gap:0.45rem;margin:0 0 0.35rem">
+        <input type="checkbox" id="applyBusyStop" /> 混雑時停止対象（所属調理場の停止でゲスト注文不可）
+      </label>
+      <select id="bulkBusyStop" style="margin:0;max-width:12rem">
+        <option value="false">オフ</option>
+        <option value="true">オン</option>
+      </select>
+    </div>
+
+    <div class="bulk-field" style="margin-bottom:0.65rem">
+      <label class="row" style="align-items:center;gap:0.45rem;margin:0 0 0.35rem">
         <input type="checkbox" id="applyAlcohol" /> アルコール商品（飲酒不可のお客様はゲストから注文できません）
       </label>
       <select id="bulkAlcohol" style="margin:0;max-width:12rem">

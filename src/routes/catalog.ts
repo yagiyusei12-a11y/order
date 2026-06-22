@@ -219,6 +219,7 @@ type MenuItemPatchData = {
   containsAlcohol?: boolean;
   kitchenServeFast?: boolean;
   hallPrepCheck?: boolean;
+  busyStopTarget?: boolean;
 };
 
 type ValidatedTimeDiscountRow = {
@@ -385,6 +386,10 @@ async function buildMenuItemPatchData(
   if (body && "hallPrepCheck" in body) {
     if (typeof body.hallPrepCheck !== "boolean") return { error: "hallPrepCheck must be boolean" };
     data.hallPrepCheck = body.hallPrepCheck;
+  }
+  if (body && "busyStopTarget" in body) {
+    if (typeof body.busyStopTarget !== "boolean") return { error: "busyStopTarget must be boolean" };
+    data.busyStopTarget = body.busyStopTarget;
   }
   return { data };
 }
@@ -821,6 +826,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       allowTakeout?: boolean;
       kitchenServeFast?: boolean;
       hallPrepCheck?: boolean;
+      busyStopTarget?: boolean;
     };
   }>("/stores/:storeId/menu/items", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
@@ -912,6 +918,12 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       if (typeof h !== "boolean") return reply.code(400).send({ error: "hallPrepCheck must be boolean" });
       hallPrepCheckFlag = h;
     }
+    let busyStopTargetFlag = false;
+    if (req.body && typeof req.body === "object" && "busyStopTarget" in req.body) {
+      const b = (req.body as { busyStopTarget?: unknown }).busyStopTarget;
+      if (typeof b !== "boolean") return reply.code(400).send({ error: "busyStopTarget must be boolean" });
+      busyStopTargetFlag = b;
+    }
     let recipe: string | null | undefined = undefined;
     if (req.body && "recipe" in req.body) {
       if (req.body.recipe === null) recipe = null;
@@ -937,6 +949,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
         allowTakeout: allowTakeoutFlag,
         kitchenServeFast: kitchenServeFastFlag,
         hallPrepCheck: hallPrepCheckFlag,
+        busyStopTarget: busyStopTargetFlag,
       },
     });
     return item;
@@ -1112,6 +1125,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
             cookTimerSec2: item.cookTimerSec2,
             kitchenServeFast: item.kitchenServeFast,
             hallPrepCheck: item.hallPrepCheck,
+            busyStopTarget: item.busyStopTarget,
             stockDailyResetQty: item.stockDailyResetQty,
           },
         });
@@ -1794,6 +1808,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
           containsAlcohol: src.containsAlcohol,
           kitchenServeFast: src.kitchenServeFast,
           hallPrepCheck: src.hallPrepCheck,
+          busyStopTarget: src.busyStopTarget,
           stockDailyResetQty: src.stockDailyResetQty,
         },
       });

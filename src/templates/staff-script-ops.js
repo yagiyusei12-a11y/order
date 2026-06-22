@@ -86,6 +86,8 @@ let opsPostPaymentHold = null;
 const OPS_AUTO_REFRESH_MS = 15000;
 /** 操作直後はこの時間だけ自動更新を止める */
 const OPS_USER_IDLE_MS = 6000;
+/** 飲酒確認モード：卓タップで飲酒可否を切り替え */
+let opsAlcoholMode = false;
 
 function loadSocketIoClient() {
   return new Promise((resolve, reject) => {
@@ -2378,9 +2380,53 @@ async function renderReceiptBox() {
   }
 }
 
+function sessionBillingAlcoholSource(session) {
+  if (!session) return null;
+  if (session.mergedIntoSessionId) {
+    return sessionsCache.find((x) => x.id === session.mergedIntoSessionId) || session;
+  }
+  return session;
+}
+
+function alcoholStatusMeta(allowed) {
+  if (allowed === true) {
+    return { text: "飲酒OK", cls: "alcohol-ok" };
+  }
+  if (allowed === false) {
+    return { text: "飲酒不可", cls: "alcohol-deny" };
+  }
+  return { text: "未確認", cls: "alcohol-unknown" };
+}
+
+function nextGuestAlcoholAllowed(current) {
+  return current === true ? false : true;
+}
+
+async function toggleSessionAlcohol(session) {
+  if (!session) return;
+  const billing = sessionBillingAlcoholSource(session);
+  const next = nextGuestAlcoholAllowed(billing.guestAlcoholAllowed);
+  markOpsUserActivity();
+  await api("/stores/" + encodeURIComponent(STORE) + "/sessions/" + encodeURIComponent(session.id), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ guestAlcoholAllowed: next }),
+  });
+  billing.guestAlcoholAllowed = next;
+  if (session.id !== billing.id) {
+    const row = sessionsCache.find((x) => x.id === billing.id);
+    if (row) row.guestAlcoholAllowed = next;
+  } else {
+    session.guestAlcoholAllowed = next;
+  }
+  renderGrid();
+  log((billing.table && billing.table.name) || "卓" + " · 飲酒可否を「" + alcoholStatusMeta(next).text + "」に変更");
+}
+
 function renderGrid() {
   const grid = document.getElementById("tableGrid");
   grid.innerHTML = "";
+  grid.classList.toggle("ops-alcohol-grid", opsAlcoholMode);
   const rows = tablesCache
     .filter((t) => t.active)
     .sort((a, b) => {
@@ -2413,6 +2459,11 @@ function renderGrid() {
     const meta = sessList.length
       ? (() => {
           const primary = s;
+          if (opsAlcoholMode) {
+            const billing = sessionBillingAlcoholSource(primary);
+            const st = alcoholStatusMeta(billing.guestAlcoholAllowed);
+            return "<span class=\"meta " + st.cls + "\">" + escapeHtml(st.text) + "</span>";
+          }
           const multi = openOnTable.length > 1;
           const gc = Number(primary.guestCount || 0);
           const cc = Number(primary.childCount || 0);
@@ -2439,7 +2490,9 @@ function renderGrid() {
             moneyHtml
           );
         })()
-      : "<span class=\"meta\">空席</span>";
+      : opsAlcoholMode
+        ? "<span class=\"meta alcohol-unknown\">—</span>"
+        : "<span class=\"meta\">空席</span>";
     const topLine = gridCellTopLineLabel(t, sessList);
     const codeTitleAttr = topLine.title ? " title=\"" + escapeHtml(topLine.title) + "\"" : "";
     const btn = document.createElement("button");
@@ -2455,6 +2508,16 @@ function renderGrid() {
       "</span>" +
       meta;
     btn.onclick = () => {
+      if (opsAlcoholMode) {
+        if (
+          !s ||
+          (s.status !== "open" && !(s.status === "merged" && s.mergedIntoSessionId))
+        ) {
+          return;
+        }
+        void toggleSessionAlcohol(s).catch((e) => log(String(e.message || e)));
+        return;
+      }
       openOpsTableDetail(t.id, null).catch((e) => log(String(e.message || e)));
     };
     grid.appendChild(btn);
@@ -2997,6 +3060,16 @@ document.getElementById("btnRefFloor").onclick = () => {
   markOpsUserActivity();
   void requestOpsRefresh("manual-floor");
 };
+const btnAlcoholModeEl = document.getElementById("btnAlcoholMode");
+if (btnAlcoholModeEl) {
+  btnAlcoholModeEl.onclick = () => {
+    opsAlcoholMode = !opsAlcoholMode;
+    btnAlcoholModeEl.classList.toggle("ops-alcohol-mode--active", opsAlcoholMode);
+    btnAlcoholModeEl.setAttribute("aria-pressed", opsAlcoholMode ? "true" : "false");
+    renderGrid();
+    log(opsAlcoholMode ? "飲酒確認モード：卓をタップして切り替え" : "飲酒確認モードを終了");
+  };
+}
 const btnOpenDrawerEl = document.getElementById("btnOpenDrawer");
 if (btnOpenDrawerEl) btnOpenDrawerEl.onclick = () => tryOpenDrawer();
 window.__opsOpenBillDiscountModal = openBillDiscountModal;

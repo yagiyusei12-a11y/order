@@ -318,6 +318,9 @@ async function applyBulk() {
   if ($("applyHallPrep").checked) {
     patch.hallPrepCheck = $("bulkHallPrep").value === "true";
   }
+  if ($("applyBusyStop").checked) {
+    patch.busyStopTarget = $("bulkBusyStop").value === "true";
+  }
   if ($("applyTimeDisc").checked) {
     try {
       patch.timeDiscounts = collectBulkTimeDiscountsForPatch();

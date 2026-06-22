@@ -304,6 +304,7 @@
 
     .badge-low { font-size: 0.6rem; font-weight: 700; color: #fde68a; background: rgba(180, 83, 9, 0.5); padding: 0.1rem 0.35rem; border-radius: 4px; }
     .badge-sold { font-size: 0.6rem; font-weight: 700; color: #fecaca; background: rgba(127, 29, 29, 0.6); padding: 0.1rem 0.35rem; border-radius: 4px; }
+    .badge-busy-stop { font-size: 0.6rem; font-weight: 700; color: #fde68a; background: rgba(120, 53, 15, 0.75); padding: 0.1rem 0.35rem; border-radius: 4px; }
     .badge-set { font-size: 0.6rem; font-weight: 700; color: #bfdbfe; background: rgba(30, 58, 95, 0.7); padding: 0.1rem 0.35rem; border-radius: 4px; }
     .badge-alcohol { font-size: 0.6rem; font-weight: 700; color: #ffedd5; background: rgba(124, 45, 18, 0.65); padding: 0.1rem 0.35rem; border-radius: 4px; }
     .badge-course-in {
@@ -1696,6 +1697,7 @@
       if (!menuItemId) return null;
       const item = menuItemById.get(menuItemId);
       if (!item) return null;
+      if (guestItemBusyStopped(item)) return null;
       const qty = Math.max(0, Math.min(99, Math.floor(Number(src.qty) || 0)));
       if (qty <= 0) return null;
       let eatMode = src.eatMode === "takeout" ? "takeout" : "dine_in";
@@ -1955,6 +1957,17 @@
     function fmtMoney(n) {
       if (!guestShowMenuPrices) return "—";
       return "¥" + n.toLocaleString("ja-JP");
+    }
+
+    function guestItemBusyStopped(item) {
+      return Boolean(item && item.busyStopped);
+    }
+    function guestBusyStopMessage(item) {
+      const m = item && item.busyStoppedMessage ? String(item.busyStoppedMessage) : "";
+      return m || "30分程販売停止中";
+    }
+    function guestItemSoldOut(item) {
+      return Boolean(item && item.sellKind !== "set" && item.stockQty != null && item.stockQty <= 0);
     }
     /** 単品・セット内オプションの差額表示（金額非表示設定時は数値を出さない） */
     function fmtGuestOptionDeltaHtml(yenTaxInclusive) {
@@ -3701,7 +3714,11 @@
         toast("酒類はご注文いただけません");
         return;
       }
-      const sold = item.stockQty != null && item.stockQty <= 0;
+      const sold = guestItemSoldOut(item);
+      if (guestItemBusyStopped(item)) {
+        toast(guestBusyStopMessage(item));
+        return;
+      }
       if (sold && item.sellKind !== "set") {
         toast("売り切れです");
         return;
@@ -4768,9 +4785,10 @@
       root.innerHTML = "";
       for (const c of cats) {
         for (const it of c.items || []) {
-          const sold = it.stockQty != null && it.stockQty <= 0;
+          const busyStopped = guestItemBusyStopped(it);
+          const sold = !busyStopped && guestItemSoldOut(it);
           const showAlcoholBadge = itemShowsAlcoholBadge(it);
-          const baseBlocked = sold || (it.containsAlcohol === true && alcoholRestricted);
+          const baseBlocked = sold || busyStopped || (it.containsAlcohol === true && alcoholRestricted);
           const card = document.createElement("article");
           card.className = "go-card";
           card.dataset.cat = c.id;
@@ -4846,6 +4864,11 @@
             b.className = "badge-sold";
             b.textContent = "売切";
             badges.appendChild(b);
+          } else if (busyStopped) {
+            const b = document.createElement("span");
+            b.className = "badge-busy-stop";
+            b.textContent = guestBusyStopMessage(it);
+            badges.appendChild(b);
           } else if (it.lowStock) {
             const b = document.createElement("span");
             b.className = "badge-low";
@@ -4870,6 +4893,10 @@
           card.appendChild(media);
           card.appendChild(body);
           card.onclick = () => {
+            if (busyStopped) {
+              toast(guestBusyStopMessage(it));
+              return;
+            }
             if (sold) {
               toast("売り切れです");
               return;

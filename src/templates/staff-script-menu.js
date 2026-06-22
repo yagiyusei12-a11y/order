@@ -349,6 +349,7 @@ function renderItemsTab(layout) {
       " · " +
       (it.isAvailable ? "店内表示中" : "店内非表示") +
       (it.hallPrepCheck ? " · ホール準備" : "") +
+      (it.busyStopTarget ? " · 混雑停止対象" : "") +
       "</div></div></div>";
   }
   mid.innerHTML = mh;
@@ -869,6 +870,9 @@ function renderItemDetail(right) {
     "<label class=\"row\" style=\"margin-top:.15rem;font-size:.82rem;gap:.4rem;align-items:flex-start\"><input type=\"checkbox\" id=\"dHallPrepCheck\"" +
     (item.hallPrepCheck ? " checked" : "") +
     " style=\"margin-top:.2rem\" /><span>ホールでも準備（調理済み前から提供待ち画面に表示）</span></label>" +
+    "<label class=\"row\" style=\"margin-top:.15rem;font-size:.82rem;gap:.4rem;align-items:flex-start\"><input type=\"checkbox\" id=\"dBusyStopTarget\"" +
+    (item.busyStopTarget ? " checked" : "") +
+    " style=\"margin-top:.2rem\" /><span>混雑時停止対象（所属調理場の停止でゲスト注文不可）</span></label>" +
     "<label class=\"row\" style=\"margin-top:.45rem;font-size:.82rem;gap:.4rem;align-items:flex-start\"><input type=\"checkbox\" id=\"dContainsAlcohol\"" +
     (item.containsAlcohol ? " checked" : "") +
     " style=\"margin-top:.2rem\" /><span>アルコール商品（飲酒不可のお客様はゲストから注文できません）</span></label>" +
@@ -961,6 +965,8 @@ function renderItemDetail(right) {
     const kitchenServeFast = !!(chkKitchenFast && chkKitchenFast.checked);
     const chkHallPrep = right.querySelector("#dHallPrepCheck");
     const hallPrepCheck = !!(chkHallPrep && chkHallPrep.checked);
+    const chkBusyStop = right.querySelector("#dBusyStopTarget");
+    const busyStopTarget = !!(chkBusyStop && chkBusyStop.checked);
     const v0 = Number(item.masterVersion ?? 1);
     btnSave.disabled = true;
     const prevLabel = btnSave.textContent;
@@ -986,6 +992,7 @@ function renderItemDetail(right) {
           allowTakeout,
           kitchenServeFast,
           hallPrepCheck,
+          busyStopTarget,
           ifMasterVersion: v0,
         }),
       });

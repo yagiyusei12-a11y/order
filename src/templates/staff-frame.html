@@ -673,6 +673,9 @@
       <a href="/staff-app/__STORE_PATH__/kitchen" class="snav" id="nav-kitchen" data-nav-key="kitchen" title="キッチン">
         <svg viewBox="0 0 24 24"><path d="M12 2C8 6 6 9 6 12a6 6 0 0012 0c0-3-2-6-6-10z"/></svg>
       </a>
+      <a href="/staff-app/__STORE_PATH__/busy-stop" class="snav" id="nav-busy-stop" data-nav-key="busyStop" title="混雑停止">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M10 8v8M14 8v8"/></svg>
+      </a>
       <a href="/staff-app/__STORE_PATH__/hall-ready" class="snav" id="nav-hall-ready" data-nav-key="hallReady" title="調理済・提供">
         <svg viewBox="0 0 24 24"><path d="M4 11h16"/><path d="M6 11V9h12v2"/><path d="M5 12l2 6h10l2-6"/><path d="M9 18v2M15 18v2"/></svg>
       </a>
@@ -939,6 +942,7 @@
       "reception",
       "handy",
       "kitchen",
+      "busyStop",
       "hallReady",
       "menu",
       "stock",
@@ -1043,8 +1047,9 @@
       if (p.includes("/ops")) id = "nav-ops";
       else if (p.includes("/reception")) id = "nav-reception";
       else if (p.includes("/handy")) id = "nav-handy";
-      else if (p.includes("/hall-ready")) id = "nav-hall-ready";
       else if (p.includes("/kitchen")) id = "nav-kitchen";
+      else if (p.includes("/busy-stop")) id = "nav-busy-stop";
+      else if (p.includes("/hall-ready")) id = "nav-hall-ready";
       else if (p.includes("/menu")) id = "nav-menu";
       else if (p.includes("/stock")) id = "nav-stock";
       else if (p.includes("/customers")) id = "nav-customers";

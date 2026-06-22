@@ -93,6 +93,8 @@ model KitchenStation {
   name      String
   sortOrder Int        @default(0)
   active    Boolean    @default(true)
+  /// 混雑時停止が押された時刻（null=通常稼働）
+  busyStoppedAt DateTime?
   store     Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
   menuItems MenuItem[]
 
@@ -385,6 +387,8 @@ model MenuItem {
   kitchenServeFast  Boolean         @default(false)
   /// ホール提供待ち：調理済み前でも hall-ready に表示
   hallPrepCheck     Boolean         @default(false)
+  /// 混雑時停止の対象（所属調理場が停止中はゲスト注文不可）
+  busyStopTarget    Boolean         @default(false)
   /// メニュー保存の楽観ロック（PATCH 時 ifMasterVersion と照合）
   masterVersion     Int             @default(1)
   category          MenuCategory    @relation(fields: [categoryId], references: [id], onDelete: Cascade)

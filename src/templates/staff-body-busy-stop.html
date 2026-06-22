@@ -1,0 +1,67 @@
+<main class="busy-stop-page">
+  <div class="busy-stop-head">
+    <h1>混雑停止</h1>
+    <p class="muted busy-stop-lead">
+      調理場ごとに<strong>停止</strong>すると、商品マスタで「混雑時停止対象」にした商品がゲスト画面で
+      <strong>30分程販売停止中</strong>となり注文できなくなります。セットに含まれる場合はセット全体が注文不可になります。
+    </p>
+    <div class="row" style="gap:0.5rem;flex-wrap:wrap;align-items:center;margin-top:0.65rem">
+      <button type="button" class="btn-primary" id="btnRefBusyStop">再読込</button>
+      <span id="busyStopLog" class="muted" style="font-size:0.82rem"></span>
+    </div>
+  </div>
+  <div id="busyStopGrid" class="busy-stop-grid" aria-live="polite"></div>
+</main>
+<style>
+  .busy-stop-page { padding: 0.25rem 0 1.5rem; max-width: 56rem; }
+  .busy-stop-lead { margin: 0.35rem 0 0; font-size: 0.88rem; line-height: 1.55; max-width: 42rem; }
+  .busy-stop-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+    gap: 0.85rem;
+    margin-top: 1rem;
+  }
+  .busy-stop-card {
+    border: 2px solid var(--border);
+    border-radius: 14px;
+    padding: 1rem 1rem 0.9rem;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    min-height: 10.5rem;
+  }
+  .busy-stop-card.is-running { border-color: #86efac; background: linear-gradient(180deg, #f0fdf4 0%, #fff 55%); }
+  .busy-stop-card.is-stopped { border-color: #fca5a5; background: linear-gradient(180deg, #fef2f2 0%, #fff 55%); }
+  .busy-stop-card.is-inactive { opacity: 0.55; }
+  .busy-stop-card-title { font-size: 1.15rem; font-weight: 900; margin: 0; line-height: 1.25; }
+  .busy-stop-badge {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 800;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    letter-spacing: 0.02em;
+  }
+  .busy-stop-badge.run { background: #dcfce7; color: #166534; }
+  .busy-stop-badge.stop { background: #fee2e2; color: #991b1b; }
+  .busy-stop-badge.off { background: #f3f4f6; color: #6b7280; }
+  .busy-stop-meta { font-size: 0.78rem; color: var(--muted); line-height: 1.45; margin: 0; }
+  .busy-stop-actions { margin-top: auto; display: flex; gap: 0.45rem; flex-wrap: wrap; }
+  .busy-stop-actions .btn-stop {
+    background: #dc2626;
+    border-color: #b91c1c;
+    color: #fff;
+    font-weight: 800;
+    flex: 1;
+    min-width: 6.5rem;
+  }
+  .busy-stop-actions .btn-resume {
+    background: #16a34a;
+    border-color: #15803d;
+    color: #fff;
+    font-weight: 800;
+    flex: 1;
+    min-width: 6.5rem;
+  }
+</style>

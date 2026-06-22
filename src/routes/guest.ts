@@ -29,6 +29,12 @@ import {
 } from "../lib/set-order-bundle.js";
 import { broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
 import {
+  GUEST_BUSY_STOP_MESSAGE,
+  isItemBusyStoppedByStations,
+  loadBusyStoppedStationIdSet,
+  setMenuItemBlockedByBusyStop,
+} from "../lib/kitchen-busy-stop.js";
+import {
   baseNetFromStoredPrice,
   eatModeTaxRatePercent,
   normalizeEatMode,
@@ -281,6 +287,8 @@ function mapGuestSetMenuItem(
           id: string;
           name: string;
           isAvailable: boolean;
+          busyStopTarget?: boolean;
+          kitchenStationId?: string | null;
           containsAlcohol?: boolean;
           stockQty: number | null;
           stockLowThreshold: number | null;
@@ -309,6 +317,7 @@ function mapGuestSetMenuItem(
   defaultPriceTaxMode: "inclusive" | "exclusive",
   taxRatePercent: number,
   nowMin: number,
+  stoppedStationIds?: ReadonlySet<string>,
 ): Record<string, unknown> | null {
   const stepsOut: Record<string, unknown>[] = [];
   type ChoiceRow = {
@@ -375,7 +384,29 @@ function mapGuestSetMenuItem(
   if (stepsOut.length === 0) return null;
   const base = mapGuestMenuItem(it, defaultPriceTaxMode, taxRatePercent, nowMin);
   const opt = mapGuestOptionGroups(it.optionLinks ?? [], defaultPriceTaxMode, taxRatePercent);
-  return opt.length ? { ...base, sellKind: "set", setSteps: stepsOut, optionGroups: opt } : { ...base, sellKind: "set", setSteps: stepsOut };
+  const out = opt.length
+    ? { ...base, sellKind: "set", setSteps: stepsOut, optionGroups: opt }
+    : { ...base, sellKind: "set", setSteps: stepsOut };
+  const itRow = it as {
+    busyStopTarget?: boolean;
+    kitchenStationId?: string | null;
+    setSteps: typeof it.setSteps;
+  };
+  if (
+    stoppedStationIds &&
+    stoppedStationIds.size > 0 &&
+    setMenuItemBlockedByBusyStop(
+      {
+        busyStopTarget: itRow.busyStopTarget === true,
+        kitchenStationId: itRow.kitchenStationId ?? null,
+      },
+      itRow.setSteps,
+      stoppedStationIds,
+    )
+  ) {
+    return { ...out, busyStopped: true, busyStoppedMessage: GUEST_BUSY_STOP_MESSAGE };
+  }
+  return out;
 }
 
 /** 注文履歴からの再注文用。売切・非表示でも構成 ID を復元できるよう緩いルール（通常メニュー API とは別） */
@@ -610,6 +641,8 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                         stockLowThreshold: true,
                         containsAlcohol: true,
                         allowTakeout: true,
+                        busyStopTarget: true,
+                        kitchenStationId: true,
                         category: {
                           include: { guestVisibleTimeWindow: true },
                         },
@@ -639,6 +672,8 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       const slice = w ? { startMin: w.startMin, endMin: w.endMin } : null;
       return categoryGuestVisibleAt(c, slice, nowMin);
     });
+
+    const stoppedStationIds = await loadBusyStoppedStationIdSet(session.storeId);
 
     const tier = session.coursePriceTier;
     const courseOut =
@@ -719,6 +754,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                 st.menuPriceTaxMode,
                 st.taxRatePercent,
                 nowMin,
+                stoppedStationIds,
               );
               if (!row) return null;
               let allowTakeoutOut = (row as { allowTakeout?: boolean }).allowTakeout === true;
@@ -728,6 +764,18 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
             const single = mapGuestMenuItem(it, st.menuPriceTaxMode, st.taxRatePercent, nowMin);
             const opt = mapGuestOptionGroups(it.optionLinks ?? [], st.menuPriceTaxMode, st.taxRatePercent);
             if (opt.length) (single as Record<string, unknown>).optionGroups = opt;
+            if (
+              isItemBusyStoppedByStations(
+                {
+                  busyStopTarget: it.busyStopTarget === true,
+                  kitchenStationId: it.kitchenStationId,
+                },
+                stoppedStationIds,
+              )
+            ) {
+              (single as Record<string, unknown>).busyStopped = true;
+              (single as Record<string, unknown>).busyStoppedMessage = GUEST_BUSY_STOP_MESSAGE;
+            }
             const courseTier =
               session.courseId == null
                 ? null
@@ -1034,6 +1082,8 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         ? bodyOrder.guestDeviceId.trim().slice(0, 128)
         : undefined;
 
+    const stoppedStationIds = await loadBusyStoppedStationIdSet(orderStoreId);
+
     try {
       const order = await prisma.$transaction(async (tx) => {
         const sess = await tx.diningSession.findUnique({
@@ -1158,6 +1208,19 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
             if (!categoryGuestVisibleAt(sc, sl0, nowMin)) throw new Error("BAD_ITEM_TIME");
             if (setItem.containsAlcohol && sess?.guestAlcoholAllowed !== true) {
               throw new Error("ALCOHOL_DENIED");
+            }
+            if (
+              stoppedStationIds.size > 0 &&
+              setMenuItemBlockedByBusyStop(
+                {
+                  busyStopTarget: setItem.busyStopTarget,
+                  kitchenStationId: setItem.kitchenStationId,
+                },
+                setItem.setSteps,
+                stoppedStationIds,
+              )
+            ) {
+              throw new Error("BAD_BUSY_STOP");
             }
 
             const stepsVal: SetStepForValidation[] = setItem.setSteps.map((st) => ({
@@ -1449,6 +1512,18 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
             if (plainItem.containsAlcohol && sess?.guestAlcoholAllowed !== true) {
               throw new Error("ALCOHOL_DENIED");
             }
+            if (
+              stoppedStationIds.size > 0 &&
+              isItemBusyStoppedByStations(
+                {
+                  busyStopTarget: plainItem.busyStopTarget,
+                  kitchenStationId: plainItem.kitchenStationId,
+                },
+                stoppedStationIds,
+              )
+            ) {
+              throw new Error("BAD_BUSY_STOP");
+            }
 
             const linkedGroups = plainItem.optionLinks
               .map((ol) => ol.optionGroup)
@@ -1686,6 +1761,9 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       if (msg === "BAD_QTY") return reply.code(400).send({ error: "invalid qty" });
       if (msg === "BAD_ITEM") return reply.code(400).send({ error: "invalid or unavailable menuItemId" });
       if (msg === "BAD_STOCK") return reply.code(400).send({ error: "insufficient stock" });
+      if (msg === "BAD_BUSY_STOP") {
+        return reply.code(400).send({ error: GUEST_BUSY_STOP_MESSAGE });
+      }
       if (msg === "BAD_ITEM_TIME") {
         return reply.code(400).send({ error: "この時間帯は注文できないカテゴリの商品が含まれています" });
       }

@@ -858,6 +858,39 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     },
   );
 
+  /** スタッフ変更などサーバー上の飲酒可否（請求セッション）を返す */
+  app.get<{ Params: { token: string } }>("/guest/:token/alcohol-status", async (req, reply) => {
+    const tokenSession = await prisma.diningSession.findUnique({
+      where: { guestToken: req.params.token },
+      select: {
+        id: true,
+        status: true,
+        storeId: true,
+        tableId: true,
+        mergedIntoSessionId: true,
+        guestAlcoholAllowed: true,
+      },
+    });
+    if (!tokenSession) {
+      return reply.code(404).send({ error: "session not found or closed" });
+    }
+    const billing = await resolveGuestBillingContext(tokenSession);
+    if (!billing.ok) {
+      return reply.code(billing.status).send(billing.body);
+    }
+    if (billing.ctx.billingSessionId === tokenSession.id) {
+      return { guestAlcoholAllowed: tokenSession.guestAlcoholAllowed };
+    }
+    const parent = await prisma.diningSession.findUnique({
+      where: { id: billing.ctx.billingSessionId },
+      select: { guestAlcoholAllowed: true, status: true },
+    });
+    if (!parent || parent.status !== "open") {
+      return reply.code(404).send({ error: "session not found or closed" });
+    }
+    return { guestAlcoholAllowed: parent.guestAlcoholAllowed };
+  });
+
   /**
    * 端末IDで匿名会員を紐づけ。初回紐づけで visitCount 加算。名前・電話は任意。
    */

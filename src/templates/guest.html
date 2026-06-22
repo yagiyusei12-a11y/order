@@ -1819,6 +1819,76 @@
     let coursePriceTaxMode = "inclusive";
     let taxRatePercent = 10;
     let alcoholRestricted = false;
+
+    function guestSafetyStorageKey() {
+      return "guest-safety:" + TOKEN;
+    }
+
+    function writeGuestSafetyStorage(allowAlcohol) {
+      try {
+        sessionStorage.setItem(
+          guestSafetyStorageKey(),
+          JSON.stringify({ allowAlcohol: !!allowAlcohol, at: Date.now() }),
+        );
+      } catch (_) {}
+    }
+
+    function syncGuestAlcoholUiExtras() {
+      const sn = document.getElementById("safetyNote");
+      if (sn) {
+        sn.style.display = alcoholRestricted ? "block" : "none";
+        sn.textContent = alcoholRestricted
+          ? "安全確認により、アルコール商品の注文を制限しています。スタッフへご相談ください。"
+          : "";
+      }
+      const hdr = document.getElementById("hdr");
+      if (hdr) {
+        const marker = " · アルコール商品は制限中";
+        let t = hdr.textContent || "";
+        if (alcoholRestricted) {
+          if (!t.includes(marker)) hdr.textContent = t + marker;
+        } else if (t.includes(marker)) {
+          hdr.textContent = t.replace(marker, "");
+        }
+      }
+    }
+
+    function refreshGuestMenuCardsForAlcohol() {
+      document.querySelectorAll("#menu .go-card").forEach((card) => {
+        const id = card.dataset.itemId;
+        const it = id ? menuItemById.get(id) : null;
+        if (!it) return;
+        const busyStopped = guestItemBusyStopped(it);
+        const sold = !busyStopped && guestItemSoldOut(it);
+        const baseBlocked = sold || busyStopped || (it.containsAlcohol === true && alcoholRestricted);
+        card.dataset.guestBlockedBase = baseBlocked ? "1" : "0";
+        const sk = card.dataset.sellKind === "set" ? "set" : "single";
+        card.classList.toggle("is-dim", baseBlocked || guestCardDimByLastOrderSellKind(sk));
+      });
+    }
+
+    function applyGuestAlcoholState(allowed) {
+      const prev = alcoholRestricted;
+      if (allowed === true) {
+        alcoholRestricted = false;
+        writeGuestSafetyStorage(true);
+      } else if (allowed === false) {
+        alcoholRestricted = true;
+        writeGuestSafetyStorage(false);
+      } else {
+        return;
+      }
+      if (prev === alcoholRestricted) return;
+      refreshGuestMenuCardsForAlcohol();
+      syncGuestAlcoholUiExtras();
+    }
+
+    async function pollGuestAlcoholFromServer() {
+      try {
+        const data = await api("/guest/" + encodeURIComponent(TOKEN) + "/alcohol-status");
+        applyGuestAlcoholState(data.guestAlcoholAllowed);
+      } catch (_) {}
+    }
     /** @type {Map<string, object>} */
     let menuItemById = new Map();
     let lastOrderTimer = null;
@@ -4518,13 +4588,7 @@
         }
       }
 
-      const sn = document.getElementById("safetyNote");
-      if (sn) {
-        sn.style.display = alcoholRestricted ? "block" : "none";
-        sn.textContent = alcoholRestricted
-          ? "安全確認により、アルコール商品の注文を制限しています。スタッフへご相談ください。"
-          : "";
-      }
+      syncGuestAlcoholUiExtras();
 
       const packStrip = document.getElementById("courseOptionPacksStrip");
       if (packStrip) {
@@ -4750,8 +4814,7 @@
       sessionCourseIncludedGuestCap = Boolean(
         gs && gs.course && gs.course.includedItemsUnlimited === false,
       );
-      if (gs && gs.guestAlcoholAllowed === true) alcoholRestricted = false;
-      else if (gs && gs.guestAlcoholAllowed === false) alcoholRestricted = true;
+      applyGuestAlcoholState(gs && gs.guestAlcoholAllowed);
       hydrateGuestCartFromStorage();
       clampCartToStock(cats);
       renderCart();
@@ -4791,6 +4854,7 @@
           const baseBlocked = sold || busyStopped || (it.containsAlcohol === true && alcoholRestricted);
           const card = document.createElement("article");
           card.className = "go-card";
+          card.dataset.itemId = String(it.id);
           card.dataset.cat = c.id;
           card.dataset.courseIncluded = it.courseTier === "included" ? "1" : "0";
           card.dataset.guestBlockedBase = baseBlocked ? "1" : "0";
@@ -5142,14 +5206,12 @@
     }
 
     async function ensureSafetyGate() {
-      const key = "guest-safety:" + TOKEN;
+      const key = guestSafetyStorageKey();
       try {
         const raw = sessionStorage.getItem(key);
         if (raw) {
           const parsed = JSON.parse(raw);
-          const allowAlcohol = !(parsed && parsed.allowAlcohol === false);
-          alcoholRestricted = !allowAlcohol;
-          await syncAlcoholAckToServer(allowAlcohol);
+          alcoholRestricted = !(parsed && parsed.allowAlcohol === false);
           return;
         }
       } catch (_) {}
@@ -5162,7 +5224,7 @@
         const finish = async (allowAlcohol) => {
           alcoholRestricted = !allowAlcohol;
           try {
-            sessionStorage.setItem(key, JSON.stringify({ allowAlcohol, at: Date.now() }));
+            writeGuestSafetyStorage(allowAlcohol);
           } catch (_) {}
           gate.style.display = "none";
           btnDeny.onclick = null;
@@ -5182,6 +5244,7 @@
         await ensureSafetyGate();
         await loadMenu();
         await loadOrders();
+        setInterval(() => void pollGuestAlcoholFromServer(), 12000);
       } catch (e) {
         document.getElementById("err").style.display = "block";
         document.getElementById("err").textContent = String(e.message || e);

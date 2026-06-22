@@ -40,6 +40,50 @@ export async function registerKitchenBusyStop(app: FastifyInstance): Promise<voi
     },
   );
 
+  /** 混雑停止画面：調理場に紐づく停止対象商品一覧 */
+  app.get<{ Params: { storeId: string; stationId: string } }>(
+    "/stores/:storeId/kitchen-stations/:stationId/busy-stop-targets",
+    async (req, reply) => {
+      const station = await prisma.kitchenStation.findFirst({
+        where: { id: req.params.stationId, storeId: req.params.storeId },
+        select: { id: true, name: true },
+      });
+      if (!station) return reply.code(404).send({ error: "station not found" });
+      const rows = await prisma.menuItem.findMany({
+        where: {
+          busyStopTarget: true,
+          kitchenStationId: station.id,
+          category: { storeId: req.params.storeId },
+        },
+        select: {
+          id: true,
+          name: true,
+          sellKind: true,
+          isAvailable: true,
+          sortOrder: true,
+          category: { select: { id: true, name: true, sortOrder: true } },
+        },
+      });
+      rows.sort((a, b) => {
+        const cs = (a.category.sortOrder ?? 0) - (b.category.sortOrder ?? 0);
+        if (cs !== 0) return cs;
+        return (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name, "ja");
+      });
+      return {
+        stationId: station.id,
+        stationName: station.name,
+        items: rows.map((it) => ({
+          id: it.id,
+          name: it.name,
+          sellKind: it.sellKind,
+          isAvailable: it.isAvailable,
+          categoryId: it.category.id,
+          categoryName: it.category.name,
+        })),
+      };
+    },
+  );
+
   app.post<{ Params: { storeId: string; stationId: string } }>(
     "/stores/:storeId/kitchen-stations/:stationId/busy-stop",
     async (req, reply) => {

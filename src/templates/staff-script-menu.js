@@ -211,6 +211,22 @@ function syncSelection() {
   }
 }
 
+function applyMenuDeepLinkFromQuery() {
+  try {
+    const itemId = new URLSearchParams(location.search).get("item");
+    if (!itemId) return;
+    for (const cat of categoriesCache) {
+      const found = (cat.items || []).find((x) => x.id === itemId);
+      if (found) {
+        selectedCategoryId = cat.id;
+        selectedItemId = itemId;
+        activeTab = "items";
+        return;
+      }
+    }
+  } catch (_) {}
+}
+
 function refreshNewCategoryParentOptions() {
   const sel = document.getElementById("newCatParentId");
   if (!sel) return;
@@ -241,6 +257,7 @@ async function loadAll() {
     modeSel.disabled = true;
   }
   syncSelection();
+  applyMenuDeepLinkFromQuery();
   refreshNewCategoryParentOptions();
   render();
 }

@@ -31,6 +31,77 @@ function fmtBusyStopWhen(iso) {
 /** @type {Array<Record<string, unknown>>} */
 let busyStopStations = [];
 
+function menuItemUrl(itemId) {
+  return (
+    "/staff-app/" +
+    encodeURIComponent(STORE) +
+    "/menu?item=" +
+    encodeURIComponent(itemId)
+  );
+}
+
+function closeBusyStopTargetsModal() {
+  const modal = document.getElementById("busyStopTargetsModal");
+  if (!modal) return;
+  modal.hidden = true;
+  modal.setAttribute("aria-hidden", "true");
+}
+
+function openBusyStopTargetsModal() {
+  const modal = document.getElementById("busyStopTargetsModal");
+  if (!modal) return;
+  modal.hidden = false;
+  modal.setAttribute("aria-hidden", "false");
+}
+
+async function showBusyStopTargets(stationId, stationName) {
+  const body = document.getElementById("busyStopTargetsBody");
+  const title = document.getElementById("busyStopTargetsTitle");
+  if (!body) return;
+  if (title) {
+    title.textContent = "停止対象商品 · " + String(stationName || "調理場");
+  }
+  body.textContent = "読み込み中…";
+  openBusyStopTargetsModal();
+  try {
+    const data = await api(
+      "/stores/" +
+        encodeURIComponent(STORE) +
+        "/kitchen-stations/" +
+        encodeURIComponent(stationId) +
+        "/busy-stop-targets",
+    );
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (!items.length) {
+      body.innerHTML =
+        "<p class=\"muted\" style=\"margin:0\">この調理場に紐づく停止対象商品はありません。<br>商品マスタで調理場を設定し、「混雑時停止対象」にチェックを入れた商品がここに表示されます。</p>";
+      return;
+    }
+    const ul = document.createElement("ul");
+    ul.className = "busy-stop-target-list";
+    for (const it of items) {
+      const li = document.createElement("li");
+      const a = document.createElement("a");
+      a.href = menuItemUrl(String(it.id));
+      a.textContent = String(it.name || "（名称未設定）");
+      const meta = document.createElement("span");
+      meta.className = "busy-stop-target-meta";
+      const bits = [String(it.categoryName || "")];
+      if (it.sellKind === "set") bits.push("セット");
+      bits.push(it.isAvailable ? "店内表示中" : "店内非表示");
+      meta.textContent = bits.filter(Boolean).join(" · ");
+      li.appendChild(a);
+      li.appendChild(meta);
+      ul.appendChild(li);
+    }
+    body.innerHTML = "";
+    body.appendChild(ul);
+  } catch (e) {
+    body.innerHTML =
+      "<p style=\"margin:0;color:#b91c1c\">" + escapeHtmlBusy(String(e.message || e)) + "</p>";
+  }
+}
+
 function renderBusyStopGrid() {
   const grid = document.getElementById("busyStopGrid");
   if (!grid) return;
@@ -65,6 +136,12 @@ function renderBusyStopGrid() {
       metaTxt += " · ゲスト注文は通常どおり";
     }
     meta.textContent = metaTxt;
+    const targetsLink = document.createElement("button");
+    targetsLink.type = "button";
+    targetsLink.className = "busy-stop-targets-link";
+    targetsLink.textContent = "停止対象商品を見る（" + targetN + "件）";
+    targetsLink.onclick = () =>
+      void showBusyStopTargets(String(st.id), String(st.name || ""));
     const actions = document.createElement("div");
     actions.className = "busy-stop-actions";
     if (active) {
@@ -87,6 +164,7 @@ function renderBusyStopGrid() {
     card.appendChild(title);
     card.appendChild(badge);
     card.appendChild(meta);
+    card.appendChild(targetsLink);
     card.appendChild(actions);
     grid.appendChild(card);
   }
@@ -134,5 +212,15 @@ if (btnRefBusyStop) {
     loadBusyStopStatus().catch((e) => busyStopLog(String(e.message || e)));
   };
 }
+
+const busyStopTargetsClose = document.getElementById("busyStopTargetsClose");
+if (busyStopTargetsClose) busyStopTargetsClose.onclick = () => closeBusyStopTargetsModal();
+const busyStopTargetsBackdrop = document.getElementById("busyStopTargetsBackdrop");
+if (busyStopTargetsBackdrop) busyStopTargetsBackdrop.onclick = () => closeBusyStopTargetsModal();
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  const modal = document.getElementById("busyStopTargetsModal");
+  if (modal && !modal.hidden) closeBusyStopTargetsModal();
+});
 
 loadBusyStopStatus().catch((e) => busyStopLog(String(e.message || e)));

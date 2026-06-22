@@ -1404,23 +1404,6 @@
     </div>
   </div>
 
-  <div class="go-profile is-collapsed" id="combineBillingCard">
-    <button type="button" class="go-profile-toggle" id="combineBillingToggle" aria-expanded="false">
-      別会計を同一会計にまとめる
-    </button>
-    <div class="go-profile-body" id="combineBillingBody">
-      <p class="muted" style="font-size: 0.82rem; line-height: 1.45; margin: 0 0 0.55rem">
-        同じ卓で別 URL の別会計になっている場合、相手の画面の URL に含まれるトークン（末尾の文字列）を入力すると、<strong>相手側の会計をこの画面に統合</strong>できます。
-      </p>
-      <label for="shareGuestTokenDisplay">この端末の共有用トークン（相手に伝える場合）</label>
-      <input id="shareGuestTokenDisplay" type="text" readonly tabindex="-1" style="font-size: 0.82rem" />
-      <label for="peerGuestTokenInput">統合する相手のトークン</label>
-      <input id="peerGuestTokenInput" type="text" autocomplete="off" maxlength="200" placeholder="相手の注文画面の URL 末尾など" />
-      <button type="button" class="submit" id="btnCombineBilling" style="margin-top: 0.45rem; width: 100%">まとめる</button>
-      <span id="combineBillingHint" class="muted" style="display: block; margin-top: 0.35rem; font-size: 0.82rem"></span>
-    </div>
-  </div>
-
   <div class="go-tabs-wrap">
     <div class="go-tabs" id="catTabs"></div>
   </div>
@@ -1538,48 +1521,6 @@
       try {
         localStorage.setItem(PROFILE_OPEN_KEY + "_" + String(TOKEN || "x"), open ? "1" : "0");
       } catch (_) {}
-    }
-
-    function setupCombineBillingUi() {
-      const card = document.getElementById("combineBillingCard");
-      const btn = document.getElementById("combineBillingToggle");
-      const shareEl = document.getElementById("shareGuestTokenDisplay");
-      const peerEl = document.getElementById("peerGuestTokenInput");
-      const goBtn = document.getElementById("btnCombineBilling");
-      const hint = document.getElementById("combineBillingHint");
-      if (!card || !btn || !shareEl || !peerEl || !goBtn) return;
-      shareEl.value = String(TOKEN || "");
-      btn.onclick = function () {
-        const isCollapsed = card.classList.contains("is-collapsed");
-        if (isCollapsed) {
-          card.classList.remove("is-collapsed");
-          btn.setAttribute("aria-expanded", "true");
-        } else {
-          card.classList.add("is-collapsed");
-          btn.setAttribute("aria-expanded", "false");
-        }
-      };
-      goBtn.onclick = async function () {
-        if (hint) hint.textContent = "";
-        const peer = String(peerEl.value || "").trim();
-        if (!peer) {
-          toast("相手のトークンを入力してください");
-          return;
-        }
-        try {
-          await api("/guest/" + encodeURIComponent(TOKEN) + "/combine-same-table-billing", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ peerGuestToken: peer }),
-          });
-          toast("まとめました");
-          location.reload();
-        } catch (e) {
-          const msg = String(e.message || e);
-          if (hint) hint.textContent = msg;
-          toast(msg);
-        }
-      };
     }
 
     function setProfileCollapsed(collapsed, focusOpts) {
@@ -4871,10 +4812,6 @@
             }
           };
         }
-      } catch (_) {}
-
-      try {
-        setupCombineBillingUi();
       } catch (_) {}
 
       try {

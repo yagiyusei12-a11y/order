@@ -1,7 +1,8 @@
 import { prisma } from "../db.js";
 
 /** ゲスト画面・注文エラー用の固定文言 */
-export const GUEST_BUSY_STOP_MESSAGE = "30分程販売停止中";
+export const GUEST_BUSY_STOP_MESSAGE =
+  "こちらの商品は混雑防止の為、一時的にご注文頂けません。";
 
 /** 停止からこの時間経過後、キッチン／ホールにアラート */
 export const BUSY_STOP_ALERT_AFTER_MS = 30 * 60 * 1000;

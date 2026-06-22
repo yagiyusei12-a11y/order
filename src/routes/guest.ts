@@ -328,6 +328,8 @@ function mapGuestSetMenuItem(
     stockQty: number | null;
     soldOut: boolean;
     containsAlcohol: boolean;
+    busyStopTarget?: boolean;
+    kitchenStationId?: string | null;
     optionGroups?: Record<string, unknown>[];
   };
   for (const st of it.setSteps) {
@@ -346,6 +348,8 @@ function mapGuestSetMenuItem(
         stockQty: comp.stockQty,
         soldOut,
         containsAlcohol: comp.containsAlcohol === true,
+        busyStopTarget: comp.busyStopTarget === true,
+        kitchenStationId: comp.kitchenStationId ?? null,
       };
       try {
         const opt = mapGuestOptionGroups(comp.optionLinks ?? [], defaultPriceTaxMode, taxRatePercent);
@@ -392,6 +396,8 @@ function mapGuestSetMenuItem(
     kitchenStationId?: string | null;
     setSteps: typeof it.setSteps;
   };
+  (out as Record<string, unknown>).busyStopTarget = itRow.busyStopTarget === true;
+  (out as Record<string, unknown>).kitchenStationId = itRow.kitchenStationId ?? null;
   if (
     stoppedStationIds &&
     stoppedStationIds.size > 0 &&
@@ -709,6 +715,10 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         reasonCode: gatePreview.reasonCode,
         messageJa: gatePreview.accepting ? "" : gatePreview.messageJa,
       },
+      busyStop: {
+        stoppedStationIds: [...stoppedStationIds],
+        message: GUEST_BUSY_STOP_MESSAGE,
+      },
       session: {
         id: session.id,
         guestCount: session.guestCount,
@@ -764,6 +774,8 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
             const single = mapGuestMenuItem(it, st.menuPriceTaxMode, st.taxRatePercent, nowMin);
             const opt = mapGuestOptionGroups(it.optionLinks ?? [], st.menuPriceTaxMode, st.taxRatePercent);
             if (opt.length) (single as Record<string, unknown>).optionGroups = opt;
+            (single as Record<string, unknown>).busyStopTarget = it.busyStopTarget === true;
+            (single as Record<string, unknown>).kitchenStationId = it.kitchenStationId ?? null;
             if (
               isItemBusyStoppedByStations(
                 {
@@ -857,6 +869,26 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       return { ok: true };
     },
   );
+
+  /** 混雑停止中の調理場（ゲスト画面のカート・メニュー再判定用） */
+  app.get<{ Params: { token: string } }>("/guest/:token/busy-stop-status", async (req, reply) => {
+    const tokenSession = await prisma.diningSession.findUnique({
+      where: { guestToken: req.params.token },
+      select: { id: true, status: true, storeId: true, tableId: true, mergedIntoSessionId: true },
+    });
+    if (!tokenSession) {
+      return reply.code(404).send({ error: "session not found or closed" });
+    }
+    const billing = await resolveGuestBillingContext(tokenSession);
+    if (!billing.ok) {
+      return reply.code(billing.status).send(billing.body);
+    }
+    const stoppedStationIds = await loadBusyStoppedStationIdSet(tokenSession.storeId);
+    return {
+      stoppedStationIds: [...stoppedStationIds],
+      message: GUEST_BUSY_STOP_MESSAGE,
+    };
+  });
 
   /** スタッフ変更などサーバー上の飲酒可否（請求セッション）を返す */
   app.get<{ Params: { token: string } }>("/guest/:token/alcohol-status", async (req, reply) => {

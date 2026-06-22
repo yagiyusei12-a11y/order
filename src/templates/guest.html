@@ -1697,7 +1697,6 @@
       if (!menuItemId) return null;
       const item = menuItemById.get(menuItemId);
       if (!item) return null;
-      if (guestItemBusyStopped(item)) return null;
       const qty = Math.max(0, Math.min(99, Math.floor(Number(src.qty) || 0)));
       if (qty <= 0) return null;
       let eatMode = src.eatMode === "takeout" ? "takeout" : "dine_in";
@@ -2034,7 +2033,107 @@
     }
     function guestBusyStopMessage(item) {
       const m = item && item.busyStoppedMessage ? String(item.busyStoppedMessage) : "";
-      return m || "30分程販売停止中";
+      return m || guestBusyStopMessageText;
+    }
+    let guestBusyStopMessageText =
+      "こちらの商品は混雑防止の為、一時的にご注文頂けません。";
+    /** @type {Set<string>} */
+    let guestStoppedStationIds = new Set();
+
+    function guestRefBlockedByBusyStop(ref) {
+      if (!ref || ref.busyStopTarget !== true) return false;
+      const sid = ref.kitchenStationId;
+      if (!sid) return false;
+      return guestStoppedStationIds.has(String(sid));
+    }
+
+    function guestRecomputeItemBusyStop(item) {
+      if (!item) return;
+      let blocked = guestRefBlockedByBusyStop(item);
+      if (!blocked && item.sellKind === "set" && item.setSteps) {
+        for (const st of item.setSteps) {
+          for (const ch of [...(st.fixedChoices || []), ...(st.choices || [])]) {
+            if (guestRefBlockedByBusyStop(ch)) {
+              blocked = true;
+              break;
+            }
+          }
+          if (blocked) break;
+        }
+      }
+      if (blocked) {
+        item.busyStopped = true;
+        item.busyStoppedMessage = guestBusyStopMessageText;
+      } else {
+        delete item.busyStopped;
+        delete item.busyStoppedMessage;
+      }
+    }
+
+    function guestRecomputeAllMenuBusyStop() {
+      for (const it of menuItemById.values()) guestRecomputeItemBusyStop(it);
+    }
+
+    function setSelectionHasBusyStop(item, setSelections) {
+      if (!item) return false;
+      if (guestItemBusyStopped(item)) return true;
+      if (!setSelections || !item.setSteps) return false;
+      for (const sel of setSelections) {
+        for (const mid of sel.menuItemIds || []) {
+          const comp = menuItemById.get(String(mid));
+          if (comp && guestItemBusyStopped(comp)) return true;
+          for (const st of item.setSteps) {
+            if (String(sel.stepId) !== String(st.id)) continue;
+            for (const ch of [...(st.fixedChoices || []), ...(st.choices || [])]) {
+              if (String(ch.menuItemId) === String(mid) && guestRefBlockedByBusyStop(ch)) return true;
+            }
+          }
+        }
+      }
+      return false;
+    }
+
+    function cartLineBusyStopped(line) {
+      const item =
+        line && line.menuItemId != null && line.menuItemId !== ""
+          ? menuItemById.get(String(line.menuItemId))
+          : null;
+      if (!item) return false;
+      if (line.sellKind === "set" && line.setSelections) {
+        return setSelectionHasBusyStop(item, line.setSelections);
+      }
+      return guestItemBusyStopped(item);
+    }
+
+    function findBusyStoppedCartLine() {
+      return Object.values(cart).find((x) => x.qty > 0 && cartLineBusyStopped(x));
+    }
+
+    function cartHasBusyStoppedLines() {
+      return Boolean(findBusyStoppedCartLine());
+    }
+
+    function applyGuestBusyStopState(stoppedIds, message, options) {
+      guestStoppedStationIds = new Set((stoppedIds || []).map((x) => String(x)));
+      if (message) guestBusyStopMessageText = String(message);
+      guestRecomputeAllMenuBusyStop();
+      refreshGuestMenuCardsForAlcohol();
+      if (options && options.skipRender) return;
+      renderCart();
+      syncCartSheetIfOpen();
+    }
+
+    async function pollGuestBusyStopFromServer() {
+      try {
+        const data = await api("/guest/" + encodeURIComponent(TOKEN) + "/busy-stop-status");
+        const prev = [...guestStoppedStationIds].sort().join(",");
+        const nextIds = Array.isArray(data.stoppedStationIds) ? data.stoppedStationIds : [];
+        const next = [...nextIds].map(String).sort().join(",");
+        applyGuestBusyStopState(nextIds, data.message);
+        if (prev !== next && cartHasBusyStoppedLines()) {
+          toast(guestBusyStopMessageText);
+        }
+      } catch (_) {}
     }
     function guestItemSoldOut(item) {
       return Boolean(item && item.sellKind !== "set" && item.stockQty != null && item.stockQty <= 0);
@@ -2377,7 +2476,9 @@
           : "カート " + count + "点";
       }
       document.getElementById("cartSum").textContent = cartSumLabel(sum);
-      document.getElementById("submit").disabled = count === 0 || guestSubmitBlockedByLastOrder();
+      const busyBlocked = cartHasBusyStoppedLines();
+      document.getElementById("submit").disabled =
+        count === 0 || guestSubmitBlockedByLastOrder() || busyBlocked;
       const cartFooter = document.getElementById("cartFooter");
       if (cartFooter) cartFooter.classList.toggle("has-pending-order", hasPending);
       const cartSheet = document.getElementById("cartSheet");
@@ -2882,6 +2983,14 @@
           subEl.className = "guest-cart-line-sub";
           subEl.textContent = sub;
           wrap.appendChild(subEl);
+        }
+        if (cartLineBusyStopped(line)) {
+          const warnEl = document.createElement("div");
+          warnEl.className = "guest-cart-line-sub";
+          warnEl.style.color = "#b91c1c";
+          warnEl.style.fontWeight = "700";
+          warnEl.textContent = guestBusyStopMessageText;
+          wrap.appendChild(warnEl);
         }
         const act = document.createElement("div");
         act.className = "guest-cart-line-actions";
@@ -4802,6 +4911,8 @@
                   ...(prev || {}),
                   id: mid,
                   name: ch.name || (prev && prev.name) || "",
+                  busyStopTarget: ch.busyStopTarget === true,
+                  kitchenStationId: ch.kitchenStationId ?? null,
                   optionGroups: ch.optionGroups,
                 });
               }
@@ -4815,6 +4926,12 @@
         gs && gs.course && gs.course.includedItemsUnlimited === false,
       );
       applyGuestAlcoholState(gs && gs.guestAlcoholAllowed);
+      if (data.busyStop) {
+        applyGuestBusyStopState(data.busyStop.stoppedStationIds, data.busyStop.message, { skipRender: true });
+      } else {
+        guestRecomputeAllMenuBusyStop();
+        refreshGuestMenuCardsForAlcohol();
+      }
       hydrateGuestCartFromStorage();
       clampCartToStock(cats);
       renderCart();
@@ -5095,6 +5212,11 @@
           return o;
         });
       if (lines.length === 0) return;
+      const busyLine = findBusyStoppedCartLine();
+      if (busyLine) {
+        toast(guestBusyStopMessageText);
+        return;
+      }
       if (alcoholRestricted) {
         const bad = Object.values(cart)
           .filter((x) => x.qty > 0)
@@ -5120,8 +5242,13 @@
         await loadOrders();
         await loadMenu();
       } catch (e) {
-        document.getElementById("err").style.display = "block";
-        document.getElementById("err").textContent = String(e.message || e);
+        const msg = String(e.message || e);
+        if (msg.includes("混雑防止") || msg.includes("一時的にご注文")) {
+          toast(msg);
+        } else {
+          document.getElementById("err").style.display = "block";
+          document.getElementById("err").textContent = msg;
+        }
       } finally {
         btn.disabled = Object.values(cart).reduce((s, x) => s + (x.qty || 0), 0) === 0;
       }
@@ -5245,6 +5372,7 @@
         await loadMenu();
         await loadOrders();
         setInterval(() => void pollGuestAlcoholFromServer(), 12000);
+        setInterval(() => void pollGuestBusyStopFromServer(), 12000);
       } catch (e) {
         document.getElementById("err").style.display = "block";
         document.getElementById("err").textContent = String(e.message || e);

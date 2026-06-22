@@ -1804,7 +1804,73 @@
         card.dataset.guestBlockedBase = baseBlocked ? "1" : "0";
         const sk = card.dataset.sellKind === "set" ? "set" : "single";
         card.classList.toggle("is-dim", baseBlocked || guestCardDimByLastOrderSellKind(sk));
+        syncGuestCardStatusBadges(card, it);
       });
+    }
+
+    function syncGuestCardStatusBadges(card, it) {
+      const body = card && card.querySelector(".go-card-body");
+      if (!body || !it) return;
+      const busyStopped = guestItemBusyStopped(it);
+      const sold = !busyStopped && guestItemSoldOut(it);
+      const parts = [];
+      if (sold) {
+        parts.push({ cls: "badge-sold", text: "売切" });
+      } else if (busyStopped) {
+        parts.push({ cls: "badge-busy-stop", text: guestBusyStopMessage(it) });
+      } else if (it.lowStock) {
+        parts.push({ cls: "badge-low", text: "残りわずか" });
+      }
+      if (it.containsAlcohol && alcoholRestricted) {
+        parts.push({ cls: "badge-sold", text: "注文不可" });
+      }
+      let badges = body.querySelector("[data-guest-status-badges]");
+      if (!parts.length) {
+        if (badges) badges.remove();
+        return;
+      }
+      if (!badges) {
+        badges = document.createElement("div");
+        badges.dataset.guestStatusBadges = "1";
+        badges.style.cssText = "display:flex;flex-wrap:wrap;gap:0.25rem;margin-top:0.35rem;";
+        body.appendChild(badges);
+      }
+      badges.innerHTML = "";
+      for (const p of parts) {
+        const b = document.createElement("span");
+        b.className = p.cls;
+        b.textContent = p.text;
+        badges.appendChild(b);
+      }
+    }
+
+    function handleGuestMenuCardClick(card) {
+      const itemId = card && card.dataset.itemId;
+      const it = itemId ? menuItemById.get(String(itemId)) : null;
+      if (!it) return;
+      const busyStopped = guestItemBusyStopped(it);
+      const sold = !busyStopped && guestItemSoldOut(it);
+      if (busyStopped) {
+        toast(guestBusyStopMessage(it));
+        return;
+      }
+      if (sold) {
+        toast("売り切れです");
+        return;
+      }
+      if (it.containsAlcohol && alcoholRestricted) {
+        toast("酒類はご注文いただけません");
+        return;
+      }
+      if (guestProductDetailBlocked(it)) {
+        toast(
+          guestLoIsSinglesOnlyMode() && it.sellKind === "set"
+            ? guestLoSetBlockedToast()
+            : "ラストオーダーの時間を過ぎています",
+        );
+        return;
+      }
+      addLine(it);
     }
 
     function applyGuestAlcoholState(allowed) {
@@ -2067,12 +2133,15 @@
     async function pollGuestBusyStopFromServer() {
       try {
         const data = await api("/guest/" + encodeURIComponent(TOKEN) + "/busy-stop-status");
-        const prev = [...guestStoppedStationIds].sort().join(",");
+        const prevIds = [...guestStoppedStationIds];
         const nextIds = Array.isArray(data.stoppedStationIds) ? data.stoppedStationIds : [];
-        const next = [...nextIds].map(String).sort().join(",");
+        const prevKey = prevIds.map(String).sort().join(",");
+        const nextKey = nextIds.map(String).sort().join(",");
         applyGuestBusyStopState(nextIds, data.message);
-        if (prev !== next && cartHasBusyStoppedLines()) {
-          toast(guestBusyStopMessageText);
+        if (prevKey !== nextKey) {
+          const prevSet = new Set(prevIds.map(String));
+          const newlyStopped = nextIds.some((id) => !prevSet.has(String(id)));
+          if (newlyStopped) toast(guestBusyStopMessageText);
         }
       } catch (_) {}
     }
@@ -2411,13 +2480,15 @@
       const sum = lines.reduce((s, x) => s + x.unitPrice * x.qty, 0);
       const hasPending = count > 0 && !guestSubmitBlockedByLastOrder();
       const cartCountEl = document.getElementById("cartCount");
+      const busyBlocked = cartHasBusyStoppedLines();
       if (cartCountEl) {
-        cartCountEl.textContent = hasPending
+        let cartLabel = hasPending
           ? "カート " + count + "点 · まだ注文されていません"
           : "カート " + count + "点";
+        if (busyBlocked) cartLabel += " · 停止中の商品あり";
+        cartCountEl.textContent = cartLabel;
       }
       document.getElementById("cartSum").textContent = cartSumLabel(sum);
-      const busyBlocked = cartHasBusyStoppedLines();
       document.getElementById("submit").disabled =
         count === 0 || guestSubmitBlockedByLastOrder() || busyBlocked;
       const cartFooter = document.getElementById("cartFooter");
@@ -4976,6 +5047,7 @@
           price.className = "go-card-price";
           price.innerHTML = fmtItemPrice(it);
           const badges = document.createElement("div");
+          badges.dataset.guestStatusBadges = "1";
           badges.style.cssText = "display:flex;flex-wrap:wrap;gap:0.25rem;margin-top:0.35rem;";
           if (sold) {
             const b = document.createElement("span");
@@ -5010,29 +5082,7 @@
 
           card.appendChild(media);
           card.appendChild(body);
-          card.onclick = () => {
-            if (busyStopped) {
-              toast(guestBusyStopMessage(it));
-              return;
-            }
-            if (sold) {
-              toast("売り切れです");
-              return;
-            }
-            if (it.containsAlcohol && alcoholRestricted) {
-              toast("酒類はご注文いただけません");
-              return;
-            }
-            if (guestProductDetailBlocked(it)) {
-              toast(
-                guestLoIsSinglesOnlyMode() && it.sellKind === "set"
-                  ? guestLoSetBlockedToast()
-                  : "ラストオーダーの時間を過ぎています",
-              );
-              return;
-            }
-            addLine(it);
-          };
+          card.onclick = () => handleGuestMenuCardClick(card);
           root.appendChild(card);
         }
       }

@@ -203,7 +203,7 @@
     const el = document.getElementById("gamesList");
     if (!games.length) {
       el.innerHTML = '<p class="muted">ゲームがありません。「ゲームを追加」または下記サンプルを参考に slug を設定してください。</p>' +
-        '<p class="muted" style="font-size:0.78rem">組み込み slug: <code>ai-drunk-diagnosis</code>, <code>ai-group-fortune</code>, <code>ai-palm-reading</code>, <code>bill-split</code>, <code>manly-roulette</code> など</p>';
+        '<p class="muted" style="font-size:0.78rem">組み込み slug: <code>ai-serious-tarot</code>, <code>ai-four-pillars</code>, <code>ai-astrology</code>, <code>ai-drunk-diagnosis</code> など</p>';
       return;
     }
     el.innerHTML = games.map((g) => {

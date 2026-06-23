@@ -1,6 +1,13 @@
 import { prisma } from "../db.js";
 
-export const AI_FORTUNE_SLUGS = ["ai-drunk-diagnosis", "ai-group-fortune", "ai-palm-reading"] as const;
+export const AI_FORTUNE_SLUGS = [
+  "ai-drunk-diagnosis",
+  "ai-group-fortune",
+  "ai-palm-reading",
+  "ai-serious-tarot",
+  "ai-four-pillars",
+  "ai-astrology",
+] as const;
 export type AiFortuneSlug = (typeof AI_FORTUNE_SLUGS)[number];
 
 export function isAiFortuneSlug(slug: string): slug is AiFortuneSlug {
@@ -32,6 +39,26 @@ export type GroupFortuneInput = {
 };
 
 export type PalmReadingInput = {
+  question?: string;
+};
+
+export type SeriousTarotInput = {
+  theme: string;
+  question: string;
+};
+
+export type FourPillarsInput = {
+  birthDate: string;
+  birthTime: string;
+  gender: string;
+  question?: string;
+};
+
+export type AstrologyInput = {
+  birthDate: string;
+  birthTime?: string;
+  birthPlace?: string;
+  theme: string;
   question?: string;
 };
 
@@ -118,6 +145,7 @@ function normalizeResult(parsed: Record<string, unknown>): AiFortuneResult {
 async function callOpenAiJson(
   system: string,
   userParts: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }>,
+  opts?: { maxTokens?: number; temperature?: number },
 ): Promise<AiFortuneResult> {
   const key = openAiKey();
   if (!key) {
@@ -131,8 +159,8 @@ async function callOpenAiJson(
     },
     body: JSON.stringify({
       model: aiModel(),
-      temperature: 0.85,
-      max_tokens: 900,
+      temperature: opts?.temperature ?? 0.85,
+      max_tokens: opts?.maxTokens ?? 900,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: system },
@@ -223,6 +251,74 @@ export function parsePalmImage(payload: AiFortunePayload): { base64: string; mim
 const JSON_SCHEMA_HINT =
   '必ず次のJSON形式のみで返答: {"title":"短い見出し","sections":[{"heading":"見出し","text":"本文"}...],"disclaimer":"注意書き1行"}';
 
+const SERIOUS_DISCLAIMER =
+  "※本格的な占いを参考程度にお楽しみください。医療・法律・重大な決断は専門家へご相談ください。";
+
+const TAROT_THEMES = ["恋愛", "仕事・キャリア", "金運", "人間関係", "総合運"] as const;
+const ASTRO_THEMES = ["恋愛", "仕事・キャリア", "金運", "総合運"] as const;
+const GENDERS = ["男性", "女性", "答えたくない"] as const;
+
+function parseBirthDate(raw: string): string {
+  const birthDate = raw.trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) throw new Error("生年月日を入力してください");
+  return birthDate;
+}
+
+function parseBirthTime(raw: string, required: boolean): string {
+  const t = raw.trim().slice(0, 5);
+  if (!t) {
+    if (required) throw new Error("出生時刻を入力してください（わからない場合は大体の時間）");
+    return "";
+  }
+  if (!/^\d{2}:\d{2}$/.test(t)) throw new Error("出生時刻は HH:MM 形式で入力してください");
+  const [h, m] = t.split(":").map((x) => parseInt(x, 10));
+  if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || h > 23 || m < 0 || m > 59) {
+    throw new Error("出生時刻が正しくありません");
+  }
+  return t;
+}
+
+export function parseSeriousTarotInput(raw: unknown): SeriousTarotInput {
+  const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const theme = typeof o.theme === "string" ? o.theme.trim() : "";
+  const question = typeof o.question === "string" ? o.question.trim().slice(0, 200) : "";
+  if (!TAROT_THEMES.includes(theme as (typeof TAROT_THEMES)[number])) {
+    throw new Error("占いテーマを選んでください");
+  }
+  if (question.length < 5) throw new Error("相談内容を5文字以上入力してください");
+  return { theme, question };
+}
+
+export function parseFourPillarsInput(raw: unknown): FourPillarsInput {
+  const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const birthDate = parseBirthDate(typeof o.birthDate === "string" ? o.birthDate : "");
+  const birthTime = parseBirthTime(typeof o.birthTime === "string" ? o.birthTime : "", true);
+  const gender = typeof o.gender === "string" ? o.gender.trim() : "";
+  if (!GENDERS.includes(gender as (typeof GENDERS)[number])) throw new Error("性別を選んでください");
+  const question = typeof o.question === "string" ? o.question.trim().slice(0, 200) : "";
+  return { birthDate, birthTime, gender, question: question || undefined };
+}
+
+export function parseAstrologyInput(raw: unknown): AstrologyInput {
+  const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const birthDate = parseBirthDate(typeof o.birthDate === "string" ? o.birthDate : "");
+  const birthTime = parseBirthTime(typeof o.birthTime === "string" ? o.birthTime : "", false);
+  const birthPlace =
+    typeof o.birthPlace === "string" ? o.birthPlace.trim().slice(0, 60) : "";
+  const theme = typeof o.theme === "string" ? o.theme.trim() : "";
+  if (!ASTRO_THEMES.includes(theme as (typeof ASTRO_THEMES)[number])) {
+    throw new Error("鑑定テーマを選んでください");
+  }
+  const question = typeof o.question === "string" ? o.question.trim().slice(0, 200) : "";
+  return {
+    birthDate,
+    birthTime: birthTime || undefined,
+    birthPlace: birthPlace || undefined,
+    theme,
+    question: question || undefined,
+  };
+}
+
 export async function runAiFortuneForSlug(
   slug: AiFortuneSlug,
   storeId: string,
@@ -281,7 +377,67 @@ export async function runAiFortuneForSlug(
     ]);
   }
 
+  if (slug === "ai-serious-tarot") {
+    const input = parseSeriousTarotInput(payload.aiInput);
+    const system =
+      "あなたは20年以上の経験を持つプロのタロットリーダーです。ウェイト版タロット78枚を想定し、" +
+      "過去・現在・未来の3枚スプレッド（または状況・障害・助言）で本格的に鑑定します。" +
+      "選んだカード名（正位置/逆位置）を明記し、象徴・キーワード・相談への具体的助言を丁寧に。" +
+      "軽いネタや適当な断定は避け、真摯で温かみのある文体。日本語。" +
+      JSON_SCHEMA_HINT +
+      ` disclaimerは「${SERIOUS_DISCLAIMER}」に近い内容。` +
+      " sectionsは5〜7個。必ず「引いたカード3枚（名前・正逆）」「テーマ別の総合メッセージ」「今後1ヶ月のアドバイス」「開運アクション」を含める。";
+    const userText =
+      `テーマ: ${input.theme}\n相談: ${input.question}\n` +
+      "ランダムに3枚のカードを選び、それぞれの意味と相談内容への当てはめを深く解説してください。";
+    return callOpenAiJson(system, [{ type: "text", text: userText }], {
+      maxTokens: 1400,
+      temperature: 0.72,
+    });
+  }
+
+  if (slug === "ai-four-pillars") {
+    const input = parseFourPillarsInput(payload.aiInput);
+    const system =
+      "あなたは四柱推命の専門鑑定士です。生年月日・出生時刻・性別から命式を読み解き、" +
+      "日干・五行のバランス・用神の考え方をわかりやすく、かつ本格的に解説します。" +
+      "断定的すぎず、可能性と注意点の両面を示す。日本語。" +
+      JSON_SCHEMA_HINT +
+      ` disclaimerは「${SERIOUS_DISCLAIMER}」に近い内容。` +
+      " sectionsは6〜8個。必ず「命式の概要（年柱・月柱・日柱・時柱のイメージ）」「性格・才能」「仕事・財運」「恋愛・対人」「今年の運勢」「開運のヒント」を含める。";
+    const userText =
+      `生年月日: ${input.birthDate}\n出生時刻: ${input.birthTime}\n性別: ${input.gender}\n` +
+      (input.question ? `相談: ${input.question}\n` : "") +
+      "四柱推命の観点から総合鑑定してください。";
+    return callOpenAiJson(system, [{ type: "text", text: userText }], {
+      maxTokens: 1500,
+      temperature: 0.68,
+    });
+  }
+
+  if (slug === "ai-astrology") {
+    const input = parseAstrologyInput(payload.aiInput);
+    const system =
+      "あなたは西洋占星術のプロフェッショナルです。出生データからサイン・ハウスの観点で本格鑑定を行います。" +
+      "出生時刻がない場合は太陽星座中心に、ある場合は月星座・上昇星座にも触れてください。" +
+      "現代の言葉で深みのある解説を。日本語。" +
+      JSON_SCHEMA_HINT +
+      ` disclaimerは「${SERIOUS_DISCLAIMER}」に近い内容。` +
+      " sectionsは6〜8個。必ず「主要星座の特徴」「テーマ別運勢」「今月のトランジット」「相性のヒント」「実践アドバイス」を含める。";
+    const userText =
+      `生年月日: ${input.birthDate}\n` +
+      (input.birthTime ? `出生時刻: ${input.birthTime}\n` : "出生時刻: 不明（太陽星座中心で）\n") +
+      (input.birthPlace ? `出生地: ${input.birthPlace}\n` : "") +
+      `鑑定テーマ: ${input.theme}\n` +
+      (input.question ? `相談: ${input.question}\n` : "") +
+      "西洋占星術で鑑定してください。";
+    return callOpenAiJson(system, [{ type: "text", text: userText }], {
+      maxTokens: 1400,
+      temperature: 0.72,
+    });
+  }
+
   throw new Error("unknown ai fortune slug");
 }
 
-export { ZODIAC_SIGNS };
+export { ZODIAC_SIGNS, TAROT_THEMES, ASTRO_THEMES, GENDERS };

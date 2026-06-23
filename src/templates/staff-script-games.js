@@ -1,6 +1,6 @@
 (function () {
   let games = [];
-  let menuItems = [];
+  let menuCategories = [];
 
   function esc(s) {
     return String(s)
@@ -37,14 +37,53 @@
     return ex + "円（税抜）";
   }
 
-  function flattenMenuItems(categories) {
-    const out = [];
-    for (const cat of categories || []) {
-      for (const it of cat.items || []) {
-        if (it && it.id && it.name) out.push(it);
+  function buildCategoryRows(categories) {
+    const list = Array.isArray(categories) ? categories : [];
+    const byParent = new Map();
+    for (const c of list) {
+      const k = c.parentId || "__root__";
+      if (!byParent.has(k)) byParent.set(k, []);
+      byParent.get(k).push(c);
+    }
+    for (const arr of byParent.values()) {
+      arr.sort(
+        (a, b) =>
+          (a.sortOrder ?? 0) - (b.sortOrder ?? 0) ||
+          String(a.name || "").localeCompare(String(b.name || ""), "ja"),
+      );
+    }
+    const rows = [];
+    for (const p of byParent.get("__root__") || []) {
+      rows.push({ cat: p, depth: 0, parentName: null });
+      for (const ch of byParent.get(p.id) || []) {
+        rows.push({ cat: ch, depth: 1, parentName: p.name });
       }
     }
-    return out;
+    for (const o of list.filter((c) => c.parentId && !list.some((p) => p.id === c.parentId))) {
+      rows.push({ cat: o, depth: 0, parentName: null });
+    }
+    return rows;
+  }
+
+  function categoryItems(cat) {
+    return [...(cat.items || [])].sort(
+      (a, b) =>
+        (a.sortOrder ?? 0) - (b.sortOrder ?? 0) ||
+        String(a.name || "").localeCompare(String(b.name || ""), "ja"),
+    );
+  }
+
+  function categoryHeaderLabel(row) {
+    if (row.depth === 1 && row.parentName) return row.parentName + " › " + row.cat.name;
+    return row.cat.name;
+  }
+
+  function countMenuItems(categories) {
+    let n = 0;
+    for (const row of buildCategoryRows(categories)) {
+      n += categoryItems(row.cat).filter((it) => it && it.id && it.name).length;
+    }
+    return n;
   }
 
   function rewardLabelForGame(g) {
@@ -62,25 +101,37 @@
     const box = document.getElementById("gameRewardList");
     if (!box) return;
     const selected = new Set(Array.isArray(selectedIds) ? selectedIds : []);
-    if (menuItems.length === 0) {
+    const rows = buildCategoryRows(menuCategories);
+    const parts = [];
+    for (const row of rows) {
+      const items = categoryItems(row.cat).filter((it) => it && it.id && it.name);
+      if (!items.length) continue;
+      parts.push(
+        '<div class="game-reward-cat">' +
+          '<div class="game-reward-cat__title">' +
+          esc(categoryHeaderLabel(row)) +
+          "</div>",
+      );
+      for (const it of items) {
+        const checked = selected.has(it.id) ? " checked" : "";
+        const suffix = it.isAvailable === false ? "（停止中）" : "";
+        parts.push(
+          '<label><input type="checkbox" name="gameReward" value="' +
+            esc(it.id) +
+            '"' +
+            checked +
+            " /> " +
+            esc(it.name + suffix) +
+            "</label>",
+        );
+      }
+      parts.push("</div>");
+    }
+    if (!parts.length) {
       box.innerHTML = '<p class="muted">メニューに商品がありません（メニュー画面で登録）</p>';
       return;
     }
-    box.innerHTML = menuItems
-      .map((it) => {
-        const checked = selected.has(it.id) ? " checked" : "";
-        const suffix = it.isAvailable === false ? "（停止中）" : "";
-        return (
-          '<label><input type="checkbox" name="gameReward" value="' +
-          esc(it.id) +
-          '"' +
-          checked +
-          " /> " +
-          esc(it.name + suffix) +
-          "</label>"
-        );
-      })
-      .join("");
+    box.innerHTML = parts.join("");
   }
 
   function getSelectedRewardIds() {
@@ -165,11 +216,9 @@
       api("/stores/" + encodeURIComponent(STORE) + "/menu/full"),
     ]);
     games = Array.isArray(gList) ? gList : [];
-    menuItems = flattenMenuItems(menu.categories).sort((a, b) =>
-      String(a.name || "").localeCompare(String(b.name || ""), "ja"),
-    );
+    menuCategories = Array.isArray(menu.categories) ? menu.categories : [];
     renderList();
-    if (menuItems.length === 0) {
+    if (countMenuItems(menuCategories) === 0) {
       log("メニュー商品が0件です。サイドバー「メニュー」で商品を登録してください。");
     } else {
       log("");

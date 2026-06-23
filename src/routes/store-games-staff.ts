@@ -7,6 +7,7 @@ import {
   parseStoreGameRewardMenuItemIds,
   validateRewardMenuItemIdsForStore,
 } from "../lib/store-game-rewards.js";
+import { seedStoreGameSamples } from "../lib/store-game-samples.js";
 
 function slugify(raw: string): string {
   return raw
@@ -92,6 +93,32 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
       include: { rewardMenuItem: { select: { id: true, name: true } } },
     });
     return Promise.all(games.map((g) => mapStoreGameStaff(g)));
+  });
+
+  app.post<{ Params: { storeId: string } }>("/stores/:storeId/games/seed-samples", async (req, reply) => {
+    if (!(await assertManager(req, reply))) return;
+    const store = await prisma.store.findUnique({
+      where: { id: req.params.storeId },
+      select: { id: true },
+    });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    try {
+      const result = await seedStoreGameSamples(req.params.storeId);
+      const games = await prisma.storeGame.findMany({
+        where: { storeId: req.params.storeId },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+        include: { rewardMenuItem: { select: { id: true, name: true } } },
+      });
+      return {
+        ok: true,
+        ...result,
+        games: await Promise.all(games.map((g) => mapStoreGameStaff(g))),
+      };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      if (msg === "store not found") return reply.code(404).send({ error: msg });
+      throw e;
+    }
   });
 
   app.post<{ Params: { storeId: string } }>("/stores/:storeId/games", async (req, reply) => {

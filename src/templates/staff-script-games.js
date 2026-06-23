@@ -174,6 +174,22 @@
     modal.setAttribute("aria-hidden", "true");
   }
 
+  async function deleteGameById(id, title) {
+    if (!id) return;
+    const label = title ? "「" + title + "」" : "このゲーム";
+    if (!confirm(label + "を削除しますか？")) return;
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/games/" + encodeURIComponent(id), {
+        method: "DELETE",
+      });
+      closeModal();
+      await loadAll();
+      log("削除しました");
+    } catch (e) {
+      log(e instanceof Error ? e.message : "削除失敗");
+    }
+  }
+
   function renderList() {
     const el = document.getElementById("gamesList");
     if (!games.length) {
@@ -197,6 +213,7 @@
         '</p></div>' +
         '<div class="games-row-actions">' +
         '<button type="button" class="btn-secondary btn-edit" data-id="' + esc(g.id) + '">編集</button>' +
+        '<button type="button" class="btn-danger btn-delete" data-id="' + esc(g.id) + '" data-title="' + esc(g.title) + '">削除</button>' +
         '</div></div>'
       );
     }).join("");
@@ -205,6 +222,11 @@
         const id = btn.getAttribute("data-id");
         const g = games.find((x) => x.id === id);
         if (g) openModal(g);
+      });
+    });
+    el.querySelectorAll(".btn-delete").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        void deleteGameById(btn.getAttribute("data-id"), btn.getAttribute("data-title"));
       });
     });
   }
@@ -227,6 +249,27 @@
 
   document.getElementById("gameKind").addEventListener("change", togglePaidFields);
   document.getElementById("btnAddGame").addEventListener("click", () => openModal(null));
+  document.getElementById("btnSeedGames").addEventListener("click", async () => {
+    if (!confirm("おみくじ・ストップ・ダイス・神経衰弱の4種を登録します。既存の同じ slug は上書き更新されます。")) return;
+    log("登録中…");
+    try {
+      const res = await api("/stores/" + encodeURIComponent(STORE) + "/games/seed-samples", {
+        method: "POST",
+        body: {},
+      });
+      games = Array.isArray(res.games) ? res.games : [];
+      renderList();
+      const parts = [];
+      if (res.created) parts.push("新規 " + res.created + "件");
+      if (res.updated) parts.push("更新 " + res.updated + "件");
+      log(parts.length ? "サンプルゲームを登録しました（" + parts.join(" / ") + "）" : "登録しました");
+      if (Array.isArray(res.warnings) && res.warnings.length) {
+        setTimeout(() => log(res.warnings.join(" / ")), 2500);
+      }
+    } catch (e) {
+      log(e instanceof Error ? e.message : "登録失敗");
+    }
+  });
   document.getElementById("gameModalClose").addEventListener("click", closeModal);
   document.getElementById("gameModalBackdrop").addEventListener("click", closeModal);
   document.getElementById("btnReloadGames").addEventListener("click", () => void loadAll().catch((e) => log(e.message)));
@@ -279,17 +322,8 @@
 
   document.getElementById("btnDeleteGame").addEventListener("click", async () => {
     const id = document.getElementById("gameId").value.trim();
-    if (!id || !confirm("このゲームを削除しますか？")) return;
-    try {
-      await api("/stores/" + encodeURIComponent(STORE) + "/games/" + encodeURIComponent(id), {
-        method: "DELETE",
-      });
-      closeModal();
-      await loadAll();
-      log("削除しました");
-    } catch (e) {
-      log(e instanceof Error ? e.message : "削除失敗");
-    }
+    const title = document.getElementById("gameTitle").value.trim();
+    await deleteGameById(id, title);
   });
 
   void loadAll().catch((e) => log(e.message));

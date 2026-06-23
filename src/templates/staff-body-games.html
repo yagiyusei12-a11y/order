@@ -17,6 +17,7 @@
     </div>
     <div class="row" style="gap:0.5rem;flex-wrap:wrap;margin-top:0.85rem">
       <button type="button" class="btn-primary" id="btnAddGame">ゲームを追加</button>
+      <button type="button" class="btn-secondary" id="btnSeedGames">サンプルゲームを登録</button>
       <button type="button" class="btn-secondary" id="btnReloadGames">再読込</button>
       <span id="gamesLog" class="muted" style="font-size:0.82rem"></span>
     </div>
@@ -89,7 +90,8 @@
   }
   .games-row-title { font-weight:800; margin:0 0 0.15rem; font-size:0.95rem; }
   .games-row-meta { font-size:0.75rem; color:var(--muted); margin:0; line-height:1.45; }
-  .games-row-actions { display:flex; gap:0.35rem; flex-shrink:0; }
+  .games-row-actions { display:flex; gap:0.35rem; flex-shrink:0; flex-wrap:wrap; justify-content:flex-end; }
+  .games-row-actions .btn-danger { font-size:0.78rem; padding:0.35rem 0.55rem; }
   .games-modal[hidden] { display:none !important; }
   .games-modal { position:fixed; inset:0; z-index:1200; display:flex; align-items:center; justify-content:center; padding:1rem; }
   .games-modal__backdrop { position:absolute; inset:0; background:rgba(0,0,0,0.35); }

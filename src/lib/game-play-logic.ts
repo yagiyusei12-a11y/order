@@ -57,3 +57,30 @@ export function gamePlayFeeTaxInclusive(exclusiveYen: number, taxRatePercent: nu
   const rate = Number.isFinite(taxRatePercent) ? taxRatePercent : 10;
   return Math.round(ex * (1 + rate / 100));
 }
+
+export function rollTwoDice(): { dice1: number; dice2: number; sum: number } {
+  const dice1 = randomInt(1, 7);
+  const dice2 = randomInt(1, 7);
+  return { dice1, dice2, sum: dice1 + dice2 };
+}
+
+export function parseDiceTargetConfig(raw: unknown): { targetSum: number } {
+  const o = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const v = o.targetSum;
+  const targetSum =
+    typeof v === "number" && Number.isFinite(v) ? Math.max(2, Math.min(12, Math.round(v))) : 8;
+  return { targetSum };
+}
+
+/** 2個のサイコロ（サーバー側乱数）。合計が targetSum なら成功 */
+export function evaluateDiceTargetWin(configJson: unknown): {
+  won: boolean;
+  dice1: number;
+  dice2: number;
+  sum: number;
+  targetSum: number;
+} {
+  const { targetSum } = parseDiceTargetConfig(configJson);
+  const { dice1, dice2, sum } = rollTwoDice();
+  return { won: sum === targetSum, dice1, dice2, sum, targetSum };
+}

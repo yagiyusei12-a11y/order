@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { verifyGamesHubKey } from "../lib/games-hub-auth.js";
-import { evaluateRandomWin, evaluateSkillWin, gamePlayFeeTaxInclusive } from "../lib/game-play-logic.js";
+import { evaluateDiceTargetWin, evaluateRandomWin, evaluateSkillWin, gamePlayFeeTaxInclusive } from "../lib/game-play-logic.js";
 import { resolveGuestBillingContext } from "../lib/guest-billing-context.js";
 import { broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
 import { evaluatePublicOrderGate } from "../lib/store-order-gate.js";
@@ -334,7 +334,12 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
     }
 
     let won = false;
-    if (game.winMode === "skill") {
+    let diceRoll: { dice1: number; dice2: number; sum: number; targetSum?: number } | null = null;
+    if (game.slug === "dice-eight") {
+      const roll = evaluateDiceTargetWin(game.configJson);
+      won = roll.won;
+      diceRoll = { dice1: roll.dice1, dice2: roll.dice2, sum: roll.sum, targetSum: roll.targetSum };
+    } else if (game.winMode === "skill") {
       won = evaluateSkillWin(game.slug, game.configJson, bodyPayload);
     } else {
       won = evaluateRandomWin(game.winProbabilityPercent);
@@ -354,7 +359,13 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
           where: { id: play.id },
           data: { status: "lost", completedAt: new Date() },
         });
-        return { won: false as const, rewardLineId: null as string | null };
+        return {
+          won: false as const,
+          rewardLineId: null as string | null,
+          ...(diceRoll
+            ? { dice1: diceRoll.dice1, dice2: diceRoll.dice2, diceSum: diceRoll.sum, targetSum: diceRoll.targetSum }
+            : {}),
+        };
       }
 
       const rewardItem = game.rewardMenuItem;
@@ -409,7 +420,14 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
         },
       });
 
-      return { won: true as const, rewardLineId: rewardLine.id, rewardName: rewardItem.name };
+      return {
+        won: true as const,
+        rewardLineId: rewardLine.id,
+        rewardName: rewardItem.name,
+        ...(diceRoll
+          ? { dice1: diceRoll.dice1, dice2: diceRoll.dice2, diceSum: diceRoll.sum, targetSum: diceRoll.targetSum }
+          : {}),
+      };
     }).catch((e: unknown) => {
       const msg = e instanceof Error ? e.message : "";
       if (msg === "NO_REWARD") return { error: "reward not configured" };

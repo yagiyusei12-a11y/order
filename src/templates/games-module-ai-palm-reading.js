@@ -1,4 +1,7 @@
 (function () {
+  const THEMES = ["恋愛", "仕事・キャリア", "金運", "人間関係", "総合運"];
+  const HANDS = ["右手", "左手", "わからない"];
+
   function esc(s) {
     return String(s)
       .replace(/&/g, "&amp;")
@@ -14,10 +17,11 @@
     st.textContent =
       ".af-wrap{width:100%;display:flex;flex-direction:column;gap:0.6rem;text-align:left}" +
       ".af-hint{color:var(--muted);font-size:0.82rem;line-height:1.5;margin:0;text-align:center}" +
+      ".af-tips{font-size:0.75rem;color:var(--muted);line-height:1.5;margin:0;padding:0.5rem 0.55rem;border-radius:8px;background:#1a222c;border:1px solid var(--line)}" +
       ".af-label{font-size:0.72rem;font-weight:800;color:var(--muted);display:block;margin:0 0 0.2rem}" +
       ".af-field{margin:0 0 0.35rem}" +
-      ".af-field input,.af-field textarea{width:100%;padding:0.5rem 0.55rem;border:1px solid var(--line);border-radius:8px;background:#0f1419;color:var(--text);font-size:0.88rem}" +
-      ".af-field textarea{min-height:3rem;resize:vertical}" +
+      ".af-field input,.af-field select,.af-field textarea{width:100%;padding:0.5rem 0.55rem;border:1px solid var(--line);border-radius:8px;background:#0f1419;color:var(--text);font-size:0.88rem}" +
+      ".af-field textarea{min-height:3.5rem;resize:vertical;line-height:1.5}" +
       ".af-photo{border:2px dashed var(--line);border-radius:12px;padding:1rem;text-align:center;background:#121820;cursor:pointer}" +
       ".af-photo img{max-width:100%;max-height:12rem;border-radius:8px;margin-top:0.5rem}" +
       ".af-photo.has-img{border-style:solid;border-color:#f0c060}" +
@@ -25,7 +29,7 @@
       ".af-result h2{font-size:1.15rem;margin:0 0 0.5rem;color:#f0c060;text-align:center}" +
       ".af-sec{margin:0 0 0.55rem}" +
       ".af-sec h3{font-size:0.82rem;margin:0 0 0.2rem;color:#8b9aab}" +
-      ".af-sec p{font-size:0.88rem;line-height:1.55;margin:0;color:var(--text)}" +
+      ".af-sec p{font-size:0.88rem;line-height:1.55;margin:0;color:var(--text);white-space:pre-wrap}" +
       ".af-disc{font-size:0.72rem;color:var(--muted);margin:0.5rem 0 0;line-height:1.45;text-align:center}";
     document.head.appendChild(st);
   }
@@ -42,7 +46,7 @@
     }
     html +=
       '<p class="af-disc">' +
-      esc(aiResult.disclaimer || "※エンタメ占いです。重大な決断の参考にはしないでください。") +
+      esc(aiResult.disclaimer || "※参考程度にお楽しみください。") +
       "</p></div>";
     root.innerHTML = html;
   }
@@ -53,7 +57,7 @@
       const img = new Image();
       img.onload = () => {
         URL.revokeObjectURL(url);
-        const maxPx = 1024;
+        const maxPx = 1280;
         let w = img.width;
         let h = img.height;
         const scale = Math.min(1, maxPx / Math.max(w, h, 1));
@@ -68,7 +72,7 @@
           return;
         }
         ctx.drawImage(img, 0, 0, w, h);
-        resolve({ base64: canvas.toDataURL("image/jpeg", 0.82), mime: "image/jpeg" });
+        resolve({ base64: canvas.toDataURL("image/jpeg", 0.88), mime: "image/jpeg" });
       };
       img.onerror = () => {
         URL.revokeObjectURL(url);
@@ -83,24 +87,34 @@
     mount(ctx) {
       const { game, root, btn, showMsg, showErr, startPaidGame, completePaidGame } = ctx;
       injectStyles();
-      const ex = game.playPriceYen || 150;
+      const ex = game.playPriceYen || 200;
       const inc = game.playPriceYenInclusive || ex;
       let phase = "idle";
       let imageData = null;
 
       function renderForm() {
+        const themeOpts = THEMES.map((t) => '<option value="' + esc(t) + '">' + esc(t) + "</option>").join("");
+        const handOpts = HANDS.map((h) => '<option value="' + esc(h) + '">' + esc(h) + "</option>").join("");
         const preview = imageData
           ? '<img src="' + imageData.base64 + '" alt="手のひら" />'
           : '<span style="font-size:2rem">✋</span><br><span class="af-hint">タップして撮影 / 選択</span>';
         root.innerHTML =
           '<div class="af-wrap">' +
-          '<p class="af-hint">手のひらを明るい場所でパシャリ。<br>AIが手相＋タロット風に仕事運・恋愛運を鑑定します。</p>' +
+          '<p class="af-hint">プロの手相鑑定士AIが、生命線・感情線などを読み解きます。<br>締めに大アルカナタロット1枚の神託も付きます。</p>' +
+          '<p class="af-tips">撮影のコツ: 明るい場所で、手のひら全体が写るように。指先〜手首まで、線がはっきり見える角度で。</p>' +
           '<label class="af-photo' +
           (imageData ? " has-img" : "") +
           '" id="afPhotoBox">' +
           preview +
           '<input id="afFile" type="file" accept="image/*" capture="environment" style="display:none" /></label>' +
-          '<label class="af-field"><span class="af-label">相談（任意）</span><textarea id="afQuestion" maxlength="120" placeholder="例: 転職すべき？恋の行方は？"></textarea></label>' +
+          '<label class="af-field"><span class="af-label">鑑定テーマ</span><select id="afTheme">' +
+          themeOpts +
+          "</select></label>" +
+          '<label class="af-field"><span class="af-label">撮影した手</span><select id="afHand">' +
+          handOpts +
+          '</select></label>' +
+          '<p class="af-hint" style="font-size:0.72rem">※左手＝先天的傾向、右手＝後天的傾向（伝統的な解釈）</p>' +
+          '<label class="af-field"><span class="af-label">相談（任意）</span><textarea id="afQuestion" maxlength="200" placeholder="例: 転職のタイミング、恋の行方、今後半年の運勢"></textarea></label>' +
           "</div>";
         const box = document.getElementById("afPhotoBox");
         const fileInput = document.getElementById("afFile");
@@ -133,7 +147,7 @@
             phase = "form";
             imageData = null;
             renderForm();
-            btn.textContent = "AIに鑑定してもらう";
+            btn.textContent = "本格鑑定を受ける";
             showMsg("参加費を会計に追加しました。", "");
           } catch (e) {
             showErr(e instanceof Error ? e.message : "開始できませんでした");
@@ -146,29 +160,32 @@
             showErr("手のひらの写真を撮影または選択してください");
             return;
           }
+          const theme = document.getElementById("afTheme")?.value || "";
+          const dominantHand = document.getElementById("afHand")?.value || "";
           const question = (document.getElementById("afQuestion")?.value || "").trim();
           btn.disabled = true;
-          btn.textContent = "AIが鑑定中…";
-          root.innerHTML = '<p class="af-hint">手相をAIが読み解いています…</p>';
+          btn.textContent = "手相を読み解き中…";
+          root.innerHTML =
+            '<p class="af-hint">生命線・感情線を分析し、タロットを引いています…</p>';
           try {
             const comma = imageData.base64.indexOf(",");
             const rawB64 = comma >= 0 ? imageData.base64.slice(comma + 1) : imageData.base64;
             const res = await completePaidGame({
               payload: {
-                aiInput: { question: question || undefined },
+                aiInput: { theme, dominantHand, question: question || undefined },
                 imageBase64: rawB64,
                 imageMime: imageData.mime,
               },
             });
             if (res.aiResult) renderAiResult(root, res.aiResult);
-            showMsg("鑑定完了！", "");
+            showMsg("鑑定が完了しました。", "");
             btn.textContent = "もう一度鑑定（" + ex + "円・税抜）";
             phase = "idle";
             imageData = null;
           } catch (e) {
             showErr(e instanceof Error ? e.message : "鑑定に失敗しました");
             renderForm();
-            btn.textContent = "AIに鑑定してもらう";
+            btn.textContent = "本格鑑定を受ける";
           }
           btn.disabled = false;
         }

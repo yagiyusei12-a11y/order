@@ -39,6 +39,8 @@ export type GroupFortuneInput = {
 };
 
 export type PalmReadingInput = {
+  theme: string;
+  dominantHand: string;
   question?: string;
 };
 
@@ -228,8 +230,16 @@ export function parseGroupFortuneInput(raw: unknown): GroupFortuneInput {
 
 export function parsePalmReadingInput(raw: unknown): PalmReadingInput {
   const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
-  const question = typeof o.question === "string" ? o.question.trim().slice(0, 120) : "";
-  return { question: question || undefined };
+  const theme = typeof o.theme === "string" ? o.theme.trim() : "";
+  const dominantHand = typeof o.dominantHand === "string" ? o.dominantHand.trim() : "";
+  const question = typeof o.question === "string" ? o.question.trim().slice(0, 200) : "";
+  if (!PALM_THEMES.includes(theme as (typeof PALM_THEMES)[number])) {
+    throw new Error("鑑定テーマを選んでください");
+  }
+  if (!DOMINANT_HANDS.includes(dominantHand as (typeof DOMINANT_HANDS)[number])) {
+    throw new Error("利き手（撮影した手）を選んでください");
+  }
+  return { theme, dominantHand, question: question || undefined };
 }
 
 const IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -256,7 +266,9 @@ const SERIOUS_DISCLAIMER =
 
 const TAROT_THEMES = ["恋愛", "仕事・キャリア", "金運", "人間関係", "総合運"] as const;
 const ASTRO_THEMES = ["恋愛", "仕事・キャリア", "金運", "総合運"] as const;
+const PALM_THEMES = ["恋愛", "仕事・キャリア", "金運", "人間関係", "総合運"] as const;
 const GENDERS = ["男性", "女性", "答えたくない"] as const;
+const DOMINANT_HANDS = ["右手", "左手", "わからない"] as const;
 
 function parseBirthDate(raw: string): string {
   const birthDate = raw.trim().slice(0, 10);
@@ -360,21 +372,36 @@ export async function runAiFortuneForSlug(
   if (slug === "ai-palm-reading") {
     const input = parsePalmReadingInput(payload.aiInput);
     const image = parsePalmImage(payload);
+    const handNote =
+      input.dominantHand === "左手"
+        ? "左手は先天的・内面の傾向（伝統的解釈）"
+        : input.dominantHand === "右手"
+          ? "右手は後天的・現実に表れる傾向（伝統的解釈）"
+          : "利き手不明のため両面の可能性に触れる";
     const system =
-      "あなたはタロットと手相を組み合わせた占い師です。アップロードされた手のひら写真を手がかりに、仕事運・恋愛運・総合運をそれっぽく読み解きます。" +
-      "実際の手相線を断定しすぎず、ポジティブと具体性のバランスを取る。日本語。" +
+      "あなたは20年以上の経験を持つプロの手相鑑定士であり、タロット（大アルカナ）にも精通しています。" +
+      "アップロードされた手のひら写真から、生命線・感情線（心線）・頭脳線・運命線などを観察し、本格的に鑑定します。" +
+      "線の長さ・深さ・枝分かれ・島・切れ目など、見える要素を具体的に言及してください。見えない線は無理に断定せず正直に述べる。" +
+      "鑑定の締めに大アルカナタロット1枚を「神託」として引き、相談テーマに結びつけてください（カード名・正逆位置を明記）。" +
+      "軽いネタ調は避け、真摯で温かみのある文体。日本語。" +
       JSON_SCHEMA_HINT +
-      " sectionsは4〜5個（仕事運、恋愛運、金運、今月のアドバイス、ラッキーアイテムなど）。";
+      ` disclaimerは「${SERIOUS_DISCLAIMER}」に近い内容。` +
+      " sectionsは6〜8個。必ず「手相の総合印象」「生命線」「感情線」「頭脳線」「鑑定テーマ別の運勢」「タロットからの神訳（カード名）」「開運アドバイス」を含める。";
     const userText =
+      `鑑定テーマ: ${input.theme}\n撮影した手: ${input.dominantHand}（${handNote}）\n` +
       (input.question ? `相談: ${input.question}\n` : "") +
-      "手のひら写真を分析して占ってください。写真が不鮮明でも、エンタメとして楽しい結果を。";
-    return callOpenAiJson(system, [
-      { type: "text", text: userText },
-      {
-        type: "image_url",
-        image_url: { url: `data:${image.mime};base64,${image.base64}` },
-      },
-    ]);
+      "手のひら写真を丁寧に分析し、手相とタロットを組み合わせた本格鑑定をお願いします。";
+    return callOpenAiJson(
+      system,
+      [
+        { type: "text", text: userText },
+        {
+          type: "image_url",
+          image_url: { url: `data:${image.mime};base64,${image.base64}` },
+        },
+      ],
+      { maxTokens: 1500, temperature: 0.7 },
+    );
   }
 
   if (slug === "ai-serious-tarot") {
@@ -440,4 +467,4 @@ export async function runAiFortuneForSlug(
   throw new Error("unknown ai fortune slug");
 }
 
-export { ZODIAC_SIGNS, TAROT_THEMES, ASTRO_THEMES, GENDERS };
+export { ZODIAC_SIGNS, TAROT_THEMES, ASTRO_THEMES, GENDERS, PALM_THEMES, DOMINANT_HANDS };

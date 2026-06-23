@@ -157,10 +157,10 @@ export const STORE_GAME_SAMPLES: StoreGameSampleDef[] = [
   {
     slug: "ai-palm-reading",
     kind: "fortune",
-    title: "AIタロット・手相鑑定",
-    description: "手のひらを撮影してアップロード。AIが仕事運・恋愛運をそれっぽく読み解きます。",
+    title: "本格手相・タロット鑑定",
+    description: "手のひらを撮影。生命線・感情線などを本格鑑定し、大アルカナタロットの神託も添えます。",
     iconEmoji: "✋",
-    playPriceYen: 150,
+    playPriceYen: 200,
     winMode: "random",
     winProbabilityPercent: 100,
     configJson: { aiType: "palm-reading" },

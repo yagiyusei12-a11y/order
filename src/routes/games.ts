@@ -18,6 +18,7 @@ import { broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
 import { evaluatePublicOrderGate } from "../lib/store-order-gate.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
 import { grantGameRewardLine } from "../lib/game-reward-grant.js";
+import { loadGamesHubBillSummary } from "../lib/games-bill-summary.js";
 import {
   filterGrantableRewardItems,
   loadGameRewardMenuItems,
@@ -154,6 +155,23 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
       tableName: session.table?.name ?? "",
       billingSessionId: billing.ctx.billingSessionId,
     };
+  });
+
+  app.get<{
+    Params: { storeId: string };
+    Querystring: { key?: string; token?: string };
+  }>("/games/api/:storeId/bill-summary", async (req, reply) => {
+    if (!(await assertGamesHubAccess(req, reply))) return;
+    const token =
+      typeof req.query.token === "string" && req.query.token.trim()
+        ? req.query.token.trim()
+        : "";
+    if (!token) return reply.code(400).send({ error: "token required" });
+    const summary = await loadGamesHubBillSummary(req.params.storeId, token);
+    if (!summary.ok) {
+      return reply.code(summary.status).send({ error: summary.error });
+    }
+    return summary;
   });
 
   app.post<{ Params: { token: string; gameId: string }; Body: { guestDeviceId?: string } }>(

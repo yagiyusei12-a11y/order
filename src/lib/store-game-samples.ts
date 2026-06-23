@@ -115,6 +115,19 @@ export const STORE_GAME_SAMPLES: StoreGameSampleDef[] = [
     sortOrder: 6,
     rewardCount: 3,
   },
+  {
+    slug: "bill-split",
+    kind: "tool",
+    title: "割り勘計算ツール",
+    description: "卓の会計金額を読み込み、均等・按分・端数切上等いろいろな割り方で計算。",
+    iconEmoji: "🧮",
+    playPriceYen: 0,
+    winMode: "random",
+    winProbabilityPercent: 0,
+    configJson: {},
+    sortOrder: 7,
+    rewardCount: 0,
+  },
 ];
 
 async function pickDefaultRewardMenuItemIds(storeId: string, count: number): Promise<string[]> {

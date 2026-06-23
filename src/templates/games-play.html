@@ -223,6 +223,18 @@
           completePaidGame,
           finishWin,
           goBackToHub,
+          fetchBillSummary: async () => {
+            const token = getToken();
+            if (!token) return null;
+            return api(
+              "/games/api/" +
+                encodeURIComponent(STORE_ID) +
+                "/bill-summary?key=" +
+                encodeURIComponent(HUB_KEY) +
+                "&token=" +
+                encodeURIComponent(token),
+            );
+          },
         };
         mod.mount(ctx);
       } catch (e) {

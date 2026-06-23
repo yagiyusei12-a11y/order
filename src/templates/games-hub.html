@@ -93,9 +93,19 @@
           "/games/api/" + encodeURIComponent(STORE_ID) + "/session?key=" + encodeURIComponent(HUB_KEY) +
           "&token=" + encodeURIComponent(token),
         );
+        let bannerText = "卓「" + (s.tableName || "—") + "」の会計に紐付け済み";
+        try {
+          const bs = await api(
+            "/games/api/" + encodeURIComponent(STORE_ID) + "/bill-summary?key=" + encodeURIComponent(HUB_KEY) +
+            "&token=" + encodeURIComponent(token),
+          );
+          if (bs.totalAvailable && bs.totalYen != null) {
+            bannerText += " · 見込み " + Number(bs.totalYen).toLocaleString("ja-JP") + "円（税込）";
+          }
+        } catch (_) {}
         el.style.display = "block";
         el.className = "banner ok";
-        el.textContent = "卓「" + (s.tableName || "—") + "」の会計に紐付け済み";
+        el.textContent = bannerText;
       } catch (_) {
         el.style.display = "block";
         el.className = "banner warn";

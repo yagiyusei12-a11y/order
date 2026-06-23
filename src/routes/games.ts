@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { verifyGamesHubKey } from "../lib/games-hub-auth.js";
-import { evaluateRandomWin, evaluateSkillWin } from "../lib/game-play-logic.js";
+import { evaluateRandomWin, evaluateSkillWin, gamePlayFeeTaxInclusive } from "../lib/game-play-logic.js";
 import { resolveGuestBillingContext } from "../lib/guest-billing-context.js";
 import { broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
 import { evaluatePublicOrderGate } from "../lib/store-order-gate.js";
@@ -34,18 +34,23 @@ async function assertGamesHubAccess(
   return true;
 }
 
-function mapStoreGamePublic(g: {
-  id: string;
-  kind: string;
-  slug: string;
-  title: string;
-  description: string | null;
-  iconEmoji: string | null;
-  playPriceYen: number;
-  winMode: string;
-  configJson: unknown;
-  rewardMenuItem: { id: string; name: string } | null;
-}) {
+function mapStoreGamePublic(
+  g: {
+    id: string;
+    kind: string;
+    slug: string;
+    title: string;
+    description: string | null;
+    iconEmoji: string | null;
+    playPriceYen: number;
+    winMode: string;
+    configJson: unknown;
+    rewardMenuItem: { id: string; name: string } | null;
+  },
+  taxRatePercent: number,
+) {
+  const exclusive = Math.max(0, Math.round(g.playPriceYen));
+  const inclusive = gamePlayFeeTaxInclusive(exclusive, taxRatePercent);
   return {
     id: g.id,
     kind: g.kind === "fortune" ? "fortune" : "paid",
@@ -53,7 +58,9 @@ function mapStoreGamePublic(g: {
     title: g.title,
     description: g.description,
     iconEmoji: g.iconEmoji,
-    playPriceYen: g.playPriceYen,
+    playPriceYen: exclusive,
+    playPriceTaxMode: "exclusive" as const,
+    playPriceYenInclusive: inclusive,
     winMode: g.winMode === "skill" ? "skill" : "random",
     configJson: g.configJson ?? {},
     rewardMenuItem: g.rewardMenuItem
@@ -69,9 +76,10 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
       if (!(await assertGamesHubAccess(req, reply))) return;
       const store = await prisma.store.findUnique({
         where: { id: req.params.storeId },
-        select: { name: true },
+        select: { name: true, settings: true },
       });
       if (!store) return reply.code(404).send({ error: "store not found" });
+      const st = mergeStoreSettings(store.settings);
       const games = await prisma.storeGame.findMany({
         where: { storeId: req.params.storeId, enabled: true },
         orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
@@ -82,7 +90,8 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
       return {
         storeId: req.params.storeId,
         storeName: store.name,
-        games: games.map(mapStoreGamePublic),
+        taxRatePercent: st.taxRatePercent,
+        games: games.map((g) => mapStoreGamePublic(g, st.taxRatePercent)),
       };
     },
   );
@@ -148,7 +157,7 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
           id: req.params.gameId,
           storeId: tokenSession.storeId,
           enabled: true,
-          kind: "paid",
+          kind: { in: ["paid", "fortune"] },
         },
         include: {
           rewardMenuItem: {
@@ -165,14 +174,16 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
       if (!game) {
         return reply.code(404).send({ error: "game not found" });
       }
-      if (!game.rewardMenuItemId || !game.rewardMenuItem) {
-        return reply.code(400).send({ error: "game reward not configured" });
-      }
-      if (!game.rewardMenuItem.isAvailable) {
-        return reply.code(400).send({ error: "reward item unavailable" });
-      }
-      if (game.rewardMenuItem.stockQty != null && game.rewardMenuItem.stockQty <= 0) {
-        return reply.code(400).send({ error: "reward item out of stock" });
+      if (game.kind === "paid") {
+        if (!game.rewardMenuItemId || !game.rewardMenuItem) {
+          return reply.code(400).send({ error: "game reward not configured" });
+        }
+        if (!game.rewardMenuItem.isAvailable) {
+          return reply.code(400).send({ error: "reward item unavailable" });
+        }
+        if (game.rewardMenuItem.stockQty != null && game.rewardMenuItem.stockQty <= 0) {
+          return reply.code(400).send({ error: "reward item out of stock" });
+        }
       }
 
       const storeRow = await prisma.store.findUnique({
@@ -191,8 +202,9 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
         typeof req.body?.guestDeviceId === "string" && req.body.guestDeviceId.trim()
           ? req.body.guestDeviceId.trim().slice(0, 64)
           : null;
-      const playPrice = Math.max(0, Math.round(game.playPriceYen));
-      const feeName = `${game.title}（参加 ${playPrice}円）`;
+      const playPriceExclusive = Math.max(0, Math.round(game.playPriceYen));
+      const playPriceInclusive = gamePlayFeeTaxInclusive(playPriceExclusive, st.taxRatePercent);
+      const feeName = `${game.title}（参加 ${playPriceExclusive}円・税抜 / 税込${playPriceInclusive}円）`;
 
       const result = await prisma.$transaction(async (tx) => {
         const play = await tx.gamePlay.create({
@@ -218,7 +230,7 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
             orderId: so.id,
             menuItemId: null,
             nameSnapshot: feeName,
-            unitPrice: playPrice,
+            unitPrice: playPriceInclusive,
             qty: 1,
             eatMode: "dine_in",
             taxRatePercent: st.taxRatePercent,
@@ -228,6 +240,8 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
               storeGameId: game.id,
               gamePlayId: play.id,
               gameTitle: game.title,
+              playPriceExclusive,
+              playPriceTaxMode: "exclusive",
             } satisfies Prisma.InputJsonObject,
             ...(guestDeviceId ? { guestDeviceId } : {}),
           },
@@ -238,7 +252,11 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
           data: { feeOrderLineId: feeLine.id },
         });
 
-        return { playId: play.id, playPriceYen: playPrice };
+        return {
+          playId: play.id,
+          playPriceYen: playPriceExclusive,
+          playPriceYenInclusive: playPriceInclusive,
+        };
       });
 
       broadcastOpsSessionUpdated(tokenSession.storeId, billingId);
@@ -298,6 +316,16 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
     }
 
     const game = play.storeGame;
+
+    if (game.kind === "fortune") {
+      await prisma.gamePlay.update({
+        where: { id: play.id },
+        data: { status: "finished", completedAt: new Date() },
+      });
+      broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
+      return { won: false, fortune: true };
+    }
+
     const bodyPayload: Record<string, unknown> = {
       ...(req.body?.payload && typeof req.body.payload === "object" ? req.body.payload : {}),
     };

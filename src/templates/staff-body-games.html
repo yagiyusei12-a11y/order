@@ -2,7 +2,7 @@
   <div class="games-admin-head">
     <h1>ゲーム・占い</h1>
     <p class="muted games-admin-lead">
-      店内POP用の<strong>ゲームハブ</strong>を管理します。有料ゲームは卓のモバイルオーダーQRと連携し、参加費を会計に載せます。成功時は選んだメニューを0円で厨房へ送ります。
+      店内POP用の<strong>ゲームハブ</strong>を管理します。ゲーム・占いとも卓のモバイルオーダーQRと連携し、<strong>参加費（税抜）</strong>を会計に載せます。成功時のプレゼントはメニューマスタから選択し、0円で厨房へ送ります。
     </p>
     <div class="games-hub-qr-row">
       <div>
@@ -35,7 +35,7 @@
         <label class="lbl" for="gameKind">種類</label>
         <select id="gameKind">
           <option value="paid">有料ゲーム</option>
-          <option value="fortune">占い（無料）</option>
+          <option value="fortune">占い（有料）</option>
         </select>
         <label class="lbl" for="gameSlug">slug（英数字・ハイフン）</label>
         <input id="gameSlug" type="text" placeholder="lucky-stop" required />
@@ -45,10 +45,10 @@
         <textarea id="gameDesc" rows="2"></textarea>
         <label class="lbl" for="gameEmoji">アイコン（絵文字）</label>
         <input id="gameEmoji" type="text" maxlength="8" placeholder="🎮" />
+        <label class="lbl" for="gamePrice">参加費（税抜円）</label>
+        <input id="gamePrice" type="number" min="0" step="1" value="80" />
         <div id="paidFields">
-          <label class="lbl" for="gamePrice">参加費（税込円）</label>
-          <input id="gamePrice" type="number" min="0" step="1" value="88" />
-          <label class="lbl" for="gameReward">成功時プレゼント（メニュー）</label>
+          <label class="lbl" for="gameReward">成功時プレゼント（メニューマスタ）</label>
           <select id="gameReward"><option value="">— 選択 —</option></select>
           <label class="lbl" for="gameWinMode">勝敗判定</label>
           <select id="gameWinMode">

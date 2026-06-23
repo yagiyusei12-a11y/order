@@ -32,6 +32,11 @@
     document.getElementById("paidFields").style.display = kind === "paid" ? "block" : "none";
   }
 
+  function formatPriceLabel(g) {
+    const ex = g.playPriceYen != null ? g.playPriceYen : 80;
+    return ex + "円（税抜）";
+  }
+
   function fillRewardSelect() {
     const sel = document.getElementById("gameReward");
     sel.innerHTML = '<option value="">— 選択 —</option>' +
@@ -48,7 +53,7 @@
     document.getElementById("gameTitle").value = game ? game.title : "";
     document.getElementById("gameDesc").value = game && game.description ? game.description : "";
     document.getElementById("gameEmoji").value = game && game.iconEmoji ? game.iconEmoji : "";
-    document.getElementById("gamePrice").value = game ? String(game.playPriceYen) : "88";
+    document.getElementById("gamePrice").value = game ? String(game.playPriceYen) : "80";
     document.getElementById("gameWinMode").value = game && game.winMode === "skill" ? "skill" : "random";
     document.getElementById("gameWinPct").value = game ? String(game.winProbabilityPercent) : "30";
     document.getElementById("gameSort").value = game ? String(game.sortOrder) : "0";
@@ -76,7 +81,7 @@
       return;
     }
     el.innerHTML = games.map((g) => {
-      const kindLabel = g.kind === "fortune" ? "占い" : g.playPriceYen + "円";
+      const kindLabel = g.kind === "fortune" ? "占い · " + formatPriceLabel(g) : formatPriceLabel(g);
       const reward = g.rewardMenuItem ? g.rewardMenuItem.name : "—";
       return (
         '<div class="games-row">' +
@@ -134,14 +139,17 @@
       title: document.getElementById("gameTitle").value.trim(),
       description: document.getElementById("gameDesc").value.trim() || null,
       iconEmoji: document.getElementById("gameEmoji").value.trim() || null,
-      playPriceYen: parseInt(document.getElementById("gamePrice").value, 10) || 88,
+      playPriceYen: parseInt(document.getElementById("gamePrice").value, 10) || 80,
       winMode: document.getElementById("gameWinMode").value,
       winProbabilityPercent: parseInt(document.getElementById("gameWinPct").value, 10) || 30,
       sortOrder: parseInt(document.getElementById("gameSort").value, 10) || 0,
       enabled: document.getElementById("gameEnabled").checked,
       rewardMenuItemId: document.getElementById("gameReward").value || null,
     };
-    if (kind === "fortune") body.rewardMenuItemId = null;
+    if (kind === "paid" && !body.rewardMenuItemId) {
+      log("有料ゲームは成功時プレゼント（メニュー）が必須です");
+      return;
+    }
     try {
       if (id) {
         await api("/stores/" + encodeURIComponent(STORE) + "/games/" + encodeURIComponent(id), {

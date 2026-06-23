@@ -97,7 +97,7 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
     const playPriceYen =
       typeof b.playPriceYen === "number" && Number.isFinite(b.playPriceYen)
         ? Math.max(0, Math.round(b.playPriceYen))
-        : 88;
+        : 80;
     const winProbabilityPercent =
       typeof b.winProbabilityPercent === "number" && Number.isFinite(b.winProbabilityPercent)
         ? Math.max(0, Math.min(100, Math.round(b.winProbabilityPercent)))
@@ -106,8 +106,16 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
       typeof b.rewardMenuItemId === "string" && b.rewardMenuItemId.trim()
         ? b.rewardMenuItemId.trim()
         : null;
-    if (kind === "fortune") rewardMenuItemId = null;
-    if (kind === "paid" && rewardMenuItemId) {
+    if (kind === "paid") {
+      if (!rewardMenuItemId) {
+        return reply.code(400).send({ error: "rewardMenuItemId required for paid games" });
+      }
+      const item = await prisma.menuItem.findFirst({
+        where: { id: rewardMenuItemId, category: { storeId: req.params.storeId } },
+        select: { id: true },
+      });
+      if (!item) return reply.code(400).send({ error: "invalid rewardMenuItemId" });
+    } else if (rewardMenuItemId) {
       const item = await prisma.menuItem.findFirst({
         where: { id: rewardMenuItemId, category: { storeId: req.params.storeId } },
         select: { id: true },
@@ -192,13 +200,16 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
       }
       if (b.kind === "fortune" || b.kind === "paid") {
         data.kind = b.kind;
-        if (b.kind === "fortune") data.rewardMenuItem = { disconnect: true };
       }
       if (b.rewardMenuItemId !== undefined) {
+        const effectiveKind = b.kind === "fortune" || b.kind === "paid" ? b.kind : existing.kind;
         const rid =
           typeof b.rewardMenuItemId === "string" && b.rewardMenuItemId.trim()
             ? b.rewardMenuItemId.trim()
             : null;
+        if (effectiveKind === "paid" && !rid) {
+          return reply.code(400).send({ error: "rewardMenuItemId required for paid games" });
+        }
         if (rid) {
           const item = await prisma.menuItem.findFirst({
             where: { id: rid, category: { storeId: req.params.storeId } },

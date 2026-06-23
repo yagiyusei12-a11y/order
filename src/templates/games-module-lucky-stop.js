@@ -5,7 +5,8 @@
       const { game, root, btn, showMsg, showErr, startPaidGame, completePaidGame } = ctx;
       const cfg = game.configJson && typeof game.configJson === "object" ? game.configJson : {};
       const targetMs = typeof cfg.targetMs === "number" ? cfg.targetMs : 3000;
-      const price = game.playPriceYen || 88;
+      const ex = game.playPriceYen || 88;
+      const inc = game.playPriceYenInclusive || ex;
 
       let running = false;
       let startAt = 0;
@@ -16,7 +17,7 @@
         root.innerHTML =
           '<p class="fortune-text">ちょうど ' + (targetMs / 1000).toFixed(1) + ' 秒で止めよう！</p>' +
           '<div class="timer-display" id="timerVal">' + (ms / 1000).toFixed(2) + '</div>' +
-          '<p class="fortune-text">参加費 ' + price + '円（卓の会計に追加）</p>';
+          '<p class="fortune-text">参加費 ' + ex + '円（税抜）/ 税込' + inc + '円</p>';
       }
 
       function tick() {
@@ -29,7 +30,7 @@
 
       render(0);
       btn.style.display = "block";
-      btn.textContent = "スタート（" + price + "円）";
+      btn.textContent = "スタート（" + ex + "円・税抜）";
 
       btn.onclick = async () => {
         showErr("");
@@ -68,7 +69,7 @@
             if (res.won) {
               showMsg("成功！「" + (res.rewardName || "特典") + "」を厨房へ送りました。", "win");
             } else {
-              showMsg("残念！またチャレンジできます（" + price + "円）。", "lose");
+              showMsg("残念！またチャレンジできます（" + ex + "円・税抜）。", "lose");
             }
             btn.textContent = "一覧へ戻る";
             btn.disabled = false;

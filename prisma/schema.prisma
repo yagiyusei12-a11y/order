@@ -535,7 +535,7 @@ model StoreGame {
   title                 String
   description           String?
   iconEmoji             String?
-  /// 有料ゲームの参加費（税込円）
+  /// 有料ゲームの参加費（税抜円）
   playPriceYen          Int        @default(88)
   /// 成功時に厨房へ送る MenuItem（有料のみ）
   rewardMenuItemId      String?

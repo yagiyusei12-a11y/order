@@ -83,8 +83,8 @@
         el.style.display = "block";
         el.className = "banner warn";
         el.innerHTML =
-          "有料ゲーム（88円等）をプレイするには、<strong>お席のモバイルオーダー用QR</strong>を読み取ってからお試しください。" +
-          '<br><span class="meta">占いはQRなしで遊べます。</span>';
+          "ゲーム・占いをプレイするには、<strong>お席のモバイルオーダー用QR</strong>を読み取ってからお試しください。" +
+          '<br><span class="meta">参加費は卓の会計に追加されます（税抜設定・税込請求）。</span>';
         return;
       }
       try {
@@ -123,9 +123,12 @@
         }
         grid.innerHTML = games.map((g) => {
           const kind = g.kind === "fortune" ? "fortune" : "paid";
+          const ex = g.playPriceYen != null ? g.playPriceYen : 80;
+          const inc = g.playPriceYenInclusive != null ? g.playPriceYenInclusive : ex;
           const badge = kind === "fortune"
-            ? '<span class="badge fortune">占い</span>'
-            : '<span class="badge paid">' + esc(String(g.playPriceYen || 88)) + '円</span>';
+            ? '<span class="badge fortune">占い ' + esc(String(ex)) + '円〜</span>'
+            : '<span class="badge paid">' + esc(String(ex)) + '円（税抜）</span>';
+          const priceNote = '<div class="meta">税込 ' + esc(String(inc)) + '円 / 卓の会計に追加</div>';
           const reward = g.rewardMenuItem && g.rewardMenuItem.name
             ? '<div class="meta">成功で「' + esc(g.rewardMenuItem.name) + '」プレゼント</div>'
             : "";
@@ -135,6 +138,7 @@
             '<div class="card-body">' +
             '<p class="card-title">' + esc(g.title) + badge + '</p>' +
             (g.description ? '<p class="card-desc">' + esc(g.description) + '</p>' : "") +
+            priceNote +
             reward +
             '</div></a>'
           );

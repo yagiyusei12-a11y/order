@@ -50,3 +50,10 @@ export function evaluateSkillWin(
   }
   return false;
 }
+
+/** 参加費（税抜入力）→ 会計行の税込 unitPrice */
+export function gamePlayFeeTaxInclusive(exclusiveYen: number, taxRatePercent: number): number {
+  const ex = Math.max(0, Math.round(exclusiveYen));
+  const rate = Number.isFinite(taxRatePercent) ? taxRatePercent : 10;
+  return Math.round(ex * (1 + rate / 100));
+}

@@ -152,6 +152,34 @@
       else history.back();
     }
 
+    function defaultPlayAgainLabel() {
+      const ex = gameMeta && gameMeta.playPriceYen != null ? gameMeta.playPriceYen : 80;
+      const kind = gameMeta && gameMeta.kind;
+      if (kind === "fortune") return "もう一度（" + ex + "円・税抜）";
+      return "もう一度チャレンジ（" + ex + "円・税抜）";
+    }
+
+    function offerPlayAgain(label, onPlayAgain) {
+      const btn = document.getElementById("btnAction");
+      if (!onPlayAgain) {
+        setupBackButton();
+        return;
+      }
+      btn.style.display = "block";
+      btn.textContent = label || defaultPlayAgainLabel();
+      btn.disabled = false;
+      btn.onclick = async () => {
+        showErr("");
+        btn.disabled = true;
+        try {
+          await onPlayAgain();
+        } catch (e) {
+          showErr(e instanceof Error ? e.message : "開始できませんでした");
+        }
+        btn.disabled = false;
+      };
+    }
+
     function setupBackButton() {
       const btn = document.getElementById("btnAction");
       btn.style.display = "block";
@@ -160,7 +188,7 @@
       btn.onclick = goBackToHub;
     }
 
-    function renderRewardPicker(choices, successPrefix) {
+    function renderRewardPicker(choices, successPrefix, onPlayAgain) {
       const root = document.getElementById("gameRoot");
       const btn = document.getElementById("btnAction");
       btn.style.display = "none";
@@ -189,7 +217,7 @@
             const picked = await pickRewardGame(menuItemId);
             root.innerHTML = '<p class="fortune-text">「' + esc(picked.rewardName || "特典") + '」を厨房へ送りました！</p>';
             showMsg("ご選択ありがとうございます。", "win");
-            setupBackButton();
+            offerPlayAgain(null, onPlayAgain);
           } catch (e) {
             root.querySelectorAll(".reward-pick-btn").forEach((b) => { b.disabled = false; });
             showErr(e instanceof Error ? e.message : "選択に失敗しました");
@@ -198,15 +226,15 @@
       });
     }
 
-    async function finishWin(res, successPrefix) {
+    async function finishWin(res, successPrefix, onPlayAgain) {
       if (!res || !res.won) return false;
       if (res.pickReward && Array.isArray(res.rewardChoices) && res.rewardChoices.length > 0) {
-        renderRewardPicker(res.rewardChoices, successPrefix);
+        renderRewardPicker(res.rewardChoices, successPrefix, onPlayAgain);
         return true;
       }
       const name = res.rewardName || "特典";
       showMsg((successPrefix ? successPrefix + " " : "成功！ ") + "「" + name + "」を厨房へ送りました。", "win");
-      setupBackButton();
+      offerPlayAgain(null, onPlayAgain);
       return true;
     }
 
@@ -229,6 +257,8 @@
           completePaidGame,
           finishWin,
           goBackToHub,
+          offerPlayAgain,
+          defaultPlayAgainLabel,
           fetchBillSummary: async () => {
             const token = getToken();
             if (!token) return null;

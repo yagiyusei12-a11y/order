@@ -2,7 +2,7 @@
   window.__gameModules = window.__gameModules || {};
   window.__gameModules["lucky-stop"] = {
     mount(ctx) {
-      const { game, root, btn, showMsg, showErr, startPaidGame, completePaidGame, finishWin, goBackToHub } = ctx;
+      const { game, root, btn, showMsg, showErr, startPaidGame, completePaidGame, finishWin, offerPlayAgain } = ctx;
       const cfg = game.configJson && typeof game.configJson === "object" ? game.configJson : {};
       const targetMs = typeof cfg.targetMs === "number" ? cfg.targetMs : 3000;
       const ex = game.playPriceYen || 88;
@@ -28,60 +28,77 @@
         raf = requestAnimationFrame(tick);
       }
 
+      async function beginPaidRound() {
+        await startPaidGame();
+        phase = "ready";
+        running = false;
+        render(0);
+        btn.style.display = "block";
+        btn.textContent = "スタート！";
+        showMsg("参加費を会計に追加しました。タイマーを止めてください。", "");
+      }
+
+      function bindMainHandler() {
+        btn.onclick = async () => {
+          showErr("");
+          showMsg("", "");
+          if (phase === "idle") {
+            btn.disabled = true;
+            try {
+              await beginPaidRound();
+            } catch (e) {
+              showErr(e instanceof Error ? e.message : "開始できませんでした");
+            }
+            btn.disabled = false;
+            return;
+          }
+          if (phase === "ready") {
+            phase = "running";
+            running = true;
+            startAt = Date.now();
+            btn.textContent = "ストップ！";
+            tick();
+            return;
+          }
+          if (phase === "running") {
+            running = false;
+            cancelAnimationFrame(raf);
+            const resultMs = Date.now() - startAt;
+            render(resultMs);
+            phase = "done";
+            btn.disabled = true;
+            btn.textContent = "判定中…";
+            try {
+              const res = await completePaidGame({ resultMs });
+              if (res.won) {
+                await finishWin(res, "成功！", retryRound);
+              } else {
+                showMsg("残念！またチャレンジできます（" + ex + "円・税抜）。", "lose");
+                offerPlayAgain(null, retryRound);
+              }
+            } catch (e) {
+              showErr(e instanceof Error ? e.message : "判定に失敗しました");
+              btn.textContent = "ストップ！";
+              btn.disabled = false;
+              phase = "running";
+            }
+          }
+        };
+      }
+
+      async function retryRound() {
+        phase = "idle";
+        running = false;
+        cancelAnimationFrame(raf);
+        render(0);
+        bindMainHandler();
+        await beginPaidRound();
+      }
+
       render(0);
       btn.style.display = "block";
       btn.textContent = "スタート（" + ex + "円・税抜）";
-
-      btn.onclick = async () => {
-        showErr("");
-        showMsg("", "");
-        if (phase === "idle") {
-          btn.disabled = true;
-          try {
-            await startPaidGame();
-            phase = "ready";
-            btn.textContent = "スタート！";
-            showMsg("参加費を会計に追加しました。タイマーを止めてください。", "");
-          } catch (e) {
-            showErr(e instanceof Error ? e.message : "開始できませんでした");
-          }
-          btn.disabled = false;
-          return;
-        }
-        if (phase === "ready") {
-          phase = "running";
-          running = true;
-          startAt = Date.now();
-          btn.textContent = "ストップ！";
-          tick();
-          return;
-        }
-        if (phase === "running") {
-          running = false;
-          cancelAnimationFrame(raf);
-          const resultMs = Date.now() - startAt;
-          render(resultMs);
-          phase = "done";
-          btn.disabled = true;
-          btn.textContent = "判定中…";
-          try {
-            const res = await completePaidGame({ resultMs });
-            if (res.won) {
-              await finishWin(res, "成功！");
-            } else {
-              showMsg("残念！またチャレンジできます（" + ex + "円・税抜）。", "lose");
-              btn.textContent = "一覧へ戻る";
-              btn.disabled = false;
-              btn.onclick = goBackToHub;
-            }
-          } catch (e) {
-            showErr(e instanceof Error ? e.message : "判定に失敗しました");
-            btn.textContent = "ストップ！";
-            btn.disabled = false;
-            phase = "running";
-          }
-        }
-      };
+      bindMainHandler();
     },
   };
 })();

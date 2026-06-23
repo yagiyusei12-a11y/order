@@ -11,7 +11,7 @@
   window.__gameModules = window.__gameModules || {};
   window.__gameModules["juggler-slot"] = {
     mount(ctx) {
-      const { game, root, btn, showMsg, showErr, startPaidGame, completePaidGame, finishWin, goBackToHub } = ctx;
+      const { game, root, btn, showMsg, showErr, startPaidGame, completePaidGame, finishWin, offerPlayAgain } = ctx;
       const ex = game.playPriceYen != null ? game.playPriceYen : 80;
       const inc = game.playPriceYenInclusive != null ? game.playPriceYenInclusive : ex;
 
@@ -100,60 +100,75 @@
         renderCabinet(reels, false, win ? "GOGOGO！大当たり！！" : "残念…ハズレ", win);
       }
 
+      async function beginPaidRound() {
+        await startPaidGame();
+        phase = "ready";
+        spinning = false;
+        renderCabinet(null, false, "SPIN！", false);
+        btn.style.display = "block";
+        btn.textContent = "スピン！";
+        showMsg("参加費を会計に追加しました。スピンしてください！", "");
+      }
+
+      function bindMainHandler() {
+        btn.onclick = async () => {
+          showErr("");
+          showMsg("", "");
+          if (phase === "idle") {
+            btn.disabled = true;
+            try {
+              await beginPaidRound();
+            } catch (e) {
+              showErr(e instanceof Error ? e.message : "開始できませんでした");
+            }
+            btn.disabled = false;
+            return;
+          }
+          if (phase === "ready" && !spinning) {
+            spinning = true;
+            btn.disabled = true;
+            btn.textContent = "回転中…";
+            try {
+              renderCabinet(
+                [randomSpinSymbol(), randomSpinSymbol(), randomSpinSymbol()],
+                true,
+                "回転中…",
+                false,
+              );
+              const res = await completePaidGame({ payload: { spun: true } });
+              const reels = Array.isArray(res.slotReels) ? res.slotReels : ["cherry", "cherry", "cherry"];
+              await animateToResult(reels);
+              if (res.won) {
+                await finishWin(res, "大当たり！7-7-7！", retryRound);
+              } else {
+                const labels = reels.map((id) => (SYMBOLS[id] ? SYMBOLS[id].label : id)).join(" - ");
+                showMsg("ハズレ… " + labels, "lose");
+                phase = "done";
+                offerPlayAgain(null, retryRound);
+              }
+            } catch (e) {
+              showErr(e instanceof Error ? e.message : "判定に失敗しました");
+              phase = "ready";
+              btn.textContent = "スピン！";
+              btn.disabled = false;
+            }
+            spinning = false;
+          }
+        };
+      }
+
+      async function retryRound() {
+        phase = "idle";
+        spinning = false;
+        renderIntro();
+        bindMainHandler();
+        await beginPaidRound();
+      }
+
       renderIntro();
       btn.style.display = "block";
       btn.textContent = "プレイする（" + ex + "円・税抜）";
-
-      btn.onclick = async () => {
-        showErr("");
-        showMsg("", "");
-        if (phase === "idle") {
-          btn.disabled = true;
-          try {
-            await startPaidGame();
-            phase = "ready";
-            renderCabinet(null, false, "SPIN！", false);
-            btn.textContent = "スピン！";
-            showMsg("参加費を会計に追加しました。スピンしてください！", "");
-          } catch (e) {
-            showErr(e instanceof Error ? e.message : "開始できませんでした");
-          }
-          btn.disabled = false;
-          return;
-        }
-        if (phase === "ready" && !spinning) {
-          spinning = true;
-          btn.disabled = true;
-          btn.textContent = "回転中…";
-          try {
-            renderCabinet(
-              [randomSpinSymbol(), randomSpinSymbol(), randomSpinSymbol()],
-              true,
-              "回転中…",
-              false,
-            );
-            const res = await completePaidGame({ payload: { spun: true } });
-            const reels = Array.isArray(res.slotReels) ? res.slotReels : ["cherry", "cherry", "cherry"];
-            await animateToResult(reels);
-            if (res.won) {
-              await finishWin(res, "大当たり！7-7-7！");
-            } else {
-              const labels = reels.map((id) => (SYMBOLS[id] ? SYMBOLS[id].label : id)).join(" - ");
-              showMsg("ハズレ… " + labels + "。またチャレンジ（" + ex + "円・税抜）", "lose");
-              btn.textContent = "一覧へ戻る";
-              btn.disabled = false;
-              btn.onclick = goBackToHub;
-            }
-            phase = "done";
-          } catch (e) {
-            showErr(e instanceof Error ? e.message : "判定に失敗しました");
-            phase = "ready";
-            btn.textContent = "スピン！";
-            btn.disabled = false;
-          }
-          spinning = false;
-        }
-      };
+      bindMainHandler();
     },
   };
 })();

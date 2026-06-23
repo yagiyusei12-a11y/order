@@ -2,7 +2,7 @@
   window.__gameModules = window.__gameModules || {};
   window.__gameModules["surface-tension"] = {
     mount(ctx) {
-      const { game, root, btn, showMsg, showErr, startPaidGame, completePaidGame, finishWin, goBackToHub } = ctx;
+      const { game, root, btn, showMsg, showErr, startPaidGame, completePaidGame, finishWin, offerPlayAgain } = ctx;
       const ex = game.playPriceYen != null ? game.playPriceYen : 100;
       const inc = game.playPriceYenInclusive != null ? game.playPriceYenInclusive : ex;
 
@@ -157,7 +157,11 @@
           const target = res.targetFillPercent != null ? res.targetFillPercent : targetFill;
           const stop = res.stopFillPercent != null ? res.stopFillPercent : stopFill;
           if (res.won) {
-            await finishWin(res, "ぴったり！ " + stop.toFixed(1) + "%（GOAL " + target.toFixed(1) + "%）");
+            await finishWin(
+              res,
+              "ぴったり！ " + stop.toFixed(1) + "%（GOAL " + target.toFixed(1) + "%）",
+              startRound,
+            );
           } else {
             const over = stop > target + 1;
             showMsg(
@@ -165,15 +169,10 @@
                 stop.toFixed(1) +
                 "%（GOAL " +
                 target.toFixed(1) +
-                "%）。またチャレンジ（" +
-                ex +
-                "円・税抜）",
+                "%）",
               "lose",
             );
-            btn.style.display = "block";
-            btn.textContent = "一覧へ戻る";
-            btn.disabled = false;
-            btn.onclick = goBackToHub;
+            offerPlayAgain(null, startRound);
           }
         } catch (e) {
           showErr(e instanceof Error ? e.message : "判定に失敗しました");
@@ -185,27 +184,32 @@
         }
       }
 
+      async function startRound() {
+        showErr("");
+        showMsg("", "");
+        const res = await startPaidGame();
+        targetFill = typeof res.targetFillPercent === "number" ? res.targetFillPercent : 97;
+        pourRate =
+          typeof res.pourRatePercentPerSec === "number" ? res.pourRatePercentPerSec : 38;
+        fill = 0;
+        pouring = false;
+        finished = false;
+        activePointerId = null;
+        phase = "playing";
+        renderPlay();
+        btn.style.display = "none";
+        showMsg("GOALラインでぴったり止めてください！", "");
+      }
+
       renderIntro();
       btn.style.display = "block";
       btn.textContent = "プレイする（" + ex + "円・税抜）";
 
       btn.onclick = async () => {
         if (phase !== "idle") return;
-        showErr("");
-        showMsg("", "");
         btn.disabled = true;
         try {
-          const res = await startPaidGame();
-          targetFill = typeof res.targetFillPercent === "number" ? res.targetFillPercent : 97;
-          pourRate =
-            typeof res.pourRatePercentPerSec === "number" ? res.pourRatePercentPerSec : 38;
-          fill = 0;
-          pouring = false;
-          finished = false;
-          phase = "playing";
-          renderPlay();
-          btn.style.display = "none";
-          showMsg("GOALラインでぴったり止めてください！", "");
+          await startRound();
         } catch (e) {
           showErr(e instanceof Error ? e.message : "開始できませんでした");
         }

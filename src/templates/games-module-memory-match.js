@@ -2,7 +2,7 @@
   window.__gameModules = window.__gameModules || {};
   window.__gameModules["memory-match"] = {
     mount(ctx) {
-      const { game, root, btn, showMsg, showErr, startPaidGame, completePaidGame, finishWin, goBackToHub } = ctx;
+      const { game, root, btn, showMsg, showErr, startPaidGame, completePaidGame, finishWin, offerPlayAgain } = ctx;
       const cfg = game.configJson && typeof game.configJson === "object" ? game.configJson : {};
       const defaultLimit = typeof cfg.timeLimitMs === "number" ? cfg.timeLimitMs : 10000;
       const defaultPairs = typeof cfg.pairCount === "number" ? cfg.pairCount : 7;
@@ -130,6 +130,7 @@
             await finishWin(
               res,
               "クリア！ " + ((res.elapsedMs || elapsedMs) / 1000).toFixed(1) + "秒で全ペア成立。",
+              startRound,
             );
           } else {
             showMsg(
@@ -142,9 +143,8 @@
                 "秒）",
               "lose",
             );
-            btn.textContent = "一覧へ戻る";
-            btn.disabled = false;
-            btn.onclick = goBackToHub;
+            phase = "idle";
+            offerPlayAgain(null, startRound);
           }
         } catch (e) {
           showErr(e instanceof Error ? e.message : "判定に失敗しました");
@@ -212,18 +212,22 @@
         showMsg("スタート！制限時間内に全ペアを揃えてください。", "");
       }
 
+      async function startRound() {
+        showErr("");
+        showMsg("", "");
+        const res = await startPaidGame();
+        beginPlay(res);
+      }
+
       renderIntro();
       btn.style.display = "block";
       btn.textContent = "プレイする（" + ex + "円・税抜）";
 
       btn.onclick = async () => {
         if (phase !== "idle") return;
-        showErr("");
-        showMsg("", "");
         btn.disabled = true;
         try {
-          const res = await startPaidGame();
-          beginPlay(res);
+          await startRound();
         } catch (e) {
           showErr(e instanceof Error ? e.message : "開始できませんでした");
         }

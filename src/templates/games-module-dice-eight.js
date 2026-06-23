@@ -7,7 +7,7 @@
   window.__gameModules = window.__gameModules || {};
   window.__gameModules["dice-eight"] = {
     mount(ctx) {
-      const { game, root, btn, showMsg, showErr, startPaidGame, completePaidGame, finishWin, goBackToHub } = ctx;
+      const { game, root, btn, showMsg, showErr, startPaidGame, completePaidGame, finishWin, offerPlayAgain } = ctx;
       const cfg = game.configJson && typeof game.configJson === "object" ? game.configJson : {};
       const targetSum = typeof cfg.targetSum === "number" ? cfg.targetSum : 8;
       const ex = game.playPriceYen != null ? game.playPriceYen : 80;
@@ -115,14 +115,12 @@
             const sum = res.diceSum != null ? res.diceSum : d1 + d2;
             renderDice(d1, d2, false);
             if (res.won) {
-              await finishWin(res, "大成功！合計 " + sum + "！");
+              await finishWin(res, "大成功！合計 " + sum + "！", retryRound);
             } else {
-              showMsg("合計 " + sum + "… 残念！またチャレンジ（" + ex + "円・税抜）", "lose");
-              btn.textContent = "一覧へ戻る";
-              btn.disabled = false;
-              btn.onclick = goBackToHub;
+              showMsg("合計 " + sum + "… 残念！", "lose");
+              phase = "done";
+              offerPlayAgain(null, retryRound);
             }
-            phase = "done";
           } catch (e) {
             showErr(e instanceof Error ? e.message : "判定に失敗しました");
             phase = "ready";
@@ -167,31 +165,49 @@
         startMotionListen();
       }
 
+      async function beginPaidRound() {
+        await startPaidGame();
+        phase = "ready";
+        rolling = false;
+        renderShakePrompt();
+        await requestMotionAndListen();
+        showMsg("参加費を会計に追加しました。振ってください！", "");
+      }
+
+      function bindMainHandler() {
+        btn.onclick = async () => {
+          showErr("");
+          showMsg("", "");
+          if (phase === "idle") {
+            btn.disabled = true;
+            try {
+              await beginPaidRound();
+            } catch (e) {
+              showErr(e instanceof Error ? e.message : "開始できませんでした");
+            }
+            btn.disabled = false;
+            return;
+          }
+          if (phase === "ready") {
+            onShakeDetected();
+          }
+        };
+      }
+
+      async function retryRound() {
+        stopMotion();
+        phase = "idle";
+        rolling = false;
+        shakeCount = 0;
+        renderIntro();
+        bindMainHandler();
+        await beginPaidRound();
+      }
+
       renderIntro();
       btn.style.display = "block";
       btn.textContent = "プレイする（" + ex + "円・税抜）";
-
-      btn.onclick = async () => {
-        showErr("");
-        showMsg("", "");
-        if (phase === "idle") {
-          btn.disabled = true;
-          try {
-            await startPaidGame();
-            phase = "ready";
-            renderShakePrompt();
-            await requestMotionAndListen();
-            showMsg("参加費を会計に追加しました。振ってください！", "");
-          } catch (e) {
-            showErr(e instanceof Error ? e.message : "開始できませんでした");
-          }
-          btn.disabled = false;
-          return;
-        }
-        if (phase === "ready") {
-          onShakeDetected();
-        }
-      };
+      bindMainHandler();
     },
   };
 })();

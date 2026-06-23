@@ -19,6 +19,9 @@
       let activePointerId = null;
       let pourSpeedMul = 1;
       let nextSpeedChangeAt = 0;
+      let lastPourMul = 1;
+      const POUR_DIFFICULTY = 1.4;
+      const RELEASE_LAG_SEC = 0.14;
 
       function injectStyles() {
         if (document.getElementById("surface-tension-styles")) return;
@@ -34,13 +37,11 @@
           ".st-mug{position:absolute;inset:0;border:3px solid #d8dee8;border-radius:0 0 18px 18px;background:linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02));overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06),0 10px 24px rgba(0,0,0,0.35)}" +
           ".st-mug::before{content:'';position:absolute;top:12%;right:-18%;width:28%;height:22%;border:3px solid #d8dee8;border-left:none;border-radius:0 14px 14px 0}" +
           ".st-beer{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(180deg,#ffcc55 0%,#e8a820 38%,#c98512 100%);transition:height 0.05s linear}" +
-          ".st-foam{position:absolute;left:0;right:0;height:8%;background:linear-gradient(180deg,#fffef8,#f5efd8);opacity:0.95;border-radius:8px 8px 0 0;box-shadow:0 -2px 8px rgba(255,255,255,0.25)}" +
-          ".st-bubbles{position:absolute;inset:0;pointer-events:none;background-image:radial-gradient(circle at 20% 80%,rgba(255,255,255,0.35) 0 2px,transparent 3px),radial-gradient(circle at 70% 60%,rgba(255,255,255,0.25) 0 1.5px,transparent 2.5px);animation:stBubble 1.2s linear infinite}" +
+          ".st-bubbles{position:absolute;inset:0;pointer-events:none;opacity:0.45;background-image:radial-gradient(circle at 20% 80%,rgba(255,255,255,0.35) 0 2px,transparent 3px),radial-gradient(circle at 70% 60%,rgba(255,255,255,0.25) 0 1.5px,transparent 2.5px);animation:stBubble 1.2s linear infinite}" +
           ".st-ok-zone{position:absolute;left:-5%;right:-5%;background:rgba(110,231,160,0.2);border-top:2px dashed rgba(110,231,160,0.9);border-bottom:2px dashed rgba(110,231,160,0.9);z-index:2;pointer-events:none}" +
           ".st-ok-zone-label{position:absolute;left:0;top:50%;transform:translateY(-50%);font-size:0.62rem;font-weight:900;color:#6ee7a0;background:rgba(12,18,24,0.92);padding:0.12rem 0.3rem;border-radius:4px;line-height:1.3;white-space:nowrap}" +
           ".st-target{position:absolute;left:-6%;right:-6%;height:2px;background:#f0c060;box-shadow:0 0 6px rgba(240,192,96,0.75);z-index:3}" +
           ".st-target::after{content:attr(data-label);position:absolute;right:0;top:-1.35rem;font-size:0.68rem;font-weight:800;color:#f0c060;white-space:nowrap}" +
-          ".st-beer.st-over .st-foam{background:linear-gradient(180deg,#ffe8e8,#ffc8c8)}" +
           ".st-speed{font-size:0.8rem;font-weight:800;color:#8b9aab;text-align:center;min-height:1.1rem}" +
           ".st-speed.fast{color:#ffb4b4}" +
           ".st-speed.slow{color:#8ec8ff}" +
@@ -63,7 +64,7 @@
         root.innerHTML =
           '<div class="st-wrap">' +
           '<p class="st-hint">画面を<strong>長押し</strong>でビールを注ぎ、<strong>指を離して</strong>止めよう。<br>緑の<strong>OKゾーン</strong>の中で止めたら成功！</p>' +
-          '<p class="st-hint">注ぎの速さは<strong>ランダムに変化</strong>します。タイミングに注意！</p>' +
+          '<p class="st-hint">注ぎ中は<strong>％が見えません</strong>。緑のOKゾーンを目安に！</p>' +
           '<p class="st-hint">参加費 ' + ex + "円（税抜）/ 税込" + inc + "円</p></div>";
       }
 
@@ -100,7 +101,6 @@
           '<div class="st-beer" id="stBeer" style="height:' +
           fill +
           '%">' +
-          '<div class="st-foam" id="stFoam"></div>' +
           '<div class="st-bubbles"></div></div>' +
           '<div class="st-target" id="stTarget" style="bottom:' +
           targetFill +
@@ -137,6 +137,9 @@
           activePointerId = null;
           pourZoneEl.classList.remove("active");
           cancelAnimationFrame(raf);
+          const lagMul = lastPourMul;
+          fill = Math.min(100, fill + pourRate * POUR_DIFFICULTY * lagMul * RELEASE_LAG_SEC);
+          updateVisuals(false);
           updateSpeedDisplay(1, false);
           void submitResult();
         }
@@ -152,10 +155,10 @@
 
       function currentPourMultiplier(now) {
         if (now >= nextSpeedChangeAt) {
-          pourSpeedMul = 0.48 + Math.random() * 1.02;
-          nextSpeedChangeAt = now + 260 + Math.random() * 540;
+          pourSpeedMul = 0.25 + Math.random() * 1.55;
+          nextSpeedChangeAt = now + 160 + Math.random() * 320;
         }
-        const wobble = 0.88 + 0.12 * Math.sin(now / 150);
+        const wobble = 0.82 + 0.18 * Math.sin(now / 110);
         return pourSpeedMul * wobble;
       }
 
@@ -167,10 +170,16 @@
           el.className = "st-speed";
           return;
         }
-        if (mul < 0.72) {
+        if (mul < 0.65) {
+          el.textContent = "注ぎ: とても遅い ↓";
+          el.className = "st-speed slow";
+        } else if (mul < 0.88) {
           el.textContent = "注ぎ: 遅い ↓";
           el.className = "st-speed slow";
-        } else if (mul > 1.18) {
+        } else if (mul > 1.45) {
+          el.textContent = "注ぎ: とても速い ↑↑";
+          el.className = "st-speed fast";
+        } else if (mul > 1.12) {
           el.textContent = "注ぎ: 速い ↑";
           el.className = "st-speed fast";
         } else {
@@ -179,10 +188,11 @@
         }
       }
 
-      function updateVisuals() {
+      function updateVisuals(showFill) {
         const beer = document.getElementById("stBeer");
         const meter = document.getElementById("stMeter");
         const z = zoneBounds();
+        const hidePct = pouring && showFill === false;
         if (beer) {
           beer.style.height = fill + "%";
           beer.classList.toggle("st-over", fill > z.hi + 0.05);
@@ -190,7 +200,7 @@
         if (meter) {
           meter.innerHTML =
             '<span class="st-now">' +
-            fill.toFixed(1) +
+            (hidePct ? "—" : fill.toFixed(1)) +
             '%</span><span class="st-sub">OKゾーン ' +
             z.lo.toFixed(1) +
             "〜" +
@@ -207,9 +217,10 @@
         const dt = Math.max(0, (now - lastTs) / 1000);
         lastTs = now;
         const mul = currentPourMultiplier(now);
+        lastPourMul = mul;
         updateSpeedDisplay(mul, true);
-        fill = Math.min(100, fill + pourRate * mul * dt);
-        updateVisuals();
+        fill = Math.min(100, fill + pourRate * POUR_DIFFICULTY * mul * dt);
+        updateVisuals(false);
         if (fill >= 100) {
           pouring = false;
           if (pourZoneEl) pourZoneEl.classList.remove("active");

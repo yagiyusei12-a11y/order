@@ -140,6 +140,43 @@ export function parseDiceTargetConfig(raw: unknown): { targetSum: number } {
   return { targetSum };
 }
 
+function rollDiceForTargetSum(targetSum: number): {
+  won: boolean;
+  dice1: number;
+  dice2: number;
+  sum: number;
+  targetSum: number;
+} {
+  const combos: [number, number][] = [];
+  for (let dice1 = 1; dice1 <= 6; dice1 += 1) {
+    for (let dice2 = 1; dice2 <= 6; dice2 += 1) {
+      if (dice1 + dice2 === targetSum) combos.push([dice1, dice2]);
+    }
+  }
+  if (combos.length === 0) {
+    const roll = rollTwoDice();
+    return { won: roll.sum === targetSum, ...roll, targetSum };
+  }
+  const [dice1, dice2] = combos[randomInt(combos.length)]!;
+  return { won: true, dice1, dice2, sum: targetSum, targetSum };
+}
+
+function rollDiceAvoidingTargetSum(targetSum: number): {
+  won: boolean;
+  dice1: number;
+  dice2: number;
+  sum: number;
+  targetSum: number;
+} {
+  for (let i = 0; i < 40; i += 1) {
+    const { dice1, dice2, sum } = rollTwoDice();
+    if (sum !== targetSum) return { won: false, dice1, dice2, sum, targetSum };
+  }
+  const dice1 = 1;
+  const dice2 = targetSum === 2 ? 6 : 1;
+  return { won: false, dice1, dice2, sum: dice1 + dice2, targetSum };
+}
+
 /** 2個のサイコロ（サーバー側乱数）。合計が targetSum なら成功 */
 export function evaluateDiceTargetWin(configJson: unknown): {
   won: boolean;
@@ -151,6 +188,21 @@ export function evaluateDiceTargetWin(configJson: unknown): {
   const { targetSum } = parseDiceTargetConfig(configJson);
   const { dice1, dice2, sum } = rollTwoDice();
   return { won: sum === targetSum, dice1, dice2, sum, targetSum };
+}
+
+/** winMode=random のときは当選率%、skill のときは出目判定 */
+export function resolveDiceOutcome(
+  configJson: unknown,
+  winMode: StoreGameWinMode,
+  winProbabilityPercent: number,
+): ReturnType<typeof evaluateDiceTargetWin> {
+  if (winMode === "random") {
+    const { targetSum } = parseDiceTargetConfig(configJson);
+    return evaluateRandomWin(winProbabilityPercent)
+      ? rollDiceForTargetSum(targetSum)
+      : rollDiceAvoidingTargetSum(targetSum);
+  }
+  return evaluateDiceTargetWin(configJson);
 }
 
 export type JugglerSlotSymbol = "seven" | "bar" | "bell" | "cherry" | "replay";
@@ -195,6 +247,18 @@ function rollJugglerReel(weights: JugglerSlotWeights): JugglerSlotSymbol {
   return entries[entries.length - 1]![0];
 }
 
+function rollNonWinningJugglerReels(weights: JugglerSlotWeights): [JugglerSlotSymbol, JugglerSlotSymbol, JugglerSlotSymbol] {
+  for (let i = 0; i < 40; i += 1) {
+    const reels: [JugglerSlotSymbol, JugglerSlotSymbol, JugglerSlotSymbol] = [
+      rollJugglerReel(weights),
+      rollJugglerReel(weights),
+      rollJugglerReel(weights),
+    ];
+    if (!(reels[0] === "seven" && reels[1] === "seven" && reels[2] === "seven")) return reels;
+  }
+  return ["cherry", "bar", "bell"];
+}
+
 /** ジャグラー風3リール（サーバー側乱数）。7-7-7 で成功 */
 export function evaluateJugglerSlotWin(configJson: unknown): {
   won: boolean;
@@ -207,4 +271,20 @@ export function evaluateJugglerSlotWin(configJson: unknown): {
     rollJugglerReel(weights),
   ];
   return { won: reels[0] === "seven" && reels[1] === "seven" && reels[2] === "seven", reels };
+}
+
+/** winMode=random のときは当選率%（リール表示は結果に合わせる）、skill のときは7-7-7 */
+export function resolveJugglerOutcome(
+  configJson: unknown,
+  winMode: StoreGameWinMode,
+  winProbabilityPercent: number,
+): ReturnType<typeof evaluateJugglerSlotWin> {
+  if (winMode === "random") {
+    const weights = parseJugglerSlotWeights(configJson);
+    const won = evaluateRandomWin(winProbabilityPercent);
+    return won
+      ? { won: true, reels: ["seven", "seven", "seven"] }
+      : { won: false, reels: rollNonWinningJugglerReels(weights) };
+  }
+  return evaluateJugglerSlotWin(configJson);
 }

@@ -3,13 +3,13 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { verifyGamesHubKey } from "../lib/games-hub-auth.js";
 import {
-  evaluateDiceTargetWin,
-  evaluateJugglerSlotWin,
   evaluateRandomWin,
   evaluateSkillWin,
   evaluateSurfaceTensionWin,
   gamePlayFeeTaxInclusive,
   parseSurfaceTensionConfig,
+  resolveDiceOutcome,
+  resolveJugglerOutcome,
   targetFillPercentForPlay,
 } from "../lib/game-play-logic.js";
 import { buildMemoryMatchDeck, evaluateMemoryMatchWin } from "../lib/memory-match-deck.js";
@@ -439,15 +439,23 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
 
     let won = false;
     let diceRoll: { dice1: number; dice2: number; sum: number; targetSum?: number } | null = null;
-    let slotRoll: ReturnType<typeof evaluateJugglerSlotWin> | null = null;
+    let slotRoll: ReturnType<typeof resolveJugglerOutcome> | null = null;
     let memoryResult: ReturnType<typeof evaluateMemoryMatchWin> | null = null;
     let surfaceResult: ReturnType<typeof evaluateSurfaceTensionWin> | null = null;
     if (game.slug === "dice-eight") {
-      const roll = evaluateDiceTargetWin(game.configJson);
+      const roll = resolveDiceOutcome(
+        game.configJson,
+        game.winMode === "skill" ? "skill" : "random",
+        game.winProbabilityPercent,
+      );
       won = roll.won;
       diceRoll = { dice1: roll.dice1, dice2: roll.dice2, sum: roll.sum, targetSum: roll.targetSum };
     } else if (game.slug === "juggler-slot") {
-      slotRoll = evaluateJugglerSlotWin(game.configJson);
+      slotRoll = resolveJugglerOutcome(
+        game.configJson,
+        game.winMode === "skill" ? "skill" : "random",
+        game.winProbabilityPercent,
+      );
       won = slotRoll.won;
     } else if (game.slug === "memory-match") {
       memoryResult = evaluateMemoryMatchWin(game.configJson, bodyPayload);

@@ -1,4 +1,5 @@
-import { randomInt } from "node:crypto";
+import { createHmac, randomInt } from "node:crypto";
+import { jwtSecret } from "../config.js";
 
 export type StoreGameWinMode = "random" | "skill";
 
@@ -38,15 +39,79 @@ export function evaluateLuckyStopWin(config: LuckyStopConfig, resultMs: number):
   return Math.abs(ms - c.targetMs) <= c.toleranceMs;
 }
 
+export type SurfaceTensionConfig = {
+  targetMinPercent?: number;
+  targetMaxPercent?: number;
+  tolerancePercent?: number;
+  pourRatePercentPerSec?: number;
+};
+
+export function parseSurfaceTensionConfig(raw: unknown): Required<SurfaceTensionConfig> {
+  const o = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const num = (k: string, def: number, min: number, max: number) => {
+    const v = o[k];
+    const n = typeof v === "number" && Number.isFinite(v) ? Math.round(v * 10) / 10 : def;
+    return Math.max(min, Math.min(max, n));
+  };
+  const targetMinPercent = num("targetMinPercent", 95, 50, 99);
+  const targetMaxPercent = num("targetMaxPercent", 99, targetMinPercent, 100);
+  return {
+    targetMinPercent,
+    targetMaxPercent,
+    tolerancePercent: num("tolerancePercent", 0.5, 0.1, 3),
+    pourRatePercentPerSec: num("pourRatePercentPerSec", 38, 10, 120),
+  };
+}
+
+function surfaceTensionSecret(): string {
+  const s = process.env.GAMES_HUB_SECRET;
+  if (s && s.length >= 16) return s;
+  return jwtSecret();
+}
+
+/** 1プレイごとのターゲットライン（95〜99%）。改ざん防止のため playId から決定論的に生成 */
+export function targetFillPercentForPlay(playId: string, configJson: unknown): number {
+  const c = parseSurfaceTensionConfig(configJson);
+  const h = createHmac("sha256", surfaceTensionSecret())
+    .update(`surface-tension:${playId}`)
+    .digest();
+  const steps = Math.round((c.targetMaxPercent - c.targetMinPercent) * 10) + 1;
+  const idx = h.readUInt32BE(0) % steps;
+  return Math.round((c.targetMinPercent + idx * 0.1) * 10) / 10;
+}
+
+export function evaluateSurfaceTensionWin(
+  configJson: unknown,
+  playId: string,
+  stopFillPercent: unknown,
+): { won: boolean; targetFillPercent: number; stopFillPercent: number } {
+  const targetFillPercent = targetFillPercentForPlay(playId, configJson);
+  if (typeof stopFillPercent !== "number" || !Number.isFinite(stopFillPercent)) {
+    return { won: false, targetFillPercent, stopFillPercent: NaN };
+  }
+  const stop = Math.max(0, Math.min(100, Math.round(stopFillPercent * 10) / 10));
+  const tol = parseSurfaceTensionConfig(configJson).tolerancePercent;
+  return {
+    won: Math.abs(stop - targetFillPercent) <= tol,
+    targetFillPercent,
+    stopFillPercent: stop,
+  };
+}
+
 export function evaluateSkillWin(
   slug: string,
   configJson: unknown,
   payload: Record<string, unknown>,
+  playId?: string,
 ): boolean {
   if (slug === "lucky-stop") {
     const resultMs = payload.resultMs;
     if (typeof resultMs !== "number" || !Number.isFinite(resultMs)) return false;
     return evaluateLuckyStopWin(parseLuckyStopConfig(configJson), resultMs);
+  }
+  if (slug === "surface-tension") {
+    if (!playId) return false;
+    return evaluateSurfaceTensionWin(configJson, playId, payload.stopFillPercent).won;
   }
   if (slug === "memory-match") {
     return false;

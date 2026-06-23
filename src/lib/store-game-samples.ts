@@ -68,6 +68,24 @@ export const STORE_GAME_SAMPLES: StoreGameSampleDef[] = [
     sortOrder: 3,
     rewardCount: 3,
   },
+  {
+    slug: "surface-tension",
+    kind: "paid",
+    title: "ぴったり表面張力ゲーム",
+    description: "長押しでビールを注ぎ、GOALライン（95〜99%）でぴったり止めよう！",
+    iconEmoji: "🍺",
+    playPriceYen: 100,
+    winMode: "skill",
+    winProbabilityPercent: 30,
+    configJson: {
+      targetMinPercent: 95,
+      targetMaxPercent: 99,
+      tolerancePercent: 0.5,
+      pourRatePercentPerSec: 38,
+    },
+    sortOrder: 4,
+    rewardCount: 3,
+  },
 ];
 
 async function pickDefaultRewardMenuItemIds(storeId: string, count: number): Promise<string[]> {

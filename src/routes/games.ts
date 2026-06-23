@@ -2,7 +2,15 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { verifyGamesHubKey } from "../lib/games-hub-auth.js";
-import { evaluateDiceTargetWin, evaluateRandomWin, evaluateSkillWin, gamePlayFeeTaxInclusive } from "../lib/game-play-logic.js";
+import {
+  evaluateDiceTargetWin,
+  evaluateRandomWin,
+  evaluateSkillWin,
+  evaluateSurfaceTensionWin,
+  gamePlayFeeTaxInclusive,
+  parseSurfaceTensionConfig,
+  targetFillPercentForPlay,
+} from "../lib/game-play-logic.js";
 import { buildMemoryMatchDeck, evaluateMemoryMatchWin } from "../lib/memory-match-deck.js";
 import { resolveGuestBillingContext } from "../lib/guest-billing-context.js";
 import { broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
@@ -283,6 +291,15 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
           memoryCards: memoryDeck.cards,
         };
       }
+      if (game.slug === "surface-tension") {
+        const stCfg = parseSurfaceTensionConfig(game.configJson);
+        const targetFillPercent = targetFillPercentForPlay(result.playId, game.configJson);
+        return {
+          ...result,
+          targetFillPercent,
+          pourRatePercentPerSec: stCfg.pourRatePercentPerSec,
+        };
+      }
       return result;
     },
   );
@@ -346,6 +363,7 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
     let won = false;
     let diceRoll: { dice1: number; dice2: number; sum: number; targetSum?: number } | null = null;
     let memoryResult: ReturnType<typeof evaluateMemoryMatchWin> | null = null;
+    let surfaceResult: ReturnType<typeof evaluateSurfaceTensionWin> | null = null;
     if (game.slug === "dice-eight") {
       const roll = evaluateDiceTargetWin(game.configJson);
       won = roll.won;
@@ -353,8 +371,11 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
     } else if (game.slug === "memory-match") {
       memoryResult = evaluateMemoryMatchWin(game.configJson, bodyPayload, play.createdAt);
       won = memoryResult.won;
+    } else if (game.slug === "surface-tension") {
+      surfaceResult = evaluateSurfaceTensionWin(game.configJson, play.id, bodyPayload.stopFillPercent);
+      won = surfaceResult.won;
     } else if (game.winMode === "skill") {
-      won = evaluateSkillWin(game.slug, game.configJson, bodyPayload);
+      won = evaluateSkillWin(game.slug, game.configJson, bodyPayload, play.id);
     } else {
       won = evaluateRandomWin(game.winProbabilityPercent);
     }
@@ -385,6 +406,12 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
                 timeLimitMs: memoryResult.timeLimitMs,
                 pairsMatched: memoryResult.pairsMatched,
                 pairCount: memoryResult.pairCount,
+              }
+            : {}),
+          ...(surfaceResult
+            ? {
+                targetFillPercent: surfaceResult.targetFillPercent,
+                stopFillPercent: surfaceResult.stopFillPercent,
               }
             : {}),
         };
@@ -421,6 +448,12 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
                 timeLimitMs: memoryResult.timeLimitMs,
                 pairsMatched: memoryResult.pairsMatched,
                 pairCount: memoryResult.pairCount,
+              }
+            : {}),
+          ...(surfaceResult
+            ? {
+                targetFillPercent: surfaceResult.targetFillPercent,
+                stopFillPercent: surfaceResult.stopFillPercent,
               }
             : {}),
         };
@@ -461,6 +494,12 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
               timeLimitMs: memoryResult.timeLimitMs,
               pairsMatched: memoryResult.pairsMatched,
               pairCount: memoryResult.pairCount,
+            }
+          : {}),
+        ...(surfaceResult
+          ? {
+              targetFillPercent: surfaceResult.targetFillPercent,
+              stopFillPercent: surfaceResult.stopFillPercent,
             }
           : {}),
       };

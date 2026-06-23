@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { loadGamesHubDeletedSlugs } from "./store-game-deleted-slugs.js";
 import { defaultHubCategoryForGame, mergeHubCategoryIntoConfig } from "./store-game-hub-category.js";
+import { isGameConfigStaffLocked } from "./store-game-staff-lock.js";
 
 export type StoreGameSampleDef = {
   slug: string;
@@ -352,9 +353,10 @@ async function pickDefaultRewardMenuItemIds(storeId: string, count: number): Pro
 
 export async function seedStoreGameSamples(
   storeId: string,
-  opts?: { mode?: "upsert" | "create-only" },
+  opts?: { mode?: "create-only" | "upsert" | "force-sync" },
 ): Promise<{ created: number; updated: number; skipped: number; slugs: string[]; warnings: string[] }> {
-  const mode = opts?.mode === "create-only" ? "create-only" : "upsert";
+  const mode =
+    opts?.mode === "force-sync" ? "force-sync" : opts?.mode === "upsert" ? "upsert" : "create-only";
   const store = await prisma.store.findUnique({ where: { id: storeId }, select: { id: true } });
   if (!store) throw new Error("store not found");
 
@@ -404,24 +406,30 @@ export async function seedStoreGameSamples(
 
     const existing = await prisma.storeGame.findUnique({
       where: { storeId_slug: { storeId, slug: sample.slug } },
-      select: { id: true },
+      select: { id: true, configJson: true },
     });
 
-    if (existing && mode === "create-only") {
-      skipped += 1;
+    if (existing) {
+      if (mode === "create-only" || mode === "upsert") {
+        skipped += 1;
+        slugs.push(sample.slug);
+        continue;
+      }
+      if (isGameConfigStaffLocked(existing.configJson)) {
+        skipped += 1;
+        slugs.push(sample.slug);
+        continue;
+      }
+      await prisma.storeGame.update({ where: { id: existing.id }, data });
+      updated += 1;
       slugs.push(sample.slug);
       continue;
     }
 
-    if (existing) {
-      await prisma.storeGame.update({ where: { id: existing.id }, data });
-      updated += 1;
-    } else {
-      await prisma.storeGame.create({
-        data: { storeId, slug: sample.slug, ...data },
-      });
-      created += 1;
-    }
+    await prisma.storeGame.create({
+      data: { storeId, slug: sample.slug, ...data },
+    });
+    created += 1;
     slugs.push(sample.slug);
   }
 

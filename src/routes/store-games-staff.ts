@@ -14,6 +14,7 @@ import {
   mergeHubCategoryIntoConfig,
   resolveGameHubCategory,
 } from "../lib/store-game-hub-category.js";
+import { markGameConfigStaffTouched } from "../lib/store-game-staff-lock.js";
 import {
   gamesHubCategoriesApiPayload,
   loadStoreGamesHubCategories,
@@ -268,7 +269,7 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
           rewardMenuItemIds: rewardMenuItemIds as Prisma.InputJsonValue,
           winMode,
           winProbabilityPercent,
-          configJson: configJson as Prisma.InputJsonValue,
+          configJson: markGameConfigStaffTouched(configJson),
           enabled: b.enabled !== false,
           sortOrder,
         },
@@ -359,6 +360,12 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
         if (!data.slug) return reply.code(400).send({ error: "invalid slug" });
       }
 
+      const baseConfigForLock =
+        data.configJson !== undefined
+          ? data.configJson
+          : (existing.configJson as Prisma.InputJsonValue);
+      data.configJson = markGameConfigStaffTouched(baseConfigForLock);
+
       try {
         const updated = await prisma.storeGame.update({
           where: { id: existing.id },
@@ -413,7 +420,11 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
         const hubRaw = hubCategories[id];
         const data: Prisma.StoreGameUpdateInput = { sortOrder: index };
         if (typeof hubRaw === "string" && isGameHubCategoryId(hubRaw.trim())) {
-          data.configJson = mergeHubCategoryIntoConfig(row.configJson, hubRaw.trim()) as Prisma.InputJsonValue;
+          data.configJson = markGameConfigStaffTouched(
+            mergeHubCategoryIntoConfig(row.configJson, hubRaw.trim()),
+          ) as Prisma.InputJsonValue;
+        } else {
+          data.configJson = markGameConfigStaffTouched(row.configJson) as Prisma.InputJsonValue;
         }
         return prisma.storeGame.update({ where: { id }, data });
       }),

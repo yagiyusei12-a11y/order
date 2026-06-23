@@ -19,6 +19,9 @@ import {
   loadStoreGamesHubCategories,
   saveStoreGamesHubCategories,
 } from "../lib/store-games-hub-config.js";
+import { summarizeGameRevenueForMonth } from "../lib/game-revenue-summary.js";
+import { mergeStoreSettings } from "../lib/store-settings.js";
+import { wallDateYmdInZone } from "../lib/store-wall-time.js";
 
 function parseGameKind(raw: unknown): "paid" | "fortune" | "tool" {
   if (raw === "fortune") return "fortune";
@@ -112,6 +115,25 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
     });
     return Promise.all(games.map((g) => mapStoreGameStaff(g)));
   });
+
+  app.get<{ Params: { storeId: string }; Querystring: { month?: string } }>(
+    "/stores/:storeId/games/revenue-summary",
+    async (req, reply) => {
+      const store = await prisma.store.findUnique({
+        where: { id: req.params.storeId },
+        select: { id: true, settings: true },
+      });
+      if (!store) return reply.code(404).send({ error: "store not found" });
+      const tz = mergeStoreSettings(store.settings).timezone;
+      const rawMonth = req.query.month?.trim() || "";
+      const month = /^\d{4}-\d{2}$/.test(rawMonth)
+        ? rawMonth
+        : wallDateYmdInZone(new Date(), tz).slice(0, 7);
+      const summary = await summarizeGameRevenueForMonth(store.id, month, tz);
+      if (!summary) return reply.code(400).send({ error: "invalid month" });
+      return summary;
+    },
+  );
 
   app.get<{ Params: { storeId: string } }>("/stores/:storeId/games/hub-config", async (req, reply) => {
     const store = await prisma.store.findUnique({

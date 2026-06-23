@@ -13,6 +13,110 @@
   let hubConfigSaveTimer = null;
   let orderSaving = false;
   let hubConfigSaving = false;
+  let revenueMonth = "";
+
+  function gamesWallMonthValue(d) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Tokyo",
+      year: "numeric",
+      month: "2-digit",
+    }).formatToParts(d || new Date());
+    const y = parts.find((p) => p.type === "year")?.value || "1970";
+    const m = parts.find((p) => p.type === "month")?.value || "01";
+    return y + "-" + m;
+  }
+
+  function gamesMonthLabel(ym) {
+    const m = /^(\d{4})-(\d{2})$/.exec(ym);
+    if (!m) return ym;
+    return parseInt(m[1], 10) + "年" + parseInt(m[2], 10) + "月";
+  }
+
+  function gamesSetMonthInput(ym) {
+    const el = document.getElementById("gamesRevenueMonth");
+    if (el && /^\d{4}-\d{2}$/.test(ym)) el.value = ym;
+    revenueMonth = ym;
+  }
+
+  function gamesShiftMonth(ym, delta) {
+    const m = /^(\d{4})-(\d{2})$/.exec(ym);
+    if (!m) return ym;
+    const y = parseInt(m[1], 10);
+    const mo = parseInt(m[2], 10);
+    const d = new Date(y, mo - 1 + delta, 1);
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+  }
+
+  function renderRevenueSummary(data) {
+    const amountEl = document.getElementById("gamesRevenueAmount");
+    const metaEl = document.getElementById("gamesRevenueMeta");
+    const breakdownEl = document.getElementById("gamesRevenueByGame");
+    if (!amountEl || !metaEl || !breakdownEl) return;
+    if (!data) {
+      amountEl.textContent = "—";
+      metaEl.textContent = "読み込みに失敗しました";
+      breakdownEl.hidden = true;
+      breakdownEl.innerHTML = "";
+      return;
+    }
+    const yen = Number(data.totalYen || 0);
+    const plays = Number(data.playCount || 0);
+    amountEl.textContent = yen.toLocaleString("ja-JP") + "円";
+    metaEl.textContent =
+      gamesMonthLabel(data.month || revenueMonth) +
+      " · " +
+      plays.toLocaleString("ja-JP") +
+      "回 · 精算完了日基準（税込）";
+    const rows = Array.isArray(data.byGame) ? data.byGame : [];
+    if (!rows.length) {
+      breakdownEl.hidden = true;
+      breakdownEl.innerHTML = "";
+      return;
+    }
+    breakdownEl.hidden = false;
+    breakdownEl.innerHTML =
+      "<table><thead><tr><th>ゲーム</th><th>回数</th><th>売上</th></tr></thead><tbody>" +
+      rows
+        .map((r) => {
+          return (
+            "<tr><td>" +
+            esc(r.title || "（不明）") +
+            "</td><td>" +
+            Number(r.playCount || 0).toLocaleString("ja-JP") +
+            "</td><td>" +
+            Number(r.totalYen || 0).toLocaleString("ja-JP") +
+            "円</td></tr>"
+          );
+        })
+        .join("") +
+      "</tbody></table>";
+  }
+
+  async function loadRevenueSummary(monthYm) {
+    const ym =
+      monthYm && /^\d{4}-\d{2}$/.test(monthYm)
+        ? monthYm
+        : revenueMonth && /^\d{4}-\d{2}$/.test(revenueMonth)
+          ? revenueMonth
+          : gamesWallMonthValue(new Date());
+    gamesSetMonthInput(ym);
+    const amountEl = document.getElementById("gamesRevenueAmount");
+    const metaEl = document.getElementById("gamesRevenueMeta");
+    if (amountEl) amountEl.textContent = "…";
+    if (metaEl) metaEl.textContent = gamesMonthLabel(ym) + " を集計中…";
+    try {
+      const data = await api(
+        "/stores/" +
+          encodeURIComponent(STORE) +
+          "/games/revenue-summary?month=" +
+          encodeURIComponent(ym),
+      );
+      renderRevenueSummary(data);
+    } catch (e) {
+      renderRevenueSummary(null);
+      if (metaEl) metaEl.textContent = e instanceof Error ? e.message : "集計に失敗しました";
+    }
+  }
 
   function esc(s) {
     return String(s)
@@ -635,10 +739,15 @@
 
   async function loadAll() {
     log("読み込み中…");
+    const monthForRevenue =
+      revenueMonth && /^\d{4}-\d{2}$/.test(revenueMonth)
+        ? revenueMonth
+        : gamesWallMonthValue(new Date());
     const [gList, menu, hub] = await Promise.all([
       api("/stores/" + encodeURIComponent(STORE) + "/games"),
       api("/stores/" + encodeURIComponent(STORE) + "/menu/full"),
       api("/stores/" + encodeURIComponent(STORE) + "/games/hub-config"),
+      loadRevenueSummary(monthForRevenue),
     ]);
     games = Array.isArray(gList) ? gList : [];
     menuCategories = Array.isArray(menu.categories) ? menu.categories : [];
@@ -750,6 +859,23 @@
     const title = document.getElementById("gameTitle").value.trim();
     await deleteGameById(id, title);
   });
+
+  gamesSetMonthInput(gamesWallMonthValue(new Date()));
+  document.querySelectorAll("button[data-games-month-preset]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const preset = btn.getAttribute("data-games-month-preset");
+      let ym = gamesWallMonthValue(new Date());
+      if (preset === "lastMonth") ym = gamesShiftMonth(ym, -1);
+      void loadRevenueSummary(ym);
+    });
+  });
+  const revenueMonthInput = document.getElementById("gamesRevenueMonth");
+  if (revenueMonthInput) {
+    revenueMonthInput.addEventListener("change", () => {
+      const ym = revenueMonthInput.value ? String(revenueMonthInput.value).trim() : "";
+      if (/^\d{4}-\d{2}$/.test(ym)) void loadRevenueSummary(ym);
+    });
+  }
 
   void loadAll().catch((e) => log(e.message));
 })();

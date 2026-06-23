@@ -1,6 +1,21 @@
 <main class="games-admin-page">
   <div class="games-admin-head">
     <h1>ゲーム・占い</h1>
+    <section class="games-revenue-card" id="gamesRevenueCard" aria-live="polite">
+      <div class="games-revenue-head">
+        <div class="games-revenue-main">
+          <div class="games-revenue-label">アプリ売上（ゲーム・占い）</div>
+          <div class="games-revenue-amount" id="gamesRevenueAmount">—</div>
+          <p class="muted games-revenue-meta" id="gamesRevenueMeta">精算完了日基準で集計します</p>
+        </div>
+        <div class="games-revenue-controls">
+          <button type="button" class="btn-ghost" data-games-month-preset="thisMonth">今月</button>
+          <button type="button" class="btn-ghost" data-games-month-preset="lastMonth">先月</button>
+          <input id="gamesRevenueMonth" type="month" aria-label="集計月" />
+        </div>
+      </div>
+      <div id="gamesRevenueByGame" class="games-revenue-breakdown" hidden></div>
+    </section>
     <p class="muted games-admin-lead">
       店内POP用の<strong>ゲームハブ</strong>を管理します。ゲーム・占いとも卓のモバイルオーダーQRと連携し、<strong>参加費（税抜）</strong>を会計に載せます。成功時のプレゼントはメニューマスタから選択し、0円で厨房へ送ります。
     </p>
@@ -92,6 +107,21 @@
 <style>
   .games-admin-page { padding:0.25rem 0 1.5rem; max-width:52rem; }
   .games-admin-lead { margin:0.35rem 0 0; font-size:0.88rem; line-height:1.55; max-width:42rem; }
+  .games-revenue-card {
+    margin:0.75rem 0 0; padding:0.85rem 1rem; border:1px solid var(--border); border-radius:12px;
+    background:linear-gradient(180deg,#fffef8 0%,#fff 100%);
+  }
+  .games-revenue-head { display:flex; gap:0.75rem; flex-wrap:wrap; align-items:flex-start; justify-content:space-between; }
+  .games-revenue-label { font-size:0.78rem; font-weight:800; color:var(--muted); letter-spacing:0.02em; }
+  .games-revenue-amount { font-size:1.65rem; font-weight:900; line-height:1.2; margin-top:0.15rem; }
+  .games-revenue-meta { margin:0.25rem 0 0; font-size:0.72rem; line-height:1.45; }
+  .games-revenue-controls { display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center; }
+  .games-revenue-controls input[type="month"] { min-width:9.5rem; font-size:0.82rem; padding:0.35rem 0.45rem; }
+  .games-revenue-breakdown { margin-top:0.65rem; padding-top:0.55rem; border-top:1px dashed var(--border); }
+  .games-revenue-breakdown table { width:100%; border-collapse:collapse; font-size:0.78rem; }
+  .games-revenue-breakdown th, .games-revenue-breakdown td { padding:0.28rem 0.2rem; text-align:left; }
+  .games-revenue-breakdown th:last-child, .games-revenue-breakdown td:last-child { text-align:right; }
+  .games-revenue-breakdown th { color:var(--muted); font-weight:700; border-bottom:1px solid var(--border); }
   .games-hub-qr-row { display:flex; gap:1rem; flex-wrap:wrap; align-items:flex-start; margin-top:0.85rem; }
   .games-hub-url-wrap { flex:1; min-width:14rem; }
   .games-hub-url-wrap input { width:100%; font-size:0.78rem; padding:0.45rem 0.5rem; }

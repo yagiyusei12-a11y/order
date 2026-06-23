@@ -13,6 +13,7 @@
     "import:menu-csv": "tsx prisma/import-menu-csv.ts",
     "seed:harunoyukoto-tables": "tsx prisma/seed-harunoyukoto-tables.ts",
     "seed:harunoyukoto-games": "tsx prisma/seed-harunoyukoto-games.ts",
+    "seed:harunoyukoto-games:upsert": "tsx prisma/upsert-harunoyukoto-games.ts",
     "import:harunoyukoto-menu": "tsx prisma/import-menu-csv.ts prisma/data/harunoyukoto-nagahama-menu.csv harunoyukoto",
     "import:harunoyukoto-sales": "tsx prisma/import-harunoyukoto-transactions-csv.ts",
     "delete:harunoyukoto-import-bills": "tsx prisma/delete-harunoyukoto-import-bills.ts",

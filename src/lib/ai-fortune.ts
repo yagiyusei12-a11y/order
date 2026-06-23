@@ -7,6 +7,15 @@ export const AI_FORTUNE_SLUGS = [
   "ai-serious-tarot",
   "ai-four-pillars",
   "ai-astrology",
+  "ai-penalty-roulette",
+  "ai-nickname-char",
+  "ai-who-treats",
+  "ai-lie-detector",
+  "ai-chain-story",
+  "ai-quiz-battle",
+  "ai-love-counsel",
+  "ai-morning-letter",
+  "ai-dialect-fortune",
 ] as const;
 export type AiFortuneSlug = (typeof AI_FORTUNE_SLUGS)[number];
 
@@ -62,6 +71,56 @@ export type AstrologyInput = {
   birthPlace?: string;
   theme: string;
   question?: string;
+};
+
+export type PenaltyRouletteInput = {
+  headCount: number;
+  tension: string;
+  intensity: string;
+};
+
+export type NicknameCharInput = {
+  nickname: string;
+  favoriteDrink: string;
+  catchphrase: string;
+};
+
+export type LieDetectorInput = {
+  genre: string;
+  difficulty: string;
+  mode: string;
+};
+
+export type ChainStoryRound = {
+  name: string;
+  keyword: string;
+};
+
+export type ChainStoryInput = {
+  rounds: ChainStoryRound[];
+};
+
+export type QuizBattleInput = {
+  genre: string;
+  difficulty: string;
+  questionCount: number;
+};
+
+export type LoveCounselInput = {
+  theme: string;
+  relationship: string;
+  worry: string;
+};
+
+export type MorningLetterInput = {
+  tonightStyle: string;
+  drinks: string;
+  bedtime: string;
+};
+
+export type DialectFortuneInput = {
+  birthDate: string;
+  dialect: string;
 };
 
 export type AiFortunePayload = {
@@ -331,6 +390,114 @@ export function parseAstrologyInput(raw: unknown): AstrologyInput {
   };
 }
 
+const PENALTY_TENSIONS = ["マイルド", "普通", "ハイテンション"] as const;
+const PENALTY_INTENSITIES = ["おとなしめ", "普通", "激しめ"] as const;
+const LIE_GENRES = ["食べ物", "酒・飲み", "雑学", "飲みネタ"] as const;
+const LIE_DIFFICULTIES = ["易しい", "普通", "難しい"] as const;
+const LIE_MODES = ["3つのウソと1つの本当", "2つの真実と1つのウソ"] as const;
+const QUIZ_GENRES = ["食べ物", "酒・飲み", "雑学", "日本文化"] as const;
+const QUIZ_DIFFICULTIES = ["易しい", "普通", "難しい"] as const;
+const LOVE_THEMES = ["恋愛", "片思い", "復縁", "結婚", "職場の恋"] as const;
+const LOVE_RELATIONSHIPS = ["独身", "付き合い中", "既婚", "複雑", "答えたくない"] as const;
+const DIALECTS = ["関西弁", "江戸っ子", "博多弁", "名古屋弁", "おまかせ"] as const;
+
+function parseChoice<T extends string>(raw: unknown, allowed: readonly T[], label: string): T {
+  const v = typeof raw === "string" ? raw.trim() : "";
+  if (!allowed.includes(v as T)) throw new Error(label + "を選んでください");
+  return v as T;
+}
+
+export function parsePenaltyRouletteInput(raw: unknown): PenaltyRouletteInput {
+  const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const headCount = Math.round(Number(o.headCount));
+  if (!Number.isFinite(headCount) || headCount < 2 || headCount > 12) {
+    throw new Error("人数は2〜12人で入力してください");
+  }
+  return {
+    headCount,
+    tension: parseChoice(o.tension, PENALTY_TENSIONS, "テンション"),
+    intensity: parseChoice(o.intensity, PENALTY_INTENSITIES, "激しさ"),
+  };
+}
+
+export function parseNicknameCharInput(raw: unknown): NicknameCharInput {
+  const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const nickname = typeof o.nickname === "string" ? o.nickname.trim().slice(0, 20) : "";
+  const favoriteDrink = typeof o.favoriteDrink === "string" ? o.favoriteDrink.trim().slice(0, 40) : "";
+  const catchphrase = typeof o.catchphrase === "string" ? o.catchphrase.trim().slice(0, 60) : "";
+  if (!nickname) throw new Error("ニックネームを入力してください");
+  if (!favoriteDrink) throw new Error("好きなお酒を入力してください");
+  return { nickname, favoriteDrink, catchphrase };
+}
+
+export function parseLieDetectorInput(raw: unknown): LieDetectorInput {
+  const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  return {
+    genre: parseChoice(o.genre, LIE_GENRES, "ジャンル"),
+    difficulty: parseChoice(o.difficulty, LIE_DIFFICULTIES, "難易度"),
+    mode: parseChoice(o.mode, LIE_MODES, "形式"),
+  };
+}
+
+export function parseChainStoryInput(raw: unknown): ChainStoryInput {
+  const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const roundsRaw = Array.isArray(o.rounds) ? o.rounds : [];
+  const rounds: ChainStoryRound[] = [];
+  for (const r of roundsRaw.slice(0, 8)) {
+    if (!r || typeof r !== "object") continue;
+    const row = r as Record<string, unknown>;
+    const name = typeof row.name === "string" ? row.name.trim().slice(0, 20) : "";
+    const keyword = typeof row.keyword === "string" ? row.keyword.trim().slice(0, 30) : "";
+    if (!name || !keyword) continue;
+    rounds.push({ name, keyword });
+  }
+  if (rounds.length < 2) throw new Error("キーワードは2人以上分入力してください");
+  return { rounds };
+}
+
+export function parseQuizBattleInput(raw: unknown): QuizBattleInput {
+  const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const questionCount = Math.round(Number(o.questionCount));
+  if (!Number.isFinite(questionCount) || questionCount < 3 || questionCount > 8) {
+    throw new Error("問題数は3〜8問で選んでください");
+  }
+  return {
+    genre: parseChoice(o.genre, QUIZ_GENRES, "ジャンル"),
+    difficulty: parseChoice(o.difficulty, QUIZ_DIFFICULTIES, "難易度"),
+    questionCount,
+  };
+}
+
+export function parseLoveCounselInput(raw: unknown): LoveCounselInput {
+  const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const worry = typeof o.worry === "string" ? o.worry.trim().slice(0, 200) : "";
+  if (worry.length < 5) throw new Error("悩みを5文字以上入力してください");
+  return {
+    theme: parseChoice(o.theme, LOVE_THEMES, "テーマ"),
+    relationship: parseChoice(o.relationship, LOVE_RELATIONSHIPS, "関係"),
+    worry,
+  };
+}
+
+export function parseMorningLetterInput(raw: unknown): MorningLetterInput {
+  const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const tonightStyle = typeof o.tonightStyle === "string" ? o.tonightStyle.trim().slice(0, 80) : "";
+  const drinks = typeof o.drinks === "string" ? o.drinks.trim().slice(0, 80) : "";
+  const bedtime = typeof o.bedtime === "string" ? o.bedtime.trim().slice(0, 20) : "";
+  if (!tonightStyle) throw new Error("今夜の過ごし方を入力してください");
+  if (!drinks) throw new Error("飲んだお酒を入力してください");
+  return { tonightStyle, drinks, bedtime: bedtime || "不明" };
+}
+
+export function parseDialectFortuneInput(raw: unknown): DialectFortuneInput {
+  const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const birthDate = parseBirthDate(typeof o.birthDate === "string" ? o.birthDate : "");
+  return {
+    birthDate,
+    dialect: parseChoice(o.dialect, DIALECTS, "方言"),
+  };
+}
+
 export async function runAiFortuneForSlug(
   slug: AiFortuneSlug,
   storeId: string,
@@ -464,7 +631,144 @@ export async function runAiFortuneForSlug(
     });
   }
 
+  if (slug === "ai-penalty-roulette") {
+    const input = parsePenaltyRouletteInput(payload.aiInput);
+    const system =
+      "あなたは飲み会の司会役です。王様ゲーム・罰ゲームのお題をユーモアたっぷりに提案します。" +
+      "危険・差別・ハラスメント・過度な飲酒を促す内容は禁止。日本語。" +
+      JSON_SCHEMA_HINT +
+      " sectionsは4〜5個。必ず「王様コマンド3つ」「罰ゲーム3つ」「盛り上がりアドバイス」を含める。各お題は番号付きで本文に列挙。";
+    const userText =
+      `店舗: ${storeName}\n人数: ${input.headCount}人\nテンション: ${input.tension}\n激しさ: ${input.intensity}\n` +
+      "飲み会向けのお題を生成してください。";
+    return callOpenAiJson(system, [{ type: "text", text: userText }]);
+  }
+
+  if (slug === "ai-nickname-char") {
+    const input = parseNicknameCharInput(payload.aiInput);
+    const system =
+      "あなたは居酒屋のキャラクター診断師です。入力から今夜のキャラタイプ・あだ名・口癖をユーモアに診断します。日本語。" +
+      JSON_SCHEMA_HINT +
+      " sectionsは4〜5個。必ず「今夜のキャラタイプ」「おすすめあだ名3つ」「口癖の提案」「相性の良い一杯」を含める。";
+    const userText =
+      `ニックネーム: ${input.nickname}\n好きなお酒: ${input.favoriteDrink}\n` +
+      (input.catchphrase ? `口癖・キーワード: ${input.catchphrase}\n` : "") +
+      `メニュー候補（お酒）: ${menu.drinks.slice(0, 15).join("、") || "（参照）"}`;
+    return callOpenAiJson(system, [{ type: "text", text: userText }]);
+  }
+
+  if (slug === "ai-who-treats") {
+    const input = parseGroupFortuneInput(payload.aiInput);
+    const memberLines = input.members
+      .map((m) => `- ${m.name}（${m.zodiac}・${m.age}歳）`)
+      .join("\n");
+    const system =
+      "あなたは飲み会のゲーム司会です。占いではなく「ゲーム判定」として、奢り役・端数担当・最後の一杯担当などをユーモアで指名します。" +
+      "実在の人物を傷つけないエンタメ。日本語。" +
+      JSON_SCHEMA_HINT +
+      " sectionsは5〜6個。必ず「今夜の奢り役」「端数・会計担当」「最後の一杯担当」「ムードメーカー」「要注意人物（ネタ）」を含める。名前は必ずメンバーから選ぶ。";
+    const userText = `店舗: ${storeName}\nメンバー:\n${memberLines}\n`;
+    return callOpenAiJson(system, [{ type: "text", text: userText }]);
+  }
+
+  if (slug === "ai-lie-detector") {
+    const input = parseLieDetectorInput(payload.aiInput);
+    const system =
+      "あなたは飲み会向けクイズマスターです。ウソ発見ゲームのお題を生成します。" +
+      JSON_SCHEMA_HINT +
+      " sectionsは形式に合わせる。各お題セットで「お題文」「選択肢または陳述一覧」「正解の番号・解説」をheadingとtextに明記。" +
+      " 形式が「3つのウソと1つの本当」なら4つの陳述、2真実1ウソなら3つの陳述。お題は2セット出す。";
+    const userText =
+      `ジャンル: ${input.genre}\n難易度: ${input.difficulty}\n形式: ${input.mode}\n` +
+      "卓で盛り上がるお題を2セット生成してください。";
+    return callOpenAiJson(system, [{ type: "text", text: userText }], { maxTokens: 1200 });
+  }
+
+  if (slug === "ai-chain-story") {
+    const input = parseChainStoryInput(payload.aiInput);
+    const roundLines = input.rounds
+      .map((r, i) => `${i + 1}. ${r.name} → キーワード「${r.keyword}」`)
+      .join("\n");
+    const system =
+      "あなたは飲み会向けの即興ストーリーテラーです。与えられたキーワードを順番に織り込んだ短編を書きます。" +
+      "オチはユーモアかほっこり。日本語。" +
+      JSON_SCHEMA_HINT +
+      " sectionsは3〜5個。「物語（前半）」「物語（後半）」「オチ」「登場人物コメント」など。物語本文は読みやすく段落分け。";
+    const userText = `店舗: ${storeName}\nキーワード順:\n${roundLines}\n一つの連続した物語にしてください。`;
+    return callOpenAiJson(system, [{ type: "text", text: userText }], { maxTokens: 1300, temperature: 0.9 });
+  }
+
+  if (slug === "ai-quiz-battle") {
+    const input = parseQuizBattleInput(payload.aiInput);
+    const system =
+      "あなたは飲み会向けクイズの出題者です。正解と解説付きの問題を出します。日本語。" +
+      JSON_SCHEMA_HINT +
+      " sectionsは問題ごとに1つ。headingは「第N問」、textに「問題文」「選択肢A〜D」「正解」「解説」を含める。";
+    const userText =
+      `ジャンル: ${input.genre}\n難易度: ${input.difficulty}\n問題数: ${input.questionCount}問\n` +
+      "4択形式で出題してください。";
+    return callOpenAiJson(system, [{ type: "text", text: userText }], {
+      maxTokens: 1400,
+      temperature: 0.75,
+    });
+  }
+
+  if (slug === "ai-love-counsel") {
+    const input = parseLoveCounselInput(payload.aiInput);
+    const system =
+      "あなたは飲み会で相談に乗る経験豊富なカウンセラーです。恋愛相談に温かく具体的に答えます。" +
+      "医療・法律の断定は避ける。日本語。" +
+      JSON_SCHEMA_HINT +
+      ` disclaimerは「${SERIOUS_DISCLAIMER}」に近い内容。` +
+      " sectionsは4〜6個。「状況の整理」「3つの視点」「今すぐできる一歩」「飲み会後のアドバイス」など。";
+    const userText =
+      `テーマ: ${input.theme}\n関係: ${input.relationship}\n悩み: ${input.worry}\n`;
+    return callOpenAiJson(system, [{ type: "text", text: userText }], { maxTokens: 1200, temperature: 0.78 });
+  }
+
+  if (slug === "ai-morning-letter") {
+    const input = parseMorningLetterInput(payload.aiInput);
+    const system =
+      "あなたはユーモアと優しさを兼ね備えたライターです。今夜の飲み方から「明日の自分」への手紙と二日酔い対策を書きます。日本語。" +
+      JSON_SCHEMA_HINT +
+      " sectionsは4個。「明日の自分への手紙」「二日酔い対策チェックリスト」「明日のラッキー行動」「AIからのひとこと」。";
+    const userText =
+      `今夜の過ごし方: ${input.tonightStyle}\n飲んだお酒: ${input.drinks}\n帰宅・就寝目安: ${input.bedtime}\n`;
+    return callOpenAiJson(system, [{ type: "text", text: userText }]);
+  }
+
+  if (slug === "ai-dialect-fortune") {
+    const input = parseDialectFortuneInput(payload.aiInput);
+    const dialectNote =
+      input.dialect === "おまかせ"
+        ? "生年月日から似合う方言キャラを選び、その方言で結果を書く"
+        : `結果の本文は${input.dialect}のノリで温かく書く（難しい方言は適度に）`;
+    const system =
+      "あなたは方言キャラの占い師です。生年月日から性格タイプを診断し、指定方言のノリで語りかけます。日本語。" +
+      JSON_SCHEMA_HINT +
+      " sectionsは4〜5個。「キャラタイプ」「今夜の運勢」「恋愛運」「金運」「開運アクション」。";
+    const userText = `生年月日: ${input.birthDate}\n方言: ${input.dialect}\n${dialectNote}`;
+    return callOpenAiJson(system, [{ type: "text", text: userText }], { temperature: 0.88 });
+  }
+
   throw new Error("unknown ai fortune slug");
 }
 
-export { ZODIAC_SIGNS, TAROT_THEMES, ASTRO_THEMES, GENDERS, PALM_THEMES, DOMINANT_HANDS };
+export {
+  ZODIAC_SIGNS,
+  TAROT_THEMES,
+  ASTRO_THEMES,
+  GENDERS,
+  PALM_THEMES,
+  DOMINANT_HANDS,
+  PENALTY_TENSIONS,
+  PENALTY_INTENSITIES,
+  LIE_GENRES,
+  LIE_DIFFICULTIES,
+  LIE_MODES,
+  QUIZ_GENRES,
+  QUIZ_DIFFICULTIES,
+  LOVE_THEMES,
+  LOVE_RELATIONSHIPS,
+  DIALECTS,
+};

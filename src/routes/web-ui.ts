@@ -311,7 +311,7 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
 
   app.get<{ Params: { slug: string } }>("/games-modules/:slug.js", async (req, reply) => {
     const slug = req.params.slug.replace(/[^a-z0-9-]/gi, "");
-    const file = `games-module-${slug}.js`;
+    const file = slug === "ai-shared" ? "games-module-ai-shared.js" : `games-module-${slug}.js`;
     const path = templatePath(file);
     if (!existsSync(path)) {
       return reply.code(404).type("text/plain; charset=utf-8").send("module not found");

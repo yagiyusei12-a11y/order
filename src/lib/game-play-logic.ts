@@ -84,17 +84,18 @@ export function evaluateSurfaceTensionWin(
   configJson: unknown,
   playId: string,
   stopFillPercent: unknown,
-): { won: boolean; targetFillPercent: number; stopFillPercent: number } {
+): { won: boolean; targetFillPercent: number; stopFillPercent: number; tolerancePercent: number } {
   const targetFillPercent = targetFillPercentForPlay(playId, configJson);
+  const tol = parseSurfaceTensionConfig(configJson).tolerancePercent;
   if (typeof stopFillPercent !== "number" || !Number.isFinite(stopFillPercent)) {
-    return { won: false, targetFillPercent, stopFillPercent: NaN };
+    return { won: false, targetFillPercent, stopFillPercent: NaN, tolerancePercent: tol };
   }
   const stop = Math.max(0, Math.min(100, Math.round(stopFillPercent * 10) / 10));
-  const tol = parseSurfaceTensionConfig(configJson).tolerancePercent;
   return {
     won: Math.abs(stop - targetFillPercent) <= tol,
     targetFillPercent,
     stopFillPercent: stop,
+    tolerancePercent: tol,
   };
 }
 

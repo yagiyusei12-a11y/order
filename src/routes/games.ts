@@ -340,6 +340,7 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
         return {
           ...result,
           targetFillPercent,
+          tolerancePercent: stCfg.tolerancePercent,
           pourRatePercentPerSec: stCfg.pourRatePercentPerSec,
         };
       }
@@ -497,6 +498,7 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
             ? {
                 targetFillPercent: surfaceResult.targetFillPercent,
                 stopFillPercent: surfaceResult.stopFillPercent,
+                tolerancePercent: surfaceResult.tolerancePercent,
               }
             : {}),
         };
@@ -540,6 +542,7 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
             ? {
                 targetFillPercent: surfaceResult.targetFillPercent,
                 stopFillPercent: surfaceResult.stopFillPercent,
+                tolerancePercent: surfaceResult.tolerancePercent,
               }
             : {}),
         };
@@ -587,6 +590,7 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
           ? {
               targetFillPercent: surfaceResult.targetFillPercent,
               stopFillPercent: surfaceResult.stopFillPercent,
+              tolerancePercent: surfaceResult.tolerancePercent,
             }
           : {}),
       };

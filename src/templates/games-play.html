@@ -69,8 +69,55 @@
     }
 
     function getToken() {
-      if (GUEST_TOKEN) return GUEST_TOKEN;
-      try { return localStorage.getItem(TOKEN_KEY) || ""; } catch (_) { return ""; }
+      if (GUEST_TOKEN) {
+        try { localStorage.setItem(TOKEN_KEY, GUEST_TOKEN); } catch (_) {}
+        return GUEST_TOKEN;
+      }
+      try {
+        const q = new URLSearchParams(location.search).get("token");
+        if (q && q.trim()) {
+          localStorage.setItem(TOKEN_KEY, q.trim());
+          return q.trim();
+        }
+        return localStorage.getItem(TOKEN_KEY) || "";
+      } catch (_) {
+        return "";
+      }
+    }
+
+    async function ensureGuestLinked() {
+      await loadScript("/games-modules/qr-link.js");
+      const qr = window.__gamesQrLink;
+      if (!qr) throw new Error("QR連携の読み込みに失敗しました");
+      const token = await qr.ensureLinked({
+        storeId: STORE_ID,
+        hubKey: HUB_KEY,
+        token: getToken(),
+        autoOpen: true,
+        cancelLabel: "一覧へ戻る",
+      });
+      if (!token) {
+        location.href = hubUrl();
+        return false;
+      }
+      return true;
+    }
+
+    async function promptQrScan(message) {
+      await loadScript("/games-modules/qr-link.js");
+      const qr = window.__gamesQrLink;
+      if (!qr) throw new Error("QR連携の読み込みに失敗しました");
+      showErr(message || "");
+      try {
+        const text = await qr.openScanner({ cancelLabel: "キャンセル" });
+        await qr.linkFromScan(text, STORE_ID, HUB_KEY);
+        showErr("");
+        return true;
+      } catch (e) {
+        if (e instanceof Error && e.message.indexOf("キャンセル") >= 0) return false;
+        showErr(e instanceof Error ? e.message : "QRの読み取りに失敗しました");
+        return false;
+      }
     }
 
     async function api(path, opts) {
@@ -118,7 +165,12 @@
     }
 
     async function startPaidGame() {
-      const token = getToken();
+      let token = getToken();
+      if (!token) {
+        const ok = await promptQrScan("卓のQRを読み取ってからプレイしてください");
+        if (!ok) throw new Error("卓のQRを読み取ってからプレイしてください");
+        token = getToken();
+      }
       if (!token) throw new Error("卓のQRを読み取ってからプレイしてください");
       const res = await api("/guest/" + encodeURIComponent(token) + "/games/" + encodeURIComponent(gameMeta.id) + "/start", {
         method: "POST",
@@ -241,6 +293,7 @@
     async function main() {
       document.getElementById("backLink").href = hubUrl();
       try {
+        if (!(await ensureGuestLinked())) return;
         const meta = await api("/games/api/" + encodeURIComponent(STORE_ID) + "/meta?key=" + encodeURIComponent(HUB_KEY));
         gameMeta = (meta.games || []).find((g) => g.slug === GAME_SLUG);
         if (!gameMeta) throw new Error("ゲームが見つかりません");

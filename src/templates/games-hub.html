@@ -38,6 +38,10 @@
     #loading { text-align:center; color:var(--muted); padding:2rem 0; }
     #err { color:var(--bad); font-size:0.85rem; margin-top:0.75rem; display:none; }
     .link-btn { display:inline-block; margin-top:0.5rem; color:var(--accent); font-weight:700; font-size:0.82rem; background:none; border:none; cursor:pointer; padding:0; font-family:inherit; }
+    .scan-btn {
+      display:inline-block; margin-top:0.55rem; padding:0.45rem 0.85rem; border:none; border-radius:999px;
+      background:var(--accent); color:#1a1408; font-weight:800; font-size:0.82rem; cursor:pointer; font-family:inherit;
+    }
     .detail[hidden] { display:none !important; }
     .detail { position:fixed; inset:0; z-index:100; display:flex; align-items:flex-end; justify-content:center; }
     .detail__backdrop { position:absolute; inset:0; background:rgba(0,0,0,0.55); }
@@ -105,6 +109,42 @@
         }
         return localStorage.getItem(TOKEN_KEY) || "";
       } catch (_) { return ""; }
+    }
+
+    function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = src;
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error("module load failed"));
+        document.head.appendChild(s);
+      });
+    }
+
+    async function openQrScanner() {
+      await loadScript("/games-modules/qr-link.js");
+      const qr = window.__gamesQrLink;
+      if (!qr) throw new Error("QR連携の読み込みに失敗しました");
+      const text = await qr.openScanner({ cancelLabel: "閉じる" });
+      await qr.linkFromScan(text, STORE_ID, HUB_KEY);
+      await refreshSessionBanner();
+    }
+
+    function bindScanButton(id) {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      btn.addEventListener("click", () => {
+        btn.disabled = true;
+        openQrScanner()
+          .catch((e) => {
+            if (!(e instanceof Error) || e.message.indexOf("キャンセル") < 0) {
+              const errEl = document.getElementById("err");
+              errEl.style.display = "block";
+              errEl.textContent = e instanceof Error ? e.message : "QRの読み取りに失敗しました";
+            }
+          })
+          .finally(() => { btn.disabled = false; });
+      });
     }
 
     function playUrl(slug) {
@@ -213,7 +253,18 @@
       const modal = document.getElementById("gameDetail");
       modal.hidden = false;
       modal.setAttribute("aria-hidden", "false");
-      document.getElementById("detailPlay").onclick = () => {
+      document.getElementById("detailPlay").onclick = async () => {
+        if (!getToken()) {
+          try {
+            await openQrScanner();
+          } catch (e) {
+            if (e instanceof Error && e.message.indexOf("キャンセル") >= 0) return;
+            const errEl = document.getElementById("err");
+            errEl.style.display = "block";
+            errEl.textContent = e instanceof Error ? e.message : "QRの読み取りに失敗しました";
+            return;
+          }
+        }
         location.href = playUrl(g.slug);
       };
     }
@@ -231,8 +282,10 @@
         el.style.display = "block";
         el.className = "banner warn";
         el.innerHTML =
-          "ゲーム・占いをプレイするには、<strong>お席のモバイルオーダー用QR</strong>を読み取ってからお試しください。" +
-          '<br><span class="meta">参加費は卓の会計に追加されます（税抜設定・税込請求）。</span>';
+          "ゲーム・占いをプレイするには、<strong>お席のモバイルオーダー用QR</strong>を読み取ってください。" +
+          '<br><span class="meta">参加費は卓の会計に追加されます（税抜設定・税込請求）。</span>' +
+          '<br><button type="button" class="scan-btn" id="btnScanQr">QRを読み取る</button>';
+        bindScanButton("btnScanQr");
         return;
       }
       try {
@@ -258,7 +311,9 @@
         el.className = "banner warn";
         el.innerHTML =
           "卓との連携が切れています。お席のQRを再度読み取ってください。" +
+          '<br><button type="button" class="scan-btn" id="btnRescanQr">QRを読み取る</button>' +
           '<br><button type="button" class="link-btn" id="clearToken">連携を解除</button>';
+        bindScanButton("btnRescanQr");
         document.getElementById("clearToken")?.addEventListener("click", () => {
           try { localStorage.removeItem(TOKEN_KEY); } catch (_) {}
           location.reload();

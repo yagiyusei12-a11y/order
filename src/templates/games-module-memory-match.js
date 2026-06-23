@@ -31,9 +31,11 @@
           ".mm-card{aspect-ratio:1;border-radius:8px;border:2px solid #2a3340;background:#1a222c;cursor:pointer;position:relative;overflow:hidden}" +
           ".mm-card:disabled{cursor:default;opacity:0.92}" +
           ".mm-card.matched{border-color:#6ee7a0;box-shadow:0 0 0 1px #6ee7a0;opacity:0.55}" +
-          ".mm-card-back,.mm-card-front{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}" +
-          ".mm-card-back{background:linear-gradient(145deg,#2a3340,#161c24);font-size:1.1rem;color:#c9a227;font-weight:800}" +
-          ".mm-card-front{background:#0f1419}" +
+          ".mm-card-back,.mm-card-front{position:absolute;inset:0;align-items:center;justify-content:center}" +
+          ".mm-card-back{z-index:2;display:flex;background:linear-gradient(145deg,#2a3340,#161c24);font-size:1.1rem;color:#c9a227;font-weight:800}" +
+          ".mm-card-front{z-index:1;display:none !important;background:#0f1419}" +
+          ".mm-card.is-open .mm-card-back,.mm-card.matched .mm-card-back{display:none !important}" +
+          ".mm-card.is-open .mm-card-front,.mm-card.matched .mm-card-front{display:flex !important}" +
           ".mm-card-front img{width:100%;height:100%;object-fit:cover;display:block}" +
           ".mm-hint{color:var(--muted);font-size:0.78rem;line-height:1.45;text-align:center;margin:0;max-width:18rem}" +
           ".mm-progress{font-size:0.82rem;color:var(--muted)}";
@@ -83,7 +85,7 @@
             c.menuItemId +
             '" aria-label="カード">' +
             '<span class="mm-card-back">?</span>' +
-            '<span class="mm-card-front" hidden><img src="' +
+            '<span class="mm-card-front"><img src="' +
             c.imageUrl +
             '" alt="" loading="lazy" /></span></button>';
         });
@@ -99,13 +101,11 @@
       }
 
       function revealCard(el) {
-        el.querySelector(".mm-card-back").hidden = true;
-        el.querySelector(".mm-card-front").hidden = false;
+        el.classList.add("is-open");
       }
 
       function hideCard(el) {
-        el.querySelector(".mm-card-back").hidden = false;
-        el.querySelector(".mm-card-front").hidden = true;
+        el.classList.remove("is-open");
       }
 
       async function finishGame(cleared) {

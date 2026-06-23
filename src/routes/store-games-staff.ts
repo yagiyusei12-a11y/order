@@ -8,6 +8,7 @@ import {
   validateRewardMenuItemIdsForStore,
 } from "../lib/store-game-rewards.js";
 import { seedStoreGameSamples } from "../lib/store-game-samples.js";
+import { forgetDeletedGameSlug, rememberDeletedGameSlug } from "../lib/store-game-deleted-slugs.js";
 
 function parseGameKind(raw: unknown): "paid" | "fortune" | "tool" {
   if (raw === "fortune") return "fortune";
@@ -188,6 +189,7 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
         },
         include: { rewardMenuItem: { select: { id: true, name: true } } },
       });
+      await forgetDeletedGameSlug(req.params.storeId, slug);
       return mapStoreGameStaff(created);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";
@@ -283,13 +285,14 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
     async (req, reply) => {
       const existing = await prisma.storeGame.findFirst({
         where: { id: req.params.gameId, storeId: req.params.storeId },
-        select: { id: true },
+        select: { id: true, slug: true },
       });
       if (!existing) return reply.code(404).send({ error: "not found" });
       await prisma.$transaction([
         prisma.gamePlay.deleteMany({ where: { storeGameId: existing.id } }),
         prisma.storeGame.delete({ where: { id: existing.id } }),
       ]);
+      await rememberDeletedGameSlug(req.params.storeId, existing.slug);
       return { ok: true };
     },
   );

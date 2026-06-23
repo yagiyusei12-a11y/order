@@ -264,7 +264,7 @@
   document.getElementById("gameKind").addEventListener("change", togglePaidFields);
   document.getElementById("btnAddGame").addEventListener("click", () => openModal(null));
   document.getElementById("btnSeedGames").addEventListener("click", async () => {
-    if (!confirm("未登録のサンプルゲームだけ追加します（削除済みの slug は復活しません）。")) return;
+    if (!confirm("未登録のサンプルゲームだけ追加します。削除済みのゲームは復活しません。")) return;
     log("登録中…");
     try {
       const res = await api("/stores/" + encodeURIComponent(STORE) + "/games/seed-samples", {

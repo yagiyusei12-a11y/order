@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
+import { loadGamesHubDeletedSlugs } from "./store-game-deleted-slugs.js";
 
 export type StoreGameSampleDef = {
   slug: string;
@@ -139,7 +140,14 @@ export async function seedStoreGameSamples(
   const slugs: string[] = [];
   const warnings: string[] = [];
 
+  const deletedSlugs = await loadGamesHubDeletedSlugs(storeId);
+
   for (const sample of STORE_GAME_SAMPLES) {
+    if (deletedSlugs.has(sample.slug)) {
+      skipped += 1;
+      slugs.push(sample.slug);
+      continue;
+    }
     let rewardMenuItemIds: string[] = [];
     if (sample.kind === "paid") {
       rewardMenuItemIds = await pickDefaultRewardMenuItemIds(storeId, sample.rewardCount);

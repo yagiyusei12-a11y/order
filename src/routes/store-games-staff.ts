@@ -95,7 +95,9 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
     return Promise.all(games.map((g) => mapStoreGameStaff(g)));
   });
 
-  app.post<{ Params: { storeId: string } }>("/stores/:storeId/games/seed-samples", async (req, reply) => {
+  app.post<{ Params: { storeId: string }; Body: { mode?: string } }>(
+    "/stores/:storeId/games/seed-samples",
+    async (req, reply) => {
     if (!(await assertManager(req, reply))) return;
     const store = await prisma.store.findUnique({
       where: { id: req.params.storeId },
@@ -103,7 +105,8 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
     });
     if (!store) return reply.code(404).send({ error: "store not found" });
     try {
-      const result = await seedStoreGameSamples(req.params.storeId);
+      const mode = req.body?.mode === "create-only" ? "create-only" : "upsert";
+      const result = await seedStoreGameSamples(req.params.storeId, { mode });
       const games = await prisma.storeGame.findMany({
         where: { storeId: req.params.storeId },
         orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
@@ -119,7 +122,8 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
       if (msg === "store not found") return reply.code(404).send({ error: msg });
       throw e;
     }
-  });
+  },
+  );
 
   app.post<{ Params: { storeId: string } }>("/stores/:storeId/games", async (req, reply) => {
     if (!(await assertManager(req, reply))) return;
@@ -261,13 +265,15 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
   app.delete<{ Params: { storeId: string; gameId: string } }>(
     "/stores/:storeId/games/:gameId",
     async (req, reply) => {
-      if (!(await assertManager(req, reply))) return;
       const existing = await prisma.storeGame.findFirst({
         where: { id: req.params.gameId, storeId: req.params.storeId },
         select: { id: true },
       });
       if (!existing) return reply.code(404).send({ error: "not found" });
-      await prisma.storeGame.delete({ where: { id: existing.id } });
+      await prisma.$transaction([
+        prisma.gamePlay.deleteMany({ where: { storeGameId: existing.id } }),
+        prisma.storeGame.delete({ where: { id: existing.id } }),
+      ]);
       return { ok: true };
     },
   );

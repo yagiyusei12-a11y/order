@@ -96,12 +96,15 @@ async function pickDefaultRewardMenuItemIds(storeId: string, count: number): Pro
 
 export async function seedStoreGameSamples(
   storeId: string,
-): Promise<{ created: number; updated: number; slugs: string[]; warnings: string[] }> {
+  opts?: { mode?: "upsert" | "create-only" },
+): Promise<{ created: number; updated: number; skipped: number; slugs: string[]; warnings: string[] }> {
+  const mode = opts?.mode === "create-only" ? "create-only" : "upsert";
   const store = await prisma.store.findUnique({ where: { id: storeId }, select: { id: true } });
   if (!store) throw new Error("store not found");
 
   let created = 0;
   let updated = 0;
+  let skipped = 0;
   const slugs: string[] = [];
   const warnings: string[] = [];
 
@@ -138,6 +141,12 @@ export async function seedStoreGameSamples(
       select: { id: true },
     });
 
+    if (existing && mode === "create-only") {
+      skipped += 1;
+      slugs.push(sample.slug);
+      continue;
+    }
+
     if (existing) {
       await prisma.storeGame.update({ where: { id: existing.id }, data });
       updated += 1;
@@ -150,5 +159,5 @@ export async function seedStoreGameSamples(
     slugs.push(sample.slug);
   }
 
-  return { created, updated, slugs, warnings };
+  return { created, updated, skipped, slugs, warnings };
 }

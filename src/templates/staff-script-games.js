@@ -16,11 +16,15 @@
   }
 
   async function api(path, opts) {
+    const method = opts && opts.method ? opts.method : "GET";
+    const hasBody = opts && opts.body !== undefined && opts.body !== null;
+    const headers = {};
+    if (hasBody) headers["Content-Type"] = "application/json";
     const r = await fetch(path, {
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      method: opts && opts.method ? opts.method : "GET",
-      body: opts && opts.body ? JSON.stringify(opts.body) : undefined,
+      headers,
+      method,
+      body: hasBody ? JSON.stringify(opts.body) : undefined,
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || "error");
@@ -178,6 +182,7 @@
     if (!id) return;
     const label = title ? "「" + title + "」" : "このゲーム";
     if (!confirm(label + "を削除しますか？")) return;
+    log("削除中…");
     try {
       await api("/stores/" + encodeURIComponent(STORE) + "/games/" + encodeURIComponent(id), {
         method: "DELETE",
@@ -250,18 +255,19 @@
   document.getElementById("gameKind").addEventListener("change", togglePaidFields);
   document.getElementById("btnAddGame").addEventListener("click", () => openModal(null));
   document.getElementById("btnSeedGames").addEventListener("click", async () => {
-    if (!confirm("おみくじ・ストップ・ダイス・神経衰弱の4種を登録します。既存の同じ slug は上書き更新されます。")) return;
+    if (!confirm("未登録のサンプルゲームだけ追加します（削除済みの slug は復活しません）。")) return;
     log("登録中…");
     try {
       const res = await api("/stores/" + encodeURIComponent(STORE) + "/games/seed-samples", {
         method: "POST",
-        body: {},
+        body: { mode: "create-only" },
       });
       games = Array.isArray(res.games) ? res.games : [];
       renderList();
       const parts = [];
       if (res.created) parts.push("新規 " + res.created + "件");
       if (res.updated) parts.push("更新 " + res.updated + "件");
+      if (res.skipped) parts.push("スキップ " + res.skipped + "件");
       log(parts.length ? "サンプルゲームを登録しました（" + parts.join(" / ") + "）" : "登録しました");
       if (Array.isArray(res.warnings) && res.warnings.length) {
         setTimeout(() => log(res.warnings.join(" / ")), 2500);

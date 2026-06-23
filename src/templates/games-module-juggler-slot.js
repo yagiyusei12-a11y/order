@@ -1,10 +1,10 @@
 (function () {
   const SYMBOLS = {
-    seven: { label: "7", cls: "sym-seven", sub: "BIG" },
-    bar: { label: "BAR", cls: "sym-bar", sub: "" },
-    bell: { label: "ベル", cls: "sym-bell", sub: "" },
-    cherry: { label: "🍒", cls: "sym-cherry", sub: "" },
-    replay: { label: "REPLAY", cls: "sym-replay", sub: "" },
+    seven: { label: "7", cls: "jg-sym-seven", sub: "BIG" },
+    bar: { label: "BAR", cls: "jg-sym-bar", sub: "" },
+    bell: { label: "ベル", cls: "jg-sym-bell", sub: "" },
+    cherry: { label: "🍒", cls: "jg-sym-cherry", sub: "" },
+    replay: { label: "REPLAY", cls: "jg-sym-replay", sub: "" },
   };
   const SPIN_SYMBOLS = ["seven", "bar", "bell", "cherry", "replay"];
 
@@ -31,11 +31,11 @@
           ".jg-reel{aspect-ratio:0.72;border-radius:8px;background:linear-gradient(180deg,#fffef5,#e8e0c8);border:2px solid #8b6914;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}" +
           ".jg-reel.spinning .jg-sym{animation:jgReelSpin 0.08s linear infinite}" +
           ".jg-sym{text-align:center;line-height:1.1;padding:0.15rem}" +
-          ".jg-sym-main{font-weight:900;font-size:1.35rem;display:block}" +
-          ".jg-sym-seven .jg-sym-main{color:#c41e1e;font-size:1.85rem;font-family:Georgia,serif}" +
+          ".jg-sym-main{font-weight:900;font-size:1.35rem;display:block;color:#1a1a1a}" +
+          ".jg-sym-seven .jg-sym-main{color:#c41e1e;font-size:1.85rem;font-family:Georgia,serif;text-shadow:0 1px 0 rgba(255,255,255,0.5)}" +
           ".jg-sym-bar .jg-sym-main{color:#1a3a8c;font-size:0.95rem;letter-spacing:0.05em}" +
-          ".jg-sym-bell .jg-sym-main{color:#b8860b;font-size:0.88rem}" +
-          ".jg-sym-replay .jg-sym-main{color:#2a6b2a;font-size:0.62rem;letter-spacing:0.02em}" +
+          ".jg-sym-bell .jg-sym-main{color:#8b6914;font-size:0.88rem}" +
+          ".jg-sym-replay .jg-sym-main{color:#1a5c1a;font-size:0.62rem;letter-spacing:0.02em}" +
           ".jg-sym-cherry .jg-sym-main{font-size:1.6rem}" +
           ".jg-payline{height:2px;background:rgba(255,60,60,0.75);margin:0.35rem 0;box-shadow:0 0 6px rgba(255,80,80,0.6)}" +
           ".jg-hint{color:var(--muted);font-size:0.78rem;line-height:1.5;text-align:center;margin:0;max-width:16rem}" +

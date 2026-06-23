@@ -37,10 +37,28 @@
     return ex + "円（税抜）";
   }
 
+  function flattenMenuItems(categories) {
+    const out = [];
+    for (const cat of categories || []) {
+      for (const it of cat.items || []) {
+        if (it && it.id && it.name) out.push(it);
+      }
+    }
+    return out;
+  }
+
   function fillRewardSelect() {
     const sel = document.getElementById("gameReward");
-    sel.innerHTML = '<option value="">— 選択 —</option>' +
-      menuItems.map((it) => '<option value="' + esc(it.id) + '">' + esc(it.name) + "</option>").join("");
+    if (!sel) return;
+    const opts = menuItems.map((it) => {
+      const label = it.isAvailable === false ? it.name + "（停止中）" : it.name;
+      return '<option value="' + esc(it.id) + '">' + esc(label) + "</option>";
+    });
+    sel.innerHTML = '<option value="">— 選択 —</option>' + opts.join("");
+    if (menuItems.length === 0) {
+      sel.innerHTML +=
+        '<option value="" disabled>メニューに商品がありません（メニュー画面で登録）</option>';
+    }
   }
 
   function openModal(game) {
@@ -111,9 +129,15 @@
       api("/stores/" + encodeURIComponent(STORE) + "/menu/full"),
     ]);
     games = Array.isArray(gList) ? gList : [];
-    menuItems = (menu.items || []).filter((it) => it.isAvailable !== false);
+    menuItems = flattenMenuItems(menu.categories).sort((a, b) =>
+      String(a.name || "").localeCompare(String(b.name || ""), "ja"),
+    );
     renderList();
-    log("");
+    if (menuItems.length === 0) {
+      log("メニュー商品が0件です。サイドバー「メニュー」で商品を登録してください。");
+    } else {
+      log("");
+    }
   }
 
   document.getElementById("gameKind").addEventListener("change", togglePaidFields);

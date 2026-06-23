@@ -1,0 +1,411 @@
+{
+  "storeId": "harunoyukoto",
+  "exportedAt": "2026-06-23T05:27:53.820Z",
+  "games": [
+    {
+      "slug": "dice-eight",
+      "kind": "paid",
+      "title": "デジタル・出目ぴったりゾロ目ダイス",
+      "description": "スマホを振って2つのサイコロを転がし、合計8で大成功！",
+      "iconEmoji": "🎲",
+      "playPriceYen": 88,
+      "winMode": "skill",
+      "winProbabilityPercent": 5,
+      "configJson": {
+        "targetSum": 8,
+        "hubCategory": "game",
+        "staffTouchedAt": "2026-06-23T05:27:19.062Z"
+      },
+      "sortOrder": 2,
+      "enabled": true,
+      "rewardMenuItemId": "cmqbrhxl804rdyu3a0f91jrzj",
+      "rewardMenuItemIds": [
+        "cmqbrhxl804rdyu3a0f91jrzj",
+        "csvitem_840be63179856ca9d22ca5359c",
+        "csvitem_095d1b4db50df5b9e979d64d9e"
+      ]
+    },
+    {
+      "slug": "memory-match",
+      "kind": "paid",
+      "title": "おつまみ絵合わせ（神経衰弱）タイムアタック",
+      "description": "10秒以内におつまみ画像のペアをすべて揃えよう！",
+      "iconEmoji": "🃏",
+      "playPriceYen": 88,
+      "winMode": "skill",
+      "winProbabilityPercent": 30,
+      "configJson": {
+        "pairCount": 7,
+        "hubCategory": "game",
+        "menuItemIds": [],
+        "timeLimitMs": 10000,
+        "staffTouchedAt": "2026-06-23T05:27:19.031Z"
+      },
+      "sortOrder": 3,
+      "enabled": true,
+      "rewardMenuItemId": "csvitem_de125963d88a530afb90072d7f",
+      "rewardMenuItemIds": [
+        "csvitem_de125963d88a530afb90072d7f",
+        "csvitem_54f31e63dfb7edd0ad4bbb4980",
+        "csvitem_dea2e7e751f6c104f0e1a1619f"
+      ]
+    },
+    {
+      "slug": "surface-tension",
+      "kind": "paid",
+      "title": "ぴったり表面張力ゲーム",
+      "description": "長押しでビールを注ぎ、GOALライン（95〜99%）でぴったり止めよう！",
+      "iconEmoji": "🍺",
+      "playPriceYen": 88,
+      "winMode": "skill",
+      "winProbabilityPercent": 30,
+      "configJson": {
+        "hubCategory": "game",
+        "staffTouchedAt": "2026-06-23T05:27:19.034Z",
+        "targetMaxPercent": 99,
+        "targetMinPercent": 95,
+        "tolerancePercent": 0.5,
+        "pourRatePercentPerSec": 38
+      },
+      "sortOrder": 4,
+      "enabled": true,
+      "rewardMenuItemId": "csvitem_de125963d88a530afb90072d7f",
+      "rewardMenuItemIds": [
+        "csvitem_de125963d88a530afb90072d7f",
+        "csvitem_54f31e63dfb7edd0ad4bbb4980",
+        "csvitem_dea2e7e751f6c104f0e1a1619f"
+      ]
+    },
+    {
+      "slug": "manly-roulette",
+      "kind": "tool",
+      "title": "超理不尽な・男気決済ルーレット",
+      "description": "奢る人をAIが理不尽な理由で決定！会計・追加ドリンク・高級おつまみの男気決済に。",
+      "iconEmoji": "🎰",
+      "playPriceYen": 0,
+      "winMode": "random",
+      "winProbabilityPercent": 0,
+      "configJson": {
+        "hubCategory": "tool",
+        "staffTouchedAt": "2026-06-23T05:27:19.036Z"
+      },
+      "sortOrder": 5,
+      "enabled": true,
+      "rewardMenuItemId": null,
+      "rewardMenuItemIds": []
+    },
+    {
+      "slug": "juggler-slot",
+      "kind": "paid",
+      "title": "ジャグラー風スロット",
+      "description": "3つのリールを回して赤い7が揃えば景品ゲット！",
+      "iconEmoji": "🎰",
+      "playPriceYen": 88,
+      "winMode": "random",
+      "winProbabilityPercent": 5,
+      "configJson": {
+        "weights": {
+          "bar": 18,
+          "bell": 22,
+          "seven": 12,
+          "cherry": 28,
+          "replay": 20
+        },
+        "hubCategory": "game",
+        "staffTouchedAt": "2026-06-23T05:27:19.043Z"
+      },
+      "sortOrder": 6,
+      "enabled": true,
+      "rewardMenuItemId": "cmqbrhxl804rdyu3a0f91jrzj",
+      "rewardMenuItemIds": [
+        "cmqbrhxl804rdyu3a0f91jrzj",
+        "csvitem_840be63179856ca9d22ca5359c",
+        "csvitem_095d1b4db50df5b9e979d64d9e"
+      ]
+    },
+    {
+      "slug": "bill-split",
+      "kind": "tool",
+      "title": "割り勘計算ツール",
+      "description": "卓の会計金額を読み込み、均等・按分・端数切上等いろいろな割り方で計算。",
+      "iconEmoji": "🧮",
+      "playPriceYen": 0,
+      "winMode": "random",
+      "winProbabilityPercent": 0,
+      "configJson": {
+        "hubCategory": "tool",
+        "staffTouchedAt": "2026-06-23T05:27:19.025Z"
+      },
+      "sortOrder": 7,
+      "enabled": true,
+      "rewardMenuItemId": null,
+      "rewardMenuItemIds": []
+    },
+    {
+      "slug": "ai-group-fortune",
+      "kind": "fortune",
+      "title": "即席相性・グループ占い",
+      "description": "メンバーの星座・年齢から、今夜の奢り役や二日酔い予備軍をAIがネタ判定。",
+      "iconEmoji": "👥",
+      "playPriceYen": 88,
+      "winMode": "random",
+      "winProbabilityPercent": 100,
+      "configJson": {
+        "aiType": "group-fortune",
+        "hubCategory": "fortune",
+        "staffTouchedAt": "2026-06-23T05:27:19.045Z"
+      },
+      "sortOrder": 9,
+      "enabled": true,
+      "rewardMenuItemId": null,
+      "rewardMenuItemIds": []
+    },
+    {
+      "slug": "ai-palm-reading",
+      "kind": "fortune",
+      "title": "本格手相・タロット鑑定",
+      "description": "手のひらを撮影。生命線・感情線などを本格鑑定し、大アルカナタロットの神託も添えます。",
+      "iconEmoji": "✋",
+      "playPriceYen": 188,
+      "winMode": "random",
+      "winProbabilityPercent": 100,
+      "configJson": {
+        "aiType": "palm-reading",
+        "hubCategory": "fortune_pro",
+        "staffTouchedAt": "2026-06-23T05:27:19.060Z"
+      },
+      "sortOrder": 10,
+      "enabled": true,
+      "rewardMenuItemId": null,
+      "rewardMenuItemIds": []
+    },
+    {
+      "slug": "ai-serious-tarot",
+      "kind": "fortune",
+      "title": "本格タロット鑑定",
+      "description": "プロのタロットリーダーAIが3枚スプレッドで、恋愛・仕事などを本格的に鑑定。",
+      "iconEmoji": "🃏",
+      "playPriceYen": 188,
+      "winMode": "random",
+      "winProbabilityPercent": 100,
+      "configJson": {
+        "aiType": "serious-tarot",
+        "hubCategory": "fortune_pro",
+        "staffTouchedAt": "2026-06-23T05:27:19.038Z"
+      },
+      "sortOrder": 11,
+      "enabled": true,
+      "rewardMenuItemId": null,
+      "rewardMenuItemIds": []
+    },
+    {
+      "slug": "ai-four-pillars",
+      "kind": "fortune",
+      "title": "四柱推命・命式鑑定",
+      "description": "生年月日と出生時刻から命式を読み解く、本格四柱推命AI鑑定。",
+      "iconEmoji": "☯️",
+      "playPriceYen": 188,
+      "winMode": "random",
+      "winProbabilityPercent": 100,
+      "configJson": {
+        "aiType": "four-pillars",
+        "hubCategory": "fortune_pro",
+        "staffTouchedAt": "2026-06-23T05:27:19.039Z"
+      },
+      "sortOrder": 12,
+      "enabled": true,
+      "rewardMenuItemId": null,
+      "rewardMenuItemIds": []
+    },
+    {
+      "slug": "ai-astrology",
+      "kind": "fortune",
+      "title": "西洋占星術・ホロスコープ鑑定",
+      "description": "出生データからサインを読み解く本格占星術。月星座・運勢まで詳しく。",
+      "iconEmoji": "🌙",
+      "playPriceYen": 188,
+      "winMode": "random",
+      "winProbabilityPercent": 100,
+      "configJson": {
+        "aiType": "astrology",
+        "hubCategory": "fortune_pro",
+        "staffTouchedAt": "2026-06-23T05:27:19.041Z"
+      },
+      "sortOrder": 13,
+      "enabled": true,
+      "rewardMenuItemId": null,
+      "rewardMenuItemIds": []
+    },
+    {
+      "slug": "ai-penalty-roulette",
+      "kind": "fortune",
+      "title": "AI罰ゲーム・王様ルーレット",
+      "description": "人数とテンションに合わせ、AIが王様ゲーム・罰ゲームのお題を毎回オリジナル生成。",
+      "iconEmoji": "👑",
+      "playPriceYen": 88,
+      "winMode": "random",
+      "winProbabilityPercent": 100,
+      "configJson": {
+        "aiType": "penalty-roulette",
+        "hubCategory": "fortune",
+        "staffTouchedAt": "2026-06-23T05:27:19.029Z"
+      },
+      "sortOrder": 14,
+      "enabled": true,
+      "rewardMenuItemId": null,
+      "rewardMenuItemIds": []
+    },
+    {
+      "slug": "ai-nickname-char",
+      "kind": "fortune",
+      "title": "AIあだ名・キャラ診断",
+      "description": "ニックネームと好きなお酒から、今夜のキャラタイプとあだ名をAIが診断。",
+      "iconEmoji": "🎭",
+      "playPriceYen": 88,
+      "winMode": "random",
+      "winProbabilityPercent": 100,
+      "configJson": {
+        "aiType": "nickname-char",
+        "hubCategory": "fortune",
+        "staffTouchedAt": "2026-06-23T05:27:19.047Z"
+      },
+      "sortOrder": 15,
+      "enabled": true,
+      "rewardMenuItemId": null,
+      "rewardMenuItemIds": []
+    },
+    {
+      "slug": "ai-who-treats",
+      "kind": "fortune",
+      "title": "AI誰が奢る？シミュレーター",
+      "description": "メンバー情報から奢り役・端数担当などをゲーム判定（占いではなくネタ判定）。",
+      "iconEmoji": "💸",
+      "playPriceYen": 88,
+      "winMode": "random",
+      "winProbabilityPercent": 100,
+      "configJson": {
+        "aiType": "who-treats",
+        "hubCategory": "fortune",
+        "staffTouchedAt": "2026-06-23T05:27:19.048Z"
+      },
+      "sortOrder": 16,
+      "enabled": true,
+      "rewardMenuItemId": null,
+      "rewardMenuItemIds": []
+    },
+    {
+      "slug": "ai-lie-detector",
+      "kind": "fortune",
+      "title": "AIウソ発見ゲーム",
+      "description": "ウソと本当のお題をAIが2セット出題。卓で正解を当てて盛り上がろう。",
+      "iconEmoji": "🕵️",
+      "playPriceYen": 88,
+      "winMode": "random",
+      "winProbabilityPercent": 100,
+      "configJson": {
+        "aiType": "lie-detector",
+        "hubCategory": "fortune",
+        "staffTouchedAt": "2026-06-23T05:27:19.050Z"
+      },
+      "sortOrder": 17,
+      "enabled": true,
+      "rewardMenuItemId": null,
+      "rewardMenuItemIds": []
+    },
+    {
+      "slug": "ai-chain-story",
+      "kind": "fortune",
+      "title": "AI連続ストーリー",
+      "description": "メンバーのキーワードを順番に織り込んだ即興物語をAIが生成。",
+      "iconEmoji": "📖",
+      "playPriceYen": 188,
+      "winMode": "random",
+      "winProbabilityPercent": 100,
+      "configJson": {
+        "aiType": "chain-story",
+        "hubCategory": "fortune",
+        "staffTouchedAt": "2026-06-23T05:27:19.052Z"
+      },
+      "sortOrder": 18,
+      "enabled": true,
+      "rewardMenuItemId": null,
+      "rewardMenuItemIds": []
+    },
+    {
+      "slug": "ai-quiz-battle",
+      "kind": "fortune",
+      "title": "AIクイズバトル",
+      "description": "ジャンルと難易度を選んで4択クイズを出題。答え合わせは卓で自己採点。",
+      "iconEmoji": "❓",
+      "playPriceYen": 88,
+      "winMode": "random",
+      "winProbabilityPercent": 100,
+      "configJson": {
+        "aiType": "quiz-battle",
+        "hubCategory": "fortune",
+        "staffTouchedAt": "2026-06-23T05:27:19.054Z"
+      },
+      "sortOrder": 19,
+      "enabled": true,
+      "rewardMenuItemId": null,
+      "rewardMenuItemIds": []
+    },
+    {
+      "slug": "ai-love-counsel",
+      "kind": "fortune",
+      "title": "AI恋愛相談（飲み会版）",
+      "description": "飲み会で気軽に相談。恋愛の悩みにAIカウンセラーが3つの視点でアドバイス。",
+      "iconEmoji": "💌",
+      "playPriceYen": 188,
+      "winMode": "random",
+      "winProbabilityPercent": 100,
+      "configJson": {
+        "aiType": "love-counsel",
+        "hubCategory": "fortune",
+        "staffTouchedAt": "2026-06-23T05:27:19.056Z"
+      },
+      "sortOrder": 20,
+      "enabled": true,
+      "rewardMenuItemId": null,
+      "rewardMenuItemIds": []
+    },
+    {
+      "slug": "ai-morning-letter",
+      "kind": "fortune",
+      "title": "AI明日の自分レター",
+      "description": "今夜の飲み方から、明日の自分へのユーモア手紙と二日酔い対策をAIが執筆。",
+      "iconEmoji": "🌅",
+      "playPriceYen": 88,
+      "winMode": "random",
+      "winProbabilityPercent": 100,
+      "configJson": {
+        "aiType": "morning-letter",
+        "hubCategory": "fortune",
+        "staffTouchedAt": "2026-06-23T05:27:19.057Z"
+      },
+      "sortOrder": 21,
+      "enabled": true,
+      "rewardMenuItemId": null,
+      "rewardMenuItemIds": []
+    },
+    {
+      "slug": "ai-dialect-fortune",
+      "kind": "fortune",
+      "title": "AI方言・キャラボイス占い",
+      "description": "生年月日から運勢を診断。関西弁・江戸っ子など選んだ方言キャラで語りかけます。",
+      "iconEmoji": "🗣️",
+      "playPriceYen": 88,
+      "winMode": "random",
+      "winProbabilityPercent": 100,
+      "configJson": {
+        "aiType": "dialect-fortune",
+        "hubCategory": "fortune",
+        "staffTouchedAt": "2026-06-23T05:27:19.059Z"
+      },
+      "sortOrder": 22,
+      "enabled": true,
+      "rewardMenuItemId": null,
+      "rewardMenuItemIds": []
+    }
+  ]
+}

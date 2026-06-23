@@ -3,7 +3,6 @@
   window.__gameModules["surface-tension"] = {
     mount(ctx) {
       const { game, root, btn, showMsg, showErr, startPaidGame, completePaidGame, finishWin, goBackToHub } = ctx;
-      const cfg = game.configJson && typeof game.configJson === "object" ? game.configJson : {};
       const ex = game.playPriceYen != null ? game.playPriceYen : 100;
       const inc = game.playPriceYenInclusive != null ? game.playPriceYenInclusive : ex;
 
@@ -15,6 +14,8 @@
       let lastTs = 0;
       let raf = 0;
       let finished = false;
+      let pourZoneEl = null;
+      let activePointerId = null;
 
       function injectStyles() {
         if (document.getElementById("surface-tension-styles")) return;
@@ -25,7 +26,7 @@
           ".st-hint{color:var(--muted);font-size:0.82rem;line-height:1.55;text-align:center;margin:0;max-width:18rem}" +
           ".st-meter{font-size:1.35rem;font-weight:900;font-variant-numeric:tabular-nums;color:#f0c060}" +
           ".st-meter span{color:var(--muted);font-size:0.82rem;font-weight:700;margin-left:0.35rem}" +
-          ".st-stage{position:relative;width:min(11rem,72vw);height:min(15rem,58vw);margin:0.25rem 0}" +
+          ".st-stage{position:relative;width:min(11rem,72vw);height:min(15rem,58vw);margin:0.25rem 0;touch-action:none}" +
           ".st-mug{position:absolute;inset:0;border:3px solid #d8dee8;border-radius:0 0 18px 18px;background:linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02));overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06),0 10px 24px rgba(0,0,0,0.35)}" +
           ".st-mug::before{content:'';position:absolute;top:12%;right:-18%;width:28%;height:22%;border:3px solid #d8dee8;border-left:none;border-radius:0 14px 14px 0}" +
           ".st-beer{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(180deg,#ffcc55 0%,#e8a820 38%,#c98512 100%);transition:height 0.05s linear}" +
@@ -34,7 +35,7 @@
           ".st-target{position:absolute;left:-6%;right:-6%;height:2px;background:#6ee7a0;box-shadow:0 0 8px rgba(110,231,160,0.85);z-index:3}" +
           ".st-target::after{content:attr(data-label);position:absolute;right:0;top:-1.35rem;font-size:0.68rem;font-weight:800;color:#6ee7a0;white-space:nowrap}" +
           ".st-target.st-over{background:#ffb4b4;box-shadow:0 0 8px rgba(255,180,180,0.85)}" +
-          ".st-pour-zone{width:100%;padding:0.85rem;border:2px dashed #3a4654;border-radius:12px;text-align:center;font-weight:800;font-size:0.92rem;color:#f0c060;background:rgba(201,162,39,0.08)}" +
+          ".st-pour-zone{width:100%;padding:0.85rem;border:2px dashed #3a4654;border-radius:12px;text-align:center;font-weight:800;font-size:0.92rem;color:#f0c060;background:rgba(201,162,39,0.08);touch-action:none;-webkit-touch-callout:none}" +
           ".st-pour-zone.active{border-color:#c9a227;background:rgba(201,162,39,0.18);animation:stPulse 0.8s ease-in-out infinite}" +
           ".st-pour-zone.done{opacity:0.55;pointer-events:none}" +
           "@keyframes stBubble{0%{transform:translateY(0)}100%{transform:translateY(-8px)}}" +
@@ -46,7 +47,7 @@
         injectStyles();
         root.innerHTML =
           '<div class="st-wrap">' +
-          '<p class="st-hint">画面を<strong>長押し</strong>でビールを注ぎ、<strong>離して</strong>止めよう。<br>GOALライン（95〜99%）でぴったり止めたら成功！</p>' +
+          '<p class="st-hint">画面を<strong>長押し</strong>でビールを注ぎ、<strong>指を離して</strong>止めよう。<br>緑のGOALライン付近で止めたら成功！</p>' +
           '<p class="st-hint">参加費 ' + ex + "円（税抜）/ 税込" + inc + "円</p></div>";
       }
 
@@ -73,34 +74,43 @@
           targetFill.toFixed(1) +
           '%"></div>' +
           "</div></div>" +
-          '<div class="st-pour-zone" id="stPourZone">長押しで注ぐ / 離して止める</div>" +
-          '<p class="st-hint">溢れさせないよう、表面張力ギリギリを狙え！</p></div>';
+          '<div class="st-pour-zone" id="stPourZone">長押しで注ぐ / 離して止める</div>' +
+          '<p class="st-hint">溢れさせないよう、GOALラインを狙え！</p></div>';
 
-        const zone = document.getElementById("stPourZone");
-        if (!zone) return;
+        pourZoneEl = document.getElementById("stPourZone");
+        if (!pourZoneEl) return;
 
         function startPour(ev) {
           if (finished || phase !== "playing") return;
-          ev.preventDefault();
+          if (activePointerId != null) return;
+          if (ev.pointerId != null) activePointerId = ev.pointerId;
+          if (ev.cancelable) ev.preventDefault();
           pouring = true;
           lastTs = performance.now();
-          zone.classList.add("active");
+          pourZoneEl.classList.add("active");
           tick();
         }
 
         function stopPour(ev) {
-          if (ev) ev.preventDefault();
+          if (ev && ev.cancelable) ev.preventDefault();
+          if (ev && ev.pointerId != null && activePointerId != null && ev.pointerId !== activePointerId) {
+            return;
+          }
           if (!pouring || finished || phase !== "playing") return;
           pouring = false;
-          zone.classList.remove("active");
+          activePointerId = null;
+          pourZoneEl.classList.remove("active");
           cancelAnimationFrame(raf);
           void submitResult();
         }
 
-        zone.addEventListener("pointerdown", startPour);
-        zone.addEventListener("pointerup", stopPour);
-        zone.addEventListener("pointerleave", stopPour);
-        zone.addEventListener("pointercancel", stopPour);
+        pourZoneEl.addEventListener("pointerdown", startPour);
+        pourZoneEl.addEventListener("pointerup", stopPour);
+        pourZoneEl.addEventListener("pointercancel", stopPour);
+        pourZoneEl.addEventListener("pointerleave", (ev) => {
+          if (ev.pointerType === "touch" || ev.pointerType === "pen") return;
+          stopPour(ev);
+        });
       }
 
       function updateVisuals() {
@@ -113,7 +123,7 @@
             fill.toFixed(1) + '% <span>GOAL ' + targetFill.toFixed(1) + "%</span>";
         }
         if (targetEl) {
-          targetEl.classList.toggle("st-over", fill > targetFill + 0.5);
+          targetEl.classList.toggle("st-over", fill > targetFill + 1);
         }
       }
 
@@ -126,8 +136,7 @@
         updateVisuals();
         if (fill >= 100) {
           pouring = false;
-          const zone = document.getElementById("stPourZone");
-          if (zone) zone.classList.remove("active");
+          if (pourZoneEl) pourZoneEl.classList.remove("active");
           void submitResult();
           return;
         }
@@ -140,8 +149,7 @@
         phase = "done";
         btn.disabled = true;
         btn.style.display = "none";
-        const zone = document.getElementById("stPourZone");
-        if (zone) zone.classList.add("done");
+        if (pourZoneEl) pourZoneEl.classList.add("done");
         showMsg("判定中…", "");
         const stopFill = Math.round(fill * 10) / 10;
         try {
@@ -151,7 +159,7 @@
           if (res.won) {
             await finishWin(res, "ぴったり！ " + stop.toFixed(1) + "%（GOAL " + target.toFixed(1) + "%）");
           } else {
-            const over = stop > target + 0.5;
+            const over = stop > target + 1;
             showMsg(
               (over ? "溢れちゃった… " : "あと少し… ") +
                 stop.toFixed(1) +
@@ -171,6 +179,7 @@
           showErr(e instanceof Error ? e.message : "判定に失敗しました");
           finished = false;
           phase = "playing";
+          if (pourZoneEl) pourZoneEl.classList.remove("done");
           btn.style.display = "block";
           btn.disabled = false;
         }

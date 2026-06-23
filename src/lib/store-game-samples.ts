@@ -83,7 +83,7 @@ export const STORE_GAME_SAMPLES: StoreGameSampleDef[] = [
     configJson: {
       targetMinPercent: 95,
       targetMaxPercent: 99,
-      tolerancePercent: 0.5,
+      tolerancePercent: 2,
       pourRatePercentPerSec: 38,
     },
     sortOrder: 4,

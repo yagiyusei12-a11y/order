@@ -58,7 +58,7 @@ export function parseSurfaceTensionConfig(raw: unknown): Required<SurfaceTension
   return {
     targetMinPercent,
     targetMaxPercent,
-    tolerancePercent: num("tolerancePercent", 0.5, 0.1, 3),
+    tolerancePercent: num("tolerancePercent", 2, 0.5, 5),
     pourRatePercentPerSec: num("pourRatePercentPerSec", 38, 10, 120),
   };
 }

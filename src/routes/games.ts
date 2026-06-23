@@ -334,7 +334,7 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
       if (memoryDeck) {
         return {
           ...result,
-          timeLimitMs: memoryDeck.timeLimitMs,
+          maxMisses: memoryDeck.maxMisses,
           pairCount: memoryDeck.pairCount,
           memoryCards: memoryDeck.cards,
         };
@@ -450,7 +450,7 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
       slotRoll = evaluateJugglerSlotWin(game.configJson);
       won = slotRoll.won;
     } else if (game.slug === "memory-match") {
-      memoryResult = evaluateMemoryMatchWin(game.configJson, bodyPayload, play.createdAt);
+      memoryResult = evaluateMemoryMatchWin(game.configJson, bodyPayload);
       won = memoryResult.won;
     } else if (game.slug === "surface-tension") {
       surfaceResult = evaluateSurfaceTensionWin(game.configJson, play.id, bodyPayload.stopFillPercent);
@@ -484,8 +484,8 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
           ...(slotRoll ? { slotReels: slotRoll.reels, slotWin: slotRoll.won } : {}),
           ...(memoryResult
             ? {
-                elapsedMs: memoryResult.elapsedMs,
-                timeLimitMs: memoryResult.timeLimitMs,
+                maxMisses: memoryResult.maxMisses,
+                missCount: memoryResult.missCount,
                 pairsMatched: memoryResult.pairsMatched,
                 pairCount: memoryResult.pairCount,
               }
@@ -527,8 +527,8 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
           ...(slotRoll ? { slotReels: slotRoll.reels, slotWin: slotRoll.won } : {}),
           ...(memoryResult
             ? {
-                elapsedMs: memoryResult.elapsedMs,
-                timeLimitMs: memoryResult.timeLimitMs,
+                maxMisses: memoryResult.maxMisses,
+                missCount: memoryResult.missCount,
                 pairsMatched: memoryResult.pairsMatched,
                 pairCount: memoryResult.pairCount,
               }
@@ -574,8 +574,8 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
         ...(slotRoll ? { slotReels: slotRoll.reels, slotWin: slotRoll.won } : {}),
         ...(memoryResult
           ? {
-              elapsedMs: memoryResult.elapsedMs,
-              timeLimitMs: memoryResult.timeLimitMs,
+              maxMisses: memoryResult.maxMisses,
+              missCount: memoryResult.missCount,
               pairsMatched: memoryResult.pairsMatched,
               pairCount: memoryResult.pairCount,
             }

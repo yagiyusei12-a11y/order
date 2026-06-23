@@ -4,22 +4,19 @@
     mount(ctx) {
       const { game, root, btn, showMsg, showErr, startPaidGame, completePaidGame, finishWin, offerPlayAgain } = ctx;
       const cfg = game.configJson && typeof game.configJson === "object" ? game.configJson : {};
-      const defaultLimit = typeof cfg.timeLimitMs === "number" ? cfg.timeLimitMs : 10000;
       const defaultPairs = typeof cfg.pairCount === "number" ? cfg.pairCount : 7;
+      const defaultMaxMisses = typeof cfg.maxMisses === "number" ? cfg.maxMisses : 2;
       const ex = game.playPriceYen != null ? game.playPriceYen : 80;
       const inc = game.playPriceYenInclusive != null ? game.playPriceYenInclusive : ex;
 
       let phase = "idle";
       let cards = [];
-      let timeLimitMs = defaultLimit;
       let pairCount = defaultPairs;
-      let timerId = null;
-      let deadline = 0;
+      let maxMisses = defaultMaxMisses;
       let pairsMatched = 0;
+      let missCount = 0;
       let flipped = [];
-      let matchedIds = new Set();
       let lockBoard = false;
-      let gameStartedAt = 0;
       let finished = false;
 
       function injectStyles() {
@@ -28,19 +25,18 @@
         st.id = "memory-match-styles";
         st.textContent =
           ".mm-wrap{display:flex;flex-direction:column;align-items:center;gap:0.55rem;width:100%}" +
-          ".mm-timer{font-size:1.6rem;font-weight:900;font-variant-numeric:tabular-nums;color:#f0c060}" +
-          ".mm-timer.urgent{color:#ffb4b4;animation:mmPulse 0.6s ease-in-out infinite}" +
+          ".mm-status{font-size:0.95rem;font-weight:800;color:#f0c060;text-align:center}" +
+          ".mm-status.danger{color:#ffb4b4}" +
           ".mm-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0.35rem;width:100%;max-width:20rem}" +
           ".mm-card{aspect-ratio:1;border-radius:8px;border:2px solid #2a3340;background:#1a222c;cursor:pointer;position:relative;overflow:hidden}" +
           ".mm-card:disabled{cursor:default;opacity:0.92}" +
-          ".mm-card.matched{border-color:#6ee7a0;box-shadow:0 0 0 1px #6ee7a0}" +
+          ".mm-card.matched{border-color:#6ee7a0;box-shadow:0 0 0 1px #6ee7a0;opacity:0.55}" +
           ".mm-card-back,.mm-card-front{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}" +
           ".mm-card-back{background:linear-gradient(145deg,#2a3340,#161c24);font-size:1.1rem;color:#c9a227;font-weight:800}" +
           ".mm-card-front{background:#0f1419}" +
           ".mm-card-front img{width:100%;height:100%;object-fit:cover;display:block}" +
           ".mm-hint{color:var(--muted);font-size:0.78rem;line-height:1.45;text-align:center;margin:0;max-width:18rem}" +
-          ".mm-progress{font-size:0.82rem;color:var(--muted)}" +
-          "@keyframes mmPulse{0%,100%{opacity:1}50%{opacity:0.65}}";
+          ".mm-progress{font-size:0.82rem;color:var(--muted)}";
         document.head.appendChild(st);
       }
 
@@ -48,39 +44,36 @@
         injectStyles();
         root.innerHTML =
           '<div class="mm-wrap">' +
-          '<p class="mm-hint">裏返された<strong>' + (pairCount * 2) + "枚</strong>のカードを、<strong>" +
-          (timeLimitMs / 1000) +
-          "秒以内</strong>にすべて揃えよう！<br>「はるのゆこと」のおつまみ画像で神経衰弱。</p>" +
-          '<p class="mm-hint">参加費 ' + ex + "円（税抜）/ 税込" + inc + "円</p></div>";
+          '<p class="mm-hint">裏向きの<strong>' +
+          (pairCount * 2) +
+          "枚</strong>から同じおつまみを2枚ずつ揃えよう！<br>ミスが<strong>" +
+          maxMisses +
+          "回</strong>で終了。「はるのゆこと」のおつまみ画像で神経衰弱。</p>" +
+          '<p class="mm-hint">参加費 ' +
+          ex +
+          "円（税抜）/ 税込" +
+          inc +
+          "円</p></div>";
       }
 
-      function formatMsLeft(ms) {
-        const s = Math.max(0, ms) / 1000;
-        return s.toFixed(1) + "秒";
-      }
-
-      function updateTimerDisplay() {
-        const el = document.getElementById("mmTimer");
+      function updateStatusDisplay() {
+        const el = document.getElementById("mmStatus");
         if (!el) return;
-        const left = deadline - Date.now();
-        el.textContent = formatMsLeft(left);
-        el.className = "mm-timer" + (left <= 3000 ? " urgent" : "");
-        if (left <= 0 && !finished) void finishGame(false);
-      }
-
-      function stopTimer() {
-        if (timerId) {
-          clearInterval(timerId);
-          timerId = null;
-        }
+        const left = Math.max(0, maxMisses - missCount);
+        el.textContent = "ミス " + missCount + " / " + maxMisses + "（あと " + left + " 回まで）";
+        el.className = "mm-status" + (left <= 1 ? " danger" : "");
       }
 
       function renderBoard() {
         injectStyles();
         let html =
           '<div class="mm-wrap">' +
-          '<div class="mm-timer" id="mmTimer">' + formatMsLeft(timeLimitMs) + "</div>" +
-          '<p class="mm-progress" id="mmProgress">0 / ' + pairCount + " ペア</p>" +
+          '<div class="mm-status" id="mmStatus">ミス 0 / ' +
+          maxMisses +
+          "</div>" +
+          '<p class="mm-progress" id="mmProgress">0 / ' +
+          pairCount +
+          " ペア</p>" +
           '<div class="mm-grid" id="mmGrid">';
         cards.forEach((c, i) => {
           html +=
@@ -96,6 +89,7 @@
         });
         html += "</div></div>";
         root.innerHTML = html;
+        updateStatusDisplay();
 
         document.getElementById("mmGrid").addEventListener("click", (ev) => {
           const t = ev.target.closest(".mm-card");
@@ -118,29 +112,29 @@
         if (finished) return;
         finished = true;
         lockBoard = true;
-        stopTimer();
         btn.disabled = true;
         btn.textContent = "判定中…";
-        const elapsedMs = Math.max(0, Date.now() - gameStartedAt);
         try {
           const res = await completePaidGame({
-            payload: { pairsMatched, elapsedMs, cleared: cleared === true },
+            payload: { pairsMatched, missCount, cleared: cleared === true },
           });
           if (res.won) {
             await finishWin(
               res,
-              "クリア！ " + ((res.elapsedMs || elapsedMs) / 1000).toFixed(1) + "秒で全ペア成立。",
+              "クリア！ " + (res.pairsMatched != null ? res.pairsMatched : pairsMatched) + " ペア全部揃えました。",
               startRound,
             );
           } else {
+            const reason =
+              missCount >= maxMisses
+                ? maxMisses + "回ミスで終了… "
+                : "残念… ";
             showMsg(
-              "残念… " +
+              reason +
                 (res.pairsMatched != null ? res.pairsMatched : pairsMatched) +
                 " / " +
                 (res.pairCount || pairCount) +
-                " ペア（制限 " +
-                ((res.timeLimitMs || timeLimitMs) / 1000) +
-                "秒）",
+                " ペア",
               "lose",
             );
             phase = "idle";
@@ -172,7 +166,8 @@
         if (a.id === b.id) {
           a.el.classList.add("matched");
           b.el.classList.add("matched");
-          matchedIds.add(a.id);
+          a.el.disabled = true;
+          b.el.disabled = true;
           pairsMatched += 1;
           const prog = document.getElementById("mmProgress");
           if (prog) prog.textContent = pairsMatched + " / " + pairCount + " ペア";
@@ -180,36 +175,38 @@
           lockBoard = false;
           if (pairsMatched >= pairCount) void finishGame(true);
         } else {
+          missCount += 1;
+          updateStatusDisplay();
           setTimeout(() => {
             hideCard(a.el);
             hideCard(b.el);
             flipped = [];
-            lockBoard = false;
-          }, 650);
+            if (missCount >= maxMisses) {
+              void finishGame(false);
+            } else {
+              lockBoard = false;
+            }
+          }, 750);
         }
       }
 
       function beginPlay(startRes) {
         cards = Array.isArray(startRes.memoryCards) ? startRes.memoryCards : [];
-        timeLimitMs = startRes.timeLimitMs || defaultLimit;
         pairCount = startRes.pairCount || defaultPairs;
+        maxMisses = startRes.maxMisses || defaultMaxMisses;
         if (cards.length < pairCount * 2) {
           showErr("カードの準備に失敗しました");
           return;
         }
         phase = "playing";
         pairsMatched = 0;
+        missCount = 0;
         flipped = [];
-        matchedIds = new Set();
         lockBoard = false;
         finished = false;
-        gameStartedAt = Date.now();
-        deadline = gameStartedAt + timeLimitMs;
         renderBoard();
-        stopTimer();
-        timerId = setInterval(updateTimerDisplay, 100);
         btn.style.display = "none";
-        showMsg("スタート！制限時間内に全ペアを揃えてください。", "");
+        showMsg("カードをタップして同じ絵を揃えてください。", "");
       }
 
       async function startRound() {

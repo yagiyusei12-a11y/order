@@ -2,8 +2,8 @@ import { randomInt } from "node:crypto";
 import { prisma } from "../db.js";
 
 export type MemoryMatchConfig = {
-  timeLimitMs: number;
   pairCount: number;
+  maxMisses: number;
   menuItemIds: string[];
 };
 
@@ -29,43 +29,44 @@ export function parseMemoryMatchConfig(raw: unknown): MemoryMatchConfig {
     return typeof v === "number" && Number.isFinite(v) ? Math.round(v) : def;
   };
   const pairCount = Math.max(2, Math.min(10, num("pairCount", 7)));
-  const timeLimitMs = Math.max(3000, Math.min(120000, num("timeLimitMs", 10000)));
+  const maxMisses = Math.max(1, Math.min(10, num("maxMisses", 2)));
   let menuItemIds: string[] = [];
   if (Array.isArray(o.menuItemIds)) {
     menuItemIds = o.menuItemIds
       .filter((x): x is string => typeof x === "string" && x.trim().length > 0)
       .map((x) => x.trim());
   }
-  return { timeLimitMs, pairCount, menuItemIds };
+  return { pairCount, maxMisses, menuItemIds };
 }
 
 export function evaluateMemoryMatchWin(
   configJson: unknown,
   payload: Record<string, unknown>,
-  playStartedAt: Date,
-): { won: boolean; elapsedMs: number; timeLimitMs: number; pairCount: number; pairsMatched: number } {
+): { won: boolean; maxMisses: number; pairCount: number; pairsMatched: number; missCount: number } {
   const cfg = parseMemoryMatchConfig(configJson);
-  const serverElapsed = Math.max(0, Date.now() - playStartedAt.getTime());
   const pairsMatched =
     typeof payload.pairsMatched === "number" && Number.isFinite(payload.pairsMatched)
       ? Math.round(payload.pairsMatched)
       : 0;
-  const bufferMs = 800;
-  const won =
-    pairsMatched >= cfg.pairCount && serverElapsed <= cfg.timeLimitMs + bufferMs;
+  const missCount =
+    typeof payload.missCount === "number" && Number.isFinite(payload.missCount)
+      ? Math.round(payload.missCount)
+      : 0;
+  const cleared = payload.cleared === true;
+  const won = cleared && pairsMatched >= cfg.pairCount && missCount < cfg.maxMisses;
   return {
     won,
-    elapsedMs: serverElapsed,
-    timeLimitMs: cfg.timeLimitMs,
+    maxMisses: cfg.maxMisses,
     pairCount: cfg.pairCount,
     pairsMatched,
+    missCount,
   };
 }
 
 export async function buildMemoryMatchDeck(
   storeId: string,
   configJson: unknown,
-): Promise<{ cards: MemoryMatchCard[]; timeLimitMs: number; pairCount: number }> {
+): Promise<{ cards: MemoryMatchCard[]; pairCount: number; maxMisses: number }> {
   const cfg = parseMemoryMatchConfig(configJson);
   const need = cfg.pairCount;
 
@@ -114,7 +115,7 @@ export async function buildMemoryMatchDeck(
 
   return {
     cards: pairs.map((c, index) => ({ index, ...c })),
-    timeLimitMs: cfg.timeLimitMs,
     pairCount: need,
+    maxMisses: cfg.maxMisses,
   };
 }

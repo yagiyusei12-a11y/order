@@ -17,17 +17,19 @@
     .grid { display:flex; flex-direction:column; gap:0.65rem; }
     .card {
       display:flex; gap:0.75rem; align-items:flex-start; background:var(--card); border:1px solid var(--line);
-      border-radius:12px; padding:0.85rem 0.9rem; cursor:pointer; text-decoration:none; color:inherit;
+      border-radius:12px; padding:0.85rem 0.9rem; cursor:pointer; text-align:left; color:inherit;
+      width:100%; font:inherit;
     }
     .card:active { opacity:0.85; }
     .emoji { font-size:1.75rem; line-height:1; flex-shrink:0; }
     .card-body { flex:1; min-width:0; }
     .card-title { font-weight:800; font-size:1rem; margin:0 0 0.2rem; }
-    .card-desc { margin:0; font-size:0.78rem; color:var(--muted); line-height:1.45; }
+    .card-desc { margin:0; font-size:0.78rem; color:var(--muted); line-height:1.45; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
     .badge { display:inline-block; font-size:0.68rem; font-weight:800; padding:0.15rem 0.45rem; border-radius:999px; margin-left:0.35rem; vertical-align:middle; }
     .badge.paid { background:#3d2f14; color:#f0c060; }
     .badge.fortune { background:#2a2040; color:#c4b5fd; }
     .badge.tool { background:#1a2a24; color:#6ee7a0; }
+    .badge.reward { background:#2a3318; color:#b8e986; margin-left:0; margin-top:0.25rem; }
     .meta { font-size:0.72rem; color:var(--muted); margin-top:0.35rem; }
     .section-title {
       font-size:0.78rem; font-weight:800; color:var(--muted); margin:0.85rem 0 0.35rem; letter-spacing:0.04em;
@@ -35,7 +37,36 @@
     .section-title:first-child { margin-top:0; }
     #loading { text-align:center; color:var(--muted); padding:2rem 0; }
     #err { color:var(--bad); font-size:0.85rem; margin-top:0.75rem; display:none; }
-    .link-btn { display:inline-block; margin-top:0.5rem; color:var(--accent); font-weight:700; font-size:0.82rem; }
+    .link-btn { display:inline-block; margin-top:0.5rem; color:var(--accent); font-weight:700; font-size:0.82rem; background:none; border:none; cursor:pointer; padding:0; font-family:inherit; }
+    .detail[hidden] { display:none !important; }
+    .detail { position:fixed; inset:0; z-index:100; display:flex; align-items:flex-end; justify-content:center; }
+    .detail__backdrop { position:absolute; inset:0; background:rgba(0,0,0,0.55); }
+    .detail__sheet {
+      position:relative; width:min(28rem,100%); max-height:88vh; overflow:auto;
+      background:var(--card); border:1px solid var(--line); border-radius:16px 16px 0 0;
+      padding:1rem 1rem calc(1rem + env(safe-area-inset-bottom));
+    }
+    .detail__head { display:flex; gap:0.75rem; align-items:flex-start; margin-bottom:0.75rem; }
+    .detail__emoji { font-size:2.25rem; line-height:1; }
+    .detail__title { font-size:1.15rem; font-weight:900; margin:0 0 0.25rem; }
+    .detail__desc { font-size:0.88rem; color:var(--muted); line-height:1.55; margin:0 0 0.75rem; white-space:pre-wrap; }
+    .detail__price { font-size:0.82rem; margin:0 0 0.75rem; line-height:1.5; }
+    .detail__rewards-title { font-size:0.78rem; font-weight:800; color:#b8e986; margin:0 0 0.45rem; }
+    .detail__rewards { display:flex; flex-direction:column; gap:0.45rem; margin:0 0 1rem; }
+    .detail__reward {
+      display:flex; gap:0.55rem; align-items:center; padding:0.45rem 0.55rem;
+      border:1px solid var(--line); border-radius:10px; background:#1a222c;
+    }
+    .detail__reward img { width:2.75rem; height:2.75rem; object-fit:cover; border-radius:8px; flex-shrink:0; }
+    .detail__reward span { font-size:0.88rem; font-weight:700; }
+    .detail__play {
+      width:100%; padding:0.8rem; border:none; border-radius:10px; background:var(--accent);
+      color:#1a1408; font-weight:900; font-size:0.95rem; cursor:pointer;
+    }
+    .detail__close {
+      position:absolute; top:0.65rem; right:0.65rem; width:2rem; height:2rem; border:none;
+      border-radius:999px; background:#2a3340; color:var(--text); font-size:1.1rem; cursor:pointer;
+    }
   </style>
 </head>
 <body>
@@ -47,10 +78,19 @@
     <div id="grid" class="grid" style="display:none"></div>
     <p id="err" role="alert"></p>
   </div>
+  <div id="gameDetail" class="detail" hidden aria-hidden="true">
+    <div class="detail__backdrop" id="detailBackdrop"></div>
+    <div class="detail__sheet" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+      <button type="button" class="detail__close" id="detailClose" aria-label="閉じる">×</button>
+      <div id="detailContent"></div>
+    </div>
+  </div>
   <script>
     const STORE_ID = __STORE_ID_JS__;
     const HUB_KEY = __HUB_KEY_JS__;
     const TOKEN_KEY = "gamesHubGuestToken_v1:" + STORE_ID;
+
+    let gamesBySlug = new Map();
 
     function esc(s) {
       return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
@@ -79,6 +119,109 @@
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || j.message || "error");
       return j;
+    }
+
+    function rewardItems(g) {
+      if (g.kind === "tool") return [];
+      if (Array.isArray(g.rewardMenuItems) && g.rewardMenuItems.length) return g.rewardMenuItems;
+      if (g.rewardMenuItem) return [g.rewardMenuItem];
+      return [];
+    }
+
+    function defaultHubCategory(g) {
+      if (g.kind === "tool") return "tool";
+      if (g.kind === "paid") return "game";
+      const pro = new Set(["omikuji","ai-serious-tarot","ai-four-pillars","ai-astrology","ai-palm-reading"]);
+      if (pro.has(g.slug)) return "fortune_pro";
+      return "fortune";
+    }
+
+    function hubCat(g, categoryIds) {
+      if (g.hubCategory && categoryIds.has(g.hubCategory)) return g.hubCategory;
+      return defaultHubCategory(g);
+    }
+
+    function priceBadge(g) {
+      const kind = g.kind === "tool" ? "tool" : g.kind === "fortune" ? "fortune" : "paid";
+      const ex = g.playPriceYen != null ? g.playPriceYen : 80;
+      if (kind === "tool") return '<span class="badge tool">無料</span>';
+      if (kind === "fortune") return '<span class="badge fortune">占い ' + esc(String(ex)) + '円〜</span>';
+      return '<span class="badge paid">' + esc(String(ex)) + '円（税抜）</span>';
+    }
+
+    function rewardTeaser(g) {
+      const items = rewardItems(g);
+      if (!items.length) return "";
+      if (items.length === 1) {
+        return '<div class="meta"><span class="badge reward">🎁 景品: ' + esc(items[0].name) + "</span></div>";
+      }
+      return '<div class="meta"><span class="badge reward">🎁 景品 ' + items.length + "種 · 成功後に選択</span></div>";
+    }
+
+    function renderCard(g) {
+      const kind = g.kind === "tool" ? "tool" : g.kind === "fortune" ? "fortune" : "paid";
+      const inc = g.playPriceYenInclusive != null ? g.playPriceYenInclusive : g.playPriceYen;
+      const priceNote =
+        kind === "tool"
+          ? '<div class="meta">タップで詳細 · 会計追加なし</div>'
+          : '<div class="meta">税込 ' + esc(String(inc)) + '円 · タップで詳細</div>';
+      return (
+        '<button type="button" class="card" data-slug="' + esc(g.slug) + '">' +
+        '<span class="emoji">' + esc(g.iconEmoji || (kind === "tool" ? "🛠️" : kind === "fortune" ? "🔮" : "🎮")) + '</span>' +
+        '<div class="card-body">' +
+        '<p class="card-title">' + esc(g.title) + priceBadge(g) + '</p>' +
+        (g.description ? '<p class="card-desc">' + esc(g.description) + '</p>' : "") +
+        rewardTeaser(g) +
+        priceNote +
+        '</div></button>'
+      );
+    }
+
+    function openDetail(slug) {
+      const g = gamesBySlug.get(slug);
+      if (!g) return;
+      const kind = g.kind === "tool" ? "tool" : g.kind === "fortune" ? "fortune" : "paid";
+      const ex = g.playPriceYen != null ? g.playPriceYen : 80;
+      const inc = g.playPriceYenInclusive != null ? g.playPriceYenInclusive : ex;
+      const items = rewardItems(g);
+      let rewardsHtml = "";
+      if (items.length) {
+        rewardsHtml = '<p class="detail__rewards-title">🎁 成功時の景品</p><div class="detail__rewards">';
+        for (const it of items) {
+          const img = it.imageUrl
+            ? '<img src="' + esc(it.imageUrl) + '" alt="" loading="lazy" />'
+            : '<span style="width:2.75rem;text-align:center;font-size:1.5rem;flex-shrink:0">🎁</span>';
+          rewardsHtml += '<div class="detail__reward">' + img + "<span>" + esc(it.name) + "</span></div>";
+        }
+        rewardsHtml += "</div>";
+        if (items.length > 1) {
+          rewardsHtml += '<p class="meta" style="margin:-0.5rem 0 1rem">成功後、お好きな景品を1つ選べます。</p>';
+        }
+      }
+      const priceHtml =
+        kind === "tool"
+          ? "<strong>無料</strong>（卓の会計には載りません）"
+          : "参加費 <strong>" + esc(String(ex)) + "円（税抜）</strong> / 税込 " + esc(String(inc)) + "円<br>卓の会計に追加されます";
+      document.getElementById("detailContent").innerHTML =
+        '<div class="detail__head">' +
+        '<span class="detail__emoji">' + esc(g.iconEmoji || "🎮") + "</span>" +
+        "<div><h2 class=\"detail__title\" id=\"detailTitle\">" + esc(g.title) + "</h2>" + priceBadge(g) + "</div></div>" +
+        (g.description ? '<p class="detail__desc">' + esc(g.description) + "</p>" : "") +
+        '<p class="detail__price">' + priceHtml + "</p>" +
+        rewardsHtml +
+        '<button type="button" class="detail__play" id="detailPlay">プレイする</button>';
+      const modal = document.getElementById("gameDetail");
+      modal.hidden = false;
+      modal.setAttribute("aria-hidden", "false");
+      document.getElementById("detailPlay").onclick = () => {
+        location.href = playUrl(g.slug);
+      };
+    }
+
+    function closeDetail() {
+      const modal = document.getElementById("gameDetail");
+      modal.hidden = true;
+      modal.setAttribute("aria-hidden", "true");
     }
 
     async function refreshSessionBanner() {
@@ -125,10 +268,13 @@
 
     async function main() {
       const errEl = document.getElementById("err");
+      document.getElementById("detailClose").addEventListener("click", closeDetail);
+      document.getElementById("detailBackdrop").addEventListener("click", closeDetail);
       try {
         await refreshSessionBanner();
         const meta = await api("/games/api/" + encodeURIComponent(STORE_ID) + "/meta?key=" + encodeURIComponent(HUB_KEY));
         const games = Array.isArray(meta.games) ? meta.games : [];
+        gamesBySlug = new Map(games.map((g) => [g.slug, g]));
         document.getElementById("loading").style.display = "none";
         const grid = document.getElementById("grid");
         grid.style.display = "flex";
@@ -136,76 +282,30 @@
           grid.innerHTML = '<p class="sub">現在公開中のゲームはありません。</p>';
           return;
         }
-        const CATEGORY_ORDER = [
-          { id: "game", label: "有料ゲーム" },
-          { id: "fortune", label: "占い・エンタメ" },
-          { id: "fortune_pro", label: "本格占い・鑑定" },
-          { id: "tool", label: "無料ツール" },
-        ];
-        function defaultHubCategory(g) {
-          if (g.kind === "tool") return "tool";
-          if (g.kind === "paid") return "game";
-          const pro = new Set([
-            "omikuji",
-            "ai-serious-tarot",
-            "ai-four-pillars",
-            "ai-astrology",
-            "ai-palm-reading",
-          ]);
-          if (pro.has(g.slug)) return "fortune_pro";
-          return "fortune";
-        }
-        function hubCat(g) {
-          return g.hubCategory && CATEGORY_ORDER.some((c) => c.id === g.hubCategory)
-            ? g.hubCategory
-            : defaultHubCategory(g);
-        }
-        function renderCard(g) {
-          const kind = g.kind === "tool" ? "tool" : g.kind === "fortune" ? "fortune" : "paid";
-          const ex = g.playPriceYen != null ? g.playPriceYen : 80;
-          const inc = g.playPriceYenInclusive != null ? g.playPriceYenInclusive : ex;
-          const badge =
-            kind === "tool"
-              ? '<span class="badge tool">無料</span>'
-              : kind === "fortune"
-                ? '<span class="badge fortune">占い ' + esc(String(ex)) + '円〜</span>'
-                : '<span class="badge paid">' + esc(String(ex)) + '円（税抜）</span>';
-          const priceNote =
-            kind === "tool"
-              ? '<div class="meta">卓連携・会計追加なし</div>'
-              : '<div class="meta">税込 ' + esc(String(inc)) + '円 / 卓の会計に追加</div>';
-          const reward = kind === "tool"
-            ? ""
-            : (() => {
-            const items = Array.isArray(g.rewardMenuItems) && g.rewardMenuItems.length
-              ? g.rewardMenuItems
-              : g.rewardMenuItem ? [g.rewardMenuItem] : [];
-            if (!items.length) return "";
-            if (items.length === 1) {
-              return '<div class="meta">成功で「' + esc(items[0].name) + '」プレゼント</div>';
-            }
-            return '<div class="meta">成功で選べる特典: ' +
-              esc(items.map((it) => it.name).join(" / ")) + '</div>';
-          })();
-          return (
-            '<a class="card" href="' + esc(playUrl(g.slug)) + '">' +
-            '<span class="emoji">' + esc(g.iconEmoji || (kind === "tool" ? "🛠️" : kind === "fortune" ? "🔮" : "🎮")) + '</span>' +
-            '<div class="card-body">' +
-            '<p class="card-title">' + esc(g.title) + badge + '</p>' +
-            (g.description ? '<p class="card-desc">' + esc(g.description) + '</p>' : "") +
-            priceNote +
-            reward +
-            '</div></a>'
-          );
-        }
+        const categories =
+          meta.hubCategories && Array.isArray(meta.hubCategories.categories) && meta.hubCategories.categories.length
+            ? meta.hubCategories.categories
+            : [
+                { id: "game", label: "有料ゲーム" },
+                { id: "fortune", label: "占い・エンタメ" },
+                { id: "fortune_pro", label: "本格占い・鑑定" },
+                { id: "tool", label: "無料ツール" },
+              ];
+        const categoryIds = new Set(categories.map((c) => c.id));
         let html = "";
-        for (const cat of CATEGORY_ORDER) {
-          const items = games.filter((g) => hubCat(g) === cat.id);
+        for (const cat of categories) {
+          const items = games.filter((g) => hubCat(g, categoryIds) === cat.id);
           if (!items.length) continue;
           html += '<h2 class="section-title">' + esc(cat.label) + "</h2>";
           html += items.map(renderCard).join("");
         }
         grid.innerHTML = html;
+        grid.querySelectorAll(".card[data-slug]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const slug = btn.getAttribute("data-slug");
+            if (slug) openDetail(slug);
+          });
+        });
       } catch (e) {
         document.getElementById("loading").style.display = "none";
         errEl.style.display = "block";

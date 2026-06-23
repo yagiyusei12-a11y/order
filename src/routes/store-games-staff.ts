@@ -14,6 +14,11 @@ import {
   mergeHubCategoryIntoConfig,
   resolveGameHubCategory,
 } from "../lib/store-game-hub-category.js";
+import {
+  gamesHubCategoriesApiPayload,
+  loadStoreGamesHubCategories,
+  saveStoreGamesHubCategories,
+} from "../lib/store-games-hub-config.js";
 
 function parseGameKind(raw: unknown): "paid" | "fortune" | "tool" {
   if (raw === "fortune") return "fortune";
@@ -106,6 +111,50 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
       include: { rewardMenuItem: { select: { id: true, name: true } } },
     });
     return Promise.all(games.map((g) => mapStoreGameStaff(g)));
+  });
+
+  app.get<{ Params: { storeId: string } }>("/stores/:storeId/games/hub-config", async (req, reply) => {
+    const store = await prisma.store.findUnique({
+      where: { id: req.params.storeId },
+      select: { id: true },
+    });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    const settings = await loadStoreGamesHubCategories(req.params.storeId);
+    return gamesHubCategoriesApiPayload(settings);
+  });
+
+  app.patch<{
+    Params: { storeId: string };
+    Body: { order?: string[]; labels?: Record<string, string> };
+  }>("/stores/:storeId/games/hub-config", async (req, reply) => {
+    if (!(await assertManager(req, reply))) return;
+    const store = await prisma.store.findUnique({
+      where: { id: req.params.storeId },
+      select: { id: true },
+    });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    if (req.body?.order) {
+      for (const id of req.body.order) {
+        if (typeof id !== "string" || !isGameHubCategoryId(id)) {
+          return reply.code(400).send({ error: "invalid category order" });
+        }
+      }
+    }
+    if (req.body?.labels && typeof req.body.labels === "object") {
+      for (const [k, v] of Object.entries(req.body.labels)) {
+        if (!isGameHubCategoryId(k)) {
+          return reply.code(400).send({ error: "invalid category label key" });
+        }
+        if (typeof v !== "string" || !v.trim()) {
+          return reply.code(400).send({ error: "invalid category label" });
+        }
+      }
+    }
+    const settings = await saveStoreGamesHubCategories(req.params.storeId, {
+      order: req.body?.order,
+      labels: req.body?.labels,
+    });
+    return gamesHubCategoriesApiPayload(settings);
   });
 
   app.post<{ Params: { storeId: string }; Body: { mode?: string } }>(

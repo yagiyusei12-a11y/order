@@ -31,6 +31,7 @@ import {
   parseStoreGameRewardMenuItemIds,
 } from "../lib/store-game-rewards.js";
 import { resolveGameHubCategory } from "../lib/store-game-hub-category.js";
+import { gamesHubCategoriesApiPayload, loadStoreGamesHubCategories } from "../lib/store-games-hub-config.js";
 
 function keyFromRequest(req: FastifyRequest): string {
   const q = req.query as { key?: unknown };
@@ -74,7 +75,7 @@ function mapStoreGamePublic(
     sortOrder: number;
   },
   taxRatePercent: number,
-  rewardMenuItems: { id: string; name: string }[],
+  rewardMenuItems: { id: string; name: string; imageUrl?: string | null }[],
 ) {
   const exclusive = Math.max(0, Math.round(g.playPriceYen));
   const inclusive = gamePlayFeeTaxInclusive(exclusive, taxRatePercent);
@@ -92,8 +93,18 @@ function mapStoreGamePublic(
     configJson: g.configJson ?? {},
     hubCategory: resolveGameHubCategory(g),
     sortOrder: g.sortOrder,
-    rewardMenuItem: rewardMenuItems[0] ? { id: rewardMenuItems[0].id, name: rewardMenuItems[0].name } : null,
-    rewardMenuItems,
+    rewardMenuItem: rewardMenuItems[0]
+      ? {
+          id: rewardMenuItems[0].id,
+          name: rewardMenuItems[0].name,
+          imageUrl: rewardMenuItems[0].imageUrl ?? null,
+        }
+      : null,
+    rewardMenuItems: rewardMenuItems.map((it) => ({
+      id: it.id,
+      name: it.name,
+      imageUrl: it.imageUrl ?? null,
+    })),
   };
 }
 
@@ -119,14 +130,22 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
           return mapStoreGamePublic(
             g,
             st.taxRatePercent,
-            items.map((it) => ({ id: it.id, name: it.name })),
+            items.map((it) => ({
+              id: it.id,
+              name: it.name,
+              imageUrl: it.imageUrl ?? null,
+            })),
           );
         }),
+      );
+      const hubCategories = gamesHubCategoriesApiPayload(
+        await loadStoreGamesHubCategories(req.params.storeId),
       );
       return {
         storeId: req.params.storeId,
         storeName: store.name,
         taxRatePercent: st.taxRatePercent,
+        hubCategories,
         games: mapped,
       };
     },

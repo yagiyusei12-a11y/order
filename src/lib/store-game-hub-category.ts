@@ -7,10 +7,73 @@ export const GAME_HUB_CATEGORIES = [
 
 export type GameHubCategoryId = (typeof GAME_HUB_CATEGORIES)[number]["id"];
 
+export type GamesHubCategorySettings = {
+  order: GameHubCategoryId[];
+  labels: Partial<Record<GameHubCategoryId, string>>;
+};
+
 const CATEGORY_IDS = new Set<string>(GAME_HUB_CATEGORIES.map((c) => c.id));
+
+export const DEFAULT_GAMES_HUB_CATEGORY_ORDER: GameHubCategoryId[] = GAME_HUB_CATEGORIES.map(
+  (c) => c.id,
+);
 
 export function isGameHubCategoryId(value: string): value is GameHubCategoryId {
   return CATEGORY_IDS.has(value);
+}
+
+export function defaultGamesHubCategorySettings(): GamesHubCategorySettings {
+  return {
+    order: DEFAULT_GAMES_HUB_CATEGORY_ORDER.slice(),
+    labels: {},
+  };
+}
+
+export function mergeGamesHubCategorySettings(raw: unknown): GamesHubCategorySettings {
+  const base = defaultGamesHubCategorySettings();
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return base;
+  const o = raw as Record<string, unknown>;
+
+  if (Array.isArray(o.order)) {
+    const seen = new Set<GameHubCategoryId>();
+    const merged: GameHubCategoryId[] = [];
+    for (const id of o.order) {
+      if (typeof id !== "string" || !isGameHubCategoryId(id) || seen.has(id)) continue;
+      seen.add(id);
+      merged.push(id);
+    }
+    for (const id of DEFAULT_GAMES_HUB_CATEGORY_ORDER) {
+      if (!seen.has(id)) merged.push(id);
+    }
+    base.order = merged;
+  }
+
+  if (o.labels && typeof o.labels === "object" && !Array.isArray(o.labels)) {
+    for (const [k, v] of Object.entries(o.labels as Record<string, unknown>)) {
+      if (!isGameHubCategoryId(k)) continue;
+      if (typeof v === "string" && v.trim()) {
+        base.labels[k] = v.trim().slice(0, 40);
+      }
+    }
+  }
+
+  return base;
+}
+
+export function listGamesHubCategories(
+  settings: GamesHubCategorySettings,
+): { id: GameHubCategoryId; label: string }[] {
+  return settings.order.map((id) => ({
+    id,
+    label: settings.labels[id]?.trim() || hubCategoryLabel(id),
+  }));
+}
+
+export function readGamesHubCategoriesFromStoreSettings(settings: unknown): GamesHubCategorySettings {
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+    return defaultGamesHubCategorySettings();
+  }
+  return mergeGamesHubCategorySettings((settings as Record<string, unknown>).gamesHubCategories);
 }
 
 export function parseHubCategoryFromConfig(configJson: unknown): string {
@@ -64,4 +127,17 @@ export function mergeHubCategoryIntoConfig(
     delete base.hubCategory;
   }
   return base;
+}
+
+export function gamesHubCategoriesToApi(settings: GamesHubCategorySettings): {
+  order: GameHubCategoryId[];
+  labels: Partial<Record<GameHubCategoryId, string>>;
+  categories: { id: GameHubCategoryId; label: string }[];
+} {
+  const categories = listGamesHubCategories(settings);
+  return {
+    order: settings.order,
+    labels: settings.labels,
+    categories,
+  };
 }

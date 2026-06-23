@@ -8,8 +8,11 @@
 
   let games = [];
   let menuCategories = [];
+  let hubConfig = { categories: GAME_HUB_CATEGORIES.slice() };
   let orderSaveTimer = null;
+  let hubConfigSaveTimer = null;
   let orderSaving = false;
+  let hubConfigSaving = false;
 
   function esc(s) {
     return String(s)
@@ -38,6 +41,145 @@
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || "error");
     return j;
+  }
+
+  function categoryDefs() {
+    return Array.isArray(hubConfig.categories) && hubConfig.categories.length
+      ? hubConfig.categories
+      : GAME_HUB_CATEGORIES.slice();
+  }
+
+  function categoryLabel(id) {
+    const found = categoryDefs().find((c) => c.id === id);
+    return found ? found.label : id;
+  }
+
+  async function persistHubConfig(patch) {
+    if (hubConfigSaving) return;
+    hubConfigSaving = true;
+    log("カテゴリ設定を保存中…");
+    try {
+      const res = await api("/stores/" + encodeURIComponent(STORE) + "/games/hub-config", {
+        method: "PATCH",
+        body: patch,
+      });
+      if (Array.isArray(res.categories)) hubConfig.categories = res.categories;
+      log("カテゴリ設定を保存しました");
+      setTimeout(() => log(""), 2000);
+    } catch (e) {
+      log(e instanceof Error ? e.message : "カテゴリ設定の保存に失敗しました");
+      await loadAll();
+    } finally {
+      hubConfigSaving = false;
+    }
+  }
+
+  function scheduleHubConfigSave(patch) {
+    if (hubConfigSaveTimer) clearTimeout(hubConfigSaveTimer);
+    hubConfigSaveTimer = setTimeout(() => {
+      hubConfigSaveTimer = null;
+      void persistHubConfig(patch);
+    }, 500);
+  }
+
+  function collectCategoryOrderFromDom() {
+    const order = [];
+    document.querySelectorAll("#gamesList .games-cat-section").forEach((section) => {
+      const id = section.getAttribute("data-category");
+      if (id) order.push(id);
+    });
+    return order;
+  }
+
+  function wireCategorySectionDrag(root) {
+    if (!root) return;
+    let draggedSection = null;
+
+    const clearSectionDragOver = () => {
+      root.querySelectorAll(".games-cat-section.drag-over").forEach((el) => {
+        el.classList.remove("drag-over");
+      });
+    };
+
+    root.querySelectorAll(".games-cat-section").forEach((section) => {
+      const handle = section.querySelector(".games-cat-drag");
+      if (!handle) return;
+
+      handle.addEventListener("dragstart", (e) => {
+        draggedSection = section;
+        section.classList.add("is-dragging");
+        try {
+          e.dataTransfer.setData("text/plain", section.getAttribute("data-category") || "");
+          e.dataTransfer.effectAllowed = "move";
+        } catch (_) {}
+      });
+
+      handle.addEventListener("dragend", () => {
+        section.classList.remove("is-dragging");
+        clearSectionDragOver();
+        draggedSection = null;
+      });
+
+      section.addEventListener("dragover", (e) => {
+        if (!draggedSection || draggedSection === section) return;
+        e.preventDefault();
+        section.classList.add("drag-over");
+      });
+
+      section.addEventListener("dragleave", () => {
+        section.classList.remove("drag-over");
+      });
+
+      section.addEventListener("drop", (e) => {
+        e.preventDefault();
+        section.classList.remove("drag-over");
+        if (!draggedSection || draggedSection === section) return;
+        const rect = section.getBoundingClientRect();
+        const after = e.clientY > rect.top + rect.height / 2;
+        if (after) section.after(draggedSection);
+        else section.before(draggedSection);
+        scheduleHubConfigSave({ order: collectCategoryOrderFromDom() });
+      });
+    });
+
+    root.querySelectorAll(".games-cat-edit").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const catId = btn.getAttribute("data-cat-id");
+        if (!catId) return;
+        const section = btn.closest(".games-cat-section");
+        const labelEl = section && section.querySelector(".games-cat-label");
+        if (!labelEl) return;
+        const current = labelEl.textContent || "";
+        const input = document.createElement("input");
+        input.type = "text";
+        input.className = "games-cat-title-input";
+        input.value = current;
+        input.maxLength = 40;
+        labelEl.replaceWith(input);
+        input.focus();
+        input.select();
+        const finish = () => {
+          const next = input.value.trim() || current;
+          const span = document.createElement("span");
+          span.className = "games-cat-label";
+          span.textContent = next;
+          input.replaceWith(span);
+          if (next !== current) {
+            scheduleHubConfigSave({ labels: { [catId]: next } });
+            const cat = hubConfig.categories.find((c) => c.id === catId);
+            if (cat) cat.label = next;
+          }
+        };
+        input.addEventListener("blur", finish);
+        input.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter") input.blur();
+          if (ev.key === "Escape") {
+            input.value = current;
+            input.blur();
+          }
+        });
+      });
+    });
   }
 
   function defaultHubCategory(kind, slug) {
@@ -440,7 +582,7 @@
       );
 
     const byCat = new Map();
-    for (const cat of GAME_HUB_CATEGORIES) byCat.set(cat.id, []);
+    for (const cat of categoryDefs()) byCat.set(cat.id, []);
     for (const g of sorted) {
       const cat = gameHubCategory(g);
       if (!byCat.has(cat)) byCat.set(cat, []);
@@ -448,17 +590,23 @@
     }
 
     let html = "";
-    for (const cat of GAME_HUB_CATEGORIES) {
+    for (const cat of categoryDefs()) {
       const items = byCat.get(cat.id) || [];
       html +=
         '<section class="games-cat-section" data-category="' +
         esc(cat.id) +
         '">' +
-        '<h2 class="games-cat-title">' +
+        '<div class="games-cat-head">' +
+        '<span class="games-cat-drag" draggable="true" title="カテゴリの並び替え" aria-label="カテゴリ並べ替え">⋮⋮</span>' +
+        '<h2 class="games-cat-title"><span class="games-cat-label">' +
         esc(cat.label) +
-        "（" +
+        "</span>（" +
         items.length +
         "）</h2>" +
+        '<button type="button" class="games-cat-edit" data-cat-id="' +
+        esc(cat.id) +
+        '">名前変更</button>' +
+        "</div>" +
         '<div class="games-cat-list">';
       if (!items.length) {
         html += '<p class="games-cat-empty">ここにドラッグして移動できます</p>';
@@ -482,16 +630,26 @@
       });
     });
     wireGameDragSort(el);
+    wireCategorySectionDrag(el);
   }
 
   async function loadAll() {
     log("読み込み中…");
-    const [gList, menu] = await Promise.all([
+    const [gList, menu, hub] = await Promise.all([
       api("/stores/" + encodeURIComponent(STORE) + "/games"),
       api("/stores/" + encodeURIComponent(STORE) + "/menu/full"),
+      api("/stores/" + encodeURIComponent(STORE) + "/games/hub-config"),
     ]);
     games = Array.isArray(gList) ? gList : [];
     menuCategories = Array.isArray(menu.categories) ? menu.categories : [];
+    if (Array.isArray(hub.categories)) hubConfig.categories = hub.categories;
+    const catSelect = document.getElementById("gameHubCategory");
+    if (catSelect) {
+      hubConfig.categories.forEach((c) => {
+        const opt = catSelect.querySelector('option[value="' + c.id + '"]');
+        if (opt) opt.textContent = c.label;
+      });
+    }
     renderList();
     if (countMenuItems(menuCategories) === 0) {
       log("メニュー商品が0件です。サイドバー「メニュー」で商品を登録してください。");

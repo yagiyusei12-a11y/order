@@ -59,6 +59,7 @@
     let gameMeta = null;
     let playId = null;
     let moduleApi = null;
+    let rewardPickActive = false;
 
     function esc(s) {
       return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
@@ -83,6 +84,80 @@
       } catch (_) {
         return "";
       }
+    }
+
+    async function fetchPendingReward() {
+      const token = getToken();
+      if (!token) return null;
+      const res = await api("/guest/" + encodeURIComponent(token) + "/games/pending-reward");
+      return res && res.pending ? res : null;
+    }
+
+    async function forfeitRewardPlay(targetPlayId) {
+      const token = getToken();
+      if (!token || !targetPlayId) return;
+      await api(
+        "/guest/" + encodeURIComponent(token) + "/games/plays/" + encodeURIComponent(targetPlayId) + "/forfeit-reward",
+        { method: "POST", body: {} },
+      );
+    }
+
+    function setBackLinkDuringPick(active) {
+      const back = document.getElementById("backLink");
+      if (!back) return;
+      if (active) {
+        back.href = hubUrl();
+        back.onclick = (e) => {
+          e.preventDefault();
+          if (
+            !confirm(
+              "景品をまだ選んでいません。\n一覧に戻りますか？\n（あとから同じゲームを開けば、もう一度選べます）",
+            )
+          ) {
+            return;
+          }
+          rewardPickActive = false;
+          location.href = hubUrl();
+        };
+        rewardPickActive = true;
+      } else {
+        back.onclick = null;
+        back.href = hubUrl();
+        rewardPickActive = false;
+      }
+    }
+
+    function btnHide() {
+      document.getElementById("btnAction").style.display = "none";
+    }
+
+    async function tryResumePendingReward() {
+      const pending = await fetchPendingReward();
+      if (!pending) return false;
+      playId = pending.playId;
+      if (pending.gameSlug !== GAME_SLUG) {
+        let playHref =
+          "/games/" +
+          encodeURIComponent(STORE_ID) +
+          "/play/" +
+          encodeURIComponent(pending.gameSlug) +
+          "?key=" +
+          encodeURIComponent(HUB_KEY);
+        const t = getToken();
+        if (t) playHref += "&token=" + encodeURIComponent(t);
+        document.getElementById("gameRoot").innerHTML =
+          '<p class="fortune-text">' +
+          esc(pending.gameTitle) +
+          "の景品選択が残っています。</p>" +
+          '<p class="fortune-text"><a href="' +
+          esc(playHref) +
+          '">景品を選ぶ</a></p>';
+        showMsg("先に景品を選ぶと、ゲームやご注文をスムーズに続けられます。", "win");
+        btnHide();
+        return true;
+      }
+      renderRewardPicker(pending.rewardChoices, pending.gameTitle + " — 景品を選んでください", null);
+      return true;
     }
 
     async function ensureGuestLinked() {
@@ -172,10 +247,28 @@
         token = getToken();
       }
       if (!token) throw new Error("卓のQRを読み取ってからプレイしてください");
-      const res = await api("/guest/" + encodeURIComponent(token) + "/games/" + encodeURIComponent(gameMeta.id) + "/start", {
+      const r = await fetch("/guest/" + encodeURIComponent(token) + "/games/" + encodeURIComponent(gameMeta.id) + "/start", {
         method: "POST",
-        body: {},
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
       });
+      const res = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        if (res.error === "pending_reward_pick" && res.playId && Array.isArray(res.rewardChoices)) {
+          playId = res.playId;
+          renderRewardPicker(
+            res.rewardChoices,
+            (res.gameTitle || "ゲーム") + " — 先に景品を選んでください",
+            null,
+          );
+        }
+        throw new Error(
+          res.error === "pending_reward_pick"
+            ? "先に景品を選んでから次のプレイに進んでください"
+            : res.error || res.message || "error",
+        );
+      }
       playId = res.playId;
       return res;
     }
@@ -244,6 +337,7 @@
       const root = document.getElementById("gameRoot");
       const btn = document.getElementById("btnAction");
       btn.style.display = "none";
+      setBackLinkDuringPick(true);
       showMsg(successPrefix || "成功！プレゼントを選んでください。", "win");
       let html =
         '<div class="reward-pick">' +
@@ -269,10 +363,24 @@
             const picked = await pickRewardGame(menuItemId);
             root.innerHTML = '<p class="fortune-text">「' + esc(picked.rewardName || "特典") + '」を厨房へ送りました！</p>';
             showMsg("ご選択ありがとうございます。", "win");
-            offerPlayAgain(null, onPlayAgain);
+            setBackLinkDuringPick(false);
+            playId = null;
+            if (onPlayAgain) {
+              offerPlayAgain(null, onPlayAgain);
+            } else {
+              offerPlayAgain(null, () => location.reload());
+            }
           } catch (e) {
             root.querySelectorAll(".reward-pick-btn").forEach((b) => { b.disabled = false; });
-            showErr(e instanceof Error ? e.message : "選択に失敗しました");
+            const msg = e instanceof Error ? e.message : "選択に失敗しました";
+            if (msg.indexOf("stock") >= 0 || msg.indexOf("unavailable") >= 0) {
+              const refreshed = await fetchPendingReward();
+              if (refreshed && refreshed.rewardChoices.length > 0) {
+                renderRewardPicker(refreshed.rewardChoices, "在庫が変わりました。もう一度選んでください。", onPlayAgain);
+                return;
+              }
+            }
+            showErr(msg);
           }
         });
       });
@@ -298,6 +406,7 @@
         gameMeta = (meta.games || []).find((g) => g.slug === GAME_SLUG);
         if (!gameMeta) throw new Error("ゲームが見つかりません");
         document.getElementById("gameTitle").textContent = gameMeta.title;
+        if (await tryResumePendingReward()) return;
         const mod = await loadModule(GAME_SLUG);
         moduleApi = mod;
         const ctx = {

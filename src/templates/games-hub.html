@@ -78,6 +78,7 @@
     <h1>__STORE_NAME_HTML__</h1>
     <p class="sub">店内ゲーム・占いコーナー</p>
     <div id="sessionBanner" class="banner warn" style="display:none"></div>
+    <div id="pendingRewardBanner" class="banner warn" style="display:none"></div>
     <p id="loading">読み込み中…</p>
     <div id="grid" class="grid" style="display:none"></div>
     <p id="err" role="alert"></p>
@@ -152,6 +153,42 @@
       let u = "/games/" + encodeURIComponent(STORE_ID) + "/play/" + encodeURIComponent(slug) + "?key=" + encodeURIComponent(HUB_KEY);
       if (t) u += "&token=" + encodeURIComponent(t);
       return u;
+    }
+
+    async function fetchPendingReward() {
+      const token = getToken();
+      if (!token) return null;
+      const res = await api("/guest/" + encodeURIComponent(token) + "/games/pending-reward");
+      return res && res.pending ? res : null;
+    }
+
+    async function refreshPendingRewardBanner() {
+      const el = document.getElementById("pendingRewardBanner");
+      if (!el) return;
+      const token = getToken();
+      if (!token) {
+        el.style.display = "none";
+        return;
+      }
+      try {
+        const p = await fetchPendingReward();
+        if (!p) {
+          el.style.display = "none";
+          return;
+        }
+        el.style.display = "block";
+        el.innerHTML =
+          "<strong>" +
+          esc(p.gameTitle) +
+          "</strong> の景品をまだ選んでいません。" +
+          '<br><span class="meta">選ぶまで新しいゲームは始められません。モバイルオーダーもこのままご利用いただけます。</span>' +
+          '<br><button type="button" class="scan-btn" id="btnPickPendingReward">景品を選ぶ</button>';
+        document.getElementById("btnPickPendingReward").onclick = () => {
+          location.href = playUrl(p.gameSlug);
+        };
+      } catch (_) {
+        el.style.display = "none";
+      }
     }
 
     async function api(path) {
@@ -265,6 +302,13 @@
             return;
           }
         }
+        try {
+          const pending = await fetchPendingReward();
+          if (pending) {
+            location.href = playUrl(pending.gameSlug);
+            return;
+          }
+        } catch (_) {}
         location.href = playUrl(g.slug);
       };
     }
@@ -327,6 +371,7 @@
       document.getElementById("detailBackdrop").addEventListener("click", closeDetail);
       try {
         await refreshSessionBanner();
+        await refreshPendingRewardBanner();
         const meta = await api("/games/api/" + encodeURIComponent(STORE_ID) + "/meta?key=" + encodeURIComponent(HUB_KEY));
         const games = Array.isArray(meta.games) ? meta.games : [];
         gamesBySlug = new Map(games.map((g) => [g.slug, g]));

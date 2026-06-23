@@ -18,6 +18,11 @@ import { broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
 import { evaluatePublicOrderGate } from "../lib/store-order-gate.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
 import { grantGameRewardLine } from "../lib/game-reward-grant.js";
+import {
+  abandonStaleStartedPlays,
+  findPendingRewardPick,
+  forfeitPendingRewardPlay,
+} from "../lib/game-pending-reward.js";
 import { loadGamesHubBillSummary } from "../lib/games-bill-summary.js";
 import {
   isAiFortuneConfigured,
@@ -127,10 +132,11 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
         games.map(async (g) => {
           const ids = parseStoreGameRewardMenuItemIds(g);
           const items = await loadGameRewardMenuItems(req.params.storeId, ids);
+          const grantable = filterGrantableRewardItems(items);
           return mapStoreGamePublic(
             g,
             st.taxRatePercent,
-            items.map((it) => ({
+            grantable.map((it) => ({
               id: it.id,
               name: it.name,
               imageUrl: it.imageUrl ?? null,
@@ -259,6 +265,12 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
 
       const billingId = billing.ctx.billingSessionId;
       const orderSourceTableId = billing.ctx.orderSourceTableId;
+
+      const pendingPick = await findPendingRewardPick(billingId, tokenSession.storeId);
+      if (pendingPick) {
+        return reply.code(409).send({ error: "pending_reward_pick", ...pendingPick });
+      }
+
       const guestDeviceId =
         typeof req.body?.guestDeviceId === "string" && req.body.guestDeviceId.trim()
           ? req.body.guestDeviceId.trim().slice(0, 64)
@@ -278,6 +290,8 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
       }
 
       const result = await prisma.$transaction(async (tx) => {
+        await abandonStaleStartedPlays(billingId, tx);
+
         const play = await tx.gamePlay.create({
           data: {
             storeGameId: game.id,
@@ -610,6 +624,77 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
     broadcastOpsSessionUpdated(tokenSession.storeId, billingId);
     return completeResult;
   });
+
+  app.get<{ Params: { token: string } }>("/guest/:token/games/pending-reward", async (req, reply) => {
+    const tokenSession = await prisma.diningSession.findUnique({
+      where: { guestToken: req.params.token },
+      select: {
+        id: true,
+        status: true,
+        storeId: true,
+        tableId: true,
+        mergedIntoSessionId: true,
+      },
+    });
+    if (!tokenSession) {
+      return reply.code(404).send({ error: "session not found or closed" });
+    }
+    const billing = await resolveGuestBillingContext(tokenSession);
+    if (!billing.ok) {
+      return reply.code(billing.status).send(billing.body);
+    }
+
+    const pending = await findPendingRewardPick(billing.ctx.billingSessionId, tokenSession.storeId);
+    if (!pending) {
+      return { pending: false as const };
+    }
+    return { pending: true as const, ...pending };
+  });
+
+  app.post<{ Params: { token: string; playId: string } }>(
+    "/guest/:token/games/plays/:playId/forfeit-reward",
+    async (req, reply) => {
+      const tokenSession = await prisma.diningSession.findUnique({
+        where: { guestToken: req.params.token },
+        select: {
+          id: true,
+          status: true,
+          storeId: true,
+          tableId: true,
+          mergedIntoSessionId: true,
+        },
+      });
+      if (!tokenSession) {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+      const billing = await resolveGuestBillingContext(tokenSession);
+      if (!billing.ok) {
+        return reply.code(billing.status).send(billing.body);
+      }
+
+      const play = await prisma.gamePlay.findUnique({
+        where: { id: req.params.playId },
+        select: { id: true, billingSessionId: true, status: true, storeGame: { select: { storeId: true } } },
+      });
+      if (!play || play.billingSessionId !== billing.ctx.billingSessionId) {
+        return reply.code(404).send({ error: "play not found" });
+      }
+      if (play.storeGame.storeId !== tokenSession.storeId) {
+        return reply.code(403).send({ error: "forbidden" });
+      }
+      if (play.status !== "won_pick_reward") {
+        return reply.code(409).send({ error: "reward already picked or play not awaiting pick" });
+      }
+
+      const ok = await forfeitPendingRewardPlay(play.id);
+      if (!ok) {
+        return reply.code(409).send({ error: "reward already picked or play not awaiting pick" });
+      }
+
+      broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
+      return { ok: true };
+    },
+  );
 
   app.post<{ Params: { token: string; playId: string }; Body: { menuItemId?: string } }>(
     "/guest/:token/games/plays/:playId/pick-reward",

@@ -32,11 +32,13 @@
       ".af-label{font-size:0.72rem;font-weight:800;color:var(--muted);display:block;margin:0 0 0.2rem}" +
       ".af-field{margin:0 0 0.35rem}" +
       ".af-field input,.af-field select{width:100%;padding:0.5rem 0.55rem;border:1px solid var(--line);border-radius:8px;background:#0f1419;color:var(--text);font-size:0.88rem}" +
-      ".af-member{border:1px solid var(--line);border-radius:10px;padding:0.5rem 0.55rem;margin-bottom:0.4rem;background:#121820}" +
-      ".af-member-title{font-size:0.75rem;font-weight:800;color:#f0c060;margin:0 0 0.35rem}" +
-      ".af-row{display:flex;gap:0.35rem}" +
-      ".af-row input,.af-row select{flex:1}" +
-      ".af-row input[type=number]{max-width:4.5rem;flex:0 0 4.5rem}" +
+      ".af-member{border:1px solid var(--line);border-radius:10px;padding:0.5rem 0.55rem;margin-bottom:0.4rem;background:#121820;display:flex;flex-direction:column;gap:0.35rem}" +
+      ".af-member-title{font-size:0.75rem;font-weight:800;color:#f0c060;margin:0}" +
+      ".af-member input,.af-member select{padding:0.5rem 0.55rem;border:1px solid var(--line);border-radius:8px;background:#0f1419;color:var(--text);font-size:0.88rem;min-width:0}" +
+      ".af-member>.afName{width:100%}" +
+      ".af-row{display:flex;gap:0.35rem;align-items:center;width:100%}" +
+      ".af-row select{flex:1;min-width:0}" +
+      ".af-row input[type=number],.af-row .afAge{flex:0 0 4.25rem;width:4.25rem}" +
       ".af-add{width:100%;padding:0.45rem;border:1px dashed var(--line);border-radius:8px;background:transparent;color:var(--muted);cursor:pointer;font-size:0.82rem}" +
       ".af-result{border:1px solid var(--line);border-radius:12px;padding:0.75rem;background:#121820}" +
       ".af-result h2{font-size:1.15rem;margin:0 0 0.5rem;color:#f0c060;text-align:center}" +
@@ -96,10 +98,10 @@
             '"><p class="af-member-title">メンバー' +
             (i + 1) +
             "</p>" +
-            '<div class="af-row"><input class="afName" type="text" placeholder="名前" maxlength="20" value="メンバー' +
+            '<input class="afName" type="text" placeholder="名前" maxlength="20" value="メンバー' +
             (i + 1) +
             '" />' +
-            '<select class="afZodiac">' +
+            '<div class="af-row"><select class="afZodiac">' +
             zodiacOptions(ZODIAC[i % ZODIAC.length]) +
             "</select>" +
             '<input class="afAge" type="number" min="1" max="120" value="' +

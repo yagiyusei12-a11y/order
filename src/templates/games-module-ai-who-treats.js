@@ -20,11 +20,11 @@
           html +=
             '<div class="af-member"><p class="af-member-title">メンバー' +
             (i + 1) +
-            "</p><div class=\"af-row\">" +
+            "</p>" +
             '<input class="afName" type="text" placeholder="名前" maxlength="20" value="メンバー' +
             (i + 1) +
             '" />' +
-            '<select class="afZodiac">' +
+            '<div class="af-row"><select class="afZodiac">' +
             zodiacOptions(ZODIAC[i % ZODIAC.length]) +
             "</select>" +
             '<input class="afAge" type="number" min="1" max="120" value="' +

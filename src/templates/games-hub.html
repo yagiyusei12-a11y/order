@@ -185,7 +185,7 @@
       const kind = g.kind === "tool" ? "tool" : g.kind === "fortune" ? "fortune" : "paid";
       const ex = g.playPriceYen != null ? g.playPriceYen : 80;
       if (kind === "tool") return '<span class="badge tool">無料</span>';
-      if (kind === "fortune") return '<span class="badge fortune">占い ' + esc(String(ex)) + '円〜</span>';
+      if (kind === "fortune") return '<span class="badge fortune">' + esc(String(ex)) + "円（税抜）</span>";
       return '<span class="badge paid">' + esc(String(ex)) + '円（税抜）</span>';
     }
 

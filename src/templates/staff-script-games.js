@@ -1,6 +1,15 @@
 (function () {
+  const GAME_HUB_CATEGORIES = [
+    { id: "game", label: "有料ゲーム" },
+    { id: "fortune", label: "占い・エンタメ" },
+    { id: "fortune_pro", label: "本格占い・鑑定" },
+    { id: "tool", label: "無料ツール" },
+  ];
+
   let games = [];
   let menuCategories = [];
+  let orderSaveTimer = null;
+  let orderSaving = false;
 
   function esc(s) {
     return String(s)
@@ -31,11 +40,37 @@
     return j;
   }
 
+  function defaultHubCategory(kind, slug) {
+    if (kind === "tool") return "tool";
+    if (kind === "paid") return "game";
+    const pro = new Set([
+      "omikuji",
+      "ai-serious-tarot",
+      "ai-four-pillars",
+      "ai-astrology",
+      "ai-palm-reading",
+    ]);
+    if (pro.has(slug)) return "fortune_pro";
+    return "fortune";
+  }
+
+  function gameHubCategory(g) {
+    if (g.hubCategory && GAME_HUB_CATEGORIES.some((c) => c.id === g.hubCategory)) {
+      return g.hubCategory;
+    }
+    return defaultHubCategory(g.kind, g.slug);
+  }
+
   function togglePaidFields() {
     const kind = document.getElementById("gameKind").value;
     document.getElementById("paidFields").style.display = kind === "paid" ? "block" : "none";
     const priceWrap = document.getElementById("gamePriceWrap");
     if (priceWrap) priceWrap.style.display = kind === "tool" ? "none" : "block";
+    const catEl = document.getElementById("gameHubCategory");
+    if (catEl && !document.getElementById("gameId").value.trim()) {
+      const slug = document.getElementById("gameSlug").value.trim();
+      catEl.value = defaultHubCategory(kind, slug);
+    }
   }
 
   function formatPriceLabel(g) {
@@ -162,7 +197,9 @@
       game && game.kind === "tool" ? "0" : game ? String(game.playPriceYen) : "80";
     document.getElementById("gameWinMode").value = game && game.winMode === "skill" ? "skill" : "random";
     document.getElementById("gameWinPct").value = game ? String(game.winProbabilityPercent) : "30";
-    document.getElementById("gameSort").value = game ? String(game.sortOrder) : "0";
+    document.getElementById("gameHubCategory").value = game
+      ? gameHubCategory(game)
+      : defaultHubCategory("paid", "");
     document.getElementById("gameEnabled").checked = game ? game.enabled !== false : true;
     const selectedIds =
       game && Array.isArray(game.rewardMenuItemIds) && game.rewardMenuItemIds.length
@@ -199,38 +236,239 @@
     }
   }
 
+  function renderGameRow(g) {
+    const kindLabel =
+      g.kind === "tool"
+        ? "無料ツール"
+        : g.kind === "fortune"
+          ? "占い · " + formatPriceLabel(g)
+          : formatPriceLabel(g);
+    const reward = rewardLabelForGame(g);
+    const rewardNote =
+      g.kind === "paid" && Array.isArray(g.rewardMenuItems) && g.rewardMenuItems.length > 1
+        ? " · お客様が選択"
+        : "";
+    return (
+      '<div class="games-row" data-id="' +
+      esc(g.id) +
+      '" data-category="' +
+      esc(gameHubCategory(g)) +
+      '">' +
+      '<span class="games-row-drag" draggable="true" title="ドラッグして並べ替え" aria-label="並べ替え">⋮⋮</span>' +
+      '<div class="games-row-main">' +
+      '<p class="games-row-title">' +
+      esc(g.iconEmoji || "🎮") +
+      " " +
+      esc(g.title) +
+      (g.enabled ? "" : ' <span class="muted">(非公開)</span>') +
+      "</p>" +
+      '<p class="games-row-meta">slug: <code>' +
+      esc(g.slug) +
+      "</code> · " +
+      esc(kindLabel) +
+      (g.kind === "paid" ? " · 特典: " + esc(reward) + esc(rewardNote) : "") +
+      "</p></div>" +
+      '<div class="games-row-actions">' +
+      '<button type="button" class="btn-secondary btn-edit" data-id="' +
+      esc(g.id) +
+      '">編集</button>' +
+      '<button type="button" class="btn-danger btn-delete" data-id="' +
+      esc(g.id) +
+      '" data-title="' +
+      esc(g.title) +
+      '">削除</button>' +
+      "</div></div>"
+    );
+  }
+
+  function collectOrderFromDom() {
+    const orderedIds = [];
+    const hubCategories = {};
+    document.querySelectorAll(".games-cat-section").forEach((section) => {
+      const catId = section.getAttribute("data-category") || "";
+      section.querySelectorAll(".games-row[data-id]").forEach((row) => {
+        const id = row.getAttribute("data-id");
+        if (!id) return;
+        orderedIds.push(id);
+        hubCategories[id] = catId;
+        row.setAttribute("data-category", catId);
+      });
+    });
+    return { orderedIds, hubCategories };
+  }
+
+  async function persistOrder() {
+    if (orderSaving) return;
+    const { orderedIds, hubCategories } = collectOrderFromDom();
+    if (!orderedIds.length) return;
+    orderSaving = true;
+    log("並び順を保存中…");
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/games/reorder", {
+        method: "POST",
+        body: { orderedIds, hubCategories },
+      });
+      games = games
+        .slice()
+        .sort((a, b) => orderedIds.indexOf(a.id) - orderedIds.indexOf(b.id))
+        .map((g) => ({
+          ...g,
+          sortOrder: orderedIds.indexOf(g.id),
+          hubCategory: hubCategories[g.id] || gameHubCategory(g),
+        }));
+      log("並び順を保存しました");
+      setTimeout(() => log(""), 2000);
+    } catch (e) {
+      log(e instanceof Error ? e.message : "並び順の保存に失敗しました");
+      await loadAll();
+    } finally {
+      orderSaving = false;
+    }
+  }
+
+  function scheduleOrderSave() {
+    if (orderSaveTimer) clearTimeout(orderSaveTimer);
+    orderSaveTimer = setTimeout(() => {
+      orderSaveTimer = null;
+      void persistOrder();
+    }, 400);
+  }
+
+  function wireGameDragSort(root) {
+    if (!root) return;
+    let draggedRow = null;
+
+    const clearDragOver = () => {
+      root.querySelectorAll(".games-row.drag-over, .games-cat-list.drag-over").forEach((el) => {
+        el.classList.remove("drag-over");
+      });
+    };
+
+    root.querySelectorAll(".games-row").forEach((row) => {
+      const handle = row.querySelector(".games-row-drag");
+      if (!handle) return;
+
+      handle.addEventListener("dragstart", (e) => {
+        draggedRow = row;
+        row.classList.add("is-dragging");
+        try {
+          e.dataTransfer.setData("text/plain", row.getAttribute("data-id") || "");
+          e.dataTransfer.effectAllowed = "move";
+        } catch (_) {}
+      });
+
+      handle.addEventListener("dragend", () => {
+        row.classList.remove("is-dragging");
+        clearDragOver();
+        draggedRow = null;
+      });
+
+      row.addEventListener("dragover", (e) => {
+        if (!draggedRow || draggedRow === row) return;
+        e.preventDefault();
+        row.classList.add("drag-over");
+      });
+
+      row.addEventListener("dragleave", () => {
+        row.classList.remove("drag-over");
+      });
+
+      row.addEventListener("drop", (e) => {
+        e.preventDefault();
+        row.classList.remove("drag-over");
+        if (!draggedRow || draggedRow === row) return;
+        const rect = row.getBoundingClientRect();
+        const after = e.clientY > rect.top + rect.height / 2;
+        const list = row.parentElement;
+        if (!list) return;
+        if (after) row.after(draggedRow);
+        else row.before(draggedRow);
+        const section = list.closest(".games-cat-section");
+        if (section) {
+          draggedRow.setAttribute("data-category", section.getAttribute("data-category") || "");
+        }
+        const empty = list.querySelector(".games-cat-empty");
+        if (empty) empty.remove();
+        scheduleOrderSave();
+      });
+    });
+
+    root.querySelectorAll(".games-cat-list").forEach((list) => {
+      list.addEventListener("dragover", (e) => {
+        if (!draggedRow) return;
+        e.preventDefault();
+        list.classList.add("drag-over");
+      });
+      list.addEventListener("dragleave", (e) => {
+        if (e.currentTarget === list && !list.contains(e.relatedTarget)) {
+          list.classList.remove("drag-over");
+        }
+      });
+      list.addEventListener("drop", (e) => {
+        e.preventDefault();
+        list.classList.remove("drag-over");
+        if (!draggedRow) return;
+        if (!list.contains(draggedRow)) {
+          list.appendChild(draggedRow);
+          const section = list.closest(".games-cat-section");
+          if (section) {
+            draggedRow.setAttribute("data-category", section.getAttribute("data-category") || "");
+          }
+          const empty = list.querySelector(".games-cat-empty");
+          if (empty) empty.remove();
+          scheduleOrderSave();
+        }
+      });
+    });
+  }
+
   function renderList() {
     const el = document.getElementById("gamesList");
     if (!games.length) {
-      el.innerHTML = '<p class="muted">ゲームがありません。「ゲームを追加」または下記サンプルを参考に slug を設定してください。</p>' +
+      el.innerHTML =
+        '<p class="muted">ゲームがありません。「ゲームを追加」または下記サンプルを参考に slug を設定してください。</p>' +
         '<p class="muted" style="font-size:0.78rem">組み込み slug: <code>ai-serious-tarot</code>, <code>ai-four-pillars</code>, <code>ai-astrology</code>, <code>ai-drunk-diagnosis</code> など</p>';
       return;
     }
-    el.innerHTML = games.map((g) => {
-      const kindLabel =
-        g.kind === "tool"
-          ? "無料ツール"
-          : g.kind === "fortune"
-            ? "占い · " + formatPriceLabel(g)
-            : formatPriceLabel(g);
-      const reward = rewardLabelForGame(g);
-      const rewardNote =
-        g.kind === "paid" && Array.isArray(g.rewardMenuItems) && g.rewardMenuItems.length > 1
-          ? " · お客様が選択"
-          : "";
-      return (
-        '<div class="games-row">' +
-        '<div><p class="games-row-title">' + esc(g.iconEmoji || "🎮") + " " + esc(g.title) +
-        (g.enabled ? "" : ' <span class="muted">(非公開)</span>') + '</p>' +
-        '<p class="games-row-meta">slug: <code>' + esc(g.slug) + '</code> · ' + esc(kindLabel) +
-        (g.kind === "paid" ? " · 特典: " + esc(reward) + esc(rewardNote) : "") +
-        '</p></div>' +
-        '<div class="games-row-actions">' +
-        '<button type="button" class="btn-secondary btn-edit" data-id="' + esc(g.id) + '">編集</button>' +
-        '<button type="button" class="btn-danger btn-delete" data-id="' + esc(g.id) + '" data-title="' + esc(g.title) + '">削除</button>' +
-        '</div></div>'
+
+    const sorted = games
+      .slice()
+      .sort(
+        (a, b) =>
+          (a.sortOrder ?? 0) - (b.sortOrder ?? 0) ||
+          String(a.title || "").localeCompare(String(b.title || ""), "ja"),
       );
-    }).join("");
+
+    const byCat = new Map();
+    for (const cat of GAME_HUB_CATEGORIES) byCat.set(cat.id, []);
+    for (const g of sorted) {
+      const cat = gameHubCategory(g);
+      if (!byCat.has(cat)) byCat.set(cat, []);
+      byCat.get(cat).push(g);
+    }
+
+    let html = "";
+    for (const cat of GAME_HUB_CATEGORIES) {
+      const items = byCat.get(cat.id) || [];
+      html +=
+        '<section class="games-cat-section" data-category="' +
+        esc(cat.id) +
+        '">' +
+        '<h2 class="games-cat-title">' +
+        esc(cat.label) +
+        "（" +
+        items.length +
+        "）</h2>" +
+        '<div class="games-cat-list">';
+      if (!items.length) {
+        html += '<p class="games-cat-empty">ここにドラッグして移動できます</p>';
+      } else {
+        html += items.map(renderGameRow).join("");
+      }
+      html += "</div></section>";
+    }
+    el.innerHTML = html;
+
     el.querySelectorAll(".btn-edit").forEach((btn) => {
       btn.addEventListener("click", () => {
         const id = btn.getAttribute("data-id");
@@ -243,6 +481,7 @@
         void deleteGameById(btn.getAttribute("data-id"), btn.getAttribute("data-title"));
       });
     });
+    wireGameDragSort(el);
   }
 
   async function loadAll() {
@@ -262,6 +501,15 @@
   }
 
   document.getElementById("gameKind").addEventListener("change", togglePaidFields);
+  document.getElementById("gameSlug").addEventListener("input", () => {
+    if (!document.getElementById("gameId").value.trim()) {
+      const kind = document.getElementById("gameKind").value;
+      const slug = document.getElementById("gameSlug").value.trim();
+      if (slug) {
+        document.getElementById("gameHubCategory").value = defaultHubCategory(kind, slug);
+      }
+    }
+  });
   document.getElementById("btnAddGame").addEventListener("click", () => openModal(null));
   document.getElementById("btnSeedGames").addEventListener("click", async () => {
     if (!confirm("未登録のサンプルゲームだけ追加します。削除済みのゲームは復活しません。")) return;
@@ -310,7 +558,7 @@
       playPriceYen: parseInt(document.getElementById("gamePrice").value, 10) || 80,
       winMode: document.getElementById("gameWinMode").value,
       winProbabilityPercent: parseInt(document.getElementById("gameWinPct").value, 10) || 30,
-      sortOrder: parseInt(document.getElementById("gameSort").value, 10) || 0,
+      hubCategory: document.getElementById("gameHubCategory").value,
       enabled: document.getElementById("gameEnabled").checked,
       rewardMenuItemIds,
     };

@@ -9,6 +9,11 @@ import {
 } from "../lib/store-game-rewards.js";
 import { seedStoreGameSamples } from "../lib/store-game-samples.js";
 import { forgetDeletedGameSlug, rememberDeletedGameSlug } from "../lib/store-game-deleted-slugs.js";
+import {
+  isGameHubCategoryId,
+  mergeHubCategoryIntoConfig,
+  resolveGameHubCategory,
+} from "../lib/store-game-hub-category.js";
 
 function parseGameKind(raw: unknown): "paid" | "fortune" | "tool" {
   if (raw === "fortune") return "fortune";
@@ -80,6 +85,7 @@ async function mapStoreGameStaff(
     winMode: g.winMode,
     winProbabilityPercent: g.winProbabilityPercent,
     configJson: g.configJson ?? {},
+    hubCategory: resolveGameHubCategory(g),
   };
 }
 
@@ -158,6 +164,14 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
       if (!v.ok) return reply.code(400).send({ error: v.error });
     }
 
+    const hubCategoryRaw = typeof b.hubCategory === "string" ? b.hubCategory.trim() : "";
+    const configJson = mergeHubCategoryIntoConfig(
+      b.configJson,
+      hubCategoryRaw && isGameHubCategoryId(hubCategoryRaw)
+        ? hubCategoryRaw
+        : resolveGameHubCategory({ kind, slug, configJson: b.configJson }),
+    );
+
     const maxSort = await prisma.storeGame.aggregate({
       where: { storeId: req.params.storeId },
       _max: { sortOrder: true },
@@ -183,7 +197,7 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
           rewardMenuItemIds: rewardMenuItemIds as Prisma.InputJsonValue,
           winMode,
           winProbabilityPercent,
-          configJson: (b.configJson ?? {}) as Prisma.InputJsonValue,
+          configJson: configJson as Prisma.InputJsonValue,
           enabled: b.enabled !== false,
           sortOrder,
         },
@@ -235,6 +249,17 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
       if (b.configJson !== undefined) {
         data.configJson = b.configJson as Prisma.InputJsonValue;
       }
+      if (typeof b.hubCategory === "string" && b.hubCategory.trim()) {
+        const hubCategory = b.hubCategory.trim();
+        if (!isGameHubCategoryId(hubCategory)) {
+          return reply.code(400).send({ error: "invalid hubCategory" });
+        }
+        const baseConfig =
+          data.configJson !== undefined
+            ? data.configJson
+            : (existing.configJson as Prisma.InputJsonValue);
+        data.configJson = mergeHubCategoryIntoConfig(baseConfig, hubCategory) as Prisma.InputJsonValue;
+      }
       if (b.kind === "fortune" || b.kind === "paid" || b.kind === "tool") {
         data.kind = parseGameKind(b.kind);
         if (data.kind === "tool") {
@@ -279,6 +304,51 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
       }
     },
   );
+
+  app.post<{
+    Params: { storeId: string };
+    Body: { orderedIds?: string[]; hubCategories?: Record<string, string> };
+  }>("/stores/:storeId/games/reorder", async (req, reply) => {
+    if (!(await assertManager(req, reply))) return;
+    const orderedIds = req.body?.orderedIds;
+    if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+      return reply.code(400).send({ error: "orderedIds required" });
+    }
+    const games = await prisma.storeGame.findMany({
+      where: { storeId: req.params.storeId },
+      select: { id: true, configJson: true },
+    });
+    if (orderedIds.length !== games.length) {
+      return reply
+        .code(400)
+        .send({ error: "orderedIds must list every game in this store exactly once" });
+    }
+    const idSet = new Set(games.map((g) => g.id));
+    const byId = new Map(games.map((g) => [g.id, g]));
+    const seen = new Set<string>();
+    const hubCategories =
+      req.body?.hubCategories && typeof req.body.hubCategories === "object"
+        ? req.body.hubCategories
+        : {};
+    for (const id of orderedIds) {
+      if (typeof id !== "string" || !idSet.has(id) || seen.has(id)) {
+        return reply.code(400).send({ error: "invalid or duplicate id in orderedIds" });
+      }
+      seen.add(id);
+    }
+    await prisma.$transaction(
+      orderedIds.map((id, index) => {
+        const row = byId.get(id)!;
+        const hubRaw = hubCategories[id];
+        const data: Prisma.StoreGameUpdateInput = { sortOrder: index };
+        if (typeof hubRaw === "string" && isGameHubCategoryId(hubRaw.trim())) {
+          data.configJson = mergeHubCategoryIntoConfig(row.configJson, hubRaw.trim()) as Prisma.InputJsonValue;
+        }
+        return prisma.storeGame.update({ where: { id }, data });
+      }),
+    );
+    return { ok: true };
+  });
 
   app.delete<{ Params: { storeId: string; gameId: string } }>(
     "/stores/:storeId/games/:gameId",

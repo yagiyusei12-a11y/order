@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { loadGamesHubDeletedSlugs } from "./store-game-deleted-slugs.js";
+import { defaultHubCategoryForGame, mergeHubCategoryIntoConfig } from "./store-game-hub-category.js";
 
 export type StoreGameSampleDef = {
   slug: string;
@@ -274,7 +275,10 @@ export async function seedStoreGameSamples(
       playPriceYen: sample.playPriceYen,
       winMode: sample.winMode,
       winProbabilityPercent: sample.winProbabilityPercent,
-      configJson: sample.configJson,
+      configJson: mergeHubCategoryIntoConfig(
+        sample.configJson,
+        defaultHubCategoryForGame(sample.kind, sample.slug),
+      ) as Prisma.InputJsonValue,
       sortOrder: sample.sortOrder,
       enabled: sample.kind === "fortune" || sample.kind === "tool" || rewardMenuItemIds.length > 0,
       rewardMenuItemIds: rewardMenuItemIds as Prisma.InputJsonValue,

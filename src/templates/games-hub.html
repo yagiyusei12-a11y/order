@@ -29,6 +29,10 @@
     .badge.fortune { background:#2a2040; color:#c4b5fd; }
     .badge.tool { background:#1a2a24; color:#6ee7a0; }
     .meta { font-size:0.72rem; color:var(--muted); margin-top:0.35rem; }
+    .section-title {
+      font-size:0.78rem; font-weight:800; color:var(--muted); margin:0.85rem 0 0.35rem; letter-spacing:0.04em;
+    }
+    .section-title:first-child { margin-top:0; }
     #loading { text-align:center; color:var(--muted); padding:2rem 0; }
     #err { color:var(--bad); font-size:0.85rem; margin-top:0.75rem; display:none; }
     .link-btn { display:inline-block; margin-top:0.5rem; color:var(--accent); font-weight:700; font-size:0.82rem; }
@@ -132,7 +136,31 @@
           grid.innerHTML = '<p class="sub">現在公開中のゲームはありません。</p>';
           return;
         }
-        grid.innerHTML = games.map((g) => {
+        const CATEGORY_ORDER = [
+          { id: "game", label: "有料ゲーム" },
+          { id: "fortune", label: "占い・エンタメ" },
+          { id: "fortune_pro", label: "本格占い・鑑定" },
+          { id: "tool", label: "無料ツール" },
+        ];
+        function defaultHubCategory(g) {
+          if (g.kind === "tool") return "tool";
+          if (g.kind === "paid") return "game";
+          const pro = new Set([
+            "omikuji",
+            "ai-serious-tarot",
+            "ai-four-pillars",
+            "ai-astrology",
+            "ai-palm-reading",
+          ]);
+          if (pro.has(g.slug)) return "fortune_pro";
+          return "fortune";
+        }
+        function hubCat(g) {
+          return g.hubCategory && CATEGORY_ORDER.some((c) => c.id === g.hubCategory)
+            ? g.hubCategory
+            : defaultHubCategory(g);
+        }
+        function renderCard(g) {
           const kind = g.kind === "tool" ? "tool" : g.kind === "fortune" ? "fortune" : "paid";
           const ex = g.playPriceYen != null ? g.playPriceYen : 80;
           const inc = g.playPriceYenInclusive != null ? g.playPriceYenInclusive : ex;
@@ -169,7 +197,15 @@
             reward +
             '</div></a>'
           );
-        }).join("");
+        }
+        let html = "";
+        for (const cat of CATEGORY_ORDER) {
+          const items = games.filter((g) => hubCat(g) === cat.id);
+          if (!items.length) continue;
+          html += '<h2 class="section-title">' + esc(cat.label) + "</h2>";
+          html += items.map(renderCard).join("");
+        }
+        grid.innerHTML = html;
       } catch (e) {
         document.getElementById("loading").style.display = "none";
         errEl.style.display = "block";

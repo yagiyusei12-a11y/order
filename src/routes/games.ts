@@ -30,6 +30,7 @@ import {
   loadGameRewardMenuItems,
   parseStoreGameRewardMenuItemIds,
 } from "../lib/store-game-rewards.js";
+import { resolveGameHubCategory } from "../lib/store-game-hub-category.js";
 
 function keyFromRequest(req: FastifyRequest): string {
   const q = req.query as { key?: unknown };
@@ -70,6 +71,7 @@ function mapStoreGamePublic(
     configJson: unknown;
     rewardMenuItemIds: unknown;
     rewardMenuItemId: string | null;
+    sortOrder: number;
   },
   taxRatePercent: number,
   rewardMenuItems: { id: string; name: string }[],
@@ -88,6 +90,8 @@ function mapStoreGamePublic(
     playPriceYenInclusive: inclusive,
     winMode: g.winMode === "skill" ? "skill" : "random",
     configJson: g.configJson ?? {},
+    hubCategory: resolveGameHubCategory(g),
+    sortOrder: g.sortOrder,
     rewardMenuItem: rewardMenuItems[0] ? { id: rewardMenuItems[0].id, name: rewardMenuItems[0].name } : null,
     rewardMenuItems,
   };

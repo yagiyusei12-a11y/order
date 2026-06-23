@@ -2,7 +2,7 @@
   window.__gameModules = window.__gameModules || {};
   window.__gameModules["memory-match"] = {
     mount(ctx) {
-      const { game, root, btn, showMsg, showErr, startPaidGame, completePaidGame } = ctx;
+      const { game, root, btn, showMsg, showErr, startPaidGame, completePaidGame, finishWin, goBackToHub } = ctx;
       const cfg = game.configJson && typeof game.configJson === "object" ? game.configJson : {};
       const defaultLimit = typeof cfg.timeLimitMs === "number" ? cfg.timeLimitMs : 10000;
       const defaultPairs = typeof cfg.pairCount === "number" ? cfg.pairCount : 7;
@@ -127,11 +127,9 @@
             payload: { pairsMatched, elapsedMs, cleared: cleared === true },
           });
           if (res.won) {
-            showMsg(
-              "クリア！ " + ((res.elapsedMs || elapsedMs) / 1000).toFixed(1) + "秒で全ペア成立。「" +
-                (res.rewardName || "特典") +
-                "」を厨房へ送りました。",
-              "win",
+            await finishWin(
+              res,
+              "クリア！ " + ((res.elapsedMs || elapsedMs) / 1000).toFixed(1) + "秒で全ペア成立。",
             );
           } else {
             showMsg(
@@ -144,14 +142,10 @@
                 "秒）",
               "lose",
             );
+            btn.textContent = "一覧へ戻る";
+            btn.disabled = false;
+            btn.onclick = goBackToHub;
           }
-          btn.textContent = "一覧へ戻る";
-          btn.disabled = false;
-          btn.onclick = () => {
-            const back = document.getElementById("backLink");
-            if (back && back.href) location.href = back.href;
-            else history.back();
-          };
         } catch (e) {
           showErr(e instanceof Error ? e.message : "判定に失敗しました");
           finished = false;

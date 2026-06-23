@@ -129,9 +129,17 @@
             ? '<span class="badge fortune">占い ' + esc(String(ex)) + '円〜</span>'
             : '<span class="badge paid">' + esc(String(ex)) + '円（税抜）</span>';
           const priceNote = '<div class="meta">税込 ' + esc(String(inc)) + '円 / 卓の会計に追加</div>';
-          const reward = g.rewardMenuItem && g.rewardMenuItem.name
-            ? '<div class="meta">成功で「' + esc(g.rewardMenuItem.name) + '」プレゼント</div>'
-            : "";
+          const reward = (() => {
+            const items = Array.isArray(g.rewardMenuItems) && g.rewardMenuItems.length
+              ? g.rewardMenuItems
+              : g.rewardMenuItem ? [g.rewardMenuItem] : [];
+            if (!items.length) return "";
+            if (items.length === 1) {
+              return '<div class="meta">成功で「' + esc(items[0].name) + '」プレゼント</div>';
+            }
+            return '<div class="meta">成功で選べる特典: ' +
+              esc(items.map((it) => it.name).join(" / ")) + '</div>';
+          })();
           return (
             '<a class="card" href="' + esc(playUrl(g.slug)) + '">' +
             '<span class="emoji">' + esc(g.iconEmoji || (kind === "fortune" ? "🔮" : "🎮")) + '</span>' +

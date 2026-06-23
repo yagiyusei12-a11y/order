@@ -8,6 +8,12 @@ import { resolveGuestBillingContext } from "../lib/guest-billing-context.js";
 import { broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
 import { evaluatePublicOrderGate } from "../lib/store-order-gate.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
+import { grantGameRewardLine } from "../lib/game-reward-grant.js";
+import {
+  filterGrantableRewardItems,
+  loadGameRewardMenuItems,
+  parseStoreGameRewardMenuItemIds,
+} from "../lib/store-game-rewards.js";
 
 function keyFromRequest(req: FastifyRequest): string {
   const q = req.query as { key?: unknown };
@@ -46,9 +52,11 @@ function mapStoreGamePublic(
     playPriceYen: number;
     winMode: string;
     configJson: unknown;
-    rewardMenuItem: { id: string; name: string } | null;
+    rewardMenuItemIds: unknown;
+    rewardMenuItemId: string | null;
   },
   taxRatePercent: number,
+  rewardMenuItems: { id: string; name: string }[],
 ) {
   const exclusive = Math.max(0, Math.round(g.playPriceYen));
   const inclusive = gamePlayFeeTaxInclusive(exclusive, taxRatePercent);
@@ -64,9 +72,8 @@ function mapStoreGamePublic(
     playPriceYenInclusive: inclusive,
     winMode: g.winMode === "skill" ? "skill" : "random",
     configJson: g.configJson ?? {},
-    rewardMenuItem: g.rewardMenuItem
-      ? { id: g.rewardMenuItem.id, name: g.rewardMenuItem.name }
-      : null,
+    rewardMenuItem: rewardMenuItems[0] ? { id: rewardMenuItems[0].id, name: rewardMenuItems[0].name } : null,
+    rewardMenuItems,
   };
 }
 
@@ -84,15 +91,23 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
       const games = await prisma.storeGame.findMany({
         where: { storeId: req.params.storeId, enabled: true },
         orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-        include: {
-          rewardMenuItem: { select: { id: true, name: true } },
-        },
       });
+      const mapped = await Promise.all(
+        games.map(async (g) => {
+          const ids = parseStoreGameRewardMenuItemIds(g);
+          const items = await loadGameRewardMenuItems(req.params.storeId, ids);
+          return mapStoreGamePublic(
+            g,
+            st.taxRatePercent,
+            items.map((it) => ({ id: it.id, name: it.name })),
+          );
+        }),
+      );
       return {
         storeId: req.params.storeId,
         storeName: store.name,
         taxRatePercent: st.taxRatePercent,
-        games: games.map((g) => mapStoreGamePublic(g, st.taxRatePercent)),
+        games: mapped,
       };
     },
   );
@@ -160,30 +175,19 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
           enabled: true,
           kind: { in: ["paid", "fortune"] },
         },
-        include: {
-          rewardMenuItem: {
-            select: {
-              id: true,
-              name: true,
-              isAvailable: true,
-              stockQty: true,
-              category: { select: { storeId: true } },
-            },
-          },
-        },
       });
       if (!game) {
         return reply.code(404).send({ error: "game not found" });
       }
       if (game.kind === "paid") {
-        if (!game.rewardMenuItemId || !game.rewardMenuItem) {
+        const rewardIds = parseStoreGameRewardMenuItemIds(game);
+        if (rewardIds.length === 0) {
           return reply.code(400).send({ error: "game reward not configured" });
         }
-        if (!game.rewardMenuItem.isAvailable) {
-          return reply.code(400).send({ error: "reward item unavailable" });
-        }
-        if (game.rewardMenuItem.stockQty != null && game.rewardMenuItem.stockQty <= 0) {
-          return reply.code(400).send({ error: "reward item out of stock" });
+        const rewardItems = await loadGameRewardMenuItems(tokenSession.storeId, rewardIds);
+        const grantable = filterGrantableRewardItems(rewardItems);
+        if (grantable.length === 0) {
+          return reply.code(400).send({ error: "reward items unavailable" });
         }
       }
 
@@ -308,20 +312,7 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
     const play = await prisma.gamePlay.findUnique({
       where: { id: req.params.playId },
       include: {
-        storeGame: {
-          include: {
-            rewardMenuItem: {
-              select: {
-                id: true,
-                name: true,
-                isAvailable: true,
-                stockQty: true,
-                containsAlcohol: true,
-                category: { select: { storeId: true } },
-              },
-            },
-          },
-        },
+        storeGame: true,
       },
     });
     if (!play || play.billingSessionId !== billing.ctx.billingSessionId) {
@@ -399,62 +390,68 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
         };
       }
 
-      const rewardItem = game.rewardMenuItem;
-      if (!rewardItem || !game.rewardMenuItemId) {
-        throw new Error("NO_REWARD");
+      const rewardIds = parseStoreGameRewardMenuItemIds(game);
+      const allRewardItems = await loadGameRewardMenuItems(tokenSession.storeId, rewardIds);
+      const grantable = filterGrantableRewardItems(allRewardItems);
+      if (grantable.length === 0) {
+        throw new Error("REWARD_UNAVAILABLE");
       }
-      if (!rewardItem.isAvailable) throw new Error("REWARD_UNAVAILABLE");
-      if (rewardItem.stockQty != null && rewardItem.stockQty <= 0) throw new Error("REWARD_STOCK");
 
-      const so = await tx.salesOrder.create({
-        data: {
-          sessionId: billingId,
-          ...(orderSourceTableId ? { sourceTableId: orderSourceTableId } : {}),
-          status: "submitted",
-          note: null,
-        },
-      });
-
-      const rewardLine = await tx.orderLine.create({
-        data: {
-          orderId: so.id,
-          menuItemId: rewardItem.id,
-          nameSnapshot: `${rewardItem.name}（ゲーム特典）`,
-          unitPrice: 0,
-          qty: 1,
-          eatMode: "dine_in",
-          taxRatePercent: st.taxRatePercent,
-          status: "queued",
-          lineExtra: {
-            kind: "gameReward",
-            storeGameId: game.id,
-            gamePlayId: play.id,
-            gameTitle: game.title,
-          } satisfies Prisma.InputJsonObject,
-          ...(play.guestDeviceId ? { guestDeviceId: play.guestDeviceId } : {}),
-        },
-      });
-
-      if (rewardItem.stockQty != null) {
-        await tx.menuItem.update({
-          where: { id: rewardItem.id },
-          data: { stockQty: { decrement: 1 } },
+      if (grantable.length > 1) {
+        await tx.gamePlay.update({
+          where: { id: play.id },
+          data: { status: "won_pick_reward", completedAt: new Date() },
         });
+        return {
+          won: true as const,
+          pickReward: true as const,
+          rewardChoices: grantable.map((it) => ({
+            id: it.id,
+            name: it.name,
+            imageUrl: it.imageUrl,
+          })),
+          rewardLineId: null as string | null,
+          rewardName: null as string | null,
+          ...(diceRoll
+            ? { dice1: diceRoll.dice1, dice2: diceRoll.dice2, diceSum: diceRoll.sum, targetSum: diceRoll.targetSum }
+            : {}),
+          ...(memoryResult
+            ? {
+                elapsedMs: memoryResult.elapsedMs,
+                timeLimitMs: memoryResult.timeLimitMs,
+                pairsMatched: memoryResult.pairsMatched,
+                pairCount: memoryResult.pairCount,
+              }
+            : {}),
+        };
       }
+
+      const rewardItem = grantable[0]!;
+      const granted = await grantGameRewardLine(tx, {
+        billingSessionId: billingId,
+        orderSourceTableId,
+        storeGameId: game.id,
+        gamePlayId: play.id,
+        gameTitle: game.title,
+        rewardItem,
+        taxRatePercent: st.taxRatePercent,
+        guestDeviceId: play.guestDeviceId,
+      });
 
       await tx.gamePlay.update({
         where: { id: play.id },
         data: {
           status: "won",
           completedAt: new Date(),
-          rewardOrderLineId: rewardLine.id,
+          rewardOrderLineId: granted.rewardLineId,
         },
       });
 
       return {
         won: true as const,
-        rewardLineId: rewardLine.id,
-        rewardName: rewardItem.name,
+        pickReward: false as const,
+        rewardLineId: granted.rewardLineId,
+        rewardName: granted.rewardName,
         ...(diceRoll
           ? { dice1: diceRoll.dice1, dice2: diceRoll.dice2, diceSum: diceRoll.sum, targetSum: diceRoll.targetSum }
           : {}),
@@ -482,4 +479,106 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
     broadcastOpsSessionUpdated(tokenSession.storeId, billingId);
     return completeResult;
   });
+
+  app.post<{ Params: { token: string; playId: string }; Body: { menuItemId?: string } }>(
+    "/guest/:token/games/plays/:playId/pick-reward",
+    async (req, reply) => {
+      const tokenSession = await prisma.diningSession.findUnique({
+        where: { guestToken: req.params.token },
+        select: {
+          id: true,
+          status: true,
+          storeId: true,
+          tableId: true,
+          mergedIntoSessionId: true,
+        },
+      });
+      if (!tokenSession) {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+      const billing = await resolveGuestBillingContext(tokenSession);
+      if (!billing.ok) {
+        return reply.code(billing.status).send(billing.body);
+      }
+
+      const menuItemId =
+        typeof req.body?.menuItemId === "string" && req.body.menuItemId.trim()
+          ? req.body.menuItemId.trim()
+          : "";
+      if (!menuItemId) {
+        return reply.code(400).send({ error: "menuItemId required" });
+      }
+
+      const play = await prisma.gamePlay.findUnique({
+        where: { id: req.params.playId },
+        include: { storeGame: true },
+      });
+      if (!play || play.billingSessionId !== billing.ctx.billingSessionId) {
+        return reply.code(404).send({ error: "play not found" });
+      }
+      if (play.storeGame.storeId !== tokenSession.storeId) {
+        return reply.code(403).send({ error: "forbidden" });
+      }
+      if (play.status !== "won_pick_reward") {
+        return reply.code(409).send({ error: "reward already picked or play not won" });
+      }
+
+      const rewardIds = parseStoreGameRewardMenuItemIds(play.storeGame);
+      if (!rewardIds.includes(menuItemId)) {
+        return reply.code(400).send({ error: "invalid reward choice" });
+      }
+
+      const storeRow = await prisma.store.findUnique({
+        where: { id: tokenSession.storeId },
+        select: { settings: true },
+      });
+      const st = mergeStoreSettings(storeRow?.settings);
+      const billingId = billing.ctx.billingSessionId;
+      const orderSourceTableId = billing.ctx.orderSourceTableId;
+      const game = play.storeGame;
+
+      const pickResult = await prisma.$transaction(async (tx) => {
+        const items = await loadGameRewardMenuItems(tokenSession.storeId, [menuItemId], tx);
+        const rewardItem = items[0];
+        if (!rewardItem) throw new Error("REWARD_UNAVAILABLE");
+
+        const granted = await grantGameRewardLine(tx, {
+          billingSessionId: billingId,
+          orderSourceTableId,
+          storeGameId: game.id,
+          gamePlayId: play.id,
+          gameTitle: game.title,
+          rewardItem,
+          taxRatePercent: st.taxRatePercent,
+          guestDeviceId: play.guestDeviceId,
+        });
+
+        await tx.gamePlay.update({
+          where: { id: play.id },
+          data: {
+            status: "won",
+            rewardOrderLineId: granted.rewardLineId,
+          },
+        });
+
+        return granted;
+      }).catch((e: unknown) => {
+        const msg = e instanceof Error ? e.message : "";
+        if (msg === "REWARD_UNAVAILABLE") return { error: "reward item unavailable" };
+        if (msg === "REWARD_STOCK") return { error: "reward item out of stock" };
+        throw e;
+      });
+
+      if ("error" in pickResult) {
+        return reply.code(400).send({ error: pickResult.error });
+      }
+
+      broadcastOpsSessionUpdated(tokenSession.storeId, billingId);
+      return {
+        ok: true,
+        rewardLineId: pickResult.rewardLineId,
+        rewardName: pickResult.rewardName,
+      };
+    },
+  );
 }

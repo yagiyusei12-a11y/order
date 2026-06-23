@@ -537,8 +537,10 @@ model StoreGame {
   iconEmoji             String?
   /// 有料ゲームの参加費（税抜円）
   playPriceYen          Int        @default(88)
-  /// 成功時に厨房へ送る MenuItem（有料のみ）
+  /// 成功時に厨房へ送る MenuItem（有料・先頭1件・互換用）
   rewardMenuItemId      String?
+  /// 成功時プレゼント候補 MenuItem.id の JSON 配列
+  rewardMenuItemIds     Json       @default("[]")
   /// random | skill
   winMode               String     @default("random")
   /// winMode=random の当選率（0〜100）

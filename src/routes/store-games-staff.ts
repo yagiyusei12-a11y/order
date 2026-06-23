@@ -1,6 +1,12 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
+import {
+  loadGameRewardMenuItems,
+  normalizeRewardMenuItemIdsInput,
+  parseStoreGameRewardMenuItemIds,
+  validateRewardMenuItemIdsForStore,
+} from "../lib/store-game-rewards.js";
 
 function slugify(raw: string): string {
   return raw
@@ -11,42 +17,44 @@ function slugify(raw: string): string {
     .slice(0, 48);
 }
 
-function parseGameBody(body: unknown): {
-  kind?: string;
-  slug?: string;
-  title?: string;
-  description?: string | null;
-  iconEmoji?: string | null;
-  playPriceYen?: number;
-  rewardMenuItemId?: string | null;
-  winMode?: string;
-  winProbabilityPercent?: number;
-  configJson?: unknown;
-  enabled?: boolean;
-  sortOrder?: number;
-} {
+function parseGameBody(body: unknown): Record<string, unknown> {
   return body && typeof body === "object" && !Array.isArray(body)
     ? (body as Record<string, unknown>)
     : {};
 }
 
-function mapStoreGameStaff(g: {
-  id: string;
-  storeId: string;
-  sortOrder: number;
-  enabled: boolean;
-  kind: string;
-  slug: string;
-  title: string;
-  description: string | null;
-  iconEmoji: string | null;
-  playPriceYen: number;
-  rewardMenuItemId: string | null;
-  winMode: string;
-  winProbabilityPercent: number;
-  configJson: unknown;
-  rewardMenuItem: { id: string; name: string } | null;
-}) {
+function parseRewardIdsFromBody(b: Record<string, unknown>): string[] {
+  if (Array.isArray(b.rewardMenuItemIds)) {
+    return normalizeRewardMenuItemIdsInput(b.rewardMenuItemIds);
+  }
+  if (typeof b.rewardMenuItemId === "string" && b.rewardMenuItemId.trim()) {
+    return [b.rewardMenuItemId.trim()];
+  }
+  return [];
+}
+
+async function mapStoreGameStaff(
+  g: {
+    id: string;
+    storeId: string;
+    sortOrder: number;
+    enabled: boolean;
+    kind: string;
+    slug: string;
+    title: string;
+    description: string | null;
+    iconEmoji: string | null;
+    playPriceYen: number;
+    rewardMenuItemId: string | null;
+    rewardMenuItemIds: unknown;
+    winMode: string;
+    winProbabilityPercent: number;
+    configJson: unknown;
+    rewardMenuItem: { id: string; name: string } | null;
+  },
+) {
+  const rewardMenuItemIds = parseStoreGameRewardMenuItemIds(g);
+  const rewardMenuItems = await loadGameRewardMenuItems(g.storeId, rewardMenuItemIds);
   return {
     id: g.id,
     sortOrder: g.sortOrder,
@@ -57,8 +65,10 @@ function mapStoreGameStaff(g: {
     description: g.description,
     iconEmoji: g.iconEmoji,
     playPriceYen: g.playPriceYen,
-    rewardMenuItemId: g.rewardMenuItemId,
-    rewardMenuItem: g.rewardMenuItem,
+    rewardMenuItemId: rewardMenuItemIds[0] ?? null,
+    rewardMenuItemIds,
+    rewardMenuItem: rewardMenuItems[0] ? { id: rewardMenuItems[0].id, name: rewardMenuItems[0].name } : null,
+    rewardMenuItems: rewardMenuItems.map((it) => ({ id: it.id, name: it.name })),
     winMode: g.winMode,
     winProbabilityPercent: g.winProbabilityPercent,
     configJson: g.configJson ?? {},
@@ -81,7 +91,7 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
       include: { rewardMenuItem: { select: { id: true, name: true } } },
     });
-    return games.map(mapStoreGameStaff);
+    return Promise.all(games.map((g) => mapStoreGameStaff(g)));
   });
 
   app.post<{ Params: { storeId: string } }>("/stores/:storeId/games", async (req, reply) => {
@@ -102,25 +112,10 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
       typeof b.winProbabilityPercent === "number" && Number.isFinite(b.winProbabilityPercent)
         ? Math.max(0, Math.min(100, Math.round(b.winProbabilityPercent)))
         : 30;
-    let rewardMenuItemId: string | null =
-      typeof b.rewardMenuItemId === "string" && b.rewardMenuItemId.trim()
-        ? b.rewardMenuItemId.trim()
-        : null;
+    const rewardMenuItemIds = parseRewardIdsFromBody(b);
     if (kind === "paid") {
-      if (!rewardMenuItemId) {
-        return reply.code(400).send({ error: "rewardMenuItemId required for paid games" });
-      }
-      const item = await prisma.menuItem.findFirst({
-        where: { id: rewardMenuItemId, category: { storeId: req.params.storeId } },
-        select: { id: true },
-      });
-      if (!item) return reply.code(400).send({ error: "invalid rewardMenuItemId" });
-    } else if (rewardMenuItemId) {
-      const item = await prisma.menuItem.findFirst({
-        where: { id: rewardMenuItemId, category: { storeId: req.params.storeId } },
-        select: { id: true },
-      });
-      if (!item) return reply.code(400).send({ error: "invalid rewardMenuItemId" });
+      const v = await validateRewardMenuItemIdsForStore(req.params.storeId, rewardMenuItemIds);
+      if (!v.ok) return reply.code(400).send({ error: v.error });
     }
 
     const maxSort = await prisma.storeGame.aggregate({
@@ -144,7 +139,8 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
           iconEmoji:
             typeof b.iconEmoji === "string" ? b.iconEmoji.trim().slice(0, 8) || null : null,
           playPriceYen,
-          rewardMenuItemId,
+          rewardMenuItemId: rewardMenuItemIds[0] ?? null,
+          rewardMenuItemIds: rewardMenuItemIds as Prisma.InputJsonValue,
           winMode,
           winProbabilityPercent,
           configJson: (b.configJson ?? {}) as Prisma.InputJsonValue,
@@ -201,25 +197,17 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
       if (b.kind === "fortune" || b.kind === "paid") {
         data.kind = b.kind;
       }
-      if (b.rewardMenuItemId !== undefined) {
+      if (b.rewardMenuItemIds !== undefined || b.rewardMenuItemId !== undefined) {
         const effectiveKind = b.kind === "fortune" || b.kind === "paid" ? b.kind : existing.kind;
-        const rid =
-          typeof b.rewardMenuItemId === "string" && b.rewardMenuItemId.trim()
-            ? b.rewardMenuItemId.trim()
-            : null;
-        if (effectiveKind === "paid" && !rid) {
-          return reply.code(400).send({ error: "rewardMenuItemId required for paid games" });
+        const rewardMenuItemIds = parseRewardIdsFromBody(b);
+        if (effectiveKind === "paid") {
+          const v = await validateRewardMenuItemIdsForStore(req.params.storeId, rewardMenuItemIds);
+          if (!v.ok) return reply.code(400).send({ error: v.error });
         }
-        if (rid) {
-          const item = await prisma.menuItem.findFirst({
-            where: { id: rid, category: { storeId: req.params.storeId } },
-            select: { id: true },
-          });
-          if (!item) return reply.code(400).send({ error: "invalid rewardMenuItemId" });
-          data.rewardMenuItem = { connect: { id: rid } };
-        } else {
-          data.rewardMenuItem = { disconnect: true };
-        }
+        data.rewardMenuItemIds = rewardMenuItemIds as Prisma.InputJsonValue;
+        data.rewardMenuItem = rewardMenuItemIds[0]
+          ? { connect: { id: rewardMenuItemIds[0] } }
+          : { disconnect: true };
       }
       if (typeof b.slug === "string" && b.slug.trim()) {
         data.slug = slugify(b.slug);

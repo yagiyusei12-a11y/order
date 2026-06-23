@@ -7,7 +7,7 @@
   window.__gameModules = window.__gameModules || {};
   window.__gameModules["dice-eight"] = {
     mount(ctx) {
-      const { game, root, btn, showMsg, showErr, startPaidGame, completePaidGame } = ctx;
+      const { game, root, btn, showMsg, showErr, startPaidGame, completePaidGame, finishWin, goBackToHub } = ctx;
       const cfg = game.configJson && typeof game.configJson === "object" ? game.configJson : {};
       const targetSum = typeof cfg.targetSum === "number" ? cfg.targetSum : 8;
       const ex = game.playPriceYen != null ? game.playPriceYen : 80;
@@ -115,18 +115,14 @@
             const sum = res.diceSum != null ? res.diceSum : d1 + d2;
             renderDice(d1, d2, false);
             if (res.won) {
-              showMsg("大成功！合計 " + sum + "！「" + (res.rewardName || "特典") + "」を厨房へ送りました。", "win");
+              await finishWin(res, "大成功！合計 " + sum + "！");
             } else {
               showMsg("合計 " + sum + "… 残念！またチャレンジ（" + ex + "円・税抜）", "lose");
+              btn.textContent = "一覧へ戻る";
+              btn.disabled = false;
+              btn.onclick = goBackToHub;
             }
             phase = "done";
-            btn.textContent = "一覧へ戻る";
-            btn.disabled = false;
-            btn.onclick = () => {
-              const back = document.getElementById("backLink");
-              if (back && back.href) location.href = back.href;
-              else history.back();
-            };
           } catch (e) {
             showErr(e instanceof Error ? e.message : "判定に失敗しました");
             phase = "ready";

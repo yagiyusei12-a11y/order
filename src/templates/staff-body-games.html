@@ -48,8 +48,11 @@
         <label class="lbl" for="gamePrice">参加費（税抜円）</label>
         <input id="gamePrice" type="number" min="0" step="1" value="80" />
         <div id="paidFields">
-          <label class="lbl" for="gameReward">成功時プレゼント（メニューマスタ）</label>
-          <select id="gameReward"><option value="">— 選択 —</option></select>
+          <label class="lbl">成功時プレゼント（メニューマスタ・複数可）</label>
+          <p class="muted" style="font-size:0.72rem;line-height:1.45;margin:0 0 0.35rem">
+            1件だけなら成功時に自動で厨房へ。2件以上ならお客様が成功後に選べます。
+          </p>
+          <div id="gameRewardList" class="game-reward-list" role="group" aria-label="成功時プレゼント"></div>
           <label class="lbl" for="gameWinMode">勝敗判定</label>
           <select id="gameWinMode">
             <option value="random">ランダム（当選率）</option>
@@ -98,5 +101,12 @@
   .games-modal__title { margin:0; font-size:1rem; font-weight:800; }
   .games-modal__body { padding:0.85rem 1rem 1rem; display:flex; flex-direction:column; gap:0.45rem; }
   .games-modal__body input, .games-modal__body select, .games-modal__body textarea { width:100%; }
+  .game-reward-list {
+    max-height:10rem; overflow:auto; border:1px solid var(--border); border-radius:8px;
+    padding:0.45rem 0.55rem; display:flex; flex-direction:column; gap:0.35rem; background:#fafafa;
+  }
+  .game-reward-list label { display:flex; align-items:flex-start; gap:0.45rem; font-size:0.82rem; cursor:pointer; }
+  .game-reward-list input { width:auto; margin-top:0.15rem; flex-shrink:0; }
+  .game-reward-list .muted { font-size:0.72rem; margin:0; }
   .games-modal__actions { display:flex; gap:0.5rem; margin-top:0.5rem; flex-wrap:wrap; }
 </style>

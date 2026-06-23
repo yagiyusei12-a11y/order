@@ -2,7 +2,7 @@
   window.__gameModules = window.__gameModules || {};
   window.__gameModules["lucky-stop"] = {
     mount(ctx) {
-      const { game, root, btn, showMsg, showErr, startPaidGame, completePaidGame } = ctx;
+      const { game, root, btn, showMsg, showErr, startPaidGame, completePaidGame, finishWin, goBackToHub } = ctx;
       const cfg = game.configJson && typeof game.configJson === "object" ? game.configJson : {};
       const targetMs = typeof cfg.targetMs === "number" ? cfg.targetMs : 3000;
       const ex = game.playPriceYen || 88;
@@ -67,17 +67,13 @@
           try {
             const res = await completePaidGame({ resultMs });
             if (res.won) {
-              showMsg("成功！「" + (res.rewardName || "特典") + "」を厨房へ送りました。", "win");
+              await finishWin(res, "成功！");
             } else {
               showMsg("残念！またチャレンジできます（" + ex + "円・税抜）。", "lose");
+              btn.textContent = "一覧へ戻る";
+              btn.disabled = false;
+              btn.onclick = goBackToHub;
             }
-            btn.textContent = "一覧へ戻る";
-            btn.disabled = false;
-            btn.onclick = () => {
-              const back = document.getElementById("backLink");
-              if (back && back.href) location.href = back.href;
-              else history.back();
-            };
           } catch (e) {
             showErr(e instanceof Error ? e.message : "判定に失敗しました");
             btn.textContent = "ストップ！";

@@ -47,18 +47,47 @@
     return out;
   }
 
-  function fillRewardSelect() {
-    const sel = document.getElementById("gameReward");
-    if (!sel) return;
-    const opts = menuItems.map((it) => {
-      const label = it.isAvailable === false ? it.name + "（停止中）" : it.name;
-      return '<option value="' + esc(it.id) + '">' + esc(label) + "</option>";
-    });
-    sel.innerHTML = '<option value="">— 選択 —</option>' + opts.join("");
+  function rewardLabelForGame(g) {
+    const items = Array.isArray(g.rewardMenuItems) && g.rewardMenuItems.length
+      ? g.rewardMenuItems
+      : g.rewardMenuItem
+        ? [g.rewardMenuItem]
+        : [];
+    if (!items.length) return "—";
+    if (items.length === 1) return items[0].name;
+    return items.map((it) => it.name).join(" / ");
+  }
+
+  function fillRewardCheckboxes(selectedIds) {
+    const box = document.getElementById("gameRewardList");
+    if (!box) return;
+    const selected = new Set(Array.isArray(selectedIds) ? selectedIds : []);
     if (menuItems.length === 0) {
-      sel.innerHTML +=
-        '<option value="" disabled>メニューに商品がありません（メニュー画面で登録）</option>';
+      box.innerHTML = '<p class="muted">メニューに商品がありません（メニュー画面で登録）</p>';
+      return;
     }
+    box.innerHTML = menuItems
+      .map((it) => {
+        const checked = selected.has(it.id) ? " checked" : "";
+        const suffix = it.isAvailable === false ? "（停止中）" : "";
+        return (
+          '<label><input type="checkbox" name="gameReward" value="' +
+          esc(it.id) +
+          '"' +
+          checked +
+          " /> " +
+          esc(it.name + suffix) +
+          "</label>"
+        );
+      })
+      .join("");
+  }
+
+  function getSelectedRewardIds() {
+    const inputs = document.querySelectorAll('#gameRewardList input[name="gameReward"]:checked');
+    return Array.from(inputs)
+      .map((el) => el.value)
+      .filter(Boolean);
   }
 
   function openModal(game) {
@@ -76,10 +105,13 @@
     document.getElementById("gameWinPct").value = game ? String(game.winProbabilityPercent) : "30";
     document.getElementById("gameSort").value = game ? String(game.sortOrder) : "0";
     document.getElementById("gameEnabled").checked = game ? game.enabled !== false : true;
-    fillRewardSelect();
-    if (game && game.rewardMenuItemId) {
-      document.getElementById("gameReward").value = game.rewardMenuItemId;
-    }
+    const selectedIds =
+      game && Array.isArray(game.rewardMenuItemIds) && game.rewardMenuItemIds.length
+        ? game.rewardMenuItemIds
+        : game && game.rewardMenuItemId
+          ? [game.rewardMenuItemId]
+          : [];
+    fillRewardCheckboxes(selectedIds);
     document.getElementById("gameModalTitle").textContent = game ? "ゲームを編集" : "ゲームを追加";
     document.getElementById("btnDeleteGame").style.display = game ? "inline-block" : "none";
     togglePaidFields();
@@ -100,13 +132,17 @@
     }
     el.innerHTML = games.map((g) => {
       const kindLabel = g.kind === "fortune" ? "占い · " + formatPriceLabel(g) : formatPriceLabel(g);
-      const reward = g.rewardMenuItem ? g.rewardMenuItem.name : "—";
+      const reward = rewardLabelForGame(g);
+      const rewardNote =
+        g.kind === "paid" && Array.isArray(g.rewardMenuItems) && g.rewardMenuItems.length > 1
+          ? " · お客様が選択"
+          : "";
       return (
         '<div class="games-row">' +
         '<div><p class="games-row-title">' + esc(g.iconEmoji || "🎮") + " " + esc(g.title) +
         (g.enabled ? "" : ' <span class="muted">(非公開)</span>') + '</p>' +
         '<p class="games-row-meta">slug: <code>' + esc(g.slug) + '</code> · ' + esc(kindLabel) +
-        (g.kind === "paid" ? " · 特典: " + esc(reward) : "") +
+        (g.kind === "paid" ? " · 特典: " + esc(reward) + esc(rewardNote) : "") +
         '</p></div>' +
         '<div class="games-row-actions">' +
         '<button type="button" class="btn-secondary btn-edit" data-id="' + esc(g.id) + '">編集</button>' +
@@ -157,6 +193,7 @@
     ev.preventDefault();
     const id = document.getElementById("gameId").value.trim();
     const kind = document.getElementById("gameKind").value;
+    const rewardMenuItemIds = getSelectedRewardIds();
     const body = {
       kind,
       slug: document.getElementById("gameSlug").value.trim(),
@@ -168,10 +205,10 @@
       winProbabilityPercent: parseInt(document.getElementById("gameWinPct").value, 10) || 30,
       sortOrder: parseInt(document.getElementById("gameSort").value, 10) || 0,
       enabled: document.getElementById("gameEnabled").checked,
-      rewardMenuItemId: document.getElementById("gameReward").value || null,
+      rewardMenuItemIds,
     };
-    if (kind === "paid" && !body.rewardMenuItemId) {
-      log("有料ゲームは成功時プレゼント（メニュー）が必須です");
+    if (kind === "paid" && rewardMenuItemIds.length === 0) {
+      log("有料ゲームは成功時プレゼント（メニュー）を1件以上選んでください");
       return;
     }
     try {

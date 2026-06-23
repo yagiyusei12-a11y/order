@@ -25,6 +25,17 @@
     .timer-display { font-size:2.5rem; font-weight:900; font-variant-numeric:tabular-nums; }
     .fortune-result { font-size:1.5rem; font-weight:900; }
     .fortune-text { color:var(--muted); font-size:0.88rem; line-height:1.55; max-width:18rem; }
+    .reward-pick { width:100%; display:flex; flex-direction:column; gap:0.5rem; margin-top:0.35rem; }
+    .reward-pick-title { font-size:0.88rem; font-weight:800; margin:0; color:var(--ok); text-align:center; }
+    .reward-pick-list { display:flex; flex-direction:column; gap:0.45rem; }
+    .reward-pick-btn {
+      display:flex; align-items:center; gap:0.65rem; width:100%; padding:0.55rem 0.65rem;
+      border:1px solid var(--line); border-radius:10px; background:#1a222c; color:var(--text);
+      cursor:pointer; text-align:left; font-size:0.88rem;
+    }
+    .reward-pick-btn:disabled { opacity:0.5; cursor:not-allowed; }
+    .reward-pick-btn img { width:2.5rem; height:2.5rem; object-fit:cover; border-radius:8px; flex-shrink:0; }
+    .reward-pick-btn .name { font-weight:700; }
   </style>
 </head>
 <body>
@@ -120,6 +131,79 @@
       });
     }
 
+    async function pickRewardGame(menuItemId) {
+      const token = getToken();
+      if (!token || !playId) throw new Error("session error");
+      return api("/guest/" + encodeURIComponent(token) + "/games/plays/" + encodeURIComponent(playId) + "/pick-reward", {
+        method: "POST",
+        body: { menuItemId },
+      });
+    }
+
+    function goBackToHub() {
+      const back = document.getElementById("backLink");
+      if (back && back.href) location.href = back.href;
+      else history.back();
+    }
+
+    function setupBackButton() {
+      const btn = document.getElementById("btnAction");
+      btn.style.display = "block";
+      btn.textContent = "一覧へ戻る";
+      btn.disabled = false;
+      btn.onclick = goBackToHub;
+    }
+
+    function renderRewardPicker(choices, successPrefix) {
+      const root = document.getElementById("gameRoot");
+      const btn = document.getElementById("btnAction");
+      btn.style.display = "none";
+      showMsg(successPrefix || "成功！プレゼントを選んでください。", "win");
+      let html =
+        '<div class="reward-pick">' +
+        '<p class="reward-pick-title">プレゼントを選んでください</p>' +
+        '<div class="reward-pick-list" id="rewardPickList">';
+      for (const c of choices) {
+        const img = c.imageUrl
+          ? '<img src="' + esc(c.imageUrl) + '" alt="" loading="lazy" />'
+          : '<span style="width:2.5rem;text-align:center;font-size:1.4rem">🎁</span>';
+        html +=
+          '<button type="button" class="reward-pick-btn" data-id="' + esc(c.id) + '">' +
+          img + '<span class="name">' + esc(c.name) + "</span></button>";
+      }
+      html += "</div></div>";
+      root.innerHTML = html;
+      root.querySelectorAll(".reward-pick-btn").forEach((el) => {
+        el.addEventListener("click", async () => {
+          const menuItemId = el.getAttribute("data-id");
+          if (!menuItemId) return;
+          root.querySelectorAll(".reward-pick-btn").forEach((b) => { b.disabled = true; });
+          showErr("");
+          try {
+            const picked = await pickRewardGame(menuItemId);
+            root.innerHTML = '<p class="fortune-text">「' + esc(picked.rewardName || "特典") + '」を厨房へ送りました！</p>';
+            showMsg("ご選択ありがとうございます。", "win");
+            setupBackButton();
+          } catch (e) {
+            root.querySelectorAll(".reward-pick-btn").forEach((b) => { b.disabled = false; });
+            showErr(e instanceof Error ? e.message : "選択に失敗しました");
+          }
+        });
+      });
+    }
+
+    async function finishWin(res, successPrefix) {
+      if (!res || !res.won) return false;
+      if (res.pickReward && Array.isArray(res.rewardChoices) && res.rewardChoices.length > 0) {
+        renderRewardPicker(res.rewardChoices, successPrefix);
+        return true;
+      }
+      const name = res.rewardName || "特典";
+      showMsg((successPrefix ? successPrefix + " " : "成功！ ") + "「" + name + "」を厨房へ送りました。", "win");
+      setupBackButton();
+      return true;
+    }
+
     async function main() {
       document.getElementById("backLink").href = hubUrl();
       try {
@@ -137,6 +221,8 @@
           showErr,
           startPaidGame,
           completePaidGame,
+          finishWin,
+          goBackToHub,
         };
         mod.mount(ctx);
       } catch (e) {

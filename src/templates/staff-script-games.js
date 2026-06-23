@@ -77,7 +77,7 @@
     const el = document.getElementById("gamesList");
     if (!games.length) {
       el.innerHTML = '<p class="muted">ゲームがありません。「ゲームを追加」または下記サンプルを参考に slug を設定してください。</p>' +
-        '<p class="muted" style="font-size:0.78rem">組み込み slug: <code>omikuji</code>（占い）, <code>lucky-stop</code>（ストップウォッチ）, <code>dice-eight</code>（シェイクサイコロ・合計8）</p>';
+        '<p class="muted" style="font-size:0.78rem">組み込み slug: <code>omikuji</code>, <code>lucky-stop</code>, <code>dice-eight</code>, <code>memory-match</code>（神経衰弱10秒）</p>';
       return;
     }
     el.innerHTML = games.map((g) => {

@@ -48,6 +48,9 @@ export function evaluateSkillWin(
     if (typeof resultMs !== "number" || !Number.isFinite(resultMs)) return false;
     return evaluateLuckyStopWin(parseLuckyStopConfig(configJson), resultMs);
   }
+  if (slug === "memory-match") {
+    return false;
+  }
   return false;
 }
 

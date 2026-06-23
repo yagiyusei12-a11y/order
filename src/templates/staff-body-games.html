@@ -57,6 +57,10 @@
           </select>
           <label class="lbl" for="gameWinPct">当選率（%）random 用</label>
           <input id="gameWinPct" type="number" min="0" max="100" step="1" value="30" />
+          <p class="muted" style="font-size:0.72rem;line-height:1.45;margin:0">
+            memory-match 用 configJson 例: <code>{"timeLimitMs":10000,"pairCount":7,"menuItemIds":[]}</code>
+            （menuItemIds 未指定時は画像付きメニューから自動選択）
+          </p>
         </div>
         <label class="lbl" for="gameSort">表示順</label>
         <input id="gameSort" type="number" step="1" value="0" />

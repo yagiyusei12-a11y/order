@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { verifyGamesHubKey } from "../lib/games-hub-auth.js";
 import { evaluateDiceTargetWin, evaluateRandomWin, evaluateSkillWin, gamePlayFeeTaxInclusive } from "../lib/game-play-logic.js";
+import { buildMemoryMatchDeck, evaluateMemoryMatchWin } from "../lib/memory-match-deck.js";
 import { resolveGuestBillingContext } from "../lib/guest-billing-context.js";
 import { broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
 import { evaluatePublicOrderGate } from "../lib/store-order-gate.js";
@@ -206,6 +207,16 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
       const playPriceInclusive = gamePlayFeeTaxInclusive(playPriceExclusive, st.taxRatePercent);
       const feeName = `${game.title}（参加 ${playPriceExclusive}円・税抜 / 税込${playPriceInclusive}円）`;
 
+      let memoryDeck: Awaited<ReturnType<typeof buildMemoryMatchDeck>> | null = null;
+      if (game.slug === "memory-match") {
+        try {
+          memoryDeck = await buildMemoryMatchDeck(tokenSession.storeId, game.configJson);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : "deck build failed";
+          return reply.code(400).send({ error: msg });
+        }
+      }
+
       const result = await prisma.$transaction(async (tx) => {
         const play = await tx.gamePlay.create({
           data: {
@@ -260,6 +271,14 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
       });
 
       broadcastOpsSessionUpdated(tokenSession.storeId, billingId);
+      if (memoryDeck) {
+        return {
+          ...result,
+          timeLimitMs: memoryDeck.timeLimitMs,
+          pairCount: memoryDeck.pairCount,
+          memoryCards: memoryDeck.cards,
+        };
+      }
       return result;
     },
   );
@@ -335,10 +354,14 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
 
     let won = false;
     let diceRoll: { dice1: number; dice2: number; sum: number; targetSum?: number } | null = null;
+    let memoryResult: ReturnType<typeof evaluateMemoryMatchWin> | null = null;
     if (game.slug === "dice-eight") {
       const roll = evaluateDiceTargetWin(game.configJson);
       won = roll.won;
       diceRoll = { dice1: roll.dice1, dice2: roll.dice2, sum: roll.sum, targetSum: roll.targetSum };
+    } else if (game.slug === "memory-match") {
+      memoryResult = evaluateMemoryMatchWin(game.configJson, bodyPayload, play.createdAt);
+      won = memoryResult.won;
     } else if (game.winMode === "skill") {
       won = evaluateSkillWin(game.slug, game.configJson, bodyPayload);
     } else {
@@ -364,6 +387,14 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
           rewardLineId: null as string | null,
           ...(diceRoll
             ? { dice1: diceRoll.dice1, dice2: diceRoll.dice2, diceSum: diceRoll.sum, targetSum: diceRoll.targetSum }
+            : {}),
+          ...(memoryResult
+            ? {
+                elapsedMs: memoryResult.elapsedMs,
+                timeLimitMs: memoryResult.timeLimitMs,
+                pairsMatched: memoryResult.pairsMatched,
+                pairCount: memoryResult.pairCount,
+              }
             : {}),
         };
       }
@@ -426,6 +457,14 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
         rewardName: rewardItem.name,
         ...(diceRoll
           ? { dice1: diceRoll.dice1, dice2: diceRoll.dice2, diceSum: diceRoll.sum, targetSum: diceRoll.targetSum }
+          : {}),
+        ...(memoryResult
+          ? {
+              elapsedMs: memoryResult.elapsedMs,
+              timeLimitMs: memoryResult.timeLimitMs,
+              pairsMatched: memoryResult.pairsMatched,
+              pairCount: memoryResult.pairCount,
+            }
           : {}),
       };
     }).catch((e: unknown) => {

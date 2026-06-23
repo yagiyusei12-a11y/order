@@ -293,6 +293,22 @@
       .join("");
   }
 
+  function lineExtraGroupKey(lineExtra) {
+    if (lineExtra != null && typeof lineExtra === "object" && !Array.isArray(lineExtra)) {
+      const ex = lineExtra;
+      if (ex.kind === "gameFee") {
+        return JSON.stringify({
+          kind: "gameFee",
+          storeGameId: ex.storeGameId ?? null,
+          gameTitle: ex.gameTitle ?? null,
+          playPriceExclusive: ex.playPriceExclusive ?? null,
+          playPriceTaxMode: ex.playPriceTaxMode ?? null,
+        });
+      }
+    }
+    return JSON.stringify(lineExtra ?? null);
+  }
+
   function groupedOrderLines(detail) {
     const lines = (detail.orderLines || []).filter(
       (l) => l.status !== "cancelled" && !isCourseOptionPackLine(l),
@@ -306,7 +322,7 @@
         l.menuItemId || "",
         String(l.sourceTableId || ""),
         JSON.stringify(l.discountJson ?? null),
-        JSON.stringify(l.lineExtra ?? null),
+        lineExtraGroupKey(l.lineExtra),
       ].join("::");
       if (!grouped.has(key)) {
         grouped.set(key, {

@@ -1,5 +1,4 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { verifyGamesHubKey } from "../lib/games-hub-auth.js";
 import {
@@ -18,6 +17,7 @@ import { broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
 import { evaluatePublicOrderGate } from "../lib/store-order-gate.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
 import { grantGameRewardLine } from "../lib/game-reward-grant.js";
+import { appendGameFeeOrderLine } from "../lib/game-fee-order-line.js";
 import {
   abandonStaleStartedPlays,
   findPendingRewardPick,
@@ -301,40 +301,21 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
           },
         });
 
-        const so = await tx.salesOrder.create({
-          data: {
-            sessionId: billingId,
-            ...(orderSourceTableId ? { sourceTableId: orderSourceTableId } : {}),
-            status: "submitted",
-            note: null,
-          },
-        });
-
-        const feeLine = await tx.orderLine.create({
-          data: {
-            orderId: so.id,
-            menuItemId: null,
-            nameSnapshot: feeName,
-            unitPrice: playPriceInclusive,
-            qty: 1,
-            eatMode: "dine_in",
-            taxRatePercent: st.taxRatePercent,
-            status: "queued",
-            lineExtra: {
-              kind: "gameFee",
-              storeGameId: game.id,
-              gamePlayId: play.id,
-              gameTitle: game.title,
-              playPriceExclusive,
-              playPriceTaxMode: "exclusive",
-            } satisfies Prisma.InputJsonObject,
-            ...(guestDeviceId ? { guestDeviceId } : {}),
-          },
+        const { feeLineId } = await appendGameFeeOrderLine(tx, {
+          billingSessionId: billingId,
+          orderSourceTableId,
+          storeGameId: game.id,
+          gameTitle: game.title,
+          playPriceExclusive,
+          playPriceInclusive,
+          feeName,
+          taxRatePercent: st.taxRatePercent,
+          guestDeviceId,
         });
 
         await tx.gamePlay.update({
           where: { id: play.id },
-          data: { feeOrderLineId: feeLine.id },
+          data: { feeOrderLineId: feeLineId },
         });
 
         return {

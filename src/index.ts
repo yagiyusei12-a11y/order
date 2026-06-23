@@ -21,7 +21,7 @@ import { runStockDailyResetForAllStores } from "./lib/stock-daily-reset.js";
 
 async function main(): Promise<void> {
   const trustProxy = process.env.TRUST_PROXY === "1";
-  const app = Fastify({ logger: true, trustProxy });
+  const app = Fastify({ logger: true, trustProxy, bodyLimit: 6 * 1024 * 1024 });
 
   await app.register(cookie);
   await app.register(jwt, {

@@ -20,6 +20,12 @@ import { mergeStoreSettings } from "../lib/store-settings.js";
 import { grantGameRewardLine } from "../lib/game-reward-grant.js";
 import { loadGamesHubBillSummary } from "../lib/games-bill-summary.js";
 import {
+  isAiFortuneConfigured,
+  isAiFortuneSlug,
+  runAiFortuneForSlug,
+  type AiFortunePayload,
+} from "../lib/ai-fortune.js";
+import {
   filterGrantableRewardItems,
   loadGameRewardMenuItems,
   parseStoreGameRewardMenuItemIds,
@@ -363,20 +369,49 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
 
     const game = play.storeGame;
 
+    const bodyPayload: Record<string, unknown> = {
+      ...(req.body?.payload && typeof req.body.payload === "object" ? req.body.payload : {}),
+    };
+    if (typeof req.body?.resultMs === "number") {
+      bodyPayload.resultMs = req.body.resultMs;
+    }
+
     if (game.kind === "fortune") {
+      if (isAiFortuneSlug(game.slug)) {
+        if (!isAiFortuneConfigured()) {
+          return reply.code(503).send({ error: "AI占いは現在ご利用いただけません（管理者にご連絡ください）" });
+        }
+        try {
+          const storeRow = await prisma.store.findUnique({
+            where: { id: tokenSession.storeId },
+            select: { name: true },
+          });
+          const aiResult = await runAiFortuneForSlug(
+            game.slug,
+            tokenSession.storeId,
+            storeRow?.name ?? "",
+            bodyPayload as AiFortunePayload,
+          );
+          await prisma.gamePlay.update({
+            where: { id: play.id },
+            data: { status: "finished", completedAt: new Date() },
+          });
+          broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
+          return { won: false, fortune: true, aiResult };
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : "AI占いに失敗しました";
+          if (msg === "AI_FORTUNE_NOT_CONFIGURED") {
+            return reply.code(503).send({ error: "AI占いは現在ご利用いただけません" });
+          }
+          return reply.code(400).send({ error: msg });
+        }
+      }
       await prisma.gamePlay.update({
         where: { id: play.id },
         data: { status: "finished", completedAt: new Date() },
       });
       broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
       return { won: false, fortune: true };
-    }
-
-    const bodyPayload: Record<string, unknown> = {
-      ...(req.body?.payload && typeof req.body.payload === "object" ? req.body.payload : {}),
-    };
-    if (typeof req.body?.resultMs === "number") {
-      bodyPayload.resultMs = req.body.resultMs;
     }
 
     let won = false;

@@ -70,7 +70,7 @@ function mapStoreGamePublic(
   const inclusive = gamePlayFeeTaxInclusive(exclusive, taxRatePercent);
   return {
     id: g.id,
-    kind: g.kind === "fortune" ? "fortune" : "paid",
+    kind: g.kind === "fortune" ? "fortune" : g.kind === "tool" ? "tool" : "paid",
     slug: g.slug,
     title: g.title,
     description: g.description,

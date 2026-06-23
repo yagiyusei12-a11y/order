@@ -9,6 +9,12 @@ import {
 } from "../lib/store-game-rewards.js";
 import { seedStoreGameSamples } from "../lib/store-game-samples.js";
 
+function parseGameKind(raw: unknown): "paid" | "fortune" | "tool" {
+  if (raw === "fortune") return "fortune";
+  if (raw === "tool") return "tool";
+  return "paid";
+}
+
 function slugify(raw: string): string {
   return raw
     .trim()
@@ -130,20 +136,22 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
     const b = parseGameBody(req.body);
     const title = typeof b.title === "string" ? b.title.trim() : "";
     if (!title) return reply.code(400).send({ error: "title required" });
-    const kind = b.kind === "fortune" ? "fortune" : "paid";
+    const kind = parseGameKind(b.kind);
     const slugRaw = typeof b.slug === "string" && b.slug.trim() ? b.slug : title;
     const slug = slugify(slugRaw);
     if (!slug) return reply.code(400).send({ error: "slug required" });
     const winMode = b.winMode === "skill" ? "skill" : "random";
     const playPriceYen =
-      typeof b.playPriceYen === "number" && Number.isFinite(b.playPriceYen)
-        ? Math.max(0, Math.round(b.playPriceYen))
-        : 80;
+      kind === "tool"
+        ? 0
+        : typeof b.playPriceYen === "number" && Number.isFinite(b.playPriceYen)
+          ? Math.max(0, Math.round(b.playPriceYen))
+          : 80;
     const winProbabilityPercent =
       typeof b.winProbabilityPercent === "number" && Number.isFinite(b.winProbabilityPercent)
         ? Math.max(0, Math.min(100, Math.round(b.winProbabilityPercent)))
         : 30;
-    const rewardMenuItemIds = parseRewardIdsFromBody(b);
+    const rewardMenuItemIds = kind === "tool" ? [] : parseRewardIdsFromBody(b);
     if (kind === "paid") {
       const v = await validateRewardMenuItemIdsForStore(req.params.storeId, rewardMenuItemIds);
       if (!v.ok) return reply.code(400).send({ error: v.error });
@@ -225,11 +233,19 @@ export async function registerStoreGamesStaff(app: FastifyInstance): Promise<voi
       if (b.configJson !== undefined) {
         data.configJson = b.configJson as Prisma.InputJsonValue;
       }
-      if (b.kind === "fortune" || b.kind === "paid") {
-        data.kind = b.kind;
+      if (b.kind === "fortune" || b.kind === "paid" || b.kind === "tool") {
+        data.kind = parseGameKind(b.kind);
+        if (data.kind === "tool") {
+          data.playPriceYen = 0;
+          data.rewardMenuItemIds = [] as Prisma.InputJsonValue;
+          data.rewardMenuItem = { disconnect: true };
+        }
       }
       if (b.rewardMenuItemIds !== undefined || b.rewardMenuItemId !== undefined) {
-        const effectiveKind = b.kind === "fortune" || b.kind === "paid" ? b.kind : existing.kind;
+        const effectiveKind =
+          b.kind === "fortune" || b.kind === "paid" || b.kind === "tool"
+            ? parseGameKind(b.kind)
+            : existing.kind;
         const rewardMenuItemIds = parseRewardIdsFromBody(b);
         if (effectiveKind === "paid") {
           const v = await validateRewardMenuItemIdsForStore(req.params.storeId, rewardMenuItemIds);

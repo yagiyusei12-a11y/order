@@ -27,6 +27,7 @@
     .badge { display:inline-block; font-size:0.68rem; font-weight:800; padding:0.15rem 0.45rem; border-radius:999px; margin-left:0.35rem; vertical-align:middle; }
     .badge.paid { background:#3d2f14; color:#f0c060; }
     .badge.fortune { background:#2a2040; color:#c4b5fd; }
+    .badge.tool { background:#1a2a24; color:#6ee7a0; }
     .meta { font-size:0.72rem; color:var(--muted); margin-top:0.35rem; }
     #loading { text-align:center; color:var(--muted); padding:2rem 0; }
     #err { color:var(--bad); font-size:0.85rem; margin-top:0.75rem; display:none; }
@@ -122,14 +123,22 @@
           return;
         }
         grid.innerHTML = games.map((g) => {
-          const kind = g.kind === "fortune" ? "fortune" : "paid";
+          const kind = g.kind === "tool" ? "tool" : g.kind === "fortune" ? "fortune" : "paid";
           const ex = g.playPriceYen != null ? g.playPriceYen : 80;
           const inc = g.playPriceYenInclusive != null ? g.playPriceYenInclusive : ex;
-          const badge = kind === "fortune"
-            ? '<span class="badge fortune">占い ' + esc(String(ex)) + '円〜</span>'
-            : '<span class="badge paid">' + esc(String(ex)) + '円（税抜）</span>';
-          const priceNote = '<div class="meta">税込 ' + esc(String(inc)) + '円 / 卓の会計に追加</div>';
-          const reward = (() => {
+          const badge =
+            kind === "tool"
+              ? '<span class="badge tool">無料</span>'
+              : kind === "fortune"
+                ? '<span class="badge fortune">占い ' + esc(String(ex)) + '円〜</span>'
+                : '<span class="badge paid">' + esc(String(ex)) + '円（税抜）</span>';
+          const priceNote =
+            kind === "tool"
+              ? '<div class="meta">卓連携・会計追加なし</div>'
+              : '<div class="meta">税込 ' + esc(String(inc)) + '円 / 卓の会計に追加</div>';
+          const reward = kind === "tool"
+            ? ""
+            : (() => {
             const items = Array.isArray(g.rewardMenuItems) && g.rewardMenuItems.length
               ? g.rewardMenuItems
               : g.rewardMenuItem ? [g.rewardMenuItem] : [];
@@ -142,7 +151,7 @@
           })();
           return (
             '<a class="card" href="' + esc(playUrl(g.slug)) + '">' +
-            '<span class="emoji">' + esc(g.iconEmoji || (kind === "fortune" ? "🔮" : "🎮")) + '</span>' +
+            '<span class="emoji">' + esc(g.iconEmoji || (kind === "tool" ? "🛠️" : kind === "fortune" ? "🔮" : "🎮")) + '</span>' +
             '<div class="card-body">' +
             '<p class="card-title">' + esc(g.title) + badge + '</p>' +
             (g.description ? '<p class="card-desc">' + esc(g.description) + '</p>' : "") +

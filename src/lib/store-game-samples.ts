@@ -3,7 +3,7 @@ import { prisma } from "../db.js";
 
 export type StoreGameSampleDef = {
   slug: string;
-  kind: "paid" | "fortune";
+  kind: "paid" | "fortune" | "tool";
   title: string;
   description: string;
   iconEmoji: string;
@@ -86,6 +86,19 @@ export const STORE_GAME_SAMPLES: StoreGameSampleDef[] = [
     sortOrder: 4,
     rewardCount: 3,
   },
+  {
+    slug: "manly-roulette",
+    kind: "tool",
+    title: "超理不尽な・男気決済ルーレット",
+    description: "奢る人をAIが理不尽な理由で決定！会計・追加ドリンク・高級おつまみの男気決済に。",
+    iconEmoji: "🎰",
+    playPriceYen: 0,
+    winMode: "random",
+    winProbabilityPercent: 0,
+    configJson: {},
+    sortOrder: 5,
+    rewardCount: 0,
+  },
 ];
 
 async function pickDefaultRewardMenuItemIds(storeId: string, count: number): Promise<string[]> {
@@ -149,7 +162,7 @@ export async function seedStoreGameSamples(
       winProbabilityPercent: sample.winProbabilityPercent,
       configJson: sample.configJson,
       sortOrder: sample.sortOrder,
-      enabled: sample.kind === "fortune" || rewardMenuItemIds.length > 0,
+      enabled: sample.kind === "fortune" || sample.kind === "tool" || rewardMenuItemIds.length > 0,
       rewardMenuItemIds: rewardMenuItemIds as Prisma.InputJsonValue,
       rewardMenuItemId: rewardMenuItemIds[0] ?? null,
     };

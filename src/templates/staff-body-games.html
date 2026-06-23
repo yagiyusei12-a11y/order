@@ -37,6 +37,7 @@
         <select id="gameKind">
           <option value="paid">有料ゲーム</option>
           <option value="fortune">占い（有料）</option>
+          <option value="tool">無料ツール</option>
         </select>
         <label class="lbl" for="gameSlug">slug（英数字・ハイフン）</label>
         <input id="gameSlug" type="text" placeholder="lucky-stop" required />
@@ -46,8 +47,10 @@
         <textarea id="gameDesc" rows="2"></textarea>
         <label class="lbl" for="gameEmoji">アイコン（絵文字）</label>
         <input id="gameEmoji" type="text" maxlength="8" placeholder="🎮" />
+        <div id="gamePriceWrap">
         <label class="lbl" for="gamePrice">参加費（税抜円）</label>
         <input id="gamePrice" type="number" min="0" step="1" value="80" />
+        </div>
         <div id="paidFields">
           <label class="lbl">成功時プレゼント（メニューマスタ・複数可）</label>
           <p class="muted" style="font-size:0.72rem;line-height:1.45;margin:0 0 0.35rem">

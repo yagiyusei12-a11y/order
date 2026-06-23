@@ -34,9 +34,12 @@
   function togglePaidFields() {
     const kind = document.getElementById("gameKind").value;
     document.getElementById("paidFields").style.display = kind === "paid" ? "block" : "none";
+    const priceWrap = document.getElementById("gamePriceWrap");
+    if (priceWrap) priceWrap.style.display = kind === "tool" ? "none" : "block";
   }
 
   function formatPriceLabel(g) {
+    if (g.kind === "tool") return "無料";
     const ex = g.playPriceYen != null ? g.playPriceYen : 80;
     return ex + "円（税抜）";
   }
@@ -155,7 +158,8 @@
     document.getElementById("gameTitle").value = game ? game.title : "";
     document.getElementById("gameDesc").value = game && game.description ? game.description : "";
     document.getElementById("gameEmoji").value = game && game.iconEmoji ? game.iconEmoji : "";
-    document.getElementById("gamePrice").value = game ? String(game.playPriceYen) : "80";
+    document.getElementById("gamePrice").value =
+      game && game.kind === "tool" ? "0" : game ? String(game.playPriceYen) : "80";
     document.getElementById("gameWinMode").value = game && game.winMode === "skill" ? "skill" : "random";
     document.getElementById("gameWinPct").value = game ? String(game.winProbabilityPercent) : "30";
     document.getElementById("gameSort").value = game ? String(game.sortOrder) : "0";
@@ -199,11 +203,16 @@
     const el = document.getElementById("gamesList");
     if (!games.length) {
       el.innerHTML = '<p class="muted">ゲームがありません。「ゲームを追加」または下記サンプルを参考に slug を設定してください。</p>' +
-        '<p class="muted" style="font-size:0.78rem">組み込み slug: <code>omikuji</code>, <code>lucky-stop</code>, <code>dice-eight</code>, <code>memory-match</code>, <code>surface-tension</code></p>';
+        '<p class="muted" style="font-size:0.78rem">組み込み slug: <code>omikuji</code>, <code>lucky-stop</code>, <code>dice-eight</code>, <code>memory-match</code>, <code>surface-tension</code>, <code>manly-roulette</code></p>';
       return;
     }
     el.innerHTML = games.map((g) => {
-      const kindLabel = g.kind === "fortune" ? "占い · " + formatPriceLabel(g) : formatPriceLabel(g);
+      const kindLabel =
+        g.kind === "tool"
+          ? "無料ツール"
+          : g.kind === "fortune"
+            ? "占い · " + formatPriceLabel(g)
+            : formatPriceLabel(g);
       const reward = rewardLabelForGame(g);
       const rewardNote =
         g.kind === "paid" && Array.isArray(g.rewardMenuItems) && g.rewardMenuItems.length > 1
@@ -308,6 +317,10 @@
     if (kind === "paid" && rewardMenuItemIds.length === 0) {
       log("有料ゲームは成功時プレゼント（メニュー）を1件以上選んでください");
       return;
+    }
+    if (kind === "tool") {
+      body.playPriceYen = 0;
+      body.rewardMenuItemIds = [];
     }
     try {
       if (id) {

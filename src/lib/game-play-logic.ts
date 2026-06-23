@@ -152,3 +152,59 @@ export function evaluateDiceTargetWin(configJson: unknown): {
   const { dice1, dice2, sum } = rollTwoDice();
   return { won: sum === targetSum, dice1, dice2, sum, targetSum };
 }
+
+export type JugglerSlotSymbol = "seven" | "bar" | "bell" | "cherry" | "replay";
+
+export type JugglerSlotWeights = Record<JugglerSlotSymbol, number>;
+
+const DEFAULT_JUGGLER_WEIGHTS: JugglerSlotWeights = {
+  seven: 12,
+  bar: 18,
+  bell: 22,
+  cherry: 28,
+  replay: 20,
+};
+
+export function parseJugglerSlotWeights(raw: unknown): JugglerSlotWeights {
+  const o = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const w = o.weights && typeof o.weights === "object" && !Array.isArray(o.weights)
+    ? (o.weights as Record<string, unknown>)
+    : {};
+  const num = (key: JugglerSlotSymbol, def: number) => {
+    const v = w[key];
+    return typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.round(v) : def;
+  };
+  return {
+    seven: num("seven", DEFAULT_JUGGLER_WEIGHTS.seven),
+    bar: num("bar", DEFAULT_JUGGLER_WEIGHTS.bar),
+    bell: num("bell", DEFAULT_JUGGLER_WEIGHTS.bell),
+    cherry: num("cherry", DEFAULT_JUGGLER_WEIGHTS.cherry),
+    replay: num("replay", DEFAULT_JUGGLER_WEIGHTS.replay),
+  };
+}
+
+function rollJugglerReel(weights: JugglerSlotWeights): JugglerSlotSymbol {
+  const entries = Object.entries(weights) as [JugglerSlotSymbol, number][];
+  const total = entries.reduce((s, [, n]) => s + n, 0);
+  if (total <= 0) return "cherry";
+  let pick = randomInt(total);
+  for (const [sym, weight] of entries) {
+    pick -= weight;
+    if (pick < 0) return sym;
+  }
+  return entries[entries.length - 1]![0];
+}
+
+/** ジャグラー風3リール（サーバー側乱数）。7-7-7 で成功 */
+export function evaluateJugglerSlotWin(configJson: unknown): {
+  won: boolean;
+  reels: [JugglerSlotSymbol, JugglerSlotSymbol, JugglerSlotSymbol];
+} {
+  const weights = parseJugglerSlotWeights(configJson);
+  const reels: [JugglerSlotSymbol, JugglerSlotSymbol, JugglerSlotSymbol] = [
+    rollJugglerReel(weights),
+    rollJugglerReel(weights),
+    rollJugglerReel(weights),
+  ];
+  return { won: reels[0] === "seven" && reels[1] === "seven" && reels[2] === "seven", reels };
+}

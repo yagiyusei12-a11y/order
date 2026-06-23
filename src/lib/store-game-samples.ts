@@ -100,6 +100,21 @@ export const STORE_GAME_SAMPLES: StoreGameSampleDef[] = [
     sortOrder: 5,
     rewardCount: 0,
   },
+  {
+    slug: "juggler-slot",
+    kind: "paid",
+    title: "ジャグラー風スロット",
+    description: "3つのリールを回して赤い7が揃えば景品ゲット！",
+    iconEmoji: "🎰",
+    playPriceYen: 80,
+    winMode: "random",
+    winProbabilityPercent: 30,
+    configJson: {
+      weights: { seven: 12, bar: 18, bell: 22, cherry: 28, replay: 20 },
+    },
+    sortOrder: 6,
+    rewardCount: 3,
+  },
 ];
 
 async function pickDefaultRewardMenuItemIds(storeId: string, count: number): Promise<string[]> {

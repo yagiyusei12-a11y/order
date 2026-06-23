@@ -4,6 +4,7 @@ import { prisma } from "../db.js";
 import { verifyGamesHubKey } from "../lib/games-hub-auth.js";
 import {
   evaluateDiceTargetWin,
+  evaluateJugglerSlotWin,
   evaluateRandomWin,
   evaluateSkillWin,
   evaluateSurfaceTensionWin,
@@ -362,12 +363,16 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
 
     let won = false;
     let diceRoll: { dice1: number; dice2: number; sum: number; targetSum?: number } | null = null;
+    let slotRoll: ReturnType<typeof evaluateJugglerSlotWin> | null = null;
     let memoryResult: ReturnType<typeof evaluateMemoryMatchWin> | null = null;
     let surfaceResult: ReturnType<typeof evaluateSurfaceTensionWin> | null = null;
     if (game.slug === "dice-eight") {
       const roll = evaluateDiceTargetWin(game.configJson);
       won = roll.won;
       diceRoll = { dice1: roll.dice1, dice2: roll.dice2, sum: roll.sum, targetSum: roll.targetSum };
+    } else if (game.slug === "juggler-slot") {
+      slotRoll = evaluateJugglerSlotWin(game.configJson);
+      won = slotRoll.won;
     } else if (game.slug === "memory-match") {
       memoryResult = evaluateMemoryMatchWin(game.configJson, bodyPayload, play.createdAt);
       won = memoryResult.won;
@@ -400,6 +405,7 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
           ...(diceRoll
             ? { dice1: diceRoll.dice1, dice2: diceRoll.dice2, diceSum: diceRoll.sum, targetSum: diceRoll.targetSum }
             : {}),
+          ...(slotRoll ? { slotReels: slotRoll.reels, slotWin: slotRoll.won } : {}),
           ...(memoryResult
             ? {
                 elapsedMs: memoryResult.elapsedMs,
@@ -442,6 +448,7 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
           ...(diceRoll
             ? { dice1: diceRoll.dice1, dice2: diceRoll.dice2, diceSum: diceRoll.sum, targetSum: diceRoll.targetSum }
             : {}),
+          ...(slotRoll ? { slotReels: slotRoll.reels, slotWin: slotRoll.won } : {}),
           ...(memoryResult
             ? {
                 elapsedMs: memoryResult.elapsedMs,
@@ -488,6 +495,7 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
         ...(diceRoll
           ? { dice1: diceRoll.dice1, dice2: diceRoll.dice2, diceSum: diceRoll.sum, targetSum: diceRoll.targetSum }
           : {}),
+        ...(slotRoll ? { slotReels: slotRoll.reels, slotWin: slotRoll.won } : {}),
         ...(memoryResult
           ? {
               elapsedMs: memoryResult.elapsedMs,

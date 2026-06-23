@@ -22,9 +22,10 @@
       ".af-field{margin:0 0 0.35rem}" +
       ".af-field input,.af-field select,.af-field textarea{width:100%;padding:0.5rem 0.55rem;border:1px solid var(--line);border-radius:8px;background:#0f1419;color:var(--text);font-size:0.88rem}" +
       ".af-field textarea{min-height:3.5rem;resize:vertical;line-height:1.5}" +
-      ".af-photo{border:2px dashed var(--line);border-radius:12px;padding:1rem;text-align:center;background:#121820;cursor:pointer}" +
-      ".af-photo img{max-width:100%;max-height:12rem;border-radius:8px;margin-top:0.5rem}" +
+      ".af-photo{border:2px dashed var(--line);border-radius:12px;padding:1rem;text-align:center;background:#121820;cursor:pointer;touch-action:manipulation}" +
+      ".af-photo img{max-width:100%;max-height:12rem;border-radius:8px;margin-top:0.5rem;display:block;margin-left:auto;margin-right:auto}" +
       ".af-photo.has-img{border-style:solid;border-color:#f0c060}" +
+      ".af-file-input{position:fixed;left:0;top:0;width:1px;height:1px;opacity:0.01;pointer-events:none}" +
       ".af-result{border:1px solid var(--line);border-radius:12px;padding:0.75rem;background:#121820}" +
       ".af-result h2{font-size:1.15rem;margin:0 0 0.5rem;color:#f0c060;text-align:center}" +
       ".af-sec{margin:0 0 0.55rem}" +
@@ -51,35 +52,66 @@
     root.innerHTML = html;
   }
 
-  function resizeImageFile(file) {
+  function readFileAsDataUrl(file) {
     return new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(file);
-      const img = new Image();
-      img.onload = () => {
-        URL.revokeObjectURL(url);
-        const maxPx = 1280;
-        let w = img.width;
-        let h = img.height;
-        const scale = Math.min(1, maxPx / Math.max(w, h, 1));
-        w = Math.max(1, Math.round(w * scale));
-        h = Math.max(1, Math.round(h * scale));
-        const canvas = document.createElement("canvas");
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          reject(new Error("画像処理に失敗しました"));
-          return;
-        }
-        ctx.drawImage(img, 0, 0, w, h);
-        resolve({ base64: canvas.toDataURL("image/jpeg", 0.88), mime: "image/jpeg" });
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error("画像の読み込みに失敗しました"));
-      };
-      img.src = url;
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("画像の読み込みに失敗しました"));
+      reader.readAsDataURL(file);
     });
+  }
+
+  function canvasFromImageSource(drawable, maxPx) {
+    const srcW = drawable.width;
+    const srcH = drawable.height;
+    const scale = Math.min(1, maxPx / Math.max(srcW, srcH, 1));
+    const w = Math.max(1, Math.round(srcW * scale));
+    const h = Math.max(1, Math.round(srcH * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("画像処理に失敗しました");
+    ctx.drawImage(drawable, 0, 0, w, h);
+    return { base64: canvas.toDataURL("image/jpeg", 0.88), mime: "image/jpeg" };
+  }
+
+  async function prepareImageFile(file) {
+    const maxPx = 1280;
+    if (typeof createImageBitmap === "function") {
+      try {
+        const bitmap = await createImageBitmap(file);
+        try {
+          return canvasFromImageSource(bitmap, maxPx);
+        } finally {
+          if (typeof bitmap.close === "function") bitmap.close();
+        }
+      } catch (_) {
+        /* fall through */
+      }
+    }
+    try {
+      const url = URL.createObjectURL(file);
+      try {
+        const img = await new Promise((resolve, reject) => {
+          const el = new Image();
+          el.onload = () => resolve(el);
+          el.onerror = () => reject(new Error("画像の読み込みに失敗しました"));
+          el.src = url;
+        });
+        return canvasFromImageSource(img, maxPx);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    } catch (_) {
+      /* fall through */
+    }
+    const mime = String(file.type || "").toLowerCase();
+    if (mime === "image/jpeg" || mime === "image/png" || mime === "image/webp") {
+      const dataUrl = await readFileAsDataUrl(file);
+      if (file.size <= 4 * 1024 * 1024) return { base64: dataUrl, mime };
+    }
+    throw new Error("画像の読み込みに失敗しました。別の写真をお試しください");
   }
 
   window.__gameModules = window.__gameModules || {};
@@ -91,22 +123,73 @@
       const inc = game.playPriceYenInclusive || ex;
       let phase = "idle";
       let imageData = null;
+      let fileInput = null;
+
+      function updatePhotoPreview() {
+        const box = document.getElementById("afPhotoBox");
+        if (!box) return;
+        box.className = "af-photo" + (imageData ? " has-img" : "");
+        if (imageData) {
+          box.innerHTML =
+            '<img src="' +
+            imageData.base64 +
+            '" alt="手のひら" />' +
+            '<p class="af-hint" style="margin-top:0.35rem">タップで撮り直し</p>';
+        } else {
+          box.innerHTML =
+            '<span style="font-size:2rem">✋</span><br><span class="af-hint">タップして撮影 / 選択</span>';
+        }
+      }
+
+      async function onPhotoSelected(file) {
+        if (!file) return;
+        showErr("");
+        const status = document.getElementById("afPhotoStatus");
+        if (status) status.textContent = "画像を処理中…";
+        try {
+          imageData = await prepareImageFile(file);
+          updatePhotoPreview();
+          if (status) status.textContent = "写真を反映しました";
+        } catch (e) {
+          if (status) status.textContent = "";
+          showErr(e instanceof Error ? e.message : "画像の処理に失敗しました");
+        }
+      }
+
+      function openPhotoPicker() {
+        if (!fileInput) fileInput = document.getElementById("afFile");
+        if (!fileInput) return;
+        fileInput.value = "";
+        fileInput.click();
+      }
+
+      function wirePhotoInput() {
+        fileInput = document.getElementById("afFile");
+        const box = document.getElementById("afPhotoBox");
+        box?.addEventListener("click", openPhotoPicker);
+        fileInput?.addEventListener("change", () => {
+          const file = fileInput.files && fileInput.files[0];
+          fileInput.value = "";
+          void onPhotoSelected(file);
+        });
+      }
 
       function renderForm() {
         const themeOpts = THEMES.map((t) => '<option value="' + esc(t) + '">' + esc(t) + "</option>").join("");
         const handOpts = HANDS.map((h) => '<option value="' + esc(h) + '">' + esc(h) + "</option>").join("");
-        const preview = imageData
-          ? '<img src="' + imageData.base64 + '" alt="手のひら" />'
-          : '<span style="font-size:2rem">✋</span><br><span class="af-hint">タップして撮影 / 選択</span>';
         root.innerHTML =
           '<div class="af-wrap">' +
           '<p class="af-hint">プロの手相鑑定士AIが、生命線・感情線などを読み解きます。<br>締めに大アルカナタロット1枚の神託も付きます。</p>' +
           '<p class="af-tips">撮影のコツ: 明るい場所で、手のひら全体が写るように。指先〜手首まで、線がはっきり見える角度で。</p>' +
-          '<label class="af-photo' +
+          '<div class="af-photo' +
           (imageData ? " has-img" : "") +
-          '" id="afPhotoBox">' +
-          preview +
-          '<input id="afFile" type="file" accept="image/*" capture="environment" style="display:none" /></label>' +
+          '" id="afPhotoBox" role="button" tabindex="0" aria-label="手のひらの写真を撮影または選択">' +
+          (imageData
+            ? '<img src="' + imageData.base64 + '" alt="手のひら" /><p class="af-hint" style="margin-top:0.35rem">タップで撮り直し</p>'
+            : '<span style="font-size:2rem">✋</span><br><span class="af-hint">タップして撮影 / 選択</span>') +
+          "</div>" +
+          '<input id="afFile" class="af-file-input" type="file" accept="image/*" />' +
+          '<p class="af-hint" id="afPhotoStatus" style="min-height:1.2em"></p>' +
           '<label class="af-field"><span class="af-label">鑑定テーマ</span><select id="afTheme">' +
           themeOpts +
           "</select></label>" +
@@ -116,20 +199,7 @@
           '<p class="af-hint" style="font-size:0.72rem">※左手＝先天的傾向、右手＝後天的傾向（伝統的な解釈）</p>' +
           '<label class="af-field"><span class="af-label">相談（任意）</span><textarea id="afQuestion" maxlength="200" placeholder="例: 転職のタイミング、恋の行方、今後半年の運勢"></textarea></label>' +
           "</div>";
-        const box = document.getElementById("afPhotoBox");
-        const fileInput = document.getElementById("afFile");
-        box?.addEventListener("click", () => fileInput?.click());
-        fileInput?.addEventListener("change", async () => {
-          const file = fileInput.files && fileInput.files[0];
-          if (!file) return;
-          showErr("");
-          try {
-            imageData = await resizeImageFile(file);
-            renderForm();
-          } catch (e) {
-            showErr(e instanceof Error ? e.message : "画像の処理に失敗しました");
-          }
-        });
+        wirePhotoInput();
       }
 
       root.innerHTML =

@@ -1,4 +1,6 @@
 import { prisma } from "../db.js";
+import { mergeStoreSettings } from "./store-settings.js";
+import { storeNowWallClock } from "./store-wall-time.js";
 
 export const AI_FORTUNE_SLUGS = [
   "ai-drunk-diagnosis",
@@ -201,6 +203,54 @@ function normalizeResult(parsed: Record<string, unknown>): AiFortuneResult {
     sections.push({ heading: "結果", text: fallback || "診断が完了しました。" });
   }
   return { title, sections, disclaimer };
+}
+
+async function loadFortuneTemporalContext(storeId: string): Promise<{
+  prefix: string;
+  systemSuffix: string;
+}> {
+  const storeRow = await prisma.store.findUnique({
+    where: { id: storeId },
+    select: { settings: true },
+  });
+  const tz = mergeStoreSettings(storeRow?.settings).timezone || "Asia/Tokyo";
+  const clock = storeNowWallClock(tz);
+  const year = parseInt(clock.dateYmd.slice(0, 4), 10);
+  const month = parseInt(clock.dateYmd.slice(5, 7), 10);
+  const dateLabel = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: tz,
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+  }).format(new Date(clock.nowMs));
+  const prefix =
+    `【鑑定実施日】${dateLabel}\n` +
+    `【時期の基準】「今年」=${year}年、「来年」=${year + 1}年、「今月」=${year}年${month}月`;
+  const systemSuffix =
+    " 運勢・金運などの時期表現は、必ずユーザー文先頭の【鑑定実施日】だけを基準にすること。" +
+    `${year}年より前の年を「今年」「今年の金運」「今月の運勢」として書かない。` +
+    "「今後○ヶ月」「近い将来」は鑑定実施日から先の期間を指す。";
+  return { prefix, systemSuffix };
+}
+
+function applyFortuneTemporal(
+  system: string,
+  userParts: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }>,
+  temporal: { prefix: string; systemSuffix: string },
+): {
+  system: string;
+  userParts: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }>;
+} {
+  let textPrepended = false;
+  const nextParts = userParts.map((part) => {
+    if (part.type === "text" && !textPrepended) {
+      textPrepended = true;
+      return { type: "text" as const, text: temporal.prefix + "\n" + part.text };
+    }
+    return part;
+  });
+  return { system: system + temporal.systemSuffix, userParts: nextParts };
 }
 
 async function callOpenAiJson(
@@ -504,7 +554,19 @@ export async function runAiFortuneForSlug(
   storeName: string,
   payload: AiFortunePayload,
 ): Promise<AiFortuneResult> {
-  const menu = await loadMenuNameHints(storeId);
+  const [menu, temporal] = await Promise.all([
+    loadMenuNameHints(storeId),
+    loadFortuneTemporalContext(storeId),
+  ]);
+
+  function invokeAi(
+    system: string,
+    userParts: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }>,
+    opts?: { maxTokens?: number; temperature?: number },
+  ): Promise<AiFortuneResult> {
+    const applied = applyFortuneTemporal(system, userParts, temporal);
+    return callOpenAiJson(applied.system, applied.userParts, opts);
+  }
 
   if (slug === "ai-drunk-diagnosis") {
     const input = parseDrunkDiagnosisInput(payload.aiInput);
@@ -519,7 +581,7 @@ export async function runAiFortuneForSlug(
       `メニュー候補（おつまみ）: ${menu.snacks.slice(0, 20).join("、") || "（店メニュー参照）"}\n` +
       `メニュー候補（お酒）: ${menu.drinks.slice(0, 15).join("、") || "（店メニュー参照）"}\n` +
       "限界値は「何杯目でペースダウンしそうか」「何時頃要注意か」などをユーモア交えて。おつまみはメニュー候補から1〜2品推すか、なければ一般的な居酒屋メニューで。";
-    return callOpenAiJson(system, [{ type: "text", text: userText }]);
+    return invokeAi(system, [{ type: "text", text: userText }]);
   }
 
   if (slug === "ai-group-fortune") {
@@ -533,7 +595,7 @@ export async function runAiFortuneForSlug(
       JSON_SCHEMA_HINT +
       " sectionsは4〜6個。例: 財布の紐が緩む人、二日酔い予備軍、ムードメーカー、秘密の腹黒枠、今夜のラッキードリンク など。";
     const userText = `店舗: ${storeName}\nメンバー:\n${memberLines}\n`;
-    return callOpenAiJson(system, [{ type: "text", text: userText }]);
+    return invokeAi(system, [{ type: "text", text: userText }]);
   }
 
   if (slug === "ai-palm-reading") {
@@ -558,7 +620,7 @@ export async function runAiFortuneForSlug(
       `鑑定テーマ: ${input.theme}\n撮影した手: ${input.dominantHand}（${handNote}）\n` +
       (input.question ? `相談: ${input.question}\n` : "") +
       "手のひら写真を丁寧に分析し、手相とタロットを組み合わせた本格鑑定をお願いします。";
-    return callOpenAiJson(
+    return invokeAi(
       system,
       [
         { type: "text", text: userText },
@@ -584,7 +646,7 @@ export async function runAiFortuneForSlug(
     const userText =
       `テーマ: ${input.theme}\n相談: ${input.question}\n` +
       "ランダムに3枚のカードを選び、それぞれの意味と相談内容への当てはめを深く解説してください。";
-    return callOpenAiJson(system, [{ type: "text", text: userText }], {
+    return invokeAi(system, [{ type: "text", text: userText }], {
       maxTokens: 1400,
       temperature: 0.72,
     });
@@ -603,7 +665,7 @@ export async function runAiFortuneForSlug(
       `生年月日: ${input.birthDate}\n出生時刻: ${input.birthTime}\n性別: ${input.gender}\n` +
       (input.question ? `相談: ${input.question}\n` : "") +
       "四柱推命の観点から総合鑑定してください。";
-    return callOpenAiJson(system, [{ type: "text", text: userText }], {
+    return invokeAi(system, [{ type: "text", text: userText }], {
       maxTokens: 1500,
       temperature: 0.68,
     });
@@ -625,7 +687,7 @@ export async function runAiFortuneForSlug(
       `鑑定テーマ: ${input.theme}\n` +
       (input.question ? `相談: ${input.question}\n` : "") +
       "西洋占星術で鑑定してください。";
-    return callOpenAiJson(system, [{ type: "text", text: userText }], {
+    return invokeAi(system, [{ type: "text", text: userText }], {
       maxTokens: 1400,
       temperature: 0.72,
     });
@@ -641,7 +703,7 @@ export async function runAiFortuneForSlug(
     const userText =
       `店舗: ${storeName}\n人数: ${input.headCount}人\nテンション: ${input.tension}\n激しさ: ${input.intensity}\n` +
       "飲み会向けのお題を生成してください。";
-    return callOpenAiJson(system, [{ type: "text", text: userText }]);
+    return invokeAi(system, [{ type: "text", text: userText }]);
   }
 
   if (slug === "ai-nickname-char") {
@@ -654,7 +716,7 @@ export async function runAiFortuneForSlug(
       `ニックネーム: ${input.nickname}\n好きなお酒: ${input.favoriteDrink}\n` +
       (input.catchphrase ? `口癖・キーワード: ${input.catchphrase}\n` : "") +
       `メニュー候補（お酒）: ${menu.drinks.slice(0, 15).join("、") || "（参照）"}`;
-    return callOpenAiJson(system, [{ type: "text", text: userText }]);
+    return invokeAi(system, [{ type: "text", text: userText }]);
   }
 
   if (slug === "ai-who-treats") {
@@ -668,7 +730,7 @@ export async function runAiFortuneForSlug(
       JSON_SCHEMA_HINT +
       " sectionsは5〜6個。必ず「今夜の奢り役」「端数・会計担当」「最後の一杯担当」「ムードメーカー」「要注意人物（ネタ）」を含める。名前は必ずメンバーから選ぶ。";
     const userText = `店舗: ${storeName}\nメンバー:\n${memberLines}\n`;
-    return callOpenAiJson(system, [{ type: "text", text: userText }]);
+    return invokeAi(system, [{ type: "text", text: userText }]);
   }
 
   if (slug === "ai-lie-detector") {
@@ -681,7 +743,7 @@ export async function runAiFortuneForSlug(
     const userText =
       `ジャンル: ${input.genre}\n難易度: ${input.difficulty}\n形式: ${input.mode}\n` +
       "卓で盛り上がるお題を2セット生成してください。";
-    return callOpenAiJson(system, [{ type: "text", text: userText }], { maxTokens: 1200 });
+    return invokeAi(system, [{ type: "text", text: userText }], { maxTokens: 1200 });
   }
 
   if (slug === "ai-chain-story") {
@@ -695,7 +757,7 @@ export async function runAiFortuneForSlug(
       JSON_SCHEMA_HINT +
       " sectionsは3〜5個。「物語（前半）」「物語（後半）」「オチ」「登場人物コメント」など。物語本文は読みやすく段落分け。";
     const userText = `店舗: ${storeName}\nキーワード順:\n${roundLines}\n一つの連続した物語にしてください。`;
-    return callOpenAiJson(system, [{ type: "text", text: userText }], { maxTokens: 1300, temperature: 0.9 });
+    return invokeAi(system, [{ type: "text", text: userText }], { maxTokens: 1300, temperature: 0.9 });
   }
 
   if (slug === "ai-quiz-battle") {
@@ -707,7 +769,7 @@ export async function runAiFortuneForSlug(
     const userText =
       `ジャンル: ${input.genre}\n難易度: ${input.difficulty}\n問題数: ${input.questionCount}問\n` +
       "4択形式で出題してください。";
-    return callOpenAiJson(system, [{ type: "text", text: userText }], {
+    return invokeAi(system, [{ type: "text", text: userText }], {
       maxTokens: 1400,
       temperature: 0.75,
     });
@@ -723,7 +785,7 @@ export async function runAiFortuneForSlug(
       " sectionsは4〜6個。「状況の整理」「3つの視点」「今すぐできる一歩」「飲み会後のアドバイス」など。";
     const userText =
       `テーマ: ${input.theme}\n関係: ${input.relationship}\n悩み: ${input.worry}\n`;
-    return callOpenAiJson(system, [{ type: "text", text: userText }], { maxTokens: 1200, temperature: 0.78 });
+    return invokeAi(system, [{ type: "text", text: userText }], { maxTokens: 1200, temperature: 0.78 });
   }
 
   if (slug === "ai-morning-letter") {
@@ -734,7 +796,7 @@ export async function runAiFortuneForSlug(
       " sectionsは4個。「明日の自分への手紙」「二日酔い対策チェックリスト」「明日のラッキー行動」「AIからのひとこと」。";
     const userText =
       `今夜の過ごし方: ${input.tonightStyle}\n飲んだお酒: ${input.drinks}\n帰宅・就寝目安: ${input.bedtime}\n`;
-    return callOpenAiJson(system, [{ type: "text", text: userText }]);
+    return invokeAi(system, [{ type: "text", text: userText }]);
   }
 
   if (slug === "ai-dialect-fortune") {
@@ -748,7 +810,7 @@ export async function runAiFortuneForSlug(
       JSON_SCHEMA_HINT +
       " sectionsは4〜5個。「キャラタイプ」「今夜の運勢」「恋愛運」「金運」「開運アクション」。";
     const userText = `生年月日: ${input.birthDate}\n方言: ${input.dialect}\n${dialectNote}`;
-    return callOpenAiJson(system, [{ type: "text", text: userText }], { temperature: 0.88 });
+    return invokeAi(system, [{ type: "text", text: userText }], { temperature: 0.88 });
   }
 
   throw new Error("unknown ai fortune slug");

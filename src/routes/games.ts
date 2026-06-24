@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { Prisma } from "@prisma/client";
 import QRCode from "qrcode";
 import { prisma } from "../db.js";
 import { verifyGamesHubKey } from "../lib/games-hub-auth.js";
@@ -53,6 +54,27 @@ import {
   parseKingsTension,
   isKingsHost,
 } from "../lib/kings-game-lobby.js";
+import {
+  BUZZER_QUIZ_SLUG,
+  advanceBuzzerQuiz,
+  applyBuzzerAnswer,
+  applyBuzzerBuzz,
+  applyBuzzerQuizQuestions,
+  beginBuzzerQuizGenerating,
+  buildBuzzerQuizJoinUrl,
+  buzzerQuizPublicView,
+  buzzerQuizStateToJson,
+  createBuzzerQuizLobby,
+  failBuzzerQuizGenerating,
+  findBuzzerQuizPlayer,
+  isBuzzerQuizHost,
+  joinBuzzerQuizLobby,
+  parseBuzzerQuizConfig,
+  parseBuzzerQuizStartInput,
+  parseBuzzerQuizState,
+  type BuzzerQuizChoiceKey,
+} from "../lib/buzzer-quiz-lobby.js";
+import { generateBuzzerQuizQuestions } from "../lib/buzzer-quiz-ai.js";
 
 function keyFromRequest(req: FastifyRequest): string {
   const q = req.query as { key?: unknown };
@@ -294,6 +316,9 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
       if (game.slug === KINGS_GAME_SLUG && !guestDeviceId) {
         return reply.code(400).send({ error: "ページを再読み込みしてからお試しください" });
       }
+      if (game.slug === BUZZER_QUIZ_SLUG && !guestDeviceId) {
+        return reply.code(400).send({ error: "ページを再読み込みしてからお試しください" });
+      }
       const playPriceExclusive = Math.max(0, Math.round(game.playPriceYen));
       const playPriceInclusive = gamePlayFeeTaxInclusive(playPriceExclusive, st.taxRatePercent);
       const feeName = `${game.title}（参加 ${playPriceExclusive}円・税抜 / 税込${playPriceInclusive}円）`;
@@ -349,6 +374,18 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
           await tx.gamePlay.update({
             where: { id: play.id },
             data: { resultJson: lobbyToJson(lobby) },
+          });
+        }
+
+        if (game.slug === BUZZER_QUIZ_SLUG) {
+          const buzzerCfg = parseBuzzerQuizConfig(game.configJson);
+          const lobby = createBuzzerQuizLobby({
+            hostDeviceId: guestDeviceId!,
+            maxPlayers: buzzerCfg.maxPlayers,
+          });
+          await tx.gamePlay.update({
+            where: { id: play.id },
+            data: { resultJson: buzzerQuizStateToJson(lobby) },
           });
         }
 
@@ -475,6 +512,23 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
         }
         return reply.code(400).send({ error: msg });
       }
+    }
+
+    if (game.slug === BUZZER_QUIZ_SLUG) {
+      const buzzer = parseBuzzerQuizState(play.resultJson);
+      if (!buzzer || buzzer.phase !== "done") {
+        return reply.code(409).send({ error: "クイズが終わってから結果を確定してください" });
+      }
+      await prisma.gamePlay.update({
+        where: { id: play.id },
+        data: {
+          status: "finished",
+          completedAt: new Date(),
+          resultJson: buzzerQuizStateToJson(buzzer),
+        },
+      });
+      broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
+      return { won: false, fortune: true, buzzerQuiz: true, lobby: buzzerQuizPublicView(buzzer, null) };
     }
 
     if (game.kind === "fortune") {
@@ -1143,6 +1197,490 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
         };
       } catch (e) {
         return reply.code(400).send({ error: e instanceof Error ? e.message : "王様を決められませんでした" });
+      }
+    },
+  );
+
+  app.get<{
+    Params: { storeId: string };
+    Querystring: { key?: string; token?: string; playId?: string };
+  }>("/games/api/:storeId/buzzer-join-qr.svg", async (req, reply) => {
+    if (!(await assertGamesHubAccess(req, reply))) return;
+    const token = typeof req.query.token === "string" ? req.query.token.trim() : "";
+    const playId = typeof req.query.playId === "string" ? req.query.playId.trim() : "";
+    const hubKey = keyFromRequest(req);
+    if (!token || !playId) {
+      return reply.code(400).type("text/plain; charset=utf-8").send("token and playId required");
+    }
+    const tokenSession = await prisma.diningSession.findUnique({
+      where: { guestToken: token },
+      select: { storeId: true },
+    });
+    if (!tokenSession || tokenSession.storeId !== req.params.storeId) {
+      return reply.code(404).type("text/plain; charset=utf-8").send("session not found");
+    }
+    const play = await prisma.gamePlay.findUnique({
+      where: { id: playId },
+      select: { storeGame: { select: { slug: true, storeId: true } }, status: true },
+    });
+    if (!play || play.storeGame.storeId !== req.params.storeId || play.storeGame.slug !== BUZZER_QUIZ_SLUG) {
+      return reply.code(404).type("text/plain; charset=utf-8").send("lobby not found");
+    }
+    if (play.status !== "started") {
+      return reply.code(409).type("text/plain; charset=utf-8").send("lobby closed");
+    }
+    const origin = `${req.protocol}://${req.hostname}`;
+    const url = buildBuzzerQuizJoinUrl(origin, req.params.storeId, hubKey, token, playId);
+    try {
+      const svg = await QRCode.toString(url, {
+        type: "svg",
+        margin: 1,
+        width: 220,
+        errorCorrectionLevel: "M",
+        color: { dark: "#1a1d24ff", light: "#ffffffff" },
+      });
+      return reply
+        .type("image/svg+xml; charset=utf-8")
+        .header("Cache-Control", "no-store")
+        .send(svg);
+    } catch {
+      return reply.code(500).type("text/plain; charset=utf-8").send("qr failed");
+    }
+  });
+
+  app.get<{ Params: { token: string; playId: string }; Querystring: { guestDeviceId?: string } }>(
+    "/guest/:token/games/plays/:playId/buzzer",
+    async (req, reply) => {
+      const tokenSession = await prisma.diningSession.findUnique({
+        where: { guestToken: req.params.token },
+        select: {
+          id: true,
+          status: true,
+          storeId: true,
+          tableId: true,
+          mergedIntoSessionId: true,
+        },
+      });
+      if (!tokenSession) {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+      const billing = await resolveGuestBillingContext(tokenSession);
+      if (!billing.ok) {
+        return reply.code(billing.status).send(billing.body);
+      }
+      const play = await prisma.gamePlay.findUnique({
+        where: { id: req.params.playId },
+        include: { storeGame: true },
+      });
+      if (!play || play.billingSessionId !== billing.ctx.billingSessionId) {
+        return reply.code(404).send({ error: "play not found" });
+      }
+      if (play.storeGame.slug !== BUZZER_QUIZ_SLUG) {
+        return reply.code(400).send({ error: "not a buzzer quiz" });
+      }
+      const state = parseBuzzerQuizState(play.resultJson);
+      if (!state) {
+        return reply.code(409).send({ error: "lobby not ready" });
+      }
+      const guestDeviceId =
+        typeof req.query.guestDeviceId === "string" && req.query.guestDeviceId.trim()
+          ? req.query.guestDeviceId.trim().slice(0, 64)
+          : null;
+      return {
+        playId: play.id,
+        status: play.status,
+        lobby: buzzerQuizPublicView(state, guestDeviceId),
+      };
+    },
+  );
+
+  app.post<{
+    Params: { token: string; playId: string };
+    Body: { guestDeviceId?: string; displayName?: string };
+  }>("/guest/:token/games/plays/:playId/buzzer/join", async (req, reply) => {
+    const tokenSession = await prisma.diningSession.findUnique({
+      where: { guestToken: req.params.token },
+      select: {
+        id: true,
+        status: true,
+        storeId: true,
+        tableId: true,
+        mergedIntoSessionId: true,
+      },
+    });
+    if (!tokenSession) {
+      return reply.code(404).send({ error: "session not found or closed" });
+    }
+    const billing = await resolveGuestBillingContext(tokenSession);
+    if (!billing.ok) {
+      return reply.code(billing.status).send(billing.body);
+    }
+    const guestDeviceId =
+      typeof req.body?.guestDeviceId === "string" && req.body.guestDeviceId.trim()
+        ? req.body.guestDeviceId.trim().slice(0, 64)
+        : "";
+    if (!guestDeviceId) {
+      return reply.code(400).send({ error: "guestDeviceId required" });
+    }
+    const displayName =
+      typeof req.body?.displayName === "string" ? req.body.displayName.trim().slice(0, 20) : "";
+    const play = await prisma.gamePlay.findUnique({
+      where: { id: req.params.playId },
+      include: { storeGame: true },
+    });
+    if (!play || play.billingSessionId !== billing.ctx.billingSessionId) {
+      return reply.code(404).send({ error: "play not found" });
+    }
+    if (play.storeGame.slug !== BUZZER_QUIZ_SLUG) {
+      return reply.code(400).send({ error: "not a buzzer quiz" });
+    }
+    if (play.status !== "started") {
+      return reply.code(409).send({ error: "このゲームはすでに終了しています" });
+    }
+    const state = parseBuzzerQuizState(play.resultJson);
+    if (!state) {
+      return reply.code(409).send({ error: "lobby not ready" });
+    }
+    try {
+      const joined = joinBuzzerQuizLobby(state, guestDeviceId, displayName || undefined);
+      if (joined.created) {
+        await prisma.gamePlay.update({
+          where: { id: play.id },
+          data: { resultJson: buzzerQuizStateToJson(joined.state) },
+        });
+        broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
+      }
+      return {
+        playId: play.id,
+        myNumber: joined.player.number,
+        created: joined.created,
+        lobby: buzzerQuizPublicView(joined.state, guestDeviceId),
+      };
+    } catch (e) {
+      return reply.code(400).send({ error: e instanceof Error ? e.message : "参加できませんでした" });
+    }
+  });
+
+  app.post<{
+    Params: { token: string; playId: string };
+    Body: { guestDeviceId?: string; genre?: string; difficulty?: string; questionCount?: number };
+  }>("/guest/:token/games/plays/:playId/buzzer/start", async (req, reply) => {
+    const tokenSession = await prisma.diningSession.findUnique({
+      where: { guestToken: req.params.token },
+      select: {
+        id: true,
+        status: true,
+        storeId: true,
+        tableId: true,
+        mergedIntoSessionId: true,
+      },
+    });
+    if (!tokenSession) {
+      return reply.code(404).send({ error: "session not found or closed" });
+    }
+    const billing = await resolveGuestBillingContext(tokenSession);
+    if (!billing.ok) {
+      return reply.code(billing.status).send(billing.body);
+    }
+    const guestDeviceId =
+      typeof req.body?.guestDeviceId === "string" && req.body.guestDeviceId.trim()
+        ? req.body.guestDeviceId.trim().slice(0, 64)
+        : "";
+    const play = await prisma.gamePlay.findUnique({
+      where: { id: req.params.playId },
+      include: { storeGame: true },
+    });
+    if (!play || play.billingSessionId !== billing.ctx.billingSessionId) {
+      return reply.code(404).send({ error: "play not found" });
+    }
+    if (play.storeGame.slug !== BUZZER_QUIZ_SLUG) {
+      return reply.code(400).send({ error: "not a buzzer quiz" });
+    }
+    if (play.status !== "started") {
+      return reply.code(409).send({ error: "このゲームはすでに終了しています" });
+    }
+    const state = parseBuzzerQuizState(play.resultJson);
+    if (!state) {
+      return reply.code(409).send({ error: "lobby not ready" });
+    }
+    if (!isBuzzerQuizHost(state, guestDeviceId)) {
+      return reply.code(403).send({ error: "司会者だけがクイズを開始できます" });
+    }
+    if (!isAiFortuneConfigured()) {
+      return reply.code(503).send({ error: "AI占いは現在ご利用いただけません（管理者にご連絡ください）" });
+    }
+    let input;
+    try {
+      input = parseBuzzerQuizStartInput(req.body ?? {});
+    } catch (e) {
+      return reply.code(400).send({ error: e instanceof Error ? e.message : "設定が不正です" });
+    }
+    let generating: ReturnType<typeof beginBuzzerQuizGenerating>;
+    try {
+      generating = beginBuzzerQuizGenerating(state, input);
+    } catch (e) {
+      return reply.code(400).send({ error: e instanceof Error ? e.message : "開始できませんでした" });
+    }
+    await prisma.gamePlay.update({
+      where: { id: play.id },
+      data: { resultJson: buzzerQuizStateToJson(generating) },
+    });
+    broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
+
+    try {
+      const storeRow = await prisma.store.findUnique({
+        where: { id: tokenSession.storeId },
+        select: { name: true },
+      });
+      const questions = await generateBuzzerQuizQuestions({
+        storeName: storeRow?.name ?? "",
+        genre: input.genre,
+        difficulty: input.difficulty,
+        questionCount: input.questionCount,
+      });
+      const ready = applyBuzzerQuizQuestions(generating, questions);
+      await prisma.gamePlay.update({
+        where: { id: play.id },
+        data: { resultJson: buzzerQuizStateToJson(ready) },
+      });
+      broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
+      return {
+        playId: play.id,
+        lobby: buzzerQuizPublicView(ready, guestDeviceId),
+      };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "問題の生成に失敗しました";
+      const failed = failBuzzerQuizGenerating(generating, msg);
+      await prisma.gamePlay.update({
+        where: { id: play.id },
+        data: { resultJson: buzzerQuizStateToJson(failed) },
+      });
+      broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
+      if (msg === "AI_FORTUNE_NOT_CONFIGURED") {
+        return reply.code(503).send({ error: "AI占いは現在ご利用いただけません" });
+      }
+      return reply.code(400).send({ error: msg });
+    }
+  });
+
+  app.post<{ Params: { token: string; playId: string }; Body: { guestDeviceId?: string } }>(
+    "/guest/:token/games/plays/:playId/buzzer/buzz",
+    async (req, reply) => {
+      const tokenSession = await prisma.diningSession.findUnique({
+        where: { guestToken: req.params.token },
+        select: {
+          id: true,
+          status: true,
+          storeId: true,
+          tableId: true,
+          mergedIntoSessionId: true,
+        },
+      });
+      if (!tokenSession) {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+      const billing = await resolveGuestBillingContext(tokenSession);
+      if (!billing.ok) {
+        return reply.code(billing.status).send(billing.body);
+      }
+      const guestDeviceId =
+        typeof req.body?.guestDeviceId === "string" && req.body.guestDeviceId.trim()
+          ? req.body.guestDeviceId.trim().slice(0, 64)
+          : "";
+      if (!guestDeviceId) {
+        return reply.code(400).send({ error: "guestDeviceId required" });
+      }
+
+      const result = await prisma.$transaction(async (tx) => {
+        const play = await tx.gamePlay.findUnique({
+          where: { id: req.params.playId },
+          include: { storeGame: true },
+        });
+        if (!play || play.billingSessionId !== billing.ctx.billingSessionId) {
+          throw new Error("NOT_FOUND");
+        }
+        if (play.storeGame.slug !== BUZZER_QUIZ_SLUG) {
+          throw new Error("NOT_BUZZER");
+        }
+        if (play.status !== "started") {
+          throw new Error("CLOSED");
+        }
+        const state = parseBuzzerQuizState(play.resultJson);
+        if (!state) {
+          throw new Error("NOT_READY");
+        }
+        if (state.phase !== "buzzing") {
+          throw new Error("NOT_BUZZING");
+        }
+        if (state.buzzWinnerDeviceId) {
+          const winner = findBuzzerQuizPlayer(state, state.buzzWinnerDeviceId);
+          return {
+            won: false,
+            buzzWinnerNumber: winner?.number ?? null,
+            lobby: buzzerQuizPublicView(state, guestDeviceId),
+          };
+        }
+        const next = applyBuzzerBuzz(state, guestDeviceId);
+        await tx.gamePlay.update({
+          where: { id: play.id },
+          data: { resultJson: buzzerQuizStateToJson(next) },
+        });
+        const winner = findBuzzerQuizPlayer(next, guestDeviceId);
+        return {
+          won: true,
+          buzzWinnerNumber: winner?.number ?? null,
+          lobby: buzzerQuizPublicView(next, guestDeviceId),
+        };
+      }).catch((e: unknown) => {
+        const msg = e instanceof Error ? e.message : "";
+        if (msg === "NOT_FOUND") return { error: "play not found", status: 404 };
+        if (msg === "NOT_BUZZER") return { error: "not a buzzer quiz", status: 400 };
+        if (msg === "CLOSED") return { error: "このゲームはすでに終了しています", status: 409 };
+        if (msg === "NOT_READY") return { error: "lobby not ready", status: 409 };
+        if (msg === "NOT_BUZZING") return { error: "今はブザーできません", status: 409 };
+        throw e;
+      });
+
+      if ("error" in result) {
+        return reply.code(result.status).send({ error: result.error });
+      }
+      broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
+      return {
+        playId: req.params.playId,
+        won: result.won,
+        buzzWinnerNumber: result.buzzWinnerNumber,
+        lobby: result.lobby,
+      };
+    },
+  );
+
+  app.post<{
+    Params: { token: string; playId: string };
+    Body: { guestDeviceId?: string; choiceKey?: string };
+  }>("/guest/:token/games/plays/:playId/buzzer/answer", async (req, reply) => {
+    const tokenSession = await prisma.diningSession.findUnique({
+      where: { guestToken: req.params.token },
+      select: {
+        id: true,
+        status: true,
+        storeId: true,
+        tableId: true,
+        mergedIntoSessionId: true,
+      },
+    });
+    if (!tokenSession) {
+      return reply.code(404).send({ error: "session not found or closed" });
+    }
+    const billing = await resolveGuestBillingContext(tokenSession);
+    if (!billing.ok) {
+      return reply.code(billing.status).send(billing.body);
+    }
+    const guestDeviceId =
+      typeof req.body?.guestDeviceId === "string" && req.body.guestDeviceId.trim()
+        ? req.body.guestDeviceId.trim().slice(0, 64)
+        : "";
+    const choiceRaw = typeof req.body?.choiceKey === "string" ? req.body.choiceKey.trim().toUpperCase() : "";
+    const choiceKey = ["A", "B", "C", "D"].includes(choiceRaw) ? (choiceRaw as BuzzerQuizChoiceKey) : null;
+    if (!guestDeviceId || !choiceKey) {
+      return reply.code(400).send({ error: "guestDeviceId and choiceKey required" });
+    }
+    const play = await prisma.gamePlay.findUnique({
+      where: { id: req.params.playId },
+      include: { storeGame: true },
+    });
+    if (!play || play.billingSessionId !== billing.ctx.billingSessionId) {
+      return reply.code(404).send({ error: "play not found" });
+    }
+    if (play.storeGame.slug !== BUZZER_QUIZ_SLUG) {
+      return reply.code(400).send({ error: "not a buzzer quiz" });
+    }
+    if (play.status !== "started") {
+      return reply.code(409).send({ error: "このゲームはすでに終了しています" });
+    }
+    const state = parseBuzzerQuizState(play.resultJson);
+    if (!state) {
+      return reply.code(409).send({ error: "lobby not ready" });
+    }
+    try {
+      const next = applyBuzzerAnswer(state, guestDeviceId, choiceKey);
+      await prisma.gamePlay.update({
+        where: { id: play.id },
+        data: { resultJson: buzzerQuizStateToJson(next) },
+      });
+      broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
+      return {
+        playId: play.id,
+        lobby: buzzerQuizPublicView(next, guestDeviceId),
+      };
+    } catch (e) {
+      return reply.code(400).send({ error: e instanceof Error ? e.message : "回答できませんでした" });
+    }
+  });
+
+  app.post<{ Params: { token: string; playId: string }; Body: { guestDeviceId?: string } }>(
+    "/guest/:token/games/plays/:playId/buzzer/next",
+    async (req, reply) => {
+      const tokenSession = await prisma.diningSession.findUnique({
+        where: { guestToken: req.params.token },
+        select: {
+          id: true,
+          status: true,
+          storeId: true,
+          tableId: true,
+          mergedIntoSessionId: true,
+        },
+      });
+      if (!tokenSession) {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+      const billing = await resolveGuestBillingContext(tokenSession);
+      if (!billing.ok) {
+        return reply.code(billing.status).send(billing.body);
+      }
+      const guestDeviceId =
+        typeof req.body?.guestDeviceId === "string" && req.body.guestDeviceId.trim()
+          ? req.body.guestDeviceId.trim().slice(0, 64)
+          : "";
+      const play = await prisma.gamePlay.findUnique({
+        where: { id: req.params.playId },
+        include: { storeGame: true },
+      });
+      if (!play || play.billingSessionId !== billing.ctx.billingSessionId) {
+        return reply.code(404).send({ error: "play not found" });
+      }
+      if (play.storeGame.slug !== BUZZER_QUIZ_SLUG) {
+        return reply.code(400).send({ error: "not a buzzer quiz" });
+      }
+      if (play.status !== "started") {
+        return reply.code(409).send({ error: "このゲームはすでに終了しています" });
+      }
+      const state = parseBuzzerQuizState(play.resultJson);
+      if (!state) {
+        return reply.code(409).send({ error: "lobby not ready" });
+      }
+      if (!isBuzzerQuizHost(state, guestDeviceId)) {
+        return reply.code(403).send({ error: "司会者だけが次の問題へ進められます" });
+      }
+      try {
+        const next = advanceBuzzerQuiz(state);
+        const data: { resultJson: Prisma.InputJsonValue; status?: string; completedAt?: Date } = {
+          resultJson: buzzerQuizStateToJson(next),
+        };
+        if (next.phase === "done") {
+          data.status = "finished";
+          data.completedAt = new Date();
+        }
+        await prisma.gamePlay.update({
+          where: { id: play.id },
+          data,
+        });
+        broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
+        return {
+          playId: play.id,
+          lobby: buzzerQuizPublicView(next, guestDeviceId),
+        };
+      } catch (e) {
+        return reply.code(400).send({ error: e instanceof Error ? e.message : "進められませんでした" });
       }
     },
   );

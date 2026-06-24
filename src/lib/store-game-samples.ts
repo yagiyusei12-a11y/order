@@ -236,6 +236,20 @@ export const STORE_GAME_SAMPLES: StoreGameSampleDef[] = [
     rewardCount: 0,
   },
   {
+    slug: "buzzer-quiz",
+    kind: "fortune",
+    title: "早押しクイズ（ブザー戦）",
+    description:
+      "司会者が参加費を払いQRで集客。AIが4択問題を出題し、最初にブザーを押した人だけが回答権を得ます。",
+    iconEmoji: "🔔",
+    playPriceYen: 150,
+    winMode: "random",
+    winProbabilityPercent: 100,
+    configJson: { maxPlayers: 12, hubCategory: "fortune" },
+    sortOrder: 17,
+    rewardCount: 0,
+  },
+  {
     slug: "ai-nickname-char",
     kind: "fortune",
     title: "AIあだ名・キャラ診断",
@@ -363,6 +377,58 @@ async function pickDefaultRewardMenuItemIds(storeId: string, count: number): Pro
     if (ids.length >= count) break;
   }
   return ids;
+}
+
+export async function seedSingleStoreGameSample(
+  storeId: string,
+  slug: string,
+): Promise<{ status: "created" | "skipped" | "deleted" | "not-found"; warnings: string[] }> {
+  const sample = STORE_GAME_SAMPLES.find((s) => s.slug === slug);
+  if (!sample) return { status: "not-found", warnings: [] };
+
+  const store = await prisma.store.findUnique({ where: { id: storeId }, select: { id: true } });
+  if (!store) throw new Error("store not found");
+
+  const deletedSlugs = await loadGamesHubDeletedSlugs(storeId);
+  if (deletedSlugs.has(slug)) return { status: "deleted", warnings: [] };
+
+  const existing = await prisma.storeGame.findUnique({
+    where: { storeId_slug: { storeId, slug } },
+    select: { id: true },
+  });
+  if (existing) return { status: "skipped", warnings: [] };
+
+  const warnings: string[] = [];
+  let rewardMenuItemIds: string[] = [];
+  if (sample.kind === "paid") {
+    rewardMenuItemIds = await pickDefaultRewardMenuItemIds(storeId, sample.rewardCount);
+    if (rewardMenuItemIds.length === 0) {
+      warnings.push(`${sample.slug}: メニュー商品がないため特典未設定（編集画面で設定してください）`);
+    }
+  }
+
+  const data = {
+    kind: sample.kind,
+    title: sample.title,
+    description: sample.description,
+    iconEmoji: sample.iconEmoji,
+    playPriceYen: sample.playPriceYen,
+    winMode: sample.winMode,
+    winProbabilityPercent: sample.winProbabilityPercent,
+    configJson: mergeHubCategoryIntoConfig(
+      sample.configJson,
+      defaultHubCategoryForGame(sample.kind, sample.slug),
+    ) as Prisma.InputJsonValue,
+    sortOrder: sample.sortOrder,
+    enabled: sample.kind === "fortune" || sample.kind === "tool" || rewardMenuItemIds.length > 0,
+    rewardMenuItemIds: rewardMenuItemIds as Prisma.InputJsonValue,
+    rewardMenuItemId: rewardMenuItemIds[0] ?? null,
+  };
+
+  await prisma.storeGame.create({
+    data: { storeId, slug: sample.slug, ...data },
+  });
+  return { status: "created", warnings };
 }
 
 export async function seedStoreGameSamples(

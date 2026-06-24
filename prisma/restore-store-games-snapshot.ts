@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from "node:fs";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../src/db.js";
 import { markGameConfigStaffTouched } from "../src/lib/store-game-staff-lock.js";
+import { loadGamesHubDeletedSlugs } from "../src/lib/store-game-deleted-slugs.js";
 
 type SnapshotGame = {
   slug: string;
@@ -36,8 +37,15 @@ async function main() {
     console.error(`Snapshot storeId mismatch: ${snap.storeId} !== ${storeId}`);
     process.exit(1);
   }
+  const deletedSlugs = await loadGamesHubDeletedSlugs(storeId);
   let updated = 0;
+  let skipped = 0;
   for (const g of snap.games) {
+    if (deletedSlugs.has(g.slug)) {
+      skipped += 1;
+      console.log("skip (deleted):", g.slug);
+      continue;
+    }
     const existing = await prisma.storeGame.findUnique({
       where: { storeId_slug: { storeId, slug: g.slug } },
       select: { id: true },
@@ -64,7 +72,7 @@ async function main() {
     }
     updated += 1;
   }
-  console.log(`OK: restored ${updated} games for ${storeId} from ${path}`);
+  console.log(`OK: restored ${updated} games for ${storeId} from ${path} (skipped ${skipped} deleted)`);
 }
 
 main()

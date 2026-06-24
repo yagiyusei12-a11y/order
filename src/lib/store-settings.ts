@@ -6,6 +6,7 @@ import {
   mergeStaffNotificationSounds,
   type StaffNotificationSoundsSettings,
 } from "./staff-notification-sounds.js";
+import { parseGamesHubDeletedSlugs } from "./store-game-deleted-slugs.js";
 
 export type { StaffNotificationCustomSound } from "./staff-notification-sound-files.js";
 export type { StaffNotificationSoundsSettings, StaffSoundBuiltinPresetId } from "./staff-notification-sounds.js";
@@ -270,6 +271,10 @@ export type StoreSettingsShape = {
   staffNotificationSounds: StaffNotificationSoundsSettings;
   /** 店舗がアップロードした通知音 */
   staffNotificationCustomSounds: StaffNotificationCustomSound[];
+  /** ゲームハブから削除した組み込み slug（サンプル再登録を防ぐ） */
+  gamesHubDeletedSlugs?: string[];
+  /** ゲームハブのカテゴリ順・ラベル（JSON そのまま） */
+  gamesHubCategories?: unknown;
 };
 
 /** スタッフ向け API 用（パスワードを伏せる） */
@@ -797,5 +802,12 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     o.staffNotificationSounds,
     d.staffNotificationCustomSounds,
   );
+  const deletedSlugs = parseGamesHubDeletedSlugs(o);
+  if (deletedSlugs.size > 0) {
+    d.gamesHubDeletedSlugs = [...deletedSlugs];
+  }
+  if (o.gamesHubCategories != null && typeof o.gamesHubCategories === "object" && !Array.isArray(o.gamesHubCategories)) {
+    d.gamesHubCategories = o.gamesHubCategories;
+  }
   return d;
 }

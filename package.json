@@ -14,6 +14,7 @@
     "seed:harunoyukoto-tables": "tsx prisma/seed-harunoyukoto-tables.ts",
     "seed:harunoyukoto-games": "tsx prisma/seed-harunoyukoto-games.ts",
     "seed:harunoyukoto-games:upsert": "tsx prisma/upsert-harunoyukoto-games.ts",
+    "seed:buzzer-quiz:harunoyukoto": "tsx prisma/seed-buzzer-quiz-harunoyukoto.ts",
     "dump:store-games": "tsx prisma/dump-store-games.ts",
     "lock:store-games": "tsx prisma/lock-store-games.ts",
     "restore:store-games": "tsx prisma/restore-store-games-snapshot.ts",

@@ -136,6 +136,103 @@
       },
     };
 
+    const buzzerApi = {
+      getToken,
+      async fetchLobby(playId) {
+        const token = getToken();
+        const dev = getOrCreateDeviceId();
+        return api(
+          "/guest/" +
+            encodeURIComponent(token) +
+            "/games/plays/" +
+            encodeURIComponent(playId) +
+            "/buzzer?guestDeviceId=" +
+            encodeURIComponent(dev),
+        );
+      },
+      async joinLobby(playId, displayName) {
+        const token = getToken();
+        return api(
+          "/guest/" +
+            encodeURIComponent(token) +
+            "/games/plays/" +
+            encodeURIComponent(playId) +
+            "/buzzer/join",
+          {
+            method: "POST",
+            body: {
+              guestDeviceId: getOrCreateDeviceId(),
+              displayName: displayName || undefined,
+            },
+          },
+        );
+      },
+      async startQuiz(playId, opts) {
+        const token = getToken();
+        return api(
+          "/guest/" +
+            encodeURIComponent(token) +
+            "/games/plays/" +
+            encodeURIComponent(playId) +
+            "/buzzer/start",
+          {
+            method: "POST",
+            body: {
+              guestDeviceId: getOrCreateDeviceId(),
+              genre: opts.genre,
+              difficulty: opts.difficulty,
+              questionCount: opts.questionCount,
+            },
+          },
+        );
+      },
+      async buzz(playId) {
+        const token = getToken();
+        return api(
+          "/guest/" +
+            encodeURIComponent(token) +
+            "/games/plays/" +
+            encodeURIComponent(playId) +
+            "/buzzer/buzz",
+          {
+            method: "POST",
+            body: { guestDeviceId: getOrCreateDeviceId() },
+          },
+        );
+      },
+      async answer(playId, choiceKey) {
+        const token = getToken();
+        return api(
+          "/guest/" +
+            encodeURIComponent(token) +
+            "/games/plays/" +
+            encodeURIComponent(playId) +
+            "/buzzer/answer",
+          {
+            method: "POST",
+            body: {
+              guestDeviceId: getOrCreateDeviceId(),
+              choiceKey,
+            },
+          },
+        );
+      },
+      async nextQuestion(playId) {
+        const token = getToken();
+        return api(
+          "/guest/" +
+            encodeURIComponent(token) +
+            "/games/plays/" +
+            encodeURIComponent(playId) +
+            "/buzzer/next",
+          {
+            method: "POST",
+            body: { guestDeviceId: getOrCreateDeviceId() },
+          },
+        );
+      },
+    };
+
     function hubUrl() {
       return "/games/" + encodeURIComponent(STORE_ID) + "?key=" + encodeURIComponent(HUB_KEY);
     }
@@ -516,6 +613,7 @@
           hubKey: HUB_KEY,
           lobbyPlayId: parseLobbyPlayId(),
           kingsApi,
+          buzzerApi,
           savedFortune:
             savedFortunePayload && savedFortunePayload.saved && savedFortunePayload.result
               ? savedFortunePayload.result

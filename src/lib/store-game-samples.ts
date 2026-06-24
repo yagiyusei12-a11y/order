@@ -222,6 +222,20 @@ export const STORE_GAME_SAMPLES: StoreGameSampleDef[] = [
     rewardCount: 0,
   },
   {
+    slug: "kings-game",
+    kind: "fortune",
+    title: "本格王様ゲーム",
+    description:
+      "司会者が参加費を払いQRを表示。読み取った人に番号が振られ、王様を決めてAIがお題を出します。",
+    iconEmoji: "👑",
+    playPriceYen: 200,
+    winMode: "random",
+    winProbabilityPercent: 100,
+    configJson: { maxPlayers: 12, hubCategory: "fortune" },
+    sortOrder: 15,
+    rewardCount: 0,
+  },
+  {
     slug: "ai-nickname-char",
     kind: "fortune",
     title: "AIあだ名・キャラ診断",
@@ -231,7 +245,7 @@ export const STORE_GAME_SAMPLES: StoreGameSampleDef[] = [
     winMode: "random",
     winProbabilityPercent: 100,
     configJson: { aiType: "nickname-char" },
-    sortOrder: 15,
+    sortOrder: 16,
     rewardCount: 0,
   },
   {

@@ -55,6 +55,7 @@
     const GAME_SLUG = __GAME_SLUG_JS__;
     const GUEST_TOKEN = __GUEST_TOKEN_JS__;
     const TOKEN_KEY = "gamesHubGuestToken_v1:" + STORE_ID;
+    const DEVICE_KEY = "gamesHubDeviceId_v1:" + STORE_ID;
 
     let gameMeta = null;
     let playId = null;
@@ -64,6 +65,76 @@
     function esc(s) {
       return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
     }
+
+    function getOrCreateDeviceId() {
+      try {
+        let id = localStorage.getItem(DEVICE_KEY);
+        if (id && id.length >= 8) return id;
+        id =
+          (typeof crypto !== "undefined" && crypto.randomUUID && crypto.randomUUID()) ||
+          "d" + Date.now() + "-" + Math.random().toString(36).slice(2, 10);
+        localStorage.setItem(DEVICE_KEY, id);
+        return id;
+      } catch (_) {
+        return "d" + Date.now();
+      }
+    }
+
+    function parseLobbyPlayId() {
+      try {
+        const q = new URLSearchParams(location.search).get("lobby");
+        return q && q.trim() ? q.trim() : null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    const kingsApi = {
+      getToken,
+      async fetchLobby(playId) {
+        const token = getToken();
+        const dev = getOrCreateDeviceId();
+        return api(
+          "/guest/" +
+            encodeURIComponent(token) +
+            "/games/plays/" +
+            encodeURIComponent(playId) +
+            "/kings?guestDeviceId=" +
+            encodeURIComponent(dev),
+        );
+      },
+      async joinLobby(playId, displayName) {
+        const token = getToken();
+        return api(
+          "/guest/" +
+            encodeURIComponent(token) +
+            "/games/plays/" +
+            encodeURIComponent(playId) +
+            "/kings/join",
+          {
+            method: "POST",
+            body: {
+              guestDeviceId: getOrCreateDeviceId(),
+              displayName: displayName || undefined,
+            },
+          },
+        );
+      },
+      async drawKing(playId) {
+        const token = getToken();
+        return api(
+          "/guest/" +
+            encodeURIComponent(token) +
+            "/games/plays/" +
+            encodeURIComponent(playId) +
+            "/kings/draw-king",
+          {
+            method: "POST",
+            body: { guestDeviceId: getOrCreateDeviceId() },
+          },
+        );
+      },
+    };
 
     function hubUrl() {
       return "/games/" + encodeURIComponent(STORE_ID) + "?key=" + encodeURIComponent(HUB_KEY);
@@ -239,7 +310,7 @@
       return mod;
     }
 
-    async function startPaidGame() {
+    async function startPaidGame(extraBody) {
       let token = getToken();
       if (!token) {
         const ok = await promptQrScan("卓のQRを読み取ってからプレイしてください");
@@ -251,7 +322,10 @@
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+          guestDeviceId: getOrCreateDeviceId(),
+          ...(extraBody && typeof extraBody === "object" ? extraBody : {}),
+        }),
       });
       const res = await r.json().catch(() => ({}));
       if (!r.ok) {
@@ -437,6 +511,11 @@
           goBackToHub,
           offerPlayAgain,
           defaultPlayAgainLabel,
+          guestDeviceId: getOrCreateDeviceId(),
+          storeId: STORE_ID,
+          hubKey: HUB_KEY,
+          lobbyPlayId: parseLobbyPlayId(),
+          kingsApi,
           savedFortune:
             savedFortunePayload && savedFortunePayload.saved && savedFortunePayload.result
               ? savedFortunePayload.result

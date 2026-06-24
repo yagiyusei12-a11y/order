@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import QRCode from "qrcode";
 import { prisma } from "../db.js";
 import { verifyGamesHubKey } from "../lib/games-hub-auth.js";
 import {
@@ -38,6 +39,20 @@ import {
 import { resolveGameHubCategory } from "../lib/store-game-hub-category.js";
 import { gamesHubCategoriesApiPayload, loadStoreGamesHubCategories } from "../lib/store-games-hub-config.js";
 import { buildFortuneResultJson, parseSavedFortuneResult } from "../lib/game-fortune-result.js";
+import {
+  KINGS_GAME_SLUG,
+  buildKingsJoinUrl,
+  createKingsLobby,
+  drawKingsKing,
+  joinKingsLobby,
+  kingsLobbyPublicView,
+  lobbyToJson,
+  parseKingsGameConfig,
+  parseKingsIntensity,
+  parseKingsLobby,
+  parseKingsTension,
+  isKingsHost,
+} from "../lib/kings-game-lobby.js";
 
 function keyFromRequest(req: FastifyRequest): string {
   const q = req.query as { key?: unknown };
@@ -210,7 +225,7 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
     return summary;
   });
 
-  app.post<{ Params: { token: string; gameId: string }; Body: { guestDeviceId?: string } }>(
+  app.post<{ Params: { token: string; gameId: string }; Body: { guestDeviceId?: string; tension?: string; intensity?: string } }>(
     "/guest/:token/games/:gameId/start",
     async (req, reply) => {
       const tokenSession = await prisma.diningSession.findUnique({
@@ -276,6 +291,9 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
         typeof req.body?.guestDeviceId === "string" && req.body.guestDeviceId.trim()
           ? req.body.guestDeviceId.trim().slice(0, 64)
           : null;
+      if (game.slug === KINGS_GAME_SLUG && !guestDeviceId) {
+        return reply.code(400).send({ error: "ページを再読み込みしてからお試しください" });
+      }
       const playPriceExclusive = Math.max(0, Math.round(game.playPriceYen));
       const playPriceInclusive = gamePlayFeeTaxInclusive(playPriceExclusive, st.taxRatePercent);
       const feeName = `${game.title}（参加 ${playPriceExclusive}円・税抜 / 税込${playPriceInclusive}円）`;
@@ -318,6 +336,21 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
           where: { id: play.id },
           data: { feeOrderLineId: feeLineId },
         });
+
+        if (game.slug === KINGS_GAME_SLUG) {
+          const kingsCfg = parseKingsGameConfig(game.configJson);
+          const startBody = req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
+          const lobby = createKingsLobby({
+            hostDeviceId: guestDeviceId!,
+            maxPlayers: kingsCfg.maxPlayers,
+            tension: parseKingsTension(startBody.tension),
+            intensity: parseKingsIntensity(startBody.intensity),
+          });
+          await tx.gamePlay.update({
+            where: { id: play.id },
+            data: { resultJson: lobbyToJson(lobby) },
+          });
+        }
 
         return {
           playId: play.id,
@@ -394,6 +427,54 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
     };
     if (typeof req.body?.resultMs === "number") {
       bodyPayload.resultMs = req.body.resultMs;
+    }
+
+    if (game.slug === KINGS_GAME_SLUG) {
+      const lobby = parseKingsLobby(play.resultJson);
+      if (!lobby) {
+        return reply.code(409).send({ error: "王様ゲームの状態が見つかりません" });
+      }
+      if (lobby.phase !== "king_revealed") {
+        return reply.code(409).send({ error: "王様を決めてからお題を出してください" });
+      }
+      if (!isAiFortuneConfigured()) {
+        return reply.code(503).send({ error: "AI占いは現在ご利用いただけません（管理者にご連絡ください）" });
+      }
+      try {
+        const storeRow = await prisma.store.findUnique({
+          where: { id: tokenSession.storeId },
+          select: { name: true },
+        });
+        const aiResult = await runAiFortuneForSlug(
+          "ai-penalty-roulette",
+          tokenSession.storeId,
+          storeRow?.name ?? "",
+          {
+            aiInput: {
+              headCount: lobby.players.length,
+              tension: lobby.tension,
+              intensity: lobby.intensity,
+            },
+          },
+        );
+        const doneLobby = { ...lobby, phase: "done" as const, aiResult };
+        await prisma.gamePlay.update({
+          where: { id: play.id },
+          data: {
+            status: "finished",
+            completedAt: new Date(),
+            resultJson: lobbyToJson(doneLobby),
+          },
+        });
+        broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
+        return { won: false, fortune: true, kingsGame: true, aiResult };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "AIお題の生成に失敗しました";
+        if (msg === "AI_FORTUNE_NOT_CONFIGURED") {
+          return reply.code(503).send({ error: "AI占いは現在ご利用いただけません" });
+        }
+        return reply.code(400).send({ error: msg });
+      }
     }
 
     if (game.kind === "fortune") {
@@ -842,6 +923,227 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
         rewardLineId: pickResult.rewardLineId,
         rewardName: pickResult.rewardName,
       };
+    },
+  );
+
+  app.get<{
+    Params: { storeId: string };
+    Querystring: { key?: string; token?: string; playId?: string };
+  }>("/games/api/:storeId/kings-join-qr.svg", async (req, reply) => {
+    if (!(await assertGamesHubAccess(req, reply))) return;
+    const token = typeof req.query.token === "string" ? req.query.token.trim() : "";
+    const playId = typeof req.query.playId === "string" ? req.query.playId.trim() : "";
+    const hubKey = keyFromRequest(req);
+    if (!token || !playId) {
+      return reply.code(400).type("text/plain; charset=utf-8").send("token and playId required");
+    }
+    const tokenSession = await prisma.diningSession.findUnique({
+      where: { guestToken: token },
+      select: { storeId: true },
+    });
+    if (!tokenSession || tokenSession.storeId !== req.params.storeId) {
+      return reply.code(404).type("text/plain; charset=utf-8").send("session not found");
+    }
+    const play = await prisma.gamePlay.findUnique({
+      where: { id: playId },
+      select: { storeGame: { select: { slug: true, storeId: true } }, status: true },
+    });
+    if (!play || play.storeGame.storeId !== req.params.storeId || play.storeGame.slug !== KINGS_GAME_SLUG) {
+      return reply.code(404).type("text/plain; charset=utf-8").send("lobby not found");
+    }
+    if (play.status !== "started") {
+      return reply.code(409).type("text/plain; charset=utf-8").send("lobby closed");
+    }
+    const origin = `${req.protocol}://${req.hostname}`;
+    const url = buildKingsJoinUrl(origin, req.params.storeId, hubKey, token, playId);
+    try {
+      const svg = await QRCode.toString(url, {
+        type: "svg",
+        margin: 1,
+        width: 220,
+        errorCorrectionLevel: "M",
+        color: { dark: "#1a1d24ff", light: "#ffffffff" },
+      });
+      return reply
+        .type("image/svg+xml; charset=utf-8")
+        .header("Cache-Control", "no-store")
+        .send(svg);
+    } catch {
+      return reply.code(500).type("text/plain; charset=utf-8").send("qr failed");
+    }
+  });
+
+  app.get<{ Params: { token: string; playId: string }; Querystring: { guestDeviceId?: string } }>(
+    "/guest/:token/games/plays/:playId/kings",
+    async (req, reply) => {
+      const tokenSession = await prisma.diningSession.findUnique({
+        where: { guestToken: req.params.token },
+        select: {
+          id: true,
+          status: true,
+          storeId: true,
+          tableId: true,
+          mergedIntoSessionId: true,
+        },
+      });
+      if (!tokenSession) {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+      const billing = await resolveGuestBillingContext(tokenSession);
+      if (!billing.ok) {
+        return reply.code(billing.status).send(billing.body);
+      }
+      const play = await prisma.gamePlay.findUnique({
+        where: { id: req.params.playId },
+        include: { storeGame: true },
+      });
+      if (!play || play.billingSessionId !== billing.ctx.billingSessionId) {
+        return reply.code(404).send({ error: "play not found" });
+      }
+      if (play.storeGame.slug !== KINGS_GAME_SLUG) {
+        return reply.code(400).send({ error: "not a kings game" });
+      }
+      const lobby = parseKingsLobby(play.resultJson);
+      if (!lobby) {
+        return reply.code(409).send({ error: "lobby not ready" });
+      }
+      const guestDeviceId =
+        typeof req.query.guestDeviceId === "string" && req.query.guestDeviceId.trim()
+          ? req.query.guestDeviceId.trim().slice(0, 64)
+          : null;
+      return {
+        playId: play.id,
+        status: play.status,
+        lobby: kingsLobbyPublicView(lobby, guestDeviceId),
+      };
+    },
+  );
+
+  app.post<{
+    Params: { token: string; playId: string };
+    Body: { guestDeviceId?: string; displayName?: string };
+  }>("/guest/:token/games/plays/:playId/kings/join", async (req, reply) => {
+    const tokenSession = await prisma.diningSession.findUnique({
+      where: { guestToken: req.params.token },
+      select: {
+        id: true,
+        status: true,
+        storeId: true,
+        tableId: true,
+        mergedIntoSessionId: true,
+      },
+    });
+    if (!tokenSession) {
+      return reply.code(404).send({ error: "session not found or closed" });
+    }
+    const billing = await resolveGuestBillingContext(tokenSession);
+    if (!billing.ok) {
+      return reply.code(billing.status).send(billing.body);
+    }
+    const guestDeviceId =
+      typeof req.body?.guestDeviceId === "string" && req.body.guestDeviceId.trim()
+        ? req.body.guestDeviceId.trim().slice(0, 64)
+        : "";
+    if (!guestDeviceId) {
+      return reply.code(400).send({ error: "guestDeviceId required" });
+    }
+    const displayName =
+      typeof req.body?.displayName === "string" ? req.body.displayName.trim().slice(0, 20) : "";
+    const play = await prisma.gamePlay.findUnique({
+      where: { id: req.params.playId },
+      include: { storeGame: true },
+    });
+    if (!play || play.billingSessionId !== billing.ctx.billingSessionId) {
+      return reply.code(404).send({ error: "play not found" });
+    }
+    if (play.storeGame.slug !== KINGS_GAME_SLUG) {
+      return reply.code(400).send({ error: "not a kings game" });
+    }
+    if (play.status !== "started") {
+      return reply.code(409).send({ error: "このゲームはすでに終了しています" });
+    }
+    const lobby = parseKingsLobby(play.resultJson);
+    if (!lobby) {
+      return reply.code(409).send({ error: "lobby not ready" });
+    }
+    try {
+      const joined = joinKingsLobby(lobby, guestDeviceId, displayName || undefined);
+      if (joined.created) {
+        await prisma.gamePlay.update({
+          where: { id: play.id },
+          data: { resultJson: lobbyToJson(joined.lobby) },
+        });
+        broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
+      }
+      return {
+        playId: play.id,
+        myNumber: joined.player.number,
+        created: joined.created,
+        lobby: kingsLobbyPublicView(joined.lobby, guestDeviceId),
+      };
+    } catch (e) {
+      return reply.code(400).send({ error: e instanceof Error ? e.message : "参加できませんでした" });
+    }
+  });
+
+  app.post<{ Params: { token: string; playId: string }; Body: { guestDeviceId?: string } }>(
+    "/guest/:token/games/plays/:playId/kings/draw-king",
+    async (req, reply) => {
+      const tokenSession = await prisma.diningSession.findUnique({
+        where: { guestToken: req.params.token },
+        select: {
+          id: true,
+          status: true,
+          storeId: true,
+          tableId: true,
+          mergedIntoSessionId: true,
+        },
+      });
+      if (!tokenSession) {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+      const billing = await resolveGuestBillingContext(tokenSession);
+      if (!billing.ok) {
+        return reply.code(billing.status).send(billing.body);
+      }
+      const guestDeviceId =
+        typeof req.body?.guestDeviceId === "string" && req.body.guestDeviceId.trim()
+          ? req.body.guestDeviceId.trim().slice(0, 64)
+          : "";
+      const play = await prisma.gamePlay.findUnique({
+        where: { id: req.params.playId },
+        include: { storeGame: true },
+      });
+      if (!play || play.billingSessionId !== billing.ctx.billingSessionId) {
+        return reply.code(404).send({ error: "play not found" });
+      }
+      if (play.storeGame.slug !== KINGS_GAME_SLUG) {
+        return reply.code(400).send({ error: "not a kings game" });
+      }
+      if (play.status !== "started") {
+        return reply.code(409).send({ error: "このゲームはすでに終了しています" });
+      }
+      const lobby = parseKingsLobby(play.resultJson);
+      if (!lobby) {
+        return reply.code(409).send({ error: "lobby not ready" });
+      }
+      if (!isKingsHost(lobby, guestDeviceId)) {
+        return reply.code(403).send({ error: "司会者だけが王様を決められます" });
+      }
+      try {
+        const next = drawKingsKing(lobby);
+        await prisma.gamePlay.update({
+          where: { id: play.id },
+          data: { resultJson: lobbyToJson(next) },
+        });
+        broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
+        return {
+          playId: play.id,
+          lobby: kingsLobbyPublicView(next, guestDeviceId),
+        };
+      } catch (e) {
+        return reply.code(400).send({ error: e instanceof Error ? e.message : "王様を決められませんでした" });
+      }
     },
   );
 }

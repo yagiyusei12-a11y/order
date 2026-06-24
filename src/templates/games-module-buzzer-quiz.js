@@ -43,6 +43,8 @@
       let lobby = null;
       let lastRevision = -1;
       let buzzLocked = false;
+      let hostGenerating = false;
+      let uiTimer = null;
       let quizSettings = {
         genre: "酒・飲み",
         difficulty: "普通",
@@ -142,7 +144,14 @@
           ".bz-leaderboard{width:100%;border-collapse:collapse;font-size:0.88rem}" +
           ".bz-leaderboard th,.bz-leaderboard td{padding:0.4rem 0.35rem;border-bottom:1px solid var(--line)}" +
           ".bz-leaderboard th{color:var(--muted);font-weight:700;font-size:0.75rem}" +
-          ".bz-rank1{color:#ffe08a;font-weight:900}";
+          ".bz-rank1{color:#ffe08a;font-weight:900}" +
+          ".bz-wait{padding:1.2rem 0.75rem;border:1px dashed var(--line);border-radius:12px;background:#121820}" +
+          ".bz-wait-title{font-size:1rem;font-weight:900;color:#f0c060;margin:0 0 0.35rem}" +
+          ".bz-wait-sub{font-size:0.82rem;color:var(--muted);margin:0;line-height:1.55}" +
+          ".bz-count{font-size:2.4rem;font-weight:900;color:#f0c060;line-height:1;margin:0.35rem 0}" +
+          ".bz-spinner{width:2.2rem;height:2.2rem;border:3px solid #2a3444;border-top-color:#f0c060;border-radius:50%;margin:0.35rem auto;animation:bzspin 0.9s linear infinite}" +
+          "@keyframes bzspin{to{transform:rotate(360deg)}}" +
+          ".bz-timer{font-size:1.6rem;font-weight:900;color:#fbbf24;text-align:center;margin:0.2rem 0}";
         document.head.appendChild(st);
       }
 
@@ -151,6 +160,61 @@
           clearInterval(pollTimer);
           pollTimer = null;
         }
+      }
+
+      function stopUiTimer() {
+        if (uiTimer) {
+          clearInterval(uiTimer);
+          uiTimer = null;
+        }
+      }
+
+      function pollIntervalMs(state) {
+        if (!state) return 1200;
+        if (state.phase === "generating" || hostGenerating) return 800;
+        if (state.phase === "buzzing" || state.phase === "answering" || state.waitingForRound) {
+          return 400;
+        }
+        return 1000;
+      }
+
+      function scheduleUiTimer() {
+        stopUiTimer();
+        if (!lobby) return;
+        if (
+          lobby.waitingForRound ||
+          lobby.phase === "answering" ||
+          lobby.phase === "generating" ||
+          hostGenerating
+        ) {
+          uiTimer = setInterval(() => {
+            if (!lobby) return;
+            if (lobby.phase === "generating" || hostGenerating) {
+              renderGeneratingView(lobby);
+              return;
+            }
+            if (lobby.waitingForRound || lobby.phase === "answering") {
+              renderPlayView(lobby);
+            }
+          }, 200);
+        }
+      }
+
+      function renderGeneratingView(state) {
+        injectStyles();
+        const body =
+          '<div class="bz-wrap bz-wait">' +
+          '<div class="bz-spinner" aria-hidden="true"></div>' +
+          '<p class="bz-wait-title">問題を作成中です</p>' +
+          '<p class="bz-wait-sub">AIがクイズを準備しています。<br>30秒ほどかかることがあります。この画面のままお待ちください。</p>' +
+          renderQuizSettingsSummary(state) +
+          '<p class="bz-hint" style="margin-top:0.5rem">参加 ' +
+          esc(String(state.playerCount || 0)) +
+          " 人</p>" +
+          renderPlayerChips(state.players) +
+          "</div>";
+        root.innerHTML = body;
+        btn.style.display = "none";
       }
 
       function qrUrl(pid) {
@@ -196,10 +260,38 @@
       }
 
       function renderQuestionBlock(state) {
-        const q = state.question;
-        if (!q) return '<p class="bz-hint">問題を読み込み中…</p>';
         const idx = (state.currentIndex || 0) + 1;
         const total = state.totalQuestions || state.questionCount || "?";
+
+        if (state.waitingForRound) {
+          const sec = Math.max(1, Math.ceil((state.roundOpensInMs || 0) / 1000));
+          return (
+            '<p class="bz-qmeta">第 ' +
+            esc(String(idx)) +
+            " / " +
+            esc(String(total)) +
+            " 問</p>" +
+            '<div class="bz-wait">' +
+            '<p class="bz-wait-title">全員に問題を配信中</p>' +
+            '<p class="bz-count">' +
+            esc(String(sec)) +
+            "</p>" +
+            '<p class="bz-wait-sub">全員の画面がそろったら同時に問題が表示されます</p>' +
+            "</div>"
+          );
+        }
+
+        const q = state.question;
+        if (!q) {
+          return (
+            '<p class="bz-qmeta">第 ' +
+            esc(String(idx)) +
+            " / " +
+            esc(String(total)) +
+            ' 問</p><p class="bz-hint">問題を読み込み中…</p>'
+          );
+        }
+
         let html =
           '<p class="bz-qmeta">第 ' +
           esc(String(idx)) +
@@ -212,7 +304,10 @@
         if (state.phase === "buzzing") {
           html += '<p class="bz-hint" style="text-align:center">問題を読んでからブザーを押そう！</p>';
         } else if (state.phase === "answering") {
+          const sec =
+            state.answerSecondsLeft != null ? state.answerSecondsLeft : 3;
           html +=
+            '<p class="bz-timer">残り ' + esc(String(sec)) + " 秒</p>" +
             '<p class="bz-hint" style="text-align:center;font-weight:800">' +
             esc(String(state.buzzWinnerNumber)) +
             " 番が回答中…</p>";
@@ -251,11 +346,19 @@
           if (state.lastAnswer) {
             html +=
               '<p class="bz-hint" style="text-align:center;margin-top:0.5rem;font-weight:800;color:' +
-              (state.lastAnswer.correct ? "var(--ok)" : "#f87171") +
+              (state.lastAnswer.timedOut
+                ? "#fbbf24"
+                : state.lastAnswer.correct
+                  ? "var(--ok)"
+                  : "#f87171") +
               '">' +
               esc(String(state.lastAnswer.playerNumber)) +
               " 番 · " +
-              (state.lastAnswer.correct ? "正解！ +1pt" : "不正解") +
+              (state.lastAnswer.timedOut
+                ? "時間切れ"
+                : state.lastAnswer.correct
+                  ? "正解！ +1pt"
+                  : "不正解") +
               "</p>";
           }
         }
@@ -369,7 +472,7 @@
 
       function renderPlayView(state) {
         injectStyles();
-        buzzLocked = state.phase !== "buzzing";
+        buzzLocked = state.phase !== "buzzing" || !!state.waitingForRound;
         let body =
           '<div class="bz-wrap">' +
           renderPlayerChips(state.players) +
@@ -377,7 +480,7 @@
           renderQuestionBlock(state) +
           "</div>";
 
-        if (state.phase === "buzzing") {
+        if (state.phase === "buzzing" && !state.waitingForRound) {
           body +=
             '<button type="button" class="bz-buzz" id="bzBuzz">ブザー！</button>';
         }
@@ -392,6 +495,7 @@
 
         if (state.phase === "buzzing") bindBuzzButton();
         if (state.phase === "answering" && state.isBuzzWinner) bindAnswerButtons();
+        scheduleUiTimer();
 
         if (mode === "host") {
           btn.style.display =
@@ -415,18 +519,18 @@
 
       function renderJoinerWaiting(state) {
         injectStyles();
+        if (state.phase === "generating") {
+          renderGeneratingView(state);
+          return;
+        }
         let body = "";
-        if (state.phase === "joining" || state.phase === "generating") {
+        if (state.phase === "joining") {
           body =
             '<p class="bz-hint">参加登録しました</p>' +
             '<p style="font-size:3rem;font-weight:900;color:#f0c060;line-height:1;margin:0.2rem 0">' +
             esc(String(state.myNumber)) +
             " 番</p>" +
-            '<p class="bz-hint">' +
-            (state.phase === "generating"
-              ? "司会者が問題を準備中…"
-              : "司会者がクイズを始めるまでお待ちください") +
-            "</p>" +
+            '<p class="bz-hint">司会者がクイズを始めるまでお待ちください</p>' +
             renderPlayerChips(state.players);
         } else {
           renderPlayView(state);
@@ -438,9 +542,39 @@
 
       function startPoll() {
         stopPoll();
-        pollTimer = setInterval(() => {
+        const ms = pollIntervalMs(lobby);
+        const tick = () => {
           void refreshLobby().catch(() => {});
-        }, 1200);
+        };
+        pollTimer = setInterval(tick, ms);
+        pollTimer._bzMs = ms;
+        tick();
+      }
+
+      function renderLobbyState(next) {
+        if (hostGenerating || next.phase === "generating") {
+          renderGeneratingView(next);
+          return;
+        }
+        if (mode === "host") {
+          if (next.phase === "joining") {
+            renderHostLobby(next);
+          } else if (next.phase === "done" && next.leaderboard) {
+            stopUiTimer();
+            renderPlayView(next);
+            stopPoll();
+          } else {
+            renderPlayView(next);
+          }
+        } else if (next.phase === "joining") {
+          renderJoinerWaiting(next);
+        } else {
+          renderPlayView(next);
+          if (next.phase === "done") {
+            stopUiTimer();
+            stopPoll();
+          }
+        }
       }
 
       async function refreshLobby() {
@@ -448,30 +582,24 @@
         const res = await buzzerApi.fetchLobby(playId);
         const next = res.lobby;
         const changed = next.revision !== lastRevision;
+        const phaseChanged = lobby && lobby.phase !== next.phase;
+        const waitChanged =
+          lobby &&
+          (lobby.waitingForRound !== next.waitingForRound ||
+            lobby.answerSecondsLeft !== next.answerSecondsLeft);
+        const prevMs = pollIntervalMs(lobby);
         lobby = next;
         syncQuizSettingsFromLobby(next);
-        if (!changed && next.phase !== "buzzing") return lobby;
         lastRevision = next.revision;
 
-        if (mode === "host") {
-          if (
-            next.phase === "joining" ||
-            (next.phase === "generating" && !next.question)
-          ) {
-            renderHostLobby(next);
-          } else if (next.phase === "done" && next.leaderboard) {
-            renderPlayView(next);
-            stopPoll();
-          } else if (next.phase !== "joining") {
-            renderPlayView(next);
-          }
-        } else {
-          if (next.phase === "joining" || next.phase === "generating") {
-            renderJoinerWaiting(next);
-          } else {
-            renderPlayView(next);
-            if (next.phase === "done") stopPoll();
-          }
+        if (hostGenerating || next.phase === "generating") {
+          renderGeneratingView(next);
+        } else if (changed || phaseChanged || waitChanged || next.phase === "buzzing") {
+          renderLobbyState(next);
+        }
+
+        if (!pollTimer || pollIntervalMs(next) !== prevMs) {
+          startPoll();
         }
         return lobby;
       }
@@ -480,10 +608,21 @@
         btn.disabled = true;
         btn.textContent = "問題を作成中…";
         showErr("");
-        root.innerHTML =
-          '<div class="bz-wrap"><p class="bz-hint">AIがクイズ問題を作成しています…<br>30秒ほどかかることがあります</p></div>';
+        hostGenerating = true;
+        renderGeneratingView(
+          lobby || {
+            phase: "generating",
+            playerCount: 0,
+            maxPlayers: 12,
+            players: [],
+            genre: quizSettings.genre,
+            difficulty: quizSettings.difficulty,
+            questionCount: quizSettings.questionCount,
+          },
+        );
         try {
           const res = await buzzerApi.startQuiz(playId);
+          hostGenerating = false;
           lobby = res.lobby;
           lastRevision = lobby.revision;
           showMsg("クイズ開始！最初にブザーを押した人が回答権を得ます。", "win");
@@ -491,10 +630,11 @@
           bindHostButton();
           startPoll();
         } catch (e) {
+          hostGenerating = false;
           showErr(e instanceof Error ? e.message : "開始できませんでした");
           const state = await buzzerApi.fetchLobby(playId);
           lobby = state.lobby;
-          renderHostLobby(lobby);
+          renderLobbyState(lobby);
         }
         btn.disabled = false;
       }

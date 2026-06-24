@@ -3,6 +3,9 @@ import { parseQuizBattleInput } from "./ai-fortune.js";
 
 export const BUZZER_QUIZ_SLUG = "buzzer-quiz";
 
+export const BUZZER_ANSWER_MS = 3000;
+export const BUZZER_ROUND_SYNC_MS = 2500;
+
 export const BUZZER_QUIZ_GENRES = ["食べ物", "酒・飲み", "雑学", "日本文化"] as const;
 export const BUZZER_QUIZ_DIFFICULTIES = ["易しい", "普通", "難しい"] as const;
 
@@ -38,8 +41,9 @@ export type BuzzerQuizPhase =
 
 export type BuzzerQuizLastAnswer = {
   deviceId: string;
-  choiceKey: BuzzerQuizChoiceKey;
+  choiceKey?: BuzzerQuizChoiceKey;
   correct: boolean;
+  timedOut?: boolean;
 };
 
 export type BuzzerQuizState = {
@@ -56,6 +60,8 @@ export type BuzzerQuizState = {
   revision: number;
   buzzWinnerDeviceId?: string;
   buzzAt?: string;
+  roundOpensAt?: string;
+  answerDeadlineAt?: string;
   lastAnswer?: BuzzerQuizLastAnswer;
   generatingError?: string;
 };
@@ -298,15 +304,18 @@ export function parseBuzzerQuizState(raw: unknown): BuzzerQuizState | null {
     state.buzzWinnerDeviceId = raw.buzzWinnerDeviceId.trim();
   }
   if (typeof raw.buzzAt === "string") state.buzzAt = raw.buzzAt;
+  if (typeof raw.roundOpensAt === "string") state.roundOpensAt = raw.roundOpensAt;
+  if (typeof raw.answerDeadlineAt === "string") state.answerDeadlineAt = raw.answerDeadlineAt;
   if (isRecord(raw.lastAnswer)) {
     const deviceId =
       typeof raw.lastAnswer.deviceId === "string" ? raw.lastAnswer.deviceId.trim() : "";
     const choiceKey = parseChoiceKey(raw.lastAnswer.choiceKey);
-    if (deviceId && choiceKey) {
+    if (deviceId) {
       state.lastAnswer = {
         deviceId,
-        choiceKey,
+        ...(choiceKey ? { choiceKey } : {}),
         correct: raw.lastAnswer.correct === true,
+        timedOut: raw.lastAnswer.timedOut === true,
       };
     }
   }
@@ -396,6 +405,7 @@ export function applyBuzzerQuizQuestions(
   if (questions.length < state.questionCount) {
     throw new Error("問題の生成に失敗しました");
   }
+  const roundOpensAt = new Date(Date.now() + BUZZER_ROUND_SYNC_MS).toISOString();
   return {
     ...state,
     phase: "buzzing",
@@ -403,6 +413,8 @@ export function applyBuzzerQuizQuestions(
     currentIndex: 0,
     buzzWinnerDeviceId: undefined,
     buzzAt: undefined,
+    answerDeadlineAt: undefined,
+    roundOpensAt,
     lastAnswer: undefined,
     generatingError: undefined,
     revision: state.revision + 1,
@@ -422,6 +434,9 @@ export function applyBuzzerBuzz(state: BuzzerQuizState, guestDeviceId: string): 
   if (state.phase !== "buzzing") {
     throw new Error("今はブザーできません");
   }
+  if (state.roundOpensAt && Date.now() < new Date(state.roundOpensAt).getTime()) {
+    throw new Error("まだ問題が表示されていません");
+  }
   if (state.buzzWinnerDeviceId) {
     throw new Error("すでに誰かがブザーを押しました");
   }
@@ -434,8 +449,34 @@ export function applyBuzzerBuzz(state: BuzzerQuizState, guestDeviceId: string): 
     phase: "answering",
     buzzWinnerDeviceId: guestDeviceId,
     buzzAt: new Date().toISOString(),
+    answerDeadlineAt: new Date(Date.now() + BUZZER_ANSWER_MS).toISOString(),
     revision: state.revision + 1,
   };
+}
+
+export function applyBuzzerAnswerTimeout(state: BuzzerQuizState): BuzzerQuizState {
+  if (state.phase !== "answering" || !state.buzzWinnerDeviceId) return state;
+  return {
+    ...state,
+    phase: "reveal",
+    lastAnswer: {
+      deviceId: state.buzzWinnerDeviceId,
+      correct: false,
+      timedOut: true,
+    },
+    answerDeadlineAt: undefined,
+    revision: state.revision + 1,
+  };
+}
+
+export function tickBuzzerQuizState(state: BuzzerQuizState): { state: BuzzerQuizState; changed: boolean } {
+  if (state.phase !== "answering" || !state.answerDeadlineAt) {
+    return { state, changed: false };
+  }
+  if (Date.now() < new Date(state.answerDeadlineAt).getTime()) {
+    return { state, changed: false };
+  }
+  return { state: applyBuzzerAnswerTimeout(state), changed: true };
 }
 
 export function applyBuzzerAnswer(
@@ -462,6 +503,7 @@ export function applyBuzzerAnswer(
     phase: "reveal",
     players,
     lastAnswer: { deviceId: guestDeviceId, choiceKey, correct },
+    answerDeadlineAt: undefined,
     revision: state.revision + 1,
   };
 }
@@ -478,6 +520,8 @@ export function advanceBuzzerQuiz(state: BuzzerQuizState): BuzzerQuizState {
       currentIndex: nextIndex,
       buzzWinnerDeviceId: undefined,
       buzzAt: undefined,
+      answerDeadlineAt: undefined,
+      roundOpensAt: undefined,
       lastAnswer: undefined,
       revision: state.revision + 1,
     };
@@ -488,6 +532,8 @@ export function advanceBuzzerQuiz(state: BuzzerQuizState): BuzzerQuizState {
     currentIndex: nextIndex,
     buzzWinnerDeviceId: undefined,
     buzzAt: undefined,
+    answerDeadlineAt: undefined,
+    roundOpensAt: new Date(Date.now() + BUZZER_ROUND_SYNC_MS).toISOString(),
     lastAnswer: undefined,
     revision: state.revision + 1,
   };
@@ -498,6 +544,21 @@ export function buzzerQuizPublicView(state: BuzzerQuizState, guestDeviceId: stri
   const isHost = isBuzzerQuizHost(state, guestDeviceId);
   const question = state.questions[state.currentIndex];
   const showAnswer = state.phase === "reveal" || state.phase === "done";
+  const now = Date.now();
+  const waitingForRound =
+    state.phase === "buzzing" &&
+    !!state.roundOpensAt &&
+    now < new Date(state.roundOpensAt).getTime();
+  const roundOpensInMs =
+    waitingForRound && state.roundOpensAt
+      ? Math.max(0, new Date(state.roundOpensAt).getTime() - now)
+      : 0;
+  const answerDeadlineMs =
+    state.phase === "answering" && state.answerDeadlineAt
+      ? new Date(state.answerDeadlineAt).getTime()
+      : null;
+  const answerSecondsLeft =
+    answerDeadlineMs != null ? Math.max(0, Math.ceil((answerDeadlineMs - now) / 1000)) : null;
   const buzzWinner = state.buzzWinnerDeviceId
     ? findBuzzerQuizPlayer(state, state.buzzWinnerDeviceId)
     : undefined;
@@ -523,22 +584,29 @@ export function buzzerQuizPublicView(state: BuzzerQuizState, guestDeviceId: stri
     isHost,
     currentIndex: state.currentIndex,
     totalQuestions: state.questions.length,
-    question: question
-      ? {
-          prompt: question.prompt,
-          choices: question.choices.map((c) => ({ key: c.key, text: c.text })),
-          ...(showAnswer
-            ? { correctKey: question.correctKey, explanation: question.explanation }
-            : {}),
-        }
-      : null,
+    waitingForRound,
+    roundOpensAt: state.roundOpensAt ?? null,
+    roundOpensInMs,
+    answerDeadlineAt: state.answerDeadlineAt ?? null,
+    answerSecondsLeft,
+    question:
+      question && !waitingForRound
+        ? {
+            prompt: question.prompt,
+            choices: question.choices.map((c) => ({ key: c.key, text: c.text })),
+            ...(showAnswer
+              ? { correctKey: question.correctKey, explanation: question.explanation }
+              : {}),
+          }
+        : null,
     buzzWinnerNumber: buzzWinner?.number ?? null,
     isBuzzWinner: !!guestDeviceId && state.buzzWinnerDeviceId === guestDeviceId,
     lastAnswer: state.lastAnswer
       ? {
           playerNumber: lastAnswerPlayer?.number ?? null,
-          choiceKey: state.lastAnswer.choiceKey,
+          choiceKey: state.lastAnswer.choiceKey ?? null,
           correct: state.lastAnswer.correct,
+          timedOut: state.lastAnswer.timedOut === true,
         }
       : null,
     generatingError: state.generatingError ?? null,

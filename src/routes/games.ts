@@ -73,9 +73,29 @@ import {
   parseBuzzerQuizStartInput,
   resolveBuzzerQuizStartInput,
   parseBuzzerQuizState,
+  tickBuzzerQuizState,
   type BuzzerQuizChoiceKey,
+  type BuzzerQuizState,
 } from "../lib/buzzer-quiz-lobby.js";
 import { generateBuzzerQuizQuestions } from "../lib/buzzer-quiz-ai.js";
+
+async function syncBuzzerQuizPlayState(
+  playId: string,
+  currentJson: unknown,
+  storeId: string,
+  billingSessionId: string,
+): Promise<BuzzerQuizState | null> {
+  const state = parseBuzzerQuizState(currentJson);
+  if (!state) return null;
+  const ticked = tickBuzzerQuizState(state);
+  if (!ticked.changed) return state;
+  await prisma.gamePlay.update({
+    where: { id: playId },
+    data: { resultJson: buzzerQuizStateToJson(ticked.state) },
+  });
+  broadcastOpsSessionUpdated(storeId, billingSessionId);
+  return ticked.state;
+}
 
 function keyFromRequest(req: FastifyRequest): string {
   const q = req.query as { key?: unknown };
@@ -1289,7 +1309,12 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
       if (play.storeGame.slug !== BUZZER_QUIZ_SLUG) {
         return reply.code(400).send({ error: "not a buzzer quiz" });
       }
-      const state = parseBuzzerQuizState(play.resultJson);
+      const state = await syncBuzzerQuizPlayState(
+        play.id,
+        play.resultJson,
+        tokenSession.storeId,
+        billing.ctx.billingSessionId,
+      );
       if (!state) {
         return reply.code(409).send({ error: "lobby not ready" });
       }
@@ -1523,6 +1548,9 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
         if (state.phase !== "buzzing") {
           throw new Error("NOT_BUZZING");
         }
+        if (state.roundOpensAt && Date.now() < new Date(state.roundOpensAt).getTime()) {
+          throw new Error("ROUND_NOT_OPEN");
+        }
         if (state.buzzWinnerDeviceId) {
           const winner = findBuzzerQuizPlayer(state, state.buzzWinnerDeviceId);
           return {
@@ -1549,6 +1577,7 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
         if (msg === "CLOSED") return { error: "このゲームはすでに終了しています", status: 409 };
         if (msg === "NOT_READY") return { error: "lobby not ready", status: 409 };
         if (msg === "NOT_BUZZING") return { error: "今はブザーできません", status: 409 };
+        if (msg === "ROUND_NOT_OPEN") return { error: "まだ問題が表示されていません", status: 409 };
         throw e;
       });
 
@@ -1608,9 +1637,17 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
     if (play.status !== "started") {
       return reply.code(409).send({ error: "このゲームはすでに終了しています" });
     }
-    const state = parseBuzzerQuizState(play.resultJson);
+    const state = await syncBuzzerQuizPlayState(
+      play.id,
+      play.resultJson,
+      tokenSession.storeId,
+      billing.ctx.billingSessionId,
+    );
     if (!state) {
       return reply.code(409).send({ error: "lobby not ready" });
+    }
+    if (state.phase !== "answering") {
+      return reply.code(409).send({ error: "今は回答できません" });
     }
     try {
       const next = applyBuzzerAnswer(state, guestDeviceId, choiceKey);
@@ -1665,7 +1702,12 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
       if (play.status !== "started") {
         return reply.code(409).send({ error: "このゲームはすでに終了しています" });
       }
-      const state = parseBuzzerQuizState(play.resultJson);
+      const state = await syncBuzzerQuizPlayState(
+        play.id,
+        play.resultJson,
+        tokenSession.storeId,
+        billing.ctx.billingSessionId,
+      );
       if (!state) {
         return reply.code(409).send({ error: "lobby not ready" });
       }

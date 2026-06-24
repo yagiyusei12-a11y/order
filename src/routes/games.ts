@@ -37,6 +37,7 @@ import {
 } from "../lib/store-game-rewards.js";
 import { resolveGameHubCategory } from "../lib/store-game-hub-category.js";
 import { gamesHubCategoriesApiPayload, loadStoreGamesHubCategories } from "../lib/store-games-hub-config.js";
+import { buildFortuneResultJson, parseSavedFortuneResult } from "../lib/game-fortune-result.js";
 
 function keyFromRequest(req: FastifyRequest): string {
   const q = req.query as { key?: unknown };
@@ -411,9 +412,14 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
             storeRow?.name ?? "",
             bodyPayload as AiFortunePayload,
           );
+          const resultJson = buildFortuneResultJson(game.slug, bodyPayload, aiResult);
           await prisma.gamePlay.update({
             where: { id: play.id },
-            data: { status: "finished", completedAt: new Date() },
+            data: {
+              status: "finished",
+              completedAt: new Date(),
+              ...(resultJson ? { resultJson } : {}),
+            },
           });
           broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
           return { won: false, fortune: true, aiResult };
@@ -425,9 +431,14 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
           return reply.code(400).send({ error: msg });
         }
       }
+      const resultJson = buildFortuneResultJson(game.slug, bodyPayload);
       await prisma.gamePlay.update({
         where: { id: play.id },
-        data: { status: "finished", completedAt: new Date() },
+        data: {
+          status: "finished",
+          completedAt: new Date(),
+          ...(resultJson ? { resultJson } : {}),
+        },
       });
       broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
       return { won: false, fortune: true };
@@ -609,6 +620,57 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
     broadcastOpsSessionUpdated(tokenSession.storeId, billingId);
     return completeResult;
   });
+
+  app.get<{ Params: { token: string }; Querystring: { slug?: string } }>(
+    "/guest/:token/games/fortune-saved",
+    async (req, reply) => {
+      const slug = typeof req.query.slug === "string" ? req.query.slug.trim() : "";
+      if (!slug) {
+        return reply.code(400).send({ error: "slug required" });
+      }
+      const tokenSession = await prisma.diningSession.findUnique({
+        where: { guestToken: req.params.token },
+        select: {
+          id: true,
+          status: true,
+          storeId: true,
+          tableId: true,
+          mergedIntoSessionId: true,
+        },
+      });
+      if (!tokenSession) {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+      const billing = await resolveGuestBillingContext(tokenSession);
+      if (!billing.ok) {
+        return reply.code(billing.status).send(billing.body);
+      }
+
+      const plays = await prisma.gamePlay.findMany({
+        where: {
+          billingSessionId: billing.ctx.billingSessionId,
+          status: "finished",
+          storeGame: { storeId: tokenSession.storeId, slug, kind: "fortune" },
+        },
+        orderBy: { completedAt: "desc" },
+        take: 8,
+        select: { resultJson: true, completedAt: true },
+      });
+      const play = plays.find((p) => p.resultJson != null);
+      if (!play || play.resultJson == null) {
+        return { saved: false as const };
+      }
+      const result = parseSavedFortuneResult(play.resultJson);
+      if (!result) {
+        return { saved: false as const };
+      }
+      return {
+        saved: true as const,
+        result,
+        completedAt: play.completedAt?.toISOString() ?? null,
+      };
+    },
+  );
 
   app.get<{ Params: { token: string } }>("/guest/:token/games/pending-reward", async (req, reply) => {
     const tokenSession = await prisma.diningSession.findUnique({

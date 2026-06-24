@@ -52,7 +52,7 @@
               '<div class="fortune-result">' + f.label + '</div>' +
               '<p class="fortune-text">' + f.text + '</p>';
             try {
-              if (playId) await completePaidGame({});
+              if (playId) await completePaidGame({ payload: { fortune: { label: f.label, text: f.text } } });
             } catch (_) {}
             showMsg("占い結果は参考程度にお楽しみください", "");
             btn.textContent = "もう一度引く（" + ex + "円・税抜）";

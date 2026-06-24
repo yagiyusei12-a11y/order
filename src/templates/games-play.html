@@ -398,6 +398,18 @@
       return true;
     }
 
+    async function fetchSavedFortune(slug) {
+      const token = getToken();
+      if (!token) return null;
+      try {
+        return await api(
+          "/guest/" + encodeURIComponent(token) + "/games/fortune-saved?slug=" + encodeURIComponent(slug),
+        );
+      } catch (_) {
+        return null;
+      }
+    }
+
     async function main() {
       document.getElementById("backLink").href = hubUrl();
       try {
@@ -407,6 +419,10 @@
         if (!gameMeta) throw new Error("ゲームが見つかりません");
         document.getElementById("gameTitle").textContent = gameMeta.title;
         if (await tryResumePendingReward()) return;
+        let savedFortunePayload = null;
+        if (gameMeta.kind === "fortune") {
+          savedFortunePayload = await fetchSavedFortune(GAME_SLUG);
+        }
         const mod = await loadModule(GAME_SLUG);
         moduleApi = mod;
         const ctx = {
@@ -421,6 +437,12 @@
           goBackToHub,
           offerPlayAgain,
           defaultPlayAgainLabel,
+          savedFortune:
+            savedFortunePayload && savedFortunePayload.saved && savedFortunePayload.result
+              ? savedFortunePayload.result
+              : null,
+          savedFortuneAt:
+            savedFortunePayload && savedFortunePayload.saved ? savedFortunePayload.completedAt : null,
           fetchBillSummary: async () => {
             const token = getToken();
             if (!token) return null;
@@ -434,6 +456,10 @@
             );
           },
         };
+        if (ctx.savedFortune) {
+          await loadScript("/games-modules/fortune-save.js");
+          if (window.__fortuneSave && window.__fortuneSave.mountSaved(ctx)) return;
+        }
         mod.mount(ctx);
       } catch (e) {
         document.getElementById("gameRoot").innerHTML = "";

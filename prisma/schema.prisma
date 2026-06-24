@@ -570,6 +570,8 @@ model GamePlay {
   rewardOrderLineId  String?
   guestDeviceId      String?
   completedAt        DateTime?
+  /// 占い・おみくじなどの鑑定結果（会計セッション中に再表示用）
+  resultJson         Json?
   createdAt          DateTime      @default(now())
   storeGame          StoreGame     @relation(fields: [storeGameId], references: [id], onDelete: Cascade)
   billingSession     DiningSession @relation(fields: [billingSessionId], references: [id], onDelete: Cascade)

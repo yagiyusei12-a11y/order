@@ -70,6 +70,25 @@ function lineKitchenServeFast(ln) {
   return Boolean(ln && ln.kitchenServeFast);
 }
 
+/** @type {Set<string>} */
+let kitStoppedStationIds = new Set();
+
+function lineStationBusyStopped(ln) {
+  if (!ln) return false;
+  if (ln.stationBusyStopped === true) return true;
+  const sid = ln.kitchenStationId;
+  return Boolean(sid && kitStoppedStationIds.has(String(sid)));
+}
+
+function appendKitStationBusyStopBadge(nameRow, ln) {
+  if (!nameRow || !lineStationBusyStopped(ln)) return;
+  const bb = document.createElement("span");
+  bb.className = "kit-station-busy-stop-badge";
+  bb.textContent = "混雑停止中";
+  bb.title = "この調理場は混雑停止中ですが、既存の注文はそのまま調理してください";
+  nameRow.appendChild(bb);
+}
+
 /** 通常表示: 1注文ブロック内に優先行が1件でもあればその卓タイルを先に並べる */
 function orderGroupHasKitchenServeFast(og) {
   if (!og || !og.lines) return false;
@@ -1472,7 +1491,9 @@ function renderKitList() {
           extraTxt,
           qty: Number(ln.qty || 0),
           categoryName: ln.categoryName,
+          kitchenStationId: ln.kitchenStationId ?? null,
           kitchenStationName: ln.kitchenStationName,
+          stationBusyStopped: lineStationBusyStopped(ln),
           oldestMs: createdAtMs,
           oldestAt: ln.orderCreatedAt,
           byTable,
@@ -1493,6 +1514,7 @@ function renderKitList() {
       } else {
         prev.qty += Number(ln.qty || 0);
         prev.kitchenServeFast = prev.kitchenServeFast || lineKitchenServeFast(ln);
+        prev.stationBusyStopped = prev.stationBusyStopped || lineStationBusyStopped(ln);
         if (createdAtMs < prev.oldestMs) {
           prev.oldestMs = createdAtMs;
           prev.oldestAt = ln.orderCreatedAt;
@@ -1577,6 +1599,7 @@ function renderKitList() {
         fb.textContent = "優先";
         nameRow.appendChild(fb);
       }
+      appendKitStationBusyStopBadge(nameRow, g);
       main.appendChild(nameRow);
       if (g.extraTxt) {
         const ex = document.createElement("div");
@@ -1836,6 +1859,7 @@ function renderKitList() {
         fb.textContent = "優先";
         nameRow.appendChild(fb);
       }
+      appendKitStationBusyStopBadge(nameRow, ln);
       if (ln.status === "queued" || ln.status === "cooking" || ln.status === "done") {
         const cancelTxt = document.createElement("button");
         cancelTxt.type = "button";
@@ -1978,6 +2002,11 @@ async function refreshKitchen() {
     await ensureMeta();
     const data = await api("/stores/" + encodeURIComponent(STORE) + "/kitchen/order-lines");
     const fetchedLines = data.lines || [];
+    const bs =
+      data.busyStop && Array.isArray(data.busyStop.stoppedStationIds)
+        ? data.busyStop.stoppedStationIds
+        : [];
+    kitStoppedStationIds = new Set(bs.map((x) => String(x)));
 
     const st = loadFilterState();
     const sig = filterStateSignature(st);
@@ -2421,3 +2450,5 @@ refreshKitIntervalFromServer()
     return refreshKitchen().then(() => refreshKitTakeoutOrders().catch(() => {}));
   })
   .catch((e) => log(String(e.message || e)));
+
+window.__kitRefreshKitchen = () => refreshKitchen().catch(() => {});

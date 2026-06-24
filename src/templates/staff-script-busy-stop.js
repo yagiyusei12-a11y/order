@@ -129,6 +129,10 @@ function renderBusyStopGrid() {
     meta.className = "busy-stop-meta";
     const targetN = Number(st.targetItemCount || 0);
     let metaTxt = "停止対象商品 " + targetN + " 件";
+    const inFlightN = Number(st.inFlightKitchenLineCount || 0);
+    if (inFlightN > 0) {
+      metaTxt += " · キッチン未完了 " + inFlightN + "件（停止後も表示）";
+    }
     if (!active) metaTxt += " · この調理場は無効です";
     else if (stopped && st.busyStoppedAt) {
       metaTxt += " · 停止開始 " + fmtBusyStopWhen(String(st.busyStoppedAt));
@@ -196,6 +200,7 @@ async function setBusyStop(stationId, stop, btn) {
     );
     busyStopLog(stop ? "停止しました" : "再開しました");
     await loadBusyStopStatus();
+    if (typeof window.__kitRefreshKitchen === "function") window.__kitRefreshKitchen();
   } catch (e) {
     busyStopLog(String(e.message || e));
   } finally {

@@ -33,6 +33,7 @@ export async function registerKitchenBusyStop(app: FastifyInstance): Promise<voi
           active: s.active,
           busyStoppedAt: s.busyStoppedAt ? s.busyStoppedAt.toISOString() : null,
           targetItemCount: s.targetItemCount,
+          inFlightKitchenLineCount: s.inFlightKitchenLineCount,
           stopped: s.busyStoppedAt != null,
         })),
       };

@@ -74,23 +74,49 @@ export type BusyStopStationStatusRow = {
   active: boolean;
   busyStoppedAt: Date | null;
   targetItemCount: number;
+  /** キッチン未完了（待ち・調理中）の明細数。混雑停止後もキャンセルされない */
+  inFlightKitchenLineCount: number;
 };
+
+/** 調理場ごとのキッチン未完了明細数（混雑停止の影響を受けない） */
+export async function loadInFlightKitchenLineCountsByStation(
+  storeId: string,
+): Promise<Map<string, number>> {
+  const rows = await prisma.orderLine.findMany({
+    where: {
+      status: { in: ["queued", "cooking"] },
+      order: { session: { storeId, status: "open" } },
+      menuItem: { kitchenStationId: { not: null } },
+    },
+    select: { menuItem: { select: { kitchenStationId: true } } },
+  });
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const sid = row.menuItem?.kitchenStationId;
+    if (!sid) continue;
+    counts.set(sid, (counts.get(sid) ?? 0) + 1);
+  }
+  return counts;
+}
 
 /** 混雑停止管理画面・API 用 */
 export async function listKitchenBusyStopStatus(storeId: string): Promise<BusyStopStationStatusRow[]> {
-  const stations = await prisma.kitchenStation.findMany({
-    where: { storeId },
-    orderBy: { sortOrder: "asc" },
-    include: {
-      _count: {
-        select: {
-          menuItems: {
-            where: { busyStopTarget: true },
+  const [stations, inFlightByStation] = await Promise.all([
+    prisma.kitchenStation.findMany({
+      where: { storeId },
+      orderBy: { sortOrder: "asc" },
+      include: {
+        _count: {
+          select: {
+            menuItems: {
+              where: { busyStopTarget: true },
+            },
           },
         },
       },
-    },
-  });
+    }),
+    loadInFlightKitchenLineCountsByStation(storeId),
+  ]);
   return stations.map((s) => ({
     id: s.id,
     name: s.name,
@@ -98,6 +124,7 @@ export async function listKitchenBusyStopStatus(storeId: string): Promise<BusySt
     active: s.active,
     busyStoppedAt: s.busyStoppedAt,
     targetItemCount: s._count.menuItems,
+    inFlightKitchenLineCount: inFlightByStation.get(s.id) ?? 0,
   }));
 }
 

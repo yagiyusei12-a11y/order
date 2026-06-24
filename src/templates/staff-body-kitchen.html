@@ -372,6 +372,18 @@
       color: #991b1b;
       line-height: 1.2;
     }
+    .kit-busy-stop-banner {
+      margin: 0 0 0.65rem;
+      padding: 0.55rem 0.75rem;
+      border-radius: 10px;
+      border: 1px solid #fca5a5;
+      background: #fef2f2;
+      color: #991b1b;
+      font-size: 0.82rem;
+      line-height: 1.45;
+      font-weight: 700;
+    }
+    .kit-busy-stop-banner[hidden] { display: none !important; }
     .kit-cancel-text-btn {
       flex-shrink: 0;
       margin: 0;
@@ -786,6 +798,7 @@
     </div>
   </div>
   <div id="kitRecipeModal" aria-live="polite"></div>
+  <div id="kitBusyStopBanner" class="kit-busy-stop-banner" hidden aria-live="polite"></div>
   <div id="kit" class="card" style="min-height:220px;padding:0;box-sizing:border-box"></div>
   <div class="kit-fs-hide">
     <div id="log"></div>

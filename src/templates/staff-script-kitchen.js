@@ -72,6 +72,40 @@ function lineKitchenServeFast(ln) {
 
 /** @type {Set<string>} */
 let kitStoppedStationIds = new Set();
+let kitInFlightLineCount = 0;
+
+function syncKitBusyStopBanner(stoppedNames, inFlightN) {
+  const el = document.getElementById("kitBusyStopBanner");
+  if (!el) return;
+  if (!stoppedNames || !stoppedNames.length) {
+    el.hidden = true;
+    el.textContent = "";
+    return;
+  }
+  el.hidden = false;
+  const names = stoppedNames.join("、");
+  const flight =
+    inFlightN > 0
+      ? "キッチン未完了 " + inFlightN + " 件はそのまま表示されます（混雑停止は新規注文のみ止めます）。"
+      : "混雑停止は新規のゲスト注文のみ止めます。";
+  el.textContent = "混雑停止中：「" + names + "」— " + flight;
+}
+
+function kitEmptyRecoveryHint(filteredCount, normalCount) {
+  const parts = [];
+  if (kitInFlightLineCount > 0 && normalCount <= 0) {
+    parts.push(
+      "サーバー上には未完了 " +
+        kitInFlightLineCount +
+        " 件あります。絞り込み・まとめ表示を確認してください。混雑停止では既存の注文は消えません。",
+    );
+  }
+  if (filteredCount > 0 && normalCount <= 0) {
+    parts.push("表示中の " + filteredCount + " 件はすべて調理済みです。<strong>注文履歴（調理済）</strong>タブで確認できます。");
+  }
+  if (!parts.length) return "";
+  return '<p class="muted" style="margin:0.5rem 0 0;font-size:0.8rem">' + parts.join(" ") + "</p>";
+}
 
 function lineStationBusyStopped(ln) {
   if (!ln) return false;
@@ -1158,7 +1192,7 @@ function flushKitListRenderIfPending() {
 }
 
 function applyKitSummaryDoneOptimistic(lineIds, componentMenuItemId) {
-  if (!summaryMode || kitMainTab !== "active" || !kitSummaryFrozenLines || !lineIds || lineIds.length === 0) return;
+  if (!summaryMode || kitMainTab !== "active" || kitSummaryFrozenLines === null || !lineIds || lineIds.length === 0) return;
   applyKitLineDoneOptimistic(lineIds, componentMenuItemId);
 }
 
@@ -1175,7 +1209,7 @@ function applyKitKitchenRemoveLines(lineIds) {
 }
 
 function syncKitPendingUi() {
-  const has = Boolean(summaryMode && kitMainTab === "active" && kitSummaryFrozenLines && kitSummaryHasPending);
+  const has = Boolean(summaryMode && kitMainTab === "active" && kitSummaryFrozenLines !== null && kitSummaryHasPending);
   const t = has ? "再読込（更新あり）" : "再読込";
   const b1 = document.getElementById("btnRefKit");
   const b2 = document.getElementById("btnKitFsRef");
@@ -1445,7 +1479,10 @@ function renderKitHistoryList(box, lines) {
 function renderKitList() {
   const box = document.getElementById("kit");
   if (!box) return;
-  const baseLines = summaryMode && kitMainTab === "active" && kitSummaryFrozenLines ? kitSummaryFrozenLines : lastLines;
+  const baseLines =
+    summaryMode && kitMainTab === "active" && kitSummaryFrozenLines !== null
+      ? kitSummaryFrozenLines
+      : lastLines;
   const lines = filterLines(baseLines);
   if (kitMainTab === "history") {
     renderKitHistoryList(box, lines);
@@ -1782,7 +1819,9 @@ function renderKitList() {
         "件中 0件表示）</p></div>";
     } else {
       box.innerHTML =
-        "<div class=\"kit-empty\"><div class=\"ico\">✅</div><div>未調理の明細はありません</div><p class=\"muted\" style=\"margin:0.5rem 0 0;font-size:0.8rem\">調理済は<strong>注文履歴</strong>タブで確認・戻せます。お渡し後は「調理済・提供」で提供済にしてください。</p></div>";
+        "<div class=\"kit-empty\"><div class=\"ico\">✅</div><div>未調理の明細はありません</div>" +
+        kitEmptyRecoveryHint(lines.length, 0) +
+        "</div>";
     }
     finishCookTimerUi();
     return;
@@ -2007,6 +2046,19 @@ async function refreshKitchen() {
         ? data.busyStop.stoppedStationIds
         : [];
     kitStoppedStationIds = new Set(bs.map((x) => String(x)));
+    kitInFlightLineCount = Number(
+      data.busyStop && data.busyStop.inFlightLineCount != null ? data.busyStop.inFlightLineCount : 0,
+    );
+    if (data.busyStop && Array.isArray(data.busyStop.stoppedStationIds) && data.busyStop.stoppedStationIds.length) {
+      const stoppedNames = [];
+      for (const sid of data.busyStop.stoppedStationIds) {
+        const hit = allStations.find((s) => String(s.id) === String(sid));
+        stoppedNames.push(hit && hit.name ? String(hit.name) : "調理場");
+      }
+      syncKitBusyStopBanner(stoppedNames, kitInFlightLineCount);
+    } else {
+      syncKitBusyStopBanner([], kitInFlightLineCount);
+    }
 
     const st = loadFilterState();
     const sig = filterStateSignature(st);
@@ -2032,7 +2084,9 @@ async function refreshKitchen() {
       kitPrevFilteredQueuedIds = new Set(nextIds);
     }
 
-    const shouldFreeze = Boolean(summaryMode && kitMainTab === "active" && kitSummaryFrozenLines && !kitForceApplyLatest);
+    const shouldFreeze = Boolean(
+      summaryMode && kitMainTab === "active" && kitSummaryFrozenLines !== null && !kitForceApplyLatest,
+    );
     if (shouldFreeze) {
       kitSummaryPendingLines = fetchedLines;
       const prevSig = summaryViewSignature(kitSummaryFrozenLines, st);
@@ -2040,7 +2094,7 @@ async function refreshKitchen() {
       kitSummaryHasPending = prevSig !== nextSig;
     } else {
       lastLines = fetchedLines;
-      if (summaryMode && kitMainTab === "active" && kitSummaryFrozenLines) {
+      if (summaryMode && kitMainTab === "active" && kitSummaryFrozenLines !== null) {
         kitSummaryFrozenLines = fetchedLines;
         kitSummaryPendingLines = null;
         kitSummaryHasPending = false;
@@ -2056,7 +2110,11 @@ async function refreshKitchen() {
       kitRenderPendingAfterLock = false;
     }
   } catch (e) {
-    if (box) {
+    if (box && lastLines.length > 0) {
+      syncKitBusyStopBanner([], kitInFlightLineCount);
+      renderKitList();
+      log("再読込に失敗しました（前回の一覧を表示中）: " + String(e.message || e));
+    } else if (box) {
       box.className = "card";
       box.textContent = String(e.message || e);
     }

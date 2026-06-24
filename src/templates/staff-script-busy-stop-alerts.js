@@ -3,6 +3,7 @@
   const ALERT_AFTER_MS = 30 * 60 * 1000;
   const REPEAT_MS = 10 * 60 * 1000;
   const POLL_MS = 60 * 1000;
+  const STATUS_POLL_MS = 15 * 1000;
   const STORAGE_KEY = "kitBusyStopAlertAt:v1:" + STORE;
 
   function readLastMap() {
@@ -19,6 +20,35 @@
   function writeLastMap(map) {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
+    } catch (_) {}
+  }
+
+  function busyStopStatusSignature(stations) {
+    return (stations || [])
+      .map((st) => {
+        if (!st || !st.stopped) return "";
+        return [
+          String(st.id || ""),
+          st.busyStopAllItems ? "all" : "target",
+          st.busyStoppedAt ? String(st.busyStoppedAt) : "",
+        ].join(":");
+      })
+      .filter(Boolean)
+      .sort()
+      .join("|");
+  }
+
+  let prevBusyStopSig = "";
+
+  async function pollBusyStopStatusForKitchen() {
+    try {
+      const data = await api("/stores/" + encodeURIComponent(STORE) + "/kitchen-busy-stop/status");
+      const stations = Array.isArray(data.stations) ? data.stations : [];
+      const sig = busyStopStatusSignature(stations);
+      if (prevBusyStopSig && sig !== prevBusyStopSig && typeof window.__kitRefreshKitchen === "function") {
+        window.__kitRefreshKitchen();
+      }
+      prevBusyStopSig = sig;
     } catch (_) {}
   }
 
@@ -54,5 +84,9 @@
   setInterval(() => {
     void pollBusyStopAlerts();
   }, POLL_MS);
+  setInterval(() => {
+    void pollBusyStopStatusForKitchen();
+  }, STATUS_POLL_MS);
   void pollBusyStopAlerts();
+  void pollBusyStopStatusForKitchen();
 })();

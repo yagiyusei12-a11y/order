@@ -149,6 +149,16 @@ export async function stopKitchenStationAllItems(
   };
 }
 
+/** 店舗全体のキッチン未完了明細数 */
+export async function countInFlightKitchenLines(storeId: string): Promise<number> {
+  return prisma.orderLine.count({
+    where: {
+      status: { in: ["queued", "cooking"] },
+      order: { session: { storeId, status: "open" } },
+    },
+  });
+}
+
 /** 調理場ごとのキッチン未完了明細数（混雑停止の影響を受けない） */
 export async function loadInFlightKitchenLineCountsByStation(
   storeId: string,

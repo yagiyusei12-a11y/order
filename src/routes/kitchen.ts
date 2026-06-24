@@ -1,7 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
-import { loadBusyStoppedStationIdSet } from "../lib/kitchen-busy-stop.js";
+import {
+  countInFlightKitchenLines,
+  loadBusyStopState,
+} from "../lib/kitchen-busy-stop.js";
 import {
   applyKitDonePartIdsToLineExtra,
   deriveSetComponentRowStatus,
@@ -393,7 +396,10 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
 
     await enrichKitchenLinesWithTakeoutNet(store.id, outLines);
 
-    const stoppedStationIds = await loadBusyStoppedStationIdSet(store.id);
+    const [{ stoppedStationIds, allItemsStoppedStationIds }, inFlightLineCount] = await Promise.all([
+      loadBusyStopState(store.id),
+      countInFlightKitchenLines(store.id),
+    ]);
     for (const line of outLines) {
       const sid = line.kitchenStationId;
       line.stationBusyStopped =
@@ -403,7 +409,11 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
     return {
       storeId: store.id,
       lines: outLines,
-      busyStop: { stoppedStationIds: [...stoppedStationIds] },
+      busyStop: {
+        stoppedStationIds: [...stoppedStationIds],
+        allItemsStoppedStationIds: [...allItemsStoppedStationIds],
+        inFlightLineCount,
+      },
     };
   });
 

@@ -140,6 +140,27 @@
     }
   }
 
+  function isGameRewardLine(line) {
+    try {
+      const ex = line && line.lineExtra;
+      if (!ex || typeof ex !== "object" || Array.isArray(ex)) return false;
+      return ex.kind === "gameReward";
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function gameRewardLineSubtext(line) {
+    try {
+      const ex = line && line.lineExtra;
+      if (!ex || typeof ex !== "object" || Array.isArray(ex)) return "";
+      const title = typeof ex.gameTitle === "string" ? ex.gameTitle.trim() : "";
+      return title ? "ゲーム: " + title : "ゲーム特典（キッチン提供）";
+    } catch (_) {
+      return "ゲーム特典（キッチン提供）";
+    }
+  }
+
   function netYenFromGross(gross, taxRatePercent) {
     const gg = Math.max(0, Math.round(Number(gross || 0)));
     const r = Number(taxRatePercent || 0);
@@ -311,7 +332,7 @@
 
   function groupedOrderLines(detail) {
     const lines = (detail.orderLines || []).filter(
-      (l) => l.status !== "cancelled" && !isCourseOptionPackLine(l),
+      (l) => l.status !== "cancelled" && !isCourseOptionPackLine(l) && !isGameRewardLine(l),
     );
     const grouped = new Map();
     for (const l of lines) {
@@ -341,6 +362,65 @@
       gg.lines.push(l);
     }
     return Array.from(grouped.values());
+  }
+
+  function groupedGameRewardLines(detail) {
+    const lines = (detail.orderLines || []).filter(
+      (l) => l.status !== "cancelled" && isGameRewardLine(l),
+    );
+    const grouped = new Map();
+    for (const l of lines) {
+      const key = [
+        l.menuItemId || "",
+        l.nameSnapshot || "",
+        String(l.eatMode || "dine_in"),
+        String(l.sourceTableId || ""),
+      ].join("::");
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          key,
+          nameSnapshot: l.nameSnapshot,
+          unitPrice: Number(l.unitPrice || 0),
+          qty: 0,
+          lineTotal: 0,
+          lines: [],
+        });
+      }
+      const gg = grouped.get(key);
+      gg.qty += Number(l.qty || 0);
+      gg.lineTotal += Number(l.lineTotal || 0);
+      gg.lines.push(l);
+    }
+    return Array.from(grouped.values());
+  }
+
+  function buildGameRewardRowsHtml(groupedGameRewards, ctx) {
+    if (!groupedGameRewards.length) return "";
+    return groupedGameRewards
+      .map((g) => {
+        const ln = g.lines && g.lines[0];
+        const sub = ln ? gameRewardLineSubtext(ln) : "ゲーム特典（キッチン提供）";
+        return (
+          "<tr class=\"ops-game-reward-row\" data-group-key=\"" +
+          ctx.escapeHtml(g.key) +
+          "\">" +
+          "<td>" +
+          "<div class=\"ops-line-name\">" +
+          "<span class=\"badge\" style=\"margin-right:.35rem;background:#b45309;color:#fff;font-weight:900\">ゲーム特典</span>" +
+          (ln ? BillRegisterShared.sourceTableBadgeHtml(ln.sourceTableId, ctx.tables, ctx.escapeHtml, ctx.displayTableCode) : "") +
+          ctx.escapeHtml(g.nameSnapshot) +
+          "</div>" +
+          "<div class=\"ops-line-sub\" style=\"font-size:0.72rem\">" +
+          ctx.escapeHtml(sub) +
+          "</div>" +
+          "<div class=\"ops-line-sub\">×" +
+          g.qty +
+          " · 会計0円（キッチン提供）</div>" +
+          "</td>" +
+          "<td class=\"ops-line-total muted\" style=\"font-size:0.82rem\">提供</td></tr>"
+        );
+      })
+      .join("");
   }
 
   /** 別会計へ移す数量を、DB 行へ按分（lineMoves 用） */
@@ -907,6 +987,7 @@ async function mountRegisterFlow(panel, ctx) {
       .join("");
   const cashKeypadHtml = ctx.hooks.renderCashKeypad();
   const groupedPackLines = BillRegisterShared.groupedCourseOptionPackLines(detail);
+  const groupedGameRewards = BillRegisterShared.groupedGameRewardLines(detail);
   const groupedLines = BillRegisterShared.groupedOrderLines(detail);
   const bcDisc = ctx.billCorrectionAllowed("discounts");
   const bcOl = ctx.billCorrectionAllowed("orderLines");
@@ -1048,7 +1129,8 @@ async function mountRegisterFlow(panel, ctx) {
     readOnly,
     guestCount: session.guestCount,
   });
-  const orderTableBody = courseRowHtml + coursePackRowsHtml + orderRows;
+  const gameRewardRowsHtml = BillRegisterShared.buildGameRewardRowsHtml(groupedGameRewards, ctx);
+  const orderTableBody = courseRowHtml + coursePackRowsHtml + gameRewardRowsHtml + orderRows;
   const orderTableFallback =
     orderTableBody ||
     "<tr><td class=\"muted\" colspan=\"2\">コース・注文なし</td></tr>";
@@ -2085,11 +2167,15 @@ async function mountRegisterFlow(panel, ctx) {
     taxBreakdownFromLines,
     linesForTaxBreakdown,
     isCourseOptionPackLine,
+    isGameRewardLine,
     netYenFromGross,
     orderLineExtraSubtext,
     groupedOrderLines,
     groupedCourseOptionPackLines,
+    groupedGameRewardLines,
     buildCourseOptionPackRowsHtml,
+    buildGameRewardRowsHtml,
+    gameRewardLineSubtext,
     courseOptionPackLineSubtext,
     buildLineMovesFromGroup,
     SESSION_COURSE_SPLIT_KEY,

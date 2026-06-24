@@ -75,7 +75,7 @@ export const STORE_GAME_SAMPLES: StoreGameSampleDef[] = [
     slug: "surface-tension",
     kind: "paid",
     title: "ぴったり表面張力ゲーム",
-    description: "長押しでビールを注ぎ、GOALライン（95〜99%）でぴったり止めよう！",
+    description: "一発勝負！長押しでビールを注ぎ、GOALライン（95〜99%）でぴったり止めよう！",
     iconEmoji: "🍺",
     playPriceYen: 100,
     winMode: "skill",

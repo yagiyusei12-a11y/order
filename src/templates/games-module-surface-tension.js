@@ -30,6 +30,8 @@
         st.textContent =
           ".st-wrap{display:flex;flex-direction:column;align-items:center;gap:0.65rem;width:100%;touch-action:none;user-select:none;-webkit-user-select:none}" +
           ".st-hint{color:var(--muted);font-size:0.82rem;line-height:1.55;text-align:center;margin:0;max-width:18rem}" +
+          ".st-one-shot{display:inline-block;font-size:0.78rem;font-weight:900;color:#0f172a;background:linear-gradient(180deg,#fde68a,#f0c060);padding:0.28rem 0.65rem;border-radius:999px;letter-spacing:0.06em;box-shadow:0 2px 8px rgba(240,192,96,0.35)}" +
+          ".st-one-shot-note{font-size:0.8rem;font-weight:800;color:#f0c060;text-align:center;margin:0;line-height:1.45}" +
           ".st-meter{font-size:1.1rem;font-weight:900;font-variant-numeric:tabular-nums;color:#f0c060;text-align:center;line-height:1.45}" +
           ".st-meter .st-now{font-size:1.35rem;display:block}" +
           ".st-meter .st-sub{color:var(--muted);font-size:0.76rem;font-weight:700}" +
@@ -63,6 +65,8 @@
         injectStyles();
         root.innerHTML =
           '<div class="st-wrap">' +
+          '<p class="st-one-shot" aria-label="一発勝負">一発勝負</p>' +
+          '<p class="st-one-shot-note">参加費1回につき、<strong>1回だけ</strong>注いで止められます。<br>やり直しはできません。</p>' +
           '<p class="st-hint">画面を<strong>長押し</strong>でビールを注ぎ、<strong>指を離して</strong>止めよう。<br>緑の<strong>OKゾーン</strong>の中で止めたら成功！</p>' +
           '<p class="st-hint">注ぎ中は<strong>％が見えません</strong>。緑のOKゾーンを目安に！</p>' +
           '<p class="st-hint">参加費 ' + ex + "円（税抜）/ 税込" + inc + "円</p></div>";
@@ -75,6 +79,7 @@
         const zoneHeight = Math.max(0.4, z.hi - z.lo);
         root.innerHTML =
           '<div class="st-wrap">' +
+          '<p class="st-one-shot">一発勝負 · この1回だけ</p>' +
           '<div class="st-meter" id="stMeter">' +
           '<span class="st-now">' +
           fill.toFixed(1) +
@@ -108,8 +113,8 @@
           targetFill.toFixed(1) +
           '%"></div>' +
           "</div></div>" +
-          '<div class="st-pour-zone" id="stPourZone">長押しで注ぐ / 離して止める</div>' +
-          '<p class="st-hint">緑の帯（OKゾーン）の中で止めよう。金色の線は中心目標。</p></div>';
+          '<div class="st-pour-zone" id="stPourZone">長押しで注ぐ / 離して止める（1回のみ）</div>' +
+          '<p class="st-hint">緑の帯（OKゾーン）の中で止めよう。金色の線は中心目標。<br><strong>指を離した時点で結果確定</strong>です。</p></div>';
 
         pourZoneEl = document.getElementById("stPourZone");
         if (!pourZoneEl) return;
@@ -262,10 +267,10 @@
                 zLo.toFixed(1) +
                 "〜" +
                 zHi.toFixed(1) +
-                "%）",
+                "%）<br><span style=\"font-size:0.85em;font-weight:700\">一発勝負のチャンスは終了しました。</span>",
               "lose",
             );
-            offerPlayAgain(null, startRound);
+            offerPlayAgain("もう一発勝負に挑戦（" + ex + "円・税抜）", startRound);
           }
         } catch (e) {
           showErr(e instanceof Error ? e.message : "判定に失敗しました");
@@ -295,7 +300,7 @@
         btn.style.display = "none";
         const z = zoneBounds();
         showMsg(
-          "OKゾーン " + z.lo.toFixed(1) + "〜" + z.hi.toFixed(1) + "% の中で止めてください！",
+          "一発勝負！ OKゾーン " + z.lo.toFixed(1) + "〜" + z.hi.toFixed(1) + "% の中で止めてください。",
           "",
         );
       }

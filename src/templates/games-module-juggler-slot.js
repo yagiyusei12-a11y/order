@@ -17,6 +17,7 @@
 
       let phase = "idle";
       let spinning = false;
+      const WIN_HOLD_MS = 2800;
 
       function injectStyles() {
         if (document.getElementById("juggler-slot-styles")) return;
@@ -139,6 +140,8 @@
               const reels = Array.isArray(res.slotReels) ? res.slotReels : ["cherry", "cherry", "cherry"];
               await animateToResult(reels);
               if (res.won) {
+                showMsg("大当たり！7-7-7！", "win");
+                await new Promise((r) => setTimeout(r, WIN_HOLD_MS));
                 await finishWin(res, "大当たり！7-7-7！", retryRound);
               } else {
                 const labels = reels.map((id) => (SYMBOLS[id] ? SYMBOLS[id].label : id)).join(" - ");

@@ -134,6 +134,34 @@
     .hall-ready-serve:active { transform: scale(0.98); }
     .hall-ready-empty { text-align: center; padding: 2.2rem 1rem; color: var(--muted); }
     .hall-ready-empty .ico { font-size: 2.2rem; margin-bottom: 0.45rem; opacity: 0.4; }
+    .hall-ready-set-bundle {
+      grid-column: 1 / -1;
+      background: #fffbeb;
+      border: 2px solid #fdba74;
+      border-radius: var(--radius);
+      padding: 0.55rem 0.62rem 0.62rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+    .hall-ready-set-bundle-multi { border-color: #fb923c; }
+    .hall-ready-set-head {
+      font-weight: 800;
+      font-size: 0.92rem;
+      color: #9a3412;
+      border-bottom: 1px solid #fed7aa;
+      padding-bottom: 0.28rem;
+    }
+    .hall-ready-set-parts {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(172px, 1fr));
+      gap: 0.45rem;
+    }
+    .hall-ready-block-compact {
+      min-height: 4.6rem;
+      background: #fff;
+      border-color: #fde68a;
+    }
   </style>
   <div id="hallFullExitBar" class="hall-full-exit-bar" hidden>
     <div class="hall-fs-exit-head">

@@ -368,6 +368,190 @@ async function ensureMeta() {
  * @param {typeof lastDoneLines} sortedLines
  * @param {"done"|"served"} mode
  */
+function hallSetComponentShortName(ln) {
+  const step = ln.setComponentStepLabel ? String(ln.setComponentStepLabel) : "";
+  const pick = ln.setComponentPickName
+    ? String(ln.setComponentPickName)
+    : String(ln.nameSnapshot || "").replace(/^[^›]+›\s*/, "");
+  if (step && pick) return step + ": " + pick;
+  return pick || String(ln.nameSnapshot || "（品目）");
+}
+
+function hallSetBundleHeadLabel(rootName, instanceIndex, instanceCount) {
+  const name = String(rootName || "セット").trim() || "セット";
+  const n = Number(instanceCount) || 1;
+  const i = Number(instanceIndex) || 1;
+  if (n <= 1) return name;
+  return name + " " + i + "食目";
+}
+
+function hallDisplayUnitCount(lines) {
+  const bundles = new Set();
+  let n = 0;
+  for (const ln of lines) {
+    const key = ln.isSetComponent && ln.setBundleInstanceKey ? String(ln.setBundleInstanceKey) : "";
+    if (key) {
+      if (!bundles.has(key)) {
+        bundles.add(key);
+        n++;
+      }
+    } else {
+      n++;
+    }
+  }
+  return n;
+}
+
+function buildHallTableDisplayUnits(lines) {
+  /** @type {Map<string, { kind: 'setBundle', key: string, rootName: string, instanceIndex: number, instanceCount: number, lines: typeof lines }>} */
+  const bundleMap = new Map();
+  for (const ln of lines) {
+    const key =
+      ln.isSetComponent && ln.setBundleInstanceKey ? String(ln.setBundleInstanceKey) : "";
+    if (!key) continue;
+    let b = bundleMap.get(key);
+    if (!b) {
+      b = {
+        kind: "setBundle",
+        key,
+        rootName: ln.setBundleRootName ? String(ln.setBundleRootName) : "",
+        instanceIndex: ln.setInstanceIndex != null ? Number(ln.setInstanceIndex) : 1,
+        instanceCount: ln.setInstanceCount != null ? Number(ln.setInstanceCount) : 1,
+        lines: [],
+      };
+      bundleMap.set(key, b);
+    }
+    b.lines.push(ln);
+  }
+  const seen = new Set();
+  /** @type {Array<{ kind: 'line', ln: (typeof lines)[number] } | { kind: 'setBundle', key: string, rootName: string, instanceIndex: number, instanceCount: number, lines: typeof lines }>} */
+  const ordered = [];
+  for (const ln of lines) {
+    const key =
+      ln.isSetComponent && ln.setBundleInstanceKey ? String(ln.setBundleInstanceKey) : "";
+    if (key) {
+      if (!seen.has(key)) {
+        seen.add(key);
+        const b = bundleMap.get(key);
+        if (b) ordered.push(b);
+      }
+    } else {
+      ordered.push({ kind: "line", ln });
+    }
+  }
+  return ordered;
+}
+
+function appendHallLineBlock(parent, ln, opts) {
+  const compact = opts && opts.compact;
+  const block = document.createElement("div");
+  const early = isHallPrepEarlyLine(ln);
+  block.className = compact
+    ? early
+      ? "hall-ready-block hall-ready-block-compact hall-ready-block-early"
+      : "hall-ready-block hall-ready-block-compact"
+    : early
+      ? "hall-ready-block hall-ready-block-early"
+      : "hall-ready-block";
+
+  const title = document.createElement("div");
+  title.className = "name";
+  const displayName = compact ? hallSetComponentShortName(ln) : ln.nameSnapshot || "（品目）";
+  title.textContent = (ln.eatMode === "takeout" ? "【テイクアウト】" : "") + displayName;
+  block.appendChild(title);
+
+  const chips = document.createElement("div");
+  chips.className = "hall-ready-chips";
+  if (ln.kitchenStationName) {
+    const ch = document.createElement("span");
+    ch.className = "hall-ready-chip";
+    ch.textContent = ln.kitchenStationName;
+    chips.appendChild(ch);
+  }
+  if (ln.categoryName) {
+    const ch = document.createElement("span");
+    ch.className = "hall-ready-chip";
+    ch.textContent = ln.categoryName;
+    chips.appendChild(ch);
+  }
+  if (!compact) {
+    const qch = document.createElement("span");
+    qch.className = "hall-ready-chip";
+    qch.textContent = "×" + (ln.qty != null ? ln.qty : 1);
+    chips.appendChild(qch);
+  }
+  if (early) {
+    const ech = document.createElement("span");
+    ech.className = "hall-ready-chip hall-ready-chip-early";
+    ech.textContent = "調理前";
+    chips.appendChild(ech);
+  }
+  if (chips.childNodes.length) block.appendChild(chips);
+
+  const time = document.createElement("div");
+  time.className = "hall-ready-time";
+  time.textContent =
+    hallTab === "served"
+      ? "提供済み " + formatServedLabel(ln)
+      : early
+        ? "注文済み（キッチン調理中） " + formatOrderCreatedLabel(ln)
+        : "調理完了 " + formatReadyLabel(ln);
+  block.appendChild(time);
+
+  const extra = orderLineExtraSubtext(ln.lineExtra);
+  if (ln.note || extra) {
+    const meta = document.createElement("div");
+    meta.className = "hall-ready-meta";
+    const parts = [];
+    if (ln.note) parts.push(escapeHtml(ln.note).replace(/\n/g, "<br/>"));
+    if (extra) parts.push(escapeHtml(extra).replace(/\n/g, "<br/>"));
+    meta.innerHTML = parts.join("<br/>");
+    block.appendChild(meta);
+  }
+
+  if (hallTab !== "served") {
+    if (early && ln.eatMode === "takeout") {
+      const hint = document.createElement("div");
+      hint.className = "hall-ready-meta";
+      hint.style.marginTop = "0.35rem";
+      hint.textContent = "テイクアウトはキッチンで「調理済」にしてから提供済みにできます";
+      block.appendChild(hint);
+    } else {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "hall-ready-serve";
+      btn.textContent = "提供済み";
+      btn.onclick = () => setLineServed(kitchenPatchLineId(ln), ln);
+      block.appendChild(btn);
+    }
+  }
+
+  parent.appendChild(block);
+}
+
+function appendHallSetBundle(grid, bundle) {
+  const wrap = document.createElement("div");
+  wrap.className = "hall-ready-set-bundle";
+  if (bundle.instanceCount > 1) wrap.classList.add("hall-ready-set-bundle-multi");
+
+  const head = document.createElement("div");
+  head.className = "hall-ready-set-head";
+  head.textContent = hallSetBundleHeadLabel(
+    bundle.rootName,
+    bundle.instanceIndex,
+    bundle.instanceCount,
+  );
+  wrap.appendChild(head);
+
+  const inner = document.createElement("div");
+  inner.className = "hall-ready-set-parts";
+  for (const ln of bundle.lines) {
+    appendHallLineBlock(inner, ln, { compact: true });
+  }
+  wrap.appendChild(inner);
+  grid.appendChild(wrap);
+}
+
 function groupByTable(sortedLines, mode) {
   /** @type {Map<string, { tableName: string; lines: typeof sortedLines }>} */
   const m = new Map();
@@ -453,88 +637,20 @@ function renderHallList() {
     head.appendChild(document.createTextNode(g.tableName));
     const badge = document.createElement("span");
     badge.className = "badge-n";
-    badge.textContent = g.lines.length + "点";
+    badge.textContent = hallDisplayUnitCount(g.lines) + "点";
     head.appendChild(badge);
     sec.appendChild(head);
 
     const grid = document.createElement("div");
     grid.className = "hall-ready-grid";
 
-    for (const ln of g.lines) {
-      const block = document.createElement("div");
-      const early = isHallPrepEarlyLine(ln);
-      block.className = early ? "hall-ready-block hall-ready-block-early" : "hall-ready-block";
-
-      const title = document.createElement("div");
-      title.className = "name";
-      title.textContent = (ln.eatMode === "takeout" ? "【テイクアウト】" : "") + (ln.nameSnapshot || "（品目）");
-      block.appendChild(title);
-
-      const chips = document.createElement("div");
-      chips.className = "hall-ready-chips";
-      if (ln.kitchenStationName) {
-        const ch = document.createElement("span");
-        ch.className = "hall-ready-chip";
-        ch.textContent = ln.kitchenStationName;
-        chips.appendChild(ch);
+    const units = buildHallTableDisplayUnits(g.lines);
+    for (const unit of units) {
+      if (unit.kind === "setBundle") {
+        appendHallSetBundle(grid, unit);
+      } else {
+        appendHallLineBlock(grid, unit.ln);
       }
-      if (ln.categoryName) {
-        const ch = document.createElement("span");
-        ch.className = "hall-ready-chip";
-        ch.textContent = ln.categoryName;
-        chips.appendChild(ch);
-      }
-      const qch = document.createElement("span");
-      qch.className = "hall-ready-chip";
-      qch.textContent = "×" + (ln.qty != null ? ln.qty : 1);
-      chips.appendChild(qch);
-      if (early) {
-        const ech = document.createElement("span");
-        ech.className = "hall-ready-chip hall-ready-chip-early";
-        ech.textContent = "調理前";
-        chips.appendChild(ech);
-      }
-      if (chips.childNodes.length) block.appendChild(chips);
-
-      const time = document.createElement("div");
-      time.className = "hall-ready-time";
-      time.textContent =
-        hallTab === "served"
-          ? "提供済み " + formatServedLabel(ln)
-          : early
-            ? "注文済み（キッチン調理中） " + formatOrderCreatedLabel(ln)
-            : "調理完了 " + formatReadyLabel(ln);
-      block.appendChild(time);
-
-      const extra = orderLineExtraSubtext(ln.lineExtra);
-      if (ln.note || extra) {
-        const meta = document.createElement("div");
-        meta.className = "hall-ready-meta";
-        const parts = [];
-        if (ln.note) parts.push(escapeHtml(ln.note).replace(/\n/g, "<br/>"));
-        if (extra) parts.push(escapeHtml(extra).replace(/\n/g, "<br/>"));
-        meta.innerHTML = parts.join("<br/>");
-        block.appendChild(meta);
-      }
-
-      if (hallTab !== "served") {
-        if (early && ln.eatMode === "takeout") {
-          const hint = document.createElement("div");
-          hint.className = "hall-ready-meta";
-          hint.style.marginTop = "0.35rem";
-          hint.textContent = "テイクアウトはキッチンで「調理済」にしてから提供済みにできます";
-          block.appendChild(hint);
-        } else {
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = "hall-ready-serve";
-          btn.textContent = "提供済み";
-          btn.onclick = () => setLineServed(kitchenPatchLineId(ln), ln);
-          block.appendChild(btn);
-        }
-      }
-
-      grid.appendChild(block);
     }
     sec.appendChild(grid);
     wrap.appendChild(sec);

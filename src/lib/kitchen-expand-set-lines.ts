@@ -87,6 +87,55 @@ export function stripSetNameSnapshotBracket(nameSnapshot: string): string {
   return (cut >= 0 ? s.slice(0, cut) : s).trim();
 }
 
+/** kitDonePartIds 用キー（同一セットを複数食注文したときは食目ごとに分ける） */
+export function formatSetPartDoneKey(
+  menuItemId: string,
+  instanceIndex: number,
+  instanceCount: number,
+): string {
+  const id = String(menuItemId || "").trim();
+  if (!id) return "";
+  if (instanceCount <= 1) return id;
+  const inst = Math.max(1, Math.floor(instanceIndex));
+  return `i${inst}:${id}`;
+}
+
+/** kitDonePartIds のエントリを分解（旧形式は menuItemId のみ） */
+export function parseSetPartDoneKey(entry: string): { instanceIndex: number | null; menuItemId: string } {
+  const s = String(entry || "").trim();
+  const m = /^i(\d+):(.+)$/.exec(s);
+  if (m) return { instanceIndex: Number(m[1]), menuItemId: m[2] };
+  return { instanceIndex: null, menuItemId: s };
+}
+
+function isSetPartDoneInTracked(
+  tracked: Set<string>,
+  menuItemId: string,
+  instanceIndex: number,
+  instanceCount: number,
+): boolean {
+  const key = formatSetPartDoneKey(menuItemId, instanceIndex, instanceCount);
+  if (tracked.has(key)) return true;
+  // 複数食導入前のデータ: 素の menuItemId は 1 食目のみ調理済み扱い
+  if (instanceCount > 1 && instanceIndex === 1 && tracked.has(menuItemId)) return true;
+  return false;
+}
+
+/** 親行のセット食数と、全構成が調理済みか */
+export function listSetPartDoneKeysForLine(
+  componentMenuItemIds: string[],
+  instanceCount: number,
+): string[] {
+  const qty = Math.max(1, instanceCount);
+  const keys: string[] = [];
+  for (let inst = 1; inst <= qty; inst++) {
+    for (const menuItemId of componentMenuItemIds) {
+      keys.push(formatSetPartDoneKey(menuItemId, inst, qty));
+    }
+  }
+  return keys;
+}
+
 /** キッチン用: 構成単品ごとの調理済み（親 OrderLine.lineExtra に保存）。未定義なら従来どおり親 status のみ */
 export function readKitDonePartIds(lineExtra: unknown): string[] | undefined {
   if (lineExtra == null || typeof lineExtra !== "object" || Array.isArray(lineExtra)) return undefined;
@@ -120,13 +169,15 @@ export function deriveSetComponentRowStatus(
   parentStatus: string,
   lineExtra: unknown,
   componentMenuItemId: string,
+  instanceIndex = 1,
+  instanceCount = 1,
 ): string {
   const tracked = readKitDonePartIds(lineExtra);
   if (tracked === undefined) {
     return parentStatus;
   }
   const done = new Set(tracked);
-  if (done.has(componentMenuItemId)) return "done";
+  if (isSetPartDoneInTracked(done, componentMenuItemId, instanceIndex, instanceCount)) return "done";
   if (parentStatus === "served" || parentStatus === "cancelled") return parentStatus;
   if (parentStatus === "done") return "done";
   return parentStatus;

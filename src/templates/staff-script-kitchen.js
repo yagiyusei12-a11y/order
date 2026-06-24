@@ -157,6 +157,14 @@ function kitchenPatchLineId(ln) {
   return String(ln.id || "");
 }
 
+function kitSetBundleHeadLabel(ln) {
+  const root = ln.setBundleRootName ? String(ln.setBundleRootName) : "セット";
+  const n = ln.setInstanceCount != null ? Number(ln.setInstanceCount) : 1;
+  const i = ln.setInstanceIndex != null ? Number(ln.setInstanceIndex) : 1;
+  if (n <= 1) return root;
+  return root + " " + i + "食目";
+}
+
 function stripNameSnapshotExtras(nameSnapshot) {
   const s = String(nameSnapshot || "");
   const i1 = s.indexOf("［");
@@ -1097,10 +1105,12 @@ function isSetParentLineExtra(lineExtra) {
  * 調理済タップ直後に一覧へ反映（通信完了を待たない）。
  * セット内訳行は kitDonePartIds を更新し、該当行だけ done にする。
  */
-function applyKitLineDoneOptimistic(lineIds, componentMenuItemId) {
+function applyKitLineDoneOptimistic(lineIds, componentMenuItemId, setInstanceIndex) {
   if (!lineIds || lineIds.length === 0) return;
   const idSet = new Set(lineIds.map((id) => String(id)));
   const comp = componentMenuItemId ? String(componentMenuItemId) : "";
+  const inst =
+    setInstanceIndex != null && setInstanceIndex !== "" ? Number(setInstanceIndex) : null;
   const nowIso = new Date().toISOString();
 
   const mapLine = (ln) => {
@@ -1110,10 +1120,14 @@ function applyKitLineDoneOptimistic(lineIds, componentMenuItemId) {
 
     if (comp) {
       if (ln.isSetComponent && ln.menuItemId && String(ln.menuItemId) === comp) {
-        return { ...ln, status: "done", readyAt: nowIso };
-      }
-      const lnId = String(ln.id || "");
-      if (lnId.includes("::") && lnId.endsWith("::" + comp)) {
+        if (
+          inst != null &&
+          !Number.isNaN(inst) &&
+          ln.setInstanceIndex != null &&
+          Number(ln.setInstanceIndex) !== inst
+        ) {
+          return ln;
+        }
         return { ...ln, status: "done", readyAt: nowIso };
       }
       if (!ln.isSetComponent && isSetParentLineExtra(ln.lineExtra)) {
@@ -1121,7 +1135,11 @@ function applyKitLineDoneOptimistic(lineIds, componentMenuItemId) {
         const prev = Array.isArray(extra.kitDonePartIds)
           ? extra.kitDonePartIds.filter((x) => typeof x === "string")
           : [];
-        if (!prev.includes(comp)) prev.push(comp);
+        const partKey =
+          inst != null && !Number.isNaN(inst) && Number(ln.qty || 1) > 1
+            ? "i" + inst + ":" + comp
+            : comp;
+        if (!prev.includes(partKey)) prev.push(partKey);
         extra.kitDonePartIds = [...prev].sort();
         return { ...ln, lineExtra: extra };
       }
@@ -1141,8 +1159,14 @@ function applyKitLineDoneOptimistic(lineIds, componentMenuItemId) {
   }
 }
 
-function kitLineDoneKey(lineId, componentMenuItemId) {
-  return String(lineId || "") + "|" + String(componentMenuItemId || "");
+function kitLineDoneKey(lineId, componentMenuItemId, setInstanceIndex) {
+  return (
+    String(lineId || "") +
+    "|" +
+    String(componentMenuItemId || "") +
+    "|" +
+    String(setInstanceIndex != null ? setInstanceIndex : "")
+  );
 }
 
 function bindKitDoneButton(btn, handler) {
@@ -1178,7 +1202,8 @@ function bindKitDoneButton(btn, handler) {
 }
 
 async function runKitLineDone(lineId, componentMenuItemId, ln) {
-  const key = kitLineDoneKey(lineId, componentMenuItemId);
+  const inst = ln && ln.setInstanceIndex != null ? ln.setInstanceIndex : undefined;
+  const key = kitLineDoneKey(lineId, componentMenuItemId, inst);
   if (kitLineDoneInFlight.has(key)) return;
   const row = ln || null;
   if (row && row.eatMode === "takeout") {
@@ -1187,7 +1212,7 @@ async function runKitLineDone(lineId, componentMenuItemId, ln) {
   }
   kitLineDoneInFlight.add(key);
   try {
-    await setLine(lineId, "done", componentMenuItemId);
+    await setLine(lineId, "done", componentMenuItemId, inst);
   } finally {
     kitLineDoneInFlight.delete(key);
   }
@@ -1524,7 +1549,12 @@ function renderKitHistoryList(box, lines) {
       rev.textContent = "戻す（未調理に戻す）";
       rev.title = "誤って調理済にした場合、待ちの注文に戻します";
       rev.onclick = () =>
-        setLine(kitchenPatchLineId(ln), "queued", ln.isSetComponent ? ln.menuItemId : "");
+        setLine(
+          kitchenPatchLineId(ln),
+          "queued",
+          ln.isSetComponent ? ln.menuItemId : "",
+          ln.isSetComponent ? ln.setInstanceIndex : undefined,
+        );
       statusRow.appendChild(rev);
       wrap.appendChild(statusRow);
       row.appendChild(name);
@@ -1946,7 +1976,36 @@ function renderKitList() {
     const body = document.createElement("div");
     body.className = "kit-order-box-body";
 
+    let bundleWrap = null;
+    let bundleKey = null;
+
     for (const ln of og.lines) {
+      const bKey =
+        ln.isSetComponent && ln.setBundleInstanceKey ? String(ln.setBundleInstanceKey) : null;
+      let rowParent = body;
+      if (bKey) {
+        if (bKey !== bundleKey) {
+          if (bundleWrap) body.appendChild(bundleWrap);
+          bundleWrap = document.createElement("div");
+          bundleWrap.className = "kit-set-bundle";
+          if ((ln.setInstanceCount || 1) > 1) bundleWrap.classList.add("kit-set-bundle-multi");
+          const bHead = document.createElement("div");
+          bHead.className = "kit-set-bundle-head";
+          bHead.textContent = kitSetBundleHeadLabel(ln);
+          bundleWrap.appendChild(bHead);
+          const bBody = document.createElement("div");
+          bBody.className = "kit-set-bundle-body";
+          bundleWrap.appendChild(bBody);
+          bundleWrap._inner = bBody;
+          bundleKey = bKey;
+        }
+        rowParent = bundleWrap._inner;
+      } else if (bundleWrap) {
+        body.appendChild(bundleWrap);
+        bundleWrap = null;
+        bundleKey = null;
+      }
+
       const row = document.createElement("div");
       row.className = ln.isSetComponent ? "kit-line-box kit-line-set-part" : "kit-line-box";
       const tag = ln.kitchenStationName ? "〈" + ln.kitchenStationName + "〉 " : "";
@@ -2076,8 +2135,9 @@ function renderKitList() {
         row.appendChild(ex);
       }
       if (wrap.childNodes.length) row.appendChild(wrap);
-      body.appendChild(row);
+      rowParent.appendChild(row);
     }
+    if (bundleWrap) body.appendChild(bundleWrap);
     d.appendChild(body);
     box.appendChild(d);
   }
@@ -2339,11 +2399,13 @@ async function cancelKitchenLinesStockout(lineIds, confirmMessage, busyBtn, hasM
   }
 }
 
-async function setLine(lineId, status, componentMenuItemId) {
+async function setLine(lineId, status, componentMenuItemId, setInstanceIndex) {
   if (!lineId) return;
   const comp = componentMenuItemId ? String(componentMenuItemId) : "";
+  const inst =
+    setInstanceIndex != null && setInstanceIndex !== "" ? Number(setInstanceIndex) : null;
   if (status === "done") {
-    applyKitLineDoneOptimistic([lineId], comp || undefined);
+    applyKitLineDoneOptimistic([lineId], comp || undefined, inst);
     renderKitList();
     finishCookTimerUi();
   }
@@ -2351,6 +2413,7 @@ async function setLine(lineId, status, componentMenuItemId) {
   try {
     const body = { status };
     if (comp) body.componentMenuItemId = comp;
+    if (comp && inst != null && !Number.isNaN(inst)) body.setInstanceIndex = inst;
     await api(
       "/stores/" + encodeURIComponent(STORE) + "/kitchen/order-lines/" + encodeURIComponent(lineId),
       { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }

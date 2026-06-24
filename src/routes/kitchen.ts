@@ -10,6 +10,8 @@ import {
   deriveSetComponentRowStatus,
   extractSetComponentsFromLineExtra,
   formatSetComponentPickDisplayName,
+  formatSetPartDoneKey,
+  listSetPartDoneKeysForLine,
   readKitDonePartIds,
   stripSetNameSnapshotBracket,
 } from "../lib/kitchen-expand-set-lines.js";
@@ -332,55 +334,75 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
           recipe: m.recipe ?? null,
         };
       });
-      for (const p of resolved) {
-        const mi = compMenuById.get(p.menuItemId)!;
-        const rowHallPrep = Boolean(mi.hallPrepCheck);
-        if (hallWaitMode && !includeLineInHallWait(l.status, parentHallPrep, rowHallPrep)) {
-          continue;
+      const setQty = Math.max(1, Number(l.qty) || 1);
+      for (let inst0 = 0; inst0 < setQty; inst0++) {
+        const instanceIndex = inst0 + 1;
+        const instanceKey = `${l.id}::i${inst0}`;
+        for (const p of resolved) {
+          const mi = compMenuById.get(p.menuItemId)!;
+          const rowHallPrep = Boolean(mi.hallPrepCheck);
+          if (hallWaitMode && !includeLineInHallWait(l.status, parentHallPrep, rowHallPrep)) {
+            continue;
+          }
+          const pickDisplay = formatSetComponentPickDisplayName(p.pickName, p.optionSubtext);
+          const instLabel =
+            setQty > 1 ? `${setTitle}（${instanceIndex}/${setQty}）` : setTitle;
+          outLines.push({
+            id: `${l.id}::i${inst0}::${p.menuItemId}`,
+            kitchenPatchLineId: l.id,
+            isSetComponent: true,
+            setBundleInstanceKey: instanceKey,
+            setInstanceIndex: instanceIndex,
+            setInstanceCount: setQty,
+            setComponentStepLabel: p.stepLabel ? p.stepLabel : null,
+            setComponentPickName: pickDisplay,
+            status: deriveSetComponentRowStatus(
+              l.status,
+              l.lineExtra,
+              p.menuItemId,
+              instanceIndex,
+              setQty,
+            ),
+            dbStatus: l.status,
+            nameSnapshot: p.stepLabel
+              ? `${instLabel} › ${p.stepLabel}: ${pickDisplay}`
+              : `${instLabel} › ${pickDisplay}`,
+            setPickOptionSubtext: p.optionSubtext || null,
+            unitPrice: 0,
+            qty: 1,
+            note: l.note,
+            lineExtra: null,
+            eatMode: (l as { eatMode?: string }).eatMode ?? "dine_in",
+            taxRatePercent: (l as { taxRatePercent?: number }).taxRatePercent ?? null,
+            menuItemId: mi.id,
+            categoryId: mi.categoryId,
+            categoryName: mi.category?.name ?? null,
+            categoryVisibleToGuest: mi.category?.visibleToGuest ?? null,
+            kitchenStationId: mi.kitchenStationId,
+            kitchenStationName: mi.kitchenStation?.name ?? null,
+            cookTimerSec: mi.cookTimerSec != null && mi.cookTimerSec > 0 ? mi.cookTimerSec : null,
+            cookTimerSec2: mi.cookTimerSec2 != null && mi.cookTimerSec2 > 0 ? mi.cookTimerSec2 : null,
+            imageUrl: mi.imageUrl ?? null,
+            recipe: mi.recipe ?? null,
+            sellKind: mi.sellKind ?? null,
+            setBundleRootName: setTitle,
+            setBundleComponents: bundleParts,
+            setParentImageUrl: parentImg,
+            setParentRecipe: parentRecipe,
+            setFixedSteps: null,
+            orderId: l.orderId,
+            orderCreatedAt: l.order.createdAt,
+            tableName,
+            sessionId: l.order.sessionId,
+            courseId: course ? course.id : null,
+            courseName: course ? course.name : null,
+            courseKind: course ? course.kind : null,
+            readyAt: l.readyAt,
+            servedAt: l.servedAt,
+            kitchenServeFast: Boolean(mi.kitchenServeFast),
+            hallPrepCheck: rowHallPrep || parentHallPrep,
+          });
         }
-        const pickDisplay = formatSetComponentPickDisplayName(p.pickName, p.optionSubtext);
-        outLines.push({
-          id: `${l.id}::${p.menuItemId}`,
-          kitchenPatchLineId: l.id,
-          isSetComponent: true,
-          status: deriveSetComponentRowStatus(l.status, l.lineExtra, p.menuItemId),
-          dbStatus: l.status,
-          nameSnapshot: p.stepLabel ? `${setTitle} › ${p.stepLabel}: ${pickDisplay}` : `${setTitle} › ${pickDisplay}`,
-          setPickOptionSubtext: p.optionSubtext || null,
-          unitPrice: 0,
-          qty: l.qty,
-          note: l.note,
-          lineExtra: null,
-          eatMode: (l as { eatMode?: string }).eatMode ?? "dine_in",
-          taxRatePercent: (l as { taxRatePercent?: number }).taxRatePercent ?? null,
-          menuItemId: mi.id,
-          categoryId: mi.categoryId,
-          categoryName: mi.category?.name ?? null,
-          categoryVisibleToGuest: mi.category?.visibleToGuest ?? null,
-          kitchenStationId: mi.kitchenStationId,
-          kitchenStationName: mi.kitchenStation?.name ?? null,
-          cookTimerSec: mi.cookTimerSec != null && mi.cookTimerSec > 0 ? mi.cookTimerSec : null,
-          cookTimerSec2: mi.cookTimerSec2 != null && mi.cookTimerSec2 > 0 ? mi.cookTimerSec2 : null,
-          imageUrl: mi.imageUrl ?? null,
-          recipe: mi.recipe ?? null,
-          sellKind: mi.sellKind ?? null,
-          setBundleRootName: setTitle,
-          setBundleComponents: bundleParts,
-          setParentImageUrl: parentImg,
-          setParentRecipe: parentRecipe,
-          setFixedSteps: null,
-          orderId: l.orderId,
-          orderCreatedAt: l.order.createdAt,
-          tableName,
-          sessionId: l.order.sessionId,
-          courseId: course ? course.id : null,
-          courseName: course ? course.name : null,
-          courseKind: course ? course.kind : null,
-          readyAt: l.readyAt,
-          servedAt: l.servedAt,
-          kitchenServeFast: Boolean(mi.kitchenServeFast),
-          hallPrepCheck: rowHallPrep || parentHallPrep,
-        });
       }
     }
 
@@ -421,7 +443,7 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
 
   app.patch<{
     Params: { storeId: string; lineId: string };
-    Body: { status: string; componentMenuItemId?: string };
+    Body: { status: string; componentMenuItemId?: string; setInstanceIndex?: number };
   }>("/stores/:storeId/kitchen/order-lines/:lineId", async (req, reply) => {
     const status = req.body?.status;
     if (!status || !LINE_STATUSES.includes(status as (typeof LINE_STATUSES)[number])) {
@@ -458,6 +480,19 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
     const picks =
       line.menuItem?.sellKind === "set" ? extractSetComponentsFromLineExtra(line.lineExtra) : [];
     const compKeys = picks.map((p) => p.menuItemId);
+    const setQty = Math.max(1, Number(line.qty) || 1);
+    const instRaw = req.body?.setInstanceIndex;
+    let setInstanceIndex = 1;
+    if (instRaw != null) {
+      const n = Number(instRaw);
+      if (!Number.isFinite(n) || n < 1) {
+        return reply.code(400).send({ error: "setInstanceIndex must be a positive integer" });
+      }
+      setInstanceIndex = Math.floor(n);
+      if (setInstanceIndex > setQty) {
+        return reply.code(400).send({ error: "setInstanceIndex exceeds line qty" });
+      }
+    }
 
     type PatchData = {
       status: string;
@@ -489,15 +524,21 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
         if (!compKeys.includes(componentMenuItemId)) {
           return reply.code(400).send({ error: "component not in set line" });
         }
+        const partKey = formatSetPartDoneKey(componentMenuItemId, setInstanceIndex, setQty);
         const existing = readKitDonePartIds(line.lineExtra);
         const idSet = new Set(existing ?? []);
         if (status === "done") {
-          idSet.add(componentMenuItemId);
+          idSet.add(partKey);
         } else {
-          idSet.delete(componentMenuItemId);
+          idSet.delete(partKey);
+          // 旧形式キーも削除（1 食目のみ）
+          if (setQty > 1 && setInstanceIndex === 1) {
+            idSet.delete(componentMenuItemId);
+          }
         }
         const arr = [...idSet].sort();
-        const allDone = compKeys.length > 0 && compKeys.every((k) => idSet.has(k));
+        const allDoneKeys = listSetPartDoneKeysForLine(compKeys, setQty);
+        const allDone = allDoneKeys.length > 0 && allDoneKeys.every((k) => idSet.has(k));
         data.lineExtra = applyKitDonePartIdsToLineExtra(line.lineExtra, arr.length === 0 ? null : arr);
         if (allDone) {
           data.status = "done";
@@ -509,7 +550,10 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
           data.servedAt = null;
         }
       } else if (status === "done") {
-        data.lineExtra = applyKitDonePartIdsToLineExtra(line.lineExtra, [...compKeys].sort());
+        data.lineExtra = applyKitDonePartIdsToLineExtra(
+          line.lineExtra,
+          [...listSetPartDoneKeysForLine(compKeys, setQty)].sort(),
+        );
         data.status = "done";
         data.readyAt = new Date();
         data.servedAt = null;

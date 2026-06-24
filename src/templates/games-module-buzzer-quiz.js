@@ -43,6 +43,62 @@
       let lobby = null;
       let lastRevision = -1;
       let buzzLocked = false;
+      let quizSettings = {
+        genre: "酒・飲み",
+        difficulty: "普通",
+        questionCount: 5,
+      };
+
+      function selectOptions(list, selected) {
+        return list
+          .map(
+            (v) =>
+              '<option value="' +
+              esc(v) +
+              '"' +
+              (v === selected ? " selected" : "") +
+              ">" +
+              esc(v) +
+              "</option>",
+          )
+          .join("");
+      }
+
+      function countOptions(selected) {
+        return COUNTS.map(
+          (n) =>
+            '<option value="' +
+            n +
+            '"' +
+            (String(selected) === n ? " selected" : "") +
+            ">" +
+            n +
+            "問</option>",
+        ).join("");
+      }
+
+      function readQuizSettingsFromForm() {
+        return {
+          genre: document.getElementById("bzGenre")?.value || quizSettings.genre,
+          difficulty: document.getElementById("bzDiff")?.value || quizSettings.difficulty,
+          questionCount: parseInt(
+            document.getElementById("bzCnt")?.value || String(quizSettings.questionCount),
+            10,
+          ),
+        };
+      }
+
+      function renderQuizSettingsSummary() {
+        return (
+          '<p class="bz-hint">出題設定: <strong>' +
+          esc(quizSettings.genre) +
+          "</strong> · " +
+          esc(quizSettings.difficulty) +
+          " · " +
+          esc(String(quizSettings.questionCount)) +
+          "問</p>"
+        );
+      }
 
       function injectStyles() {
         if (document.getElementById("bz-styles")) return;
@@ -272,18 +328,10 @@
 
       function renderHostLobby(state) {
         injectStyles();
-        const genreOpts = GENRES.map(
-          (g) => '<option value="' + esc(g) + '">' + esc(g) + "</option>",
-        ).join("");
-        const diffOpts = DIFFS.map(
-          (d) => '<option value="' + esc(d) + '">' + esc(d) + "</option>",
-        ).join("");
-        const cntOpts = COUNTS.map(
-          (n) => '<option value="' + n + '">' + n + "問</option>",
-        ).join("");
         root.innerHTML =
           '<div class="bz-wrap">' +
           '<p class="bz-hint">参加者にQRを読み取ってもらい、番号を振ります。<br>全員揃ったらクイズを開始しましょう。</p>' +
+          renderQuizSettingsSummary() +
           '<div class="bz-qr-box">' +
           '<img src="' +
           esc(qrUrl(playId)) +
@@ -296,15 +344,6 @@
           esc(String(state.maxPlayers)) +
           " 人</p>" +
           renderPlayerChips(state.players) +
-          '<label class="bz-field"><span class="bz-label">ジャンル</span><select id="bzGenre">' +
-          genreOpts +
-          "</select></label>" +
-          '<label class="bz-field"><span class="bz-label">難易度</span><select id="bzDiff">' +
-          diffOpts +
-          "</select></label>" +
-          '<label class="bz-field"><span class="bz-label">問題数</span><select id="bzCnt">' +
-          cntOpts +
-          "</select></label>" +
           (state.generatingError
             ? '<p class="bz-hint" style="color:#f87171">' + esc(state.generatingError) + "</p>"
             : "") +
@@ -431,13 +470,10 @@
         root.innerHTML =
           '<div class="bz-wrap"><p class="bz-hint">AIがクイズ問題を作成しています…<br>30秒ほどかかることがあります</p></div>';
         try {
-          const genre = document.getElementById("bzGenre")?.value || "酒・飲み";
-          const difficulty = document.getElementById("bzDiff")?.value || "普通";
-          const questionCount = parseInt(document.getElementById("bzCnt")?.value || "5", 10);
           const res = await buzzerApi.startQuiz(playId, {
-            genre,
-            difficulty,
-            questionCount,
+            genre: quizSettings.genre,
+            difficulty: quizSettings.difficulty,
+            questionCount: quizSettings.questionCount,
           });
           lobby = res.lobby;
           lastRevision = lobby.revision;
@@ -495,26 +531,17 @@
 
       function renderIntro() {
         injectStyles();
-        const genreOpts = GENRES.map(
-          (g) => '<option value="' + esc(g) + '">' + esc(g) + "</option>",
-        ).join("");
-        const diffOpts = DIFFS.map(
-          (d) => '<option value="' + esc(d) + '">' + esc(d) + "</option>",
-        ).join("");
-        const cntOpts = COUNTS.map(
-          (n) => '<option value="' + n + '">' + n + "問</option>",
-        ).join("");
         root.innerHTML =
           '<div class="bz-wrap">' +
           '<p class="bz-hint">司会者が参加費を払い、QRで参加者を集めます。<br>AIが4択問題を出題。最初にブザーを押した人だけが回答できます。</p>' +
           '<label class="bz-field"><span class="bz-label">ジャンル</span><select id="bzGenre">' +
-          genreOpts +
+          selectOptions(GENRES, quizSettings.genre) +
           "</select></label>" +
           '<label class="bz-field"><span class="bz-label">難易度</span><select id="bzDiff">' +
-          diffOpts +
+          selectOptions(DIFFS, quizSettings.difficulty) +
           "</select></label>" +
           '<label class="bz-field"><span class="bz-label">問題数</span><select id="bzCnt">' +
-          cntOpts +
+          countOptions(quizSettings.questionCount) +
           "</select></label>" +
           '<p class="bz-hint">参加費 ' +
           ex +
@@ -529,6 +556,7 @@
           showMsg("", "");
           btn.disabled = true;
           try {
+            quizSettings = readQuizSettingsFromForm();
             const res = await startPaidGame({});
             playId = res.playId;
             mode = "host";

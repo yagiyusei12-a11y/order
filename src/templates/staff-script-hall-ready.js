@@ -122,13 +122,21 @@ function orderCreatedAtMs(ln) {
   return Number.isNaN(t) ? 0 : t;
 }
 
-function isHallPrepEarlyLine(ln) {
-  return ln && ln.status !== "done" && ln.status !== "served";
+function hallLineDbStatus(ln) {
+  if (!ln) return "";
+  const db = ln.dbStatus;
+  if (db != null && String(db)) return String(db);
+  return String(ln.status || "");
 }
 
-/** キッチンで調理済（status=done）になった行のみ通知（ホール準備の調理前は除く） */
+function isHallPrepEarlyLine(ln) {
+  const st = hallLineDbStatus(ln);
+  return st !== "done" && st !== "served";
+}
+
+/** キッチンで調理済（dbStatus=done）になった行のみ通知（ホール準備の調理前は除く） */
 function isHallReadyChimeLine(ln) {
-  return ln && ln.status === "done";
+  return hallLineDbStatus(ln) === "done";
 }
 
 function hallLineKey(ln) {

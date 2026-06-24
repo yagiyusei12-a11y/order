@@ -32,6 +32,8 @@ let kitSummaryFrozenLines = null;
 let kitKitchenUiLock = 0;
 let kitRenderPendingAfterLock = false;
 let kitInteractUntil = 0;
+let kitDoneButtonsArmedAt = 0;
+let kitBusyStopRefreshTimer = null;
 /** @type {Set<string>} */
 const kitLineDoneInFlight = new Set();
 let kitSummaryPendingLines = null;
@@ -1144,20 +1146,45 @@ function kitLineDoneKey(lineId, componentMenuItemId) {
 }
 
 function bindKitDoneButton(btn, handler) {
+  const state = { down: false, pointerId: -1 };
+  btn.addEventListener(
+    "pointerdown",
+    (ev) => {
+      if (ev.button !== 0) return;
+      state.down = true;
+      state.pointerId = ev.pointerId;
+    },
+    { passive: true },
+  );
+  btn.addEventListener("pointercancel", () => {
+    state.down = false;
+    state.pointerId = -1;
+  });
   const run = (ev) => {
-    if (ev.type === "pointerup" && ev.button !== 0) return;
+    if (ev.type === "pointerup") {
+      if (ev.button !== 0) return;
+      if (!state.down || state.pointerId !== ev.pointerId) return;
+      state.down = false;
+      state.pointerId = -1;
+    }
     ev.preventDefault();
     ev.stopPropagation();
     if (btn.disabled) return;
+    if (!kitDoneButtonsArmed()) return;
     void handler(btn);
   };
   btn.addEventListener("pointerup", run);
   btn.addEventListener("click", (ev) => ev.preventDefault());
 }
 
-async function runKitLineDone(lineId, componentMenuItemId) {
+async function runKitLineDone(lineId, componentMenuItemId, ln) {
   const key = kitLineDoneKey(lineId, componentMenuItemId);
   if (kitLineDoneInFlight.has(key)) return;
+  const row = ln || null;
+  if (row && row.eatMode === "takeout") {
+    const name = orderLineDisplayName(row) || "この商品";
+    if (!confirm("「" + name + "」を調理済にしますか？")) return;
+  }
   kitLineDoneInFlight.add(key);
   try {
     await setLine(lineId, "done", componentMenuItemId);
@@ -1166,11 +1193,23 @@ async function runKitLineDone(lineId, componentMenuItemId) {
   }
 }
 
-async function runKitSummaryTableDone(lineIds, summaryComponentMenuItemId) {
+async function runKitSummaryTableDone(lineIds, summaryComponentMenuItemId, sampleLn) {
   const uniq = [...new Set((lineIds || []).map((id) => String(id)).filter(Boolean))];
   if (uniq.length === 0) return;
   const key = "summary:" + uniq.join(",") + "|" + String(summaryComponentMenuItemId || "");
   if (kitLineDoneInFlight.has(key)) return;
+  const label = sampleLn ? orderLineDisplayName(sampleLn) : "対象商品";
+  if (
+    !confirm(
+      "「" +
+        label +
+        "」の " +
+        uniq.length +
+        " 件を調理済にしますか？\n（まとめ表示の一括操作です）",
+    )
+  ) {
+    return;
+  }
   kitLineDoneInFlight.add(key);
   try {
     await setLinesDone(uniq, summaryComponentMenuItemId);
@@ -1181,6 +1220,35 @@ async function runKitSummaryTableDone(lineIds, summaryComponentMenuItemId) {
 
 function shouldDeferKitListRender() {
   return kitKitchenUiLock > 0 || Date.now() < kitInteractUntil;
+}
+
+function armKitDoneButtonsAfterRender() {
+  kitDoneButtonsArmedAt = Date.now() + 450;
+}
+
+function finishKitListRender() {
+  armKitDoneButtonsAfterRender();
+  finishCookTimerUi();
+}
+
+function kitDoneButtonsArmed() {
+  return Date.now() >= kitDoneButtonsArmedAt;
+}
+
+function shouldDeferBusyStopKitchenRefresh() {
+  return shouldDeferKitListRender() || !kitDoneButtonsArmed();
+}
+
+function scheduleKitBusyStopRefresh() {
+  if (kitBusyStopRefreshTimer != null) return;
+  kitBusyStopRefreshTimer = setTimeout(() => {
+    kitBusyStopRefreshTimer = null;
+    if (shouldDeferBusyStopKitchenRefresh()) {
+      scheduleKitBusyStopRefresh();
+      return;
+    }
+    refreshKitchen().catch(() => {});
+  }, 400);
 }
 
 function flushKitListRenderIfPending() {
@@ -1479,6 +1547,7 @@ function renderKitHistoryList(box, lines) {
 function renderKitList() {
   const box = document.getElementById("kit");
   if (!box) return;
+  kitDoneButtonsArmedAt = Date.now() + 999999999;
   const baseLines =
     summaryMode && kitMainTab === "active" && kitSummaryFrozenLines !== null
       ? kitSummaryFrozenLines
@@ -1486,12 +1555,12 @@ function renderKitList() {
   const lines = filterLines(baseLines);
   if (kitMainTab === "history") {
     renderKitHistoryList(box, lines);
-    finishCookTimerUi();
+    finishKitListRender();
     return;
   }
   if (kitMainTab === "reserve") {
     renderKitTakeoutReserveList(box);
-    finishCookTimerUi();
+    finishKitListRender();
     return;
   }
   syncKitTabChrome();
@@ -1506,7 +1575,7 @@ function renderKitList() {
         lastLines.length +
         "件中 0件表示）</p></div>";
     }
-    finishCookTimerUi();
+    finishKitListRender();
     return;
   }
   if (summaryMode) {
@@ -1586,7 +1655,7 @@ function renderKitList() {
       box.className = "card";
       box.innerHTML =
         "<div class=\"kit-empty\"><div class=\"ico\">✅</div><div>まとめ対象の明細がありません</div><p class=\"muted\" style=\"margin:0.5rem 0 0;font-size:0.8rem\">未完了（待ち・調理中）の行がここに並びます。調理済は「調理済・提供」画面で確認できます。</p></div>";
-      finishCookTimerUi();
+      finishKitListRender();
       return;
     }
     box.className = "card kit-layout-normal";
@@ -1709,7 +1778,7 @@ function renderKitList() {
         bindKitDoneButton(b, (btn) => {
           btn.disabled = true;
           btn.textContent = "処理中…";
-          void runKitSummaryTableDone(tableLineIds, summaryComp);
+          void runKitSummaryTableDone(tableLineIds, summaryComp, sampleLn);
         });
         cell.appendChild(b);
         const hasMenuItem = Boolean(sampleLn && sampleLn.menuItemId);
@@ -1802,7 +1871,7 @@ function renderKitList() {
       d.appendChild(bodyEl);
       box.appendChild(d);
     }
-    finishCookTimerUi();
+    finishKitListRender();
     return;
   }
   /** 通常表示: 調理済（done）は出さない（「調理済・提供」画面へ）。待ち・調理中のみ。 */
@@ -1823,7 +1892,7 @@ function renderKitList() {
         kitEmptyRecoveryHint(lines.length, 0) +
         "</div>";
     }
-    finishCookTimerUi();
+    finishKitListRender();
     return;
   }
   /** 通常表示: 1注文（orderId）= 1ブロック、行内は調理場のみ（カテゴリなし） */
@@ -1989,7 +2058,7 @@ function renderKitList() {
         bindKitDoneButton(b2, (btn) => {
           btn.disabled = true;
           btn.textContent = "処理中…";
-          void runKitLineDone(patchId, compId);
+          void runKitLineDone(patchId, compId, ln);
         });
         statusRow.appendChild(b2);
       }
@@ -2012,7 +2081,7 @@ function renderKitList() {
     d.appendChild(body);
     box.appendChild(d);
   }
-  finishCookTimerUi();
+  finishKitListRender();
 }
 
 async function refreshKitIntervalFromServer() {
@@ -2509,4 +2578,11 @@ refreshKitIntervalFromServer()
   })
   .catch((e) => log(String(e.message || e)));
 
-window.__kitRefreshKitchen = () => refreshKitchen().catch(() => {});
+window.__kitRefreshKitchen = () => {
+  if (shouldDeferBusyStopKitchenRefresh()) {
+    scheduleKitBusyStopRefresh();
+    return;
+  }
+  refreshKitchen().catch(() => {});
+};
+window.__kitShouldDeferBusyStopKitchenRefresh = shouldDeferBusyStopKitchenRefresh;

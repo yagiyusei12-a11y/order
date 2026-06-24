@@ -131,6 +131,9 @@ function renderBusyStopGrid() {
       (active ? (stopped ? " is-stopped" : " is-running") : " is-inactive");
     card.dataset.stationId = String(st.id || "");
     card.style.order = String(Number(st.sortOrder ?? 0));
+    const targetN = Number(st.targetItemCount || 0);
+    const stationN = Number(st.stationMenuItemCount || 0);
+    const allItemsStop = Boolean(st.busyStopAllItems);
     const title = document.createElement("h2");
     title.className = "busy-stop-card-title";
     title.textContent = String(st.name || "（名称未設定）");
@@ -140,9 +143,6 @@ function renderBusyStopGrid() {
     badge.textContent = active ? (stopped ? (allItemsStop ? "全商品停止中" : "停止中") : "受付中") : "無効";
     const meta = document.createElement("p");
     meta.className = "busy-stop-meta";
-    const targetN = Number(st.targetItemCount || 0);
-    const stationN = Number(st.stationMenuItemCount || 0);
-    const allItemsStop = Boolean(st.busyStopAllItems);
     let metaTxt = allItemsStop
       ? "全商品 " + stationN + " 件を一時停止中"
       : "停止対象商品 " + targetN + " 件";

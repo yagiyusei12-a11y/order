@@ -1,6 +1,7 @@
 import { prisma } from "../db.js";
 import { mergeStoreSettings } from "./store-settings.js";
 import { storeNowWallClock } from "./store-wall-time.js";
+import { parseTarotDrawnCards, type TarotDrawnCard } from "./tarot-deck.js";
 
 export const AI_FORTUNE_SLUGS = [
   "ai-drunk-diagnosis",
@@ -58,6 +59,7 @@ export type PalmReadingInput = {
 export type SeriousTarotInput = {
   theme: string;
   question: string;
+  cards: TarotDrawnCard[];
 };
 
 export type FourPillarsInput = {
@@ -407,7 +409,8 @@ export function parseSeriousTarotInput(raw: unknown): SeriousTarotInput {
     throw new Error("占いテーマを選んでください");
   }
   if (question.length < 5) throw new Error("相談内容を5文字以上入力してください");
-  return { theme, question };
+  const cards = parseTarotDrawnCards(o.cards);
+  return { theme, question, cards };
 }
 
 export function parseFourPillarsInput(raw: unknown): FourPillarsInput {
@@ -635,17 +638,22 @@ export async function runAiFortuneForSlug(
 
   if (slug === "ai-serious-tarot") {
     const input = parseSeriousTarotInput(payload.aiInput);
+    const cardsLine = input.cards
+      .map((c) => `${c.position}: ${c.name}（${c.reversed ? "逆位置" : "正位置"}）`)
+      .join("、");
     const system =
       "あなたは20年以上の経験を持つプロのタロットリーダーです。ウェイト版タロット78枚を想定し、" +
-      "過去・現在・未来の3枚スプレッド（または状況・障害・助言）で本格的に鑑定します。" +
-      "選んだカード名（正位置/逆位置）を明記し、象徴・キーワード・相談への具体的助言を丁寧に。" +
+      "過去・現在・未来の3枚スプレッドで本格的に鑑定します。" +
+      "ユーザーがすでに引いた3枚のカードだけを解釈すること。別のカードを選び直したり追加したりしない。" +
+      "各カードの象徴・キーワード・相談への具体的助言を丁寧に。" +
       "軽いネタや適当な断定は避け、真摯で温かみのある文体。日本語。" +
       JSON_SCHEMA_HINT +
       ` disclaimerは「${SERIOUS_DISCLAIMER}」に近い内容。` +
-      " sectionsは5〜7個。必ず「引いたカード3枚（名前・正逆）」「テーマ別の総合メッセージ」「今後1ヶ月のアドバイス」「開運アクション」を含める。";
+      " sectionsは5〜7個。必ず「過去のカード」「現在のカード」「未来のカード」「テーマ別の総合メッセージ」「今後1ヶ月のアドバイス」「開運アクション」を含める。";
     const userText =
       `テーマ: ${input.theme}\n相談: ${input.question}\n` +
-      "ランダムに3枚のカードを選び、それぞれの意味と相談内容への当てはめを深く解説してください。";
+      `引いたカード: ${cardsLine}\n` +
+      "この3枚について、それぞれの意味と相談内容への当てはめを深く解説してください。";
     return invokeAi(system, [{ type: "text", text: userText }], {
       maxTokens: 1400,
       temperature: 0.72,

@@ -5,6 +5,7 @@ import {
   GUEST_BUSY_STOP_MESSAGE,
   listKitchenBusyStopStatus,
   loadBusyStoppedStationIdSet,
+  markAllStationMenuItemsBusyStopTarget,
 } from "../lib/kitchen-busy-stop.js";
 import { broadcastGuestBusyStopUpdated } from "../lib/ops-seat-socket.js";
 
@@ -33,6 +34,7 @@ export async function registerKitchenBusyStop(app: FastifyInstance): Promise<voi
           active: s.active,
           busyStoppedAt: s.busyStoppedAt ? s.busyStoppedAt.toISOString() : null,
           targetItemCount: s.targetItemCount,
+          stationMenuItemCount: s.stationMenuItemCount,
           inFlightKitchenLineCount: s.inFlightKitchenLineCount,
           stopped: s.busyStoppedAt != null,
         })),
@@ -93,6 +95,23 @@ export async function registerKitchenBusyStop(app: FastifyInstance): Promise<voi
           categoryName: it.category.name,
         })),
       };
+    },
+  );
+
+  /** 調理場に紐づく全商品を「混雑時停止対象」にする */
+  app.post<{ Params: { storeId: string; stationId: string } }>(
+    "/stores/:storeId/kitchen-stations/:stationId/busy-stop-mark-all-targets",
+    async (req, reply) => {
+      const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+      if (!store) return reply.code(404).send({ error: "store not found" });
+      try {
+        const result = await markAllStationMenuItemsBusyStopTarget(store.id, req.params.stationId);
+        return result;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "";
+        if (msg === "STATION_NOT_FOUND") return reply.code(404).send({ error: "station not found" });
+        throw e;
+      }
     },
   );
 

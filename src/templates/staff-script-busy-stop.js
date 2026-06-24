@@ -31,6 +31,17 @@ function fmtBusyStopWhen(iso) {
 /** @type {Array<Record<string, unknown>>} */
 let busyStopStations = [];
 
+function compareBusyStopStations(a, b) {
+  const sa = Number(a.sortOrder ?? 0);
+  const sb = Number(b.sortOrder ?? 0);
+  if (sa !== sb) return sa - sb;
+  return String(a.id || "").localeCompare(String(b.id || ""), "ja");
+}
+
+function sortedBusyStopStations() {
+  return [...busyStopStations].sort(compareBusyStopStations);
+}
+
 function menuItemUrl(itemId) {
   return (
     "/staff-app/" +
@@ -111,13 +122,15 @@ function renderBusyStopGrid() {
       "<p class=\"muted\" style=\"grid-column:1/-1;margin:0\">調理場が登録されていません。設定画面から調理場を追加してください。</p>";
     return;
   }
-  for (const st of busyStopStations) {
+  for (const st of sortedBusyStopStations()) {
     const stopped = Boolean(st.stopped);
     const active = st.active !== false;
     const card = document.createElement("article");
     card.className =
       "busy-stop-card" +
       (active ? (stopped ? " is-stopped" : " is-running") : " is-inactive");
+    card.dataset.stationId = String(st.id || "");
+    card.style.order = String(Number(st.sortOrder ?? 0));
     const title = document.createElement("h2");
     title.className = "busy-stop-card-title";
     title.textContent = String(st.name || "（名称未設定）");
@@ -128,7 +141,11 @@ function renderBusyStopGrid() {
     const meta = document.createElement("p");
     meta.className = "busy-stop-meta";
     const targetN = Number(st.targetItemCount || 0);
+    const stationN = Number(st.stationMenuItemCount || 0);
     let metaTxt = "停止対象商品 " + targetN + " 件";
+    if (stationN > 0 && stationN !== targetN) {
+      metaTxt += "（全 " + stationN + " 件中）";
+    }
     const inFlightN = Number(st.inFlightKitchenLineCount || 0);
     if (inFlightN > 0) {
       metaTxt += " · キッチン未完了 " + inFlightN + "件（停止後も表示）";
@@ -148,6 +165,8 @@ function renderBusyStopGrid() {
       void showBusyStopTargets(String(st.id), String(st.name || ""));
     const actions = document.createElement("div");
     actions.className = "busy-stop-actions";
+    const actionsRow = document.createElement("div");
+    actionsRow.className = "busy-stop-actions-row";
     if (active) {
       if (stopped) {
         const resume = document.createElement("button");
@@ -155,15 +174,36 @@ function renderBusyStopGrid() {
         resume.className = "btn-primary btn-resume";
         resume.textContent = "再開する";
         resume.onclick = () => void setBusyStop(String(st.id), false, resume);
-        actions.appendChild(resume);
+        actionsRow.appendChild(resume);
       } else {
         const stop = document.createElement("button");
         stop.type = "button";
         stop.className = "btn-primary btn-stop";
         stop.textContent = "停止する";
         stop.onclick = () => void setBusyStop(String(st.id), true, stop);
-        actions.appendChild(stop);
+        actionsRow.appendChild(stop);
       }
+      const markAll = document.createElement("button");
+      markAll.type = "button";
+      markAll.className = "btn-mark-all";
+      const pendingMark = Math.max(0, stationN - targetN);
+      if (stationN <= 0) {
+        markAll.textContent = "全商品停止（商品なし）";
+        markAll.disabled = true;
+        markAll.title = "この調理場に紐づく商品がありません";
+      } else if (pendingMark <= 0) {
+        markAll.textContent = "全商品停止済み";
+        markAll.disabled = true;
+        markAll.title = "この調理場の商品はすべて停止対象です";
+      } else {
+        markAll.textContent = "全商品停止（あと " + pendingMark + " 件）";
+        markAll.title = "この調理場の商品をすべて「混雑時停止対象」にします";
+        markAll.onclick = () => void markAllBusyStopTargets(String(st.id), markAll);
+      }
+      actions.appendChild(actionsRow);
+      actions.appendChild(markAll);
+    } else if (actionsRow.childNodes.length) {
+      actions.appendChild(actionsRow);
     }
     card.appendChild(title);
     card.appendChild(badge);
@@ -175,9 +215,41 @@ function renderBusyStopGrid() {
 }
 
 async function loadBusyStopStatus() {
+  const grid = document.getElementById("busyStopGrid");
+  const scrollY = grid ? grid.scrollTop : 0;
   const data = await api("/stores/" + encodeURIComponent(STORE) + "/kitchen-busy-stop/status");
   busyStopStations = Array.isArray(data.stations) ? data.stations : [];
+  busyStopStations.sort(compareBusyStopStations);
   renderBusyStopGrid();
+  if (grid) grid.scrollTop = scrollY;
+}
+
+async function markAllBusyStopTargets(stationId, btn) {
+  busyStopLog("");
+  const prev = btn && btn.textContent;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "設定中…";
+  }
+  try {
+    const data = await api(
+      "/stores/" +
+        encodeURIComponent(STORE) +
+        "/kitchen-stations/" +
+        encodeURIComponent(stationId) +
+        "/busy-stop-mark-all-targets",
+      { method: "POST" },
+    );
+    const n = Number(data.updatedCount || 0);
+    busyStopLog(n > 0 ? "全商品を停止対象にしました（" + n + " 件）" : "停止対象の追加はありませんでした");
+    await loadBusyStopStatus();
+  } catch (e) {
+    busyStopLog(String(e.message || e));
+  } finally {
+    if (btn && btn.isConnected) {
+      if (prev) btn.textContent = prev;
+    }
+  }
 }
 
 async function setBusyStop(stationId, stop, btn) {

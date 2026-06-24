@@ -442,6 +442,17 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
     });
     if (!line) return reply.code(404).send({ error: "line not found" });
 
+    const eatMode = (line as { eatMode?: string }).eatMode ?? "dine_in";
+    if (
+      status === "served" &&
+      (line.status === "queued" || line.status === "cooking") &&
+      eatMode === "takeout"
+    ) {
+      return reply
+        .code(400)
+        .send({ error: "テイクアウトはキッチンで調理済にしてから提供済みにできます" });
+    }
+
     const picks =
       line.menuItem?.sellKind === "set" ? extractSetComponentsFromLineExtra(line.lineExtra) : [];
     const compKeys = picks.map((p) => p.menuItemId);

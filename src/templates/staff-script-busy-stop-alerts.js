@@ -23,6 +23,58 @@
     } catch (_) {}
   }
 
+  /** window.alert は閉じた直後のタップが背面の「提供済み」等に透過することがあるためモーダルを使う */
+  function showBusyStopAlertModal(message) {
+    return new Promise((resolve) => {
+      const bd = document.createElement("div");
+      bd.className = "kit-busy-stop-alert-backdrop";
+      bd.setAttribute("role", "dialog");
+      bd.setAttribute("aria-modal", "true");
+
+      const card = document.createElement("div");
+      card.className = "kit-busy-stop-alert-card";
+
+      const body = document.createElement("p");
+      body.className = "kit-busy-stop-alert-text";
+      body.textContent = message;
+
+      const actions = document.createElement("div");
+      actions.className = "kit-busy-stop-alert-actions";
+
+      const ok = document.createElement("button");
+      ok.type = "button";
+      ok.className = "btn-primary";
+      ok.textContent = "OK";
+
+      function close() {
+        bd.remove();
+        document.removeEventListener("keydown", onKey);
+        resolve();
+      }
+
+      function onKey(ev) {
+        if (ev.key === "Escape" || ev.key === "Enter") close();
+      }
+
+      ok.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        close();
+      });
+      bd.addEventListener("click", (ev) => {
+        if (ev.target === bd) close();
+      });
+      document.addEventListener("keydown", onKey);
+
+      actions.appendChild(ok);
+      card.appendChild(body);
+      card.appendChild(actions);
+      bd.appendChild(card);
+      document.body.appendChild(bd);
+      ok.focus();
+    });
+  }
+
   function busyStopStatusSignature(stations) {
     return (stations || [])
       .map((st) => {
@@ -69,7 +121,7 @@
         const prev = Number(last[id] || 0);
         if (!prev || now - prev >= REPEAT_MS) {
           const name = st.name ? String(st.name) : "（名称未設定）";
-          window.alert("現在調理場「" + name + "」は停止中です");
+          await showBusyStopAlertModal("現在調理場「" + name + "」は停止中です");
           last[id] = now;
         }
       }

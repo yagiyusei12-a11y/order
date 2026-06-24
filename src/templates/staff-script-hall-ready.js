@@ -17,6 +17,8 @@ const hallChimePendingIds = new Set();
 let hallChimeTimer = null;
 let hallChimePlaying = false;
 let hallChimeInitialized = false;
+/** @type {Set<string>} */
+const hallServeInFlight = new Set();
 
 function log(t) {
   const el = document.getElementById("log");
@@ -508,12 +510,20 @@ function renderHallList() {
       }
 
       if (hallTab !== "served") {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "hall-ready-serve";
-        btn.textContent = "提供済み";
-        btn.onclick = () => setLineServed(kitchenPatchLineId(ln));
-        block.appendChild(btn);
+        if (early && ln.eatMode === "takeout") {
+          const hint = document.createElement("div");
+          hint.className = "hall-ready-meta";
+          hint.style.marginTop = "0.35rem";
+          hint.textContent = "テイクアウトはキッチンで「調理済」にしてから提供済みにできます";
+          block.appendChild(hint);
+        } else {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "hall-ready-serve";
+          btn.textContent = "提供済み";
+          btn.onclick = () => setLineServed(kitchenPatchLineId(ln), ln);
+          block.appendChild(btn);
+        }
       }
 
       grid.appendChild(block);
@@ -524,7 +534,21 @@ function renderHallList() {
   root.appendChild(wrap);
 }
 
-async function setLineServed(lineId) {
+async function setLineServed(lineId, ln) {
+  if (!lineId) return;
+  if (hallServeInFlight.has(lineId)) return;
+  const early = ln && isHallPrepEarlyLine(ln);
+  if (early && ln.eatMode !== "takeout") {
+    const name = ln.nameSnapshot ? String(ln.nameSnapshot) : "この商品";
+    if (
+      !confirm(
+        "「" + name + "」はキッチン調理前です。\n本当に提供済みにしますか？",
+      )
+    ) {
+      return;
+    }
+  }
+  hallServeInFlight.add(lineId);
   log("");
   try {
     await api(
@@ -534,6 +558,8 @@ async function setLineServed(lineId) {
     await refreshHall();
   } catch (e) {
     log(String(e.message || e));
+  } finally {
+    hallServeInFlight.delete(lineId);
   }
 }
 

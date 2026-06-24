@@ -29,16 +29,16 @@
       "slug": "memory-match",
       "kind": "paid",
       "title": "おつまみ絵合わせ（神経衰弱）タイムアタック",
-      "description": "10秒以内におつまみ画像のペアをすべて揃えよう！",
+      "description": "裏向きのカードから同じおつまみを揃えよう。ミス3回で終了！",
       "iconEmoji": "🃏",
       "playPriceYen": 88,
       "winMode": "skill",
       "winProbabilityPercent": 30,
       "configJson": {
         "pairCount": 7,
+        "maxMisses": 3,
         "hubCategory": "game",
         "menuItemIds": [],
-        "timeLimitMs": 10000,
         "staffTouchedAt": "2026-06-23T05:27:19.031Z"
       },
       "sortOrder": 3,

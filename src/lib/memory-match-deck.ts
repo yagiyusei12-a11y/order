@@ -29,7 +29,7 @@ export function parseMemoryMatchConfig(raw: unknown): MemoryMatchConfig {
     return typeof v === "number" && Number.isFinite(v) ? Math.round(v) : def;
   };
   const pairCount = Math.max(2, Math.min(10, num("pairCount", 7)));
-  const maxMisses = Math.max(1, Math.min(10, num("maxMisses", 2)));
+  const maxMisses = Math.max(1, Math.min(10, num("maxMisses", 3)));
   let menuItemIds: string[] = [];
   if (Array.isArray(o.menuItemIds)) {
     menuItemIds = o.menuItemIds

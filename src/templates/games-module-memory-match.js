@@ -5,7 +5,7 @@
       const { game, root, btn, showMsg, showErr, startPaidGame, completePaidGame, finishWin, offerPlayAgain } = ctx;
       const cfg = game.configJson && typeof game.configJson === "object" ? game.configJson : {};
       const defaultPairs = typeof cfg.pairCount === "number" ? cfg.pairCount : 7;
-      const defaultMaxMisses = typeof cfg.maxMisses === "number" ? cfg.maxMisses : 2;
+      const defaultMaxMisses = typeof cfg.maxMisses === "number" ? cfg.maxMisses : 3;
       const ex = game.playPriceYen != null ? game.playPriceYen : 80;
       const inc = game.playPriceYenInclusive != null ? game.playPriceYenInclusive : ex;
 

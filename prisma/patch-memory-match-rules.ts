@@ -16,12 +16,12 @@ async function main() {
       ? { ...(game.configJson as Record<string, unknown>) }
       : {};
   delete cfg.timeLimitMs;
-  cfg.maxMisses = typeof cfg.maxMisses === "number" ? cfg.maxMisses : 2;
+  cfg.maxMisses = typeof cfg.maxMisses === "number" ? cfg.maxMisses : 3;
   await prisma.storeGame.update({
     where: { id: game.id },
     data: {
       title: "おつまみ絵合わせ（神経衰弱）",
-      description: "裏向きのカードから同じおつまみを揃えよう。ミス2回で終了！",
+      description: "裏向きのカードから同じおつまみを揃えよう。ミス3回で終了！",
       configJson: cfg,
     },
   });

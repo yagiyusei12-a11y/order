@@ -32,7 +32,7 @@ import { resolveGuestBillingContext } from "../lib/guest-billing-context.js";
 import {
   GUEST_BUSY_STOP_MESSAGE,
   isItemBusyStoppedByStations,
-  loadBusyStoppedStationIdSet,
+  loadBusyStopState,
   setMenuItemBlockedByBusyStop,
 } from "../lib/kitchen-busy-stop.js";
 import {
@@ -272,6 +272,7 @@ function mapGuestSetMenuItem(
   taxRatePercent: number,
   nowMin: number,
   stoppedStationIds?: ReadonlySet<string>,
+  allItemsStoppedStationIds?: ReadonlySet<string>,
 ): Record<string, unknown> | null {
   const stepsOut: Record<string, unknown>[] = [];
   type ChoiceRow = {
@@ -362,6 +363,7 @@ function mapGuestSetMenuItem(
       },
       itRow.setSteps,
       stoppedStationIds,
+      allItemsStoppedStationIds,
     )
   ) {
     return { ...out, busyStopped: true, busyStoppedMessage: GUEST_BUSY_STOP_MESSAGE };
@@ -633,7 +635,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       return categoryGuestVisibleAt(c, slice, nowMin);
     });
 
-    const stoppedStationIds = await loadBusyStoppedStationIdSet(session.storeId);
+    const { stoppedStationIds, allItemsStoppedStationIds } = await loadBusyStopState(session.storeId);
 
     const tier = session.coursePriceTier;
     const courseOut =
@@ -671,6 +673,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       },
       busyStop: {
         stoppedStationIds: [...stoppedStationIds],
+        allItemsStoppedStationIds: [...allItemsStoppedStationIds],
         message: GUEST_BUSY_STOP_MESSAGE,
       },
       session: {
@@ -720,6 +723,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                 st.taxRatePercent,
                 nowMin,
                 stoppedStationIds,
+                allItemsStoppedStationIds,
               );
               if (!row) return null;
               let allowTakeoutOut = (row as { allowTakeout?: boolean }).allowTakeout === true;
@@ -738,6 +742,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                   kitchenStationId: it.kitchenStationId,
                 },
                 stoppedStationIds,
+                allItemsStoppedStationIds,
               )
             ) {
               (single as Record<string, unknown>).busyStopped = true;
@@ -838,9 +843,10 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     if (!billing.ok) {
       return reply.code(billing.status).send(billing.body);
     }
-    const stoppedStationIds = await loadBusyStoppedStationIdSet(tokenSession.storeId);
+    const { stoppedStationIds, allItemsStoppedStationIds } = await loadBusyStopState(tokenSession.storeId);
     return {
       stoppedStationIds: [...stoppedStationIds],
+      allItemsStoppedStationIds: [...allItemsStoppedStationIds],
       message: GUEST_BUSY_STOP_MESSAGE,
     };
   });
@@ -1102,7 +1108,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         ? bodyOrder.guestDeviceId.trim().slice(0, 128)
         : undefined;
 
-    const stoppedStationIds = await loadBusyStoppedStationIdSet(orderStoreId);
+    const { stoppedStationIds, allItemsStoppedStationIds } = await loadBusyStopState(orderStoreId);
 
     try {
       const order = await prisma.$transaction(async (tx) => {
@@ -1238,6 +1244,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                 },
                 setItem.setSteps,
                 stoppedStationIds,
+                allItemsStoppedStationIds,
               )
             ) {
               throw new Error("BAD_BUSY_STOP");
@@ -1540,6 +1547,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
                   kitchenStationId: plainItem.kitchenStationId,
                 },
                 stoppedStationIds,
+                allItemsStoppedStationIds,
               )
             ) {
               throw new Error("BAD_BUSY_STOP");

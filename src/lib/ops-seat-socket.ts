@@ -25,6 +25,7 @@ export type OpsSessionUpdatedPayload = {
 
 export type GuestBusyStopUpdatedPayload = {
   stoppedStationIds: string[];
+  allItemsStoppedStationIds: string[];
   message: string;
 };
 
@@ -63,6 +64,7 @@ export function broadcastGuestBusyStopUpdated(
   if (!opsSocketServer || !sid) return;
   opsSocketServer.to(storeRoom(sid)).emit("guest:busy-stop-updated", {
     stoppedStationIds: payload.stoppedStationIds,
+    allItemsStoppedStationIds: payload.allItemsStoppedStationIds,
     message: payload.message,
   });
 }

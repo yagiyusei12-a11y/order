@@ -96,6 +96,8 @@ model KitchenStation {
   active    Boolean    @default(true)
   /// 混雑時停止が押された時刻（null=通常稼働）
   busyStoppedAt DateTime?
+  /// 停止中に調理場の全商品をゲスト注文不可にする（再開で自動解除。商品マスタは変更しない）
+  busyStopAllItems Boolean @default(false)
   store     Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
   menuItems MenuItem[]
 

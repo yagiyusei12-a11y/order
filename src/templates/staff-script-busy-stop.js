@@ -137,13 +137,16 @@ function renderBusyStopGrid() {
     const badge = document.createElement("span");
     badge.className =
       "busy-stop-badge " + (active ? (stopped ? "stop" : "run") : "off");
-    badge.textContent = active ? (stopped ? "停止中" : "受付中") : "無効";
+    badge.textContent = active ? (stopped ? (allItemsStop ? "全商品停止中" : "停止中") : "受付中") : "無効";
     const meta = document.createElement("p");
     meta.className = "busy-stop-meta";
     const targetN = Number(st.targetItemCount || 0);
     const stationN = Number(st.stationMenuItemCount || 0);
-    let metaTxt = "停止対象商品 " + targetN + " 件";
-    if (stationN > 0 && stationN !== targetN) {
+    const allItemsStop = Boolean(st.busyStopAllItems);
+    let metaTxt = allItemsStop
+      ? "全商品 " + stationN + " 件を一時停止中"
+      : "停止対象商品 " + targetN + " 件";
+    if (!allItemsStop && stationN > 0 && stationN !== targetN) {
       metaTxt += "（全 " + stationN + " 件中）";
     }
     const inFlightN = Number(st.inFlightKitchenLineCount || 0);
@@ -186,19 +189,19 @@ function renderBusyStopGrid() {
       const markAll = document.createElement("button");
       markAll.type = "button";
       markAll.className = "btn-mark-all";
-      const pendingMark = Math.max(0, stationN - targetN);
       if (stationN <= 0) {
         markAll.textContent = "全商品停止（商品なし）";
         markAll.disabled = true;
         markAll.title = "この調理場に紐づく商品がありません";
-      } else if (pendingMark <= 0) {
-        markAll.textContent = "全商品停止済み";
+      } else if (allItemsStop) {
+        markAll.textContent = "全商品停止中";
         markAll.disabled = true;
-        markAll.title = "この調理場の商品はすべて停止対象です";
+        markAll.title = "この調理場の全商品を一時停止しています。再開するには「再開する」を押してください";
       } else {
-        markAll.textContent = "全商品停止（あと " + pendingMark + " 件）";
-        markAll.title = "この調理場の商品をすべて「混雑時停止対象」にします";
-        markAll.onclick = () => void markAllBusyStopTargets(String(st.id), markAll);
+        markAll.textContent = "全商品停止（" + stationN + " 件）";
+        markAll.title =
+          "この調理場の全商品を一時的にゲスト注文不可にします（商品マスタは変更しません）";
+        markAll.onclick = () => void stopAllBusyStopItems(String(st.id), markAll);
       }
       actions.appendChild(actionsRow);
       actions.appendChild(markAll);
@@ -224,25 +227,25 @@ async function loadBusyStopStatus() {
   if (grid) grid.scrollTop = scrollY;
 }
 
-async function markAllBusyStopTargets(stationId, btn) {
+async function stopAllBusyStopItems(stationId, btn) {
   busyStopLog("");
   const prev = btn && btn.textContent;
   if (btn) {
     btn.disabled = true;
-    btn.textContent = "設定中…";
+    btn.textContent = "停止中…";
   }
   try {
-    const data = await api(
+    await api(
       "/stores/" +
         encodeURIComponent(STORE) +
         "/kitchen-stations/" +
         encodeURIComponent(stationId) +
-        "/busy-stop-mark-all-targets",
+        "/busy-stop-all-items",
       { method: "POST" },
     );
-    const n = Number(data.updatedCount || 0);
-    busyStopLog(n > 0 ? "全商品を停止対象にしました（" + n + " 件）" : "停止対象の追加はありませんでした");
+    busyStopLog("全商品を一時停止しました");
     await loadBusyStopStatus();
+    if (typeof window.__kitRefreshKitchen === "function") window.__kitRefreshKitchen();
   } catch (e) {
     busyStopLog(String(e.message || e));
   } finally {

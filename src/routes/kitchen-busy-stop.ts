@@ -4,15 +4,16 @@ import {
   busyStopStationsNeedingAlert,
   GUEST_BUSY_STOP_MESSAGE,
   listKitchenBusyStopStatus,
-  loadBusyStoppedStationIdSet,
-  markAllStationMenuItemsBusyStopTarget,
+  loadBusyStopState,
+  stopKitchenStationAllItems,
 } from "../lib/kitchen-busy-stop.js";
 import { broadcastGuestBusyStopUpdated } from "../lib/ops-seat-socket.js";
 
 async function notifyGuestBusyStopChanged(storeId: string): Promise<void> {
-  const stoppedStationIds = await loadBusyStoppedStationIdSet(storeId);
+  const { stoppedStationIds, allItemsStoppedStationIds } = await loadBusyStopState(storeId);
   broadcastGuestBusyStopUpdated(storeId, {
     stoppedStationIds: [...stoppedStationIds],
+    allItemsStoppedStationIds: [...allItemsStoppedStationIds],
     message: GUEST_BUSY_STOP_MESSAGE,
   });
 }
@@ -33,6 +34,7 @@ export async function registerKitchenBusyStop(app: FastifyInstance): Promise<voi
           sortOrder: s.sortOrder,
           active: s.active,
           busyStoppedAt: s.busyStoppedAt ? s.busyStoppedAt.toISOString() : null,
+          busyStopAllItems: s.busyStopAllItems,
           targetItemCount: s.targetItemCount,
           stationMenuItemCount: s.stationMenuItemCount,
           inFlightKitchenLineCount: s.inFlightKitchenLineCount,
@@ -98,18 +100,25 @@ export async function registerKitchenBusyStop(app: FastifyInstance): Promise<voi
     },
   );
 
-  /** 調理場に紐づく全商品を「混雑時停止対象」にする */
+  /** 調理場の全商品を一時的に混雑停止（商品マスタは変更しない） */
   app.post<{ Params: { storeId: string; stationId: string } }>(
-    "/stores/:storeId/kitchen-stations/:stationId/busy-stop-mark-all-targets",
+    "/stores/:storeId/kitchen-stations/:stationId/busy-stop-all-items",
     async (req, reply) => {
       const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
       if (!store) return reply.code(404).send({ error: "store not found" });
       try {
-        const result = await markAllStationMenuItemsBusyStopTarget(store.id, req.params.stationId);
-        return result;
+        const updated = await stopKitchenStationAllItems(store.id, req.params.stationId);
+        await notifyGuestBusyStopChanged(store.id);
+        return {
+          id: updated.id,
+          busyStoppedAt: updated.busyStoppedAt.toISOString(),
+          busyStopAllItems: true,
+          stopped: true,
+        };
       } catch (e) {
         const msg = e instanceof Error ? e.message : "";
         if (msg === "STATION_NOT_FOUND") return reply.code(404).send({ error: "station not found" });
+        if (msg === "STATION_INACTIVE") return reply.code(400).send({ error: "無効な調理場は停止できません" });
         throw e;
       }
     },
@@ -125,13 +134,14 @@ export async function registerKitchenBusyStop(app: FastifyInstance): Promise<voi
       if (!row.active) return reply.code(400).send({ error: "無効な調理場は停止できません" });
       const updated = await prisma.kitchenStation.update({
         where: { id: row.id },
-        data: { busyStoppedAt: new Date() },
+        data: { busyStoppedAt: new Date(), busyStopAllItems: false },
       });
       await notifyGuestBusyStopChanged(req.params.storeId);
       return {
         id: updated.id,
         name: updated.name,
         busyStoppedAt: updated.busyStoppedAt?.toISOString() ?? null,
+        busyStopAllItems: false,
         stopped: true,
       };
     },
@@ -146,13 +156,14 @@ export async function registerKitchenBusyStop(app: FastifyInstance): Promise<voi
       if (!row) return reply.code(404).send({ error: "station not found" });
       const updated = await prisma.kitchenStation.update({
         where: { id: row.id },
-        data: { busyStoppedAt: null },
+        data: { busyStoppedAt: null, busyStopAllItems: false },
       });
       await notifyGuestBusyStopChanged(req.params.storeId);
       return {
         id: updated.id,
         name: updated.name,
         busyStoppedAt: null,
+        busyStopAllItems: false,
         stopped: false,
       };
     },

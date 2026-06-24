@@ -15,23 +15,40 @@ export type BusyStopMenuItemRef = {
   kitchenStationId: string | null;
 };
 
+export type BusyStopState = {
+  stoppedStationIds: Set<string>;
+  allItemsStoppedStationIds: Set<string>;
+};
+
 export function isItemBusyStoppedByStations(
   item: BusyStopMenuItemRef,
   stoppedStationIds: ReadonlySet<string>,
+  allItemsStoppedStationIds?: ReadonlySet<string>,
 ): boolean {
-  if (!item.busyStopTarget) return false;
   const sid = item.kitchenStationId;
-  if (!sid) return false;
-  return stoppedStationIds.has(sid);
+  if (!sid || !stoppedStationIds.has(sid)) return false;
+  if (allItemsStoppedStationIds?.has(sid)) return true;
+  return item.busyStopTarget === true;
 }
 
-/** 現在混雑停止中の調理場 ID */
-export async function loadBusyStoppedStationIdSet(storeId: string): Promise<Set<string>> {
+/** 現在混雑停止中の調理場（通常停止・全商品停止を含む） */
+export async function loadBusyStopState(storeId: string): Promise<BusyStopState> {
   const rows = await prisma.kitchenStation.findMany({
     where: { storeId, busyStoppedAt: { not: null } },
-    select: { id: true },
+    select: { id: true, busyStopAllItems: true },
   });
-  return new Set(rows.map((r) => r.id));
+  const stoppedStationIds = new Set<string>();
+  const allItemsStoppedStationIds = new Set<string>();
+  for (const row of rows) {
+    stoppedStationIds.add(row.id);
+    if (row.busyStopAllItems) allItemsStoppedStationIds.add(row.id);
+  }
+  return { stoppedStationIds, allItemsStoppedStationIds };
+}
+
+/** @deprecated loadBusyStopState を利用 */
+export async function loadBusyStoppedStationIdSet(storeId: string): Promise<Set<string>> {
+  return (await loadBusyStopState(storeId)).stoppedStationIds;
 }
 
 type SetStepChoiceRow = {
@@ -50,8 +67,9 @@ export function setMenuItemBlockedByBusyStop(
   setItem: BusyStopMenuItemRef,
   setSteps: SetStepRow[],
   stoppedStationIds: ReadonlySet<string>,
+  allItemsStoppedStationIds?: ReadonlySet<string>,
 ): boolean {
-  if (isItemBusyStoppedByStations(setItem, stoppedStationIds)) return true;
+  if (isItemBusyStoppedByStations(setItem, stoppedStationIds, allItemsStoppedStationIds)) return true;
   for (const st of setSteps) {
     for (const ch of st.choices) {
       const comp = ch.componentMenuItem;
@@ -61,6 +79,7 @@ export function setMenuItemBlockedByBusyStop(
           kitchenStationId: comp.kitchenStationId ?? null,
         },
         stoppedStationIds,
+        allItemsStoppedStationIds,
       )) return true;
     }
   }
@@ -73,6 +92,7 @@ export type BusyStopStationStatusRow = {
   sortOrder: number;
   active: boolean;
   busyStoppedAt: Date | null;
+  busyStopAllItems: boolean;
   /** この調理場に紐づく商品マスタ件数 */
   stationMenuItemCount: number;
   targetItemCount: number;
@@ -101,38 +121,32 @@ export async function loadStationMenuItemCountsByStation(
   return counts;
 }
 
-/** 調理場に紐づく全商品を「混雑時停止対象」にする */
-export async function markAllStationMenuItemsBusyStopTarget(
+/** 調理場の全商品を一時的に混雑停止（商品マスタは変更しない） */
+export async function stopKitchenStationAllItems(
   storeId: string,
   stationId: string,
-): Promise<{ updatedCount: number; targetItemCount: number }> {
+): Promise<{ id: string; busyStoppedAt: Date; busyStopAllItems: true }> {
   const station = await prisma.kitchenStation.findFirst({
     where: { id: stationId, storeId },
-    select: { id: true },
+    select: { id: true, active: true, busyStoppedAt: true },
   });
   if (!station) throw new Error("STATION_NOT_FOUND");
+  if (!station.active) throw new Error("STATION_INACTIVE");
 
-  const updated = await prisma.menuItem.updateMany({
-    where: {
-      kitchenStationId: stationId,
-      category: { storeId },
-      busyStopTarget: false,
-    },
+  const updated = await prisma.kitchenStation.update({
+    where: { id: stationId },
     data: {
-      busyStopTarget: true,
-      masterVersion: { increment: 1 },
+      busyStopAllItems: true,
+      ...(station.busyStoppedAt ? {} : { busyStoppedAt: new Date() }),
     },
+    select: { id: true, busyStoppedAt: true, busyStopAllItems: true },
   });
-
-  const targetItemCount = await prisma.menuItem.count({
-    where: {
-      kitchenStationId: stationId,
-      category: { storeId },
-      busyStopTarget: true,
-    },
-  });
-
-  return { updatedCount: updated.count, targetItemCount };
+  if (!updated.busyStoppedAt) throw new Error("STOP_FAILED");
+  return {
+    id: updated.id,
+    busyStoppedAt: updated.busyStoppedAt,
+    busyStopAllItems: true,
+  };
 }
 
 /** 調理場ごとのキッチン未完了明細数（混雑停止の影響を受けない） */
@@ -181,6 +195,7 @@ export async function listKitchenBusyStopStatus(storeId: string): Promise<BusySt
     sortOrder: s.sortOrder,
     active: s.active,
     busyStoppedAt: s.busyStoppedAt,
+    busyStopAllItems: s.busyStopAllItems,
     stationMenuItemCount: menuItemByStation.get(s.id) ?? 0,
     targetItemCount: s._count.menuItems,
     inFlightKitchenLineCount: inFlightByStation.get(s.id) ?? 0,

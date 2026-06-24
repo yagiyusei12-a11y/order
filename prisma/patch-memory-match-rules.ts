@@ -16,7 +16,7 @@ async function main() {
       ? { ...(game.configJson as Record<string, unknown>) }
       : {};
   delete cfg.timeLimitMs;
-  cfg.maxMisses = typeof cfg.maxMisses === "number" ? cfg.maxMisses : 3;
+  cfg.maxMisses = 3;
   await prisma.storeGame.update({
     where: { id: game.id },
     data: {

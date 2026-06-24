@@ -67,37 +67,110 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 const CHOICE_KEYS: BuzzerQuizChoiceKey[] = ["A", "B", "C", "D"];
 
 function parseChoiceKey(raw: unknown): BuzzerQuizChoiceKey | null {
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    const idx = Math.round(raw);
+    if (idx >= 0 && idx <= 3) return CHOICE_KEYS[idx]!;
+    if (idx >= 1 && idx <= 4) return CHOICE_KEYS[idx - 1]!;
+  }
   const v = typeof raw === "string" ? raw.trim().toUpperCase() : "";
-  return CHOICE_KEYS.includes(v as BuzzerQuizChoiceKey) ? (v as BuzzerQuizChoiceKey) : null;
+  if (CHOICE_KEYS.includes(v as BuzzerQuizChoiceKey)) return v as BuzzerQuizChoiceKey;
+  const n = parseInt(v, 10);
+  if (n >= 1 && n <= 4) return CHOICE_KEYS[n - 1]!;
+  return null;
+}
+
+function parseBuzzerQuizChoices(raw: unknown): BuzzerQuizChoice[] | null {
+  if (Array.isArray(raw)) {
+    const out: BuzzerQuizChoice[] = [];
+    for (let i = 0; i < raw.length && i < 4; i++) {
+      const c = raw[i];
+      if (typeof c === "string") {
+        const s = c.trim();
+        const m = s.match(/^([A-D])[.．、:：\s]+(.+)$/i);
+        if (m) {
+          out.push({ key: m[1]!.toUpperCase() as BuzzerQuizChoiceKey, text: m[2]!.trim() });
+        } else {
+          out.push({ key: CHOICE_KEYS[i]!, text: s });
+        }
+        continue;
+      }
+      if (!isRecord(c)) continue;
+      const key = parseChoiceKey(c.key ?? c.label ?? c.option ?? c.id ?? CHOICE_KEYS[i]);
+      const text =
+        typeof c.text === "string"
+          ? c.text.trim()
+          : typeof c.value === "string"
+            ? c.value.trim()
+            : typeof c.option === "string"
+              ? c.option.trim()
+              : typeof c.label === "string" && !parseChoiceKey(c.label)
+                ? c.label.trim()
+                : "";
+      if (key && text) out.push({ key, text });
+    }
+    if (out.length === 4) {
+      const keys = new Set(out.map((c) => c.key));
+      if (keys.size === 4) return out;
+      return out.map((c, i) => ({ key: CHOICE_KEYS[i]!, text: c.text }));
+    }
+    return null;
+  }
+  if (isRecord(raw)) {
+    const out: BuzzerQuizChoice[] = [];
+    for (const key of CHOICE_KEYS) {
+      const text = typeof raw[key] === "string" ? raw[key].trim() : "";
+      if (!text) return null;
+      out.push({ key, text });
+    }
+    return out;
+  }
+  return null;
+}
+
+function questionPromptFromRecord(raw: Record<string, unknown>): string {
+  for (const k of ["prompt", "question", "text", "body", "q"]) {
+    const v = raw[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return "";
 }
 
 export function parseBuzzerQuizQuestion(raw: unknown): BuzzerQuizQuestion | null {
   if (!isRecord(raw)) return null;
-  const prompt = typeof raw.prompt === "string" ? raw.prompt.trim() : "";
+  const prompt = questionPromptFromRecord(raw);
   if (!prompt) return null;
-  const correctKey = parseChoiceKey(raw.correctKey);
+  const choices = parseBuzzerQuizChoices(raw.choices ?? raw.options ?? raw.answers);
+  if (!choices) return null;
+  const correctKey = parseChoiceKey(
+    raw.correctKey ?? raw.correct ?? raw.correctAnswer ?? raw.answer ?? raw.correctIndex,
+  );
   if (!correctKey) return null;
-  const explanation = typeof raw.explanation === "string" ? raw.explanation.trim() : "";
-  const choices: BuzzerQuizChoice[] = [];
-  if (Array.isArray(raw.choices)) {
-    for (const c of raw.choices) {
-      if (!isRecord(c)) continue;
-      const key = parseChoiceKey(c.key);
-      const text = typeof c.text === "string" ? c.text.trim() : "";
-      if (!key || !text) continue;
-      choices.push({ key, text });
-    }
-  }
-  if (choices.length !== 4) return null;
-  const keys = new Set(choices.map((c) => c.key));
-  if (keys.size !== 4) return null;
+  if (!choices.some((c) => c.key === correctKey)) return null;
+  const explanation =
+    typeof raw.explanation === "string"
+      ? raw.explanation.trim()
+      : typeof raw.comment === "string"
+        ? raw.comment.trim()
+        : typeof raw.reason === "string"
+          ? raw.reason.trim()
+          : "";
   return { prompt, choices, correctKey, explanation };
 }
 
+export function extractBuzzerQuizQuestionsRaw(parsed: unknown): unknown[] {
+  if (Array.isArray(parsed)) return parsed;
+  if (!isRecord(parsed)) return [];
+  for (const k of ["questions", "items", "quiz", "problems", "data"]) {
+    if (Array.isArray(parsed[k])) return parsed[k] as unknown[];
+  }
+  if (questionPromptFromRecord(parsed)) return [parsed];
+  return [];
+}
+
 export function parseBuzzerQuizQuestions(raw: unknown): BuzzerQuizQuestion[] {
-  if (!Array.isArray(raw)) return [];
+  const items = extractBuzzerQuizQuestionsRaw(raw);
   const out: BuzzerQuizQuestion[] = [];
-  for (const q of raw) {
+  for (const q of items) {
     const parsed = parseBuzzerQuizQuestion(q);
     if (parsed) out.push(parsed);
   }

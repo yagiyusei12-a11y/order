@@ -88,16 +88,28 @@
         };
       }
 
-      function renderQuizSettingsSummary() {
+      function renderQuizSettingsSummary(state) {
+        const genre = (state && state.genre) || quizSettings.genre;
+        const difficulty = (state && state.difficulty) || quizSettings.difficulty;
+        const questionCount = (state && state.questionCount) || quizSettings.questionCount;
         return (
-          '<p class="bz-hint">出題設定: <strong>' +
-          esc(quizSettings.genre) +
+          '<p class="bz-hint bz-setup-summary">出題設定: <strong>' +
+          esc(genre) +
           "</strong> · " +
-          esc(quizSettings.difficulty) +
+          esc(difficulty) +
           " · " +
-          esc(String(quizSettings.questionCount)) +
+          esc(String(questionCount)) +
           "問</p>"
         );
+      }
+
+      function syncQuizSettingsFromLobby(state) {
+        if (!state || !state.genre || !state.difficulty || !state.questionCount) return;
+        quizSettings = {
+          genre: state.genre,
+          difficulty: state.difficulty,
+          questionCount: state.questionCount,
+        };
       }
 
       function injectStyles() {
@@ -331,7 +343,7 @@
         root.innerHTML =
           '<div class="bz-wrap">' +
           '<p class="bz-hint">参加者にQRを読み取ってもらい、番号を振ります。<br>全員揃ったらクイズを開始しましょう。</p>' +
-          renderQuizSettingsSummary() +
+          renderQuizSettingsSummary(state) +
           '<div class="bz-qr-box">' +
           '<img src="' +
           esc(qrUrl(playId)) +
@@ -437,6 +449,7 @@
         const next = res.lobby;
         const changed = next.revision !== lastRevision;
         lobby = next;
+        syncQuizSettingsFromLobby(next);
         if (!changed && next.phase !== "buzzing") return lobby;
         lastRevision = next.revision;
 
@@ -470,11 +483,7 @@
         root.innerHTML =
           '<div class="bz-wrap"><p class="bz-hint">AIがクイズ問題を作成しています…<br>30秒ほどかかることがあります</p></div>';
         try {
-          const res = await buzzerApi.startQuiz(playId, {
-            genre: quizSettings.genre,
-            difficulty: quizSettings.difficulty,
-            questionCount: quizSettings.questionCount,
-          });
+          const res = await buzzerApi.startQuiz(playId);
           lobby = res.lobby;
           lastRevision = lobby.revision;
           showMsg("クイズ開始！最初にブザーを押した人が回答権を得ます。", "win");
@@ -557,12 +566,17 @@
           btn.disabled = true;
           try {
             quizSettings = readQuizSettingsFromForm();
-            const res = await startPaidGame({});
+            const res = await startPaidGame({
+              genre: quizSettings.genre,
+              difficulty: quizSettings.difficulty,
+              questionCount: quizSettings.questionCount,
+            });
             playId = res.playId;
             mode = "host";
             showMsg("参加費を会計に追加しました。QRを見せて参加者を集めてください。", "");
             const state = await buzzerApi.fetchLobby(playId);
             lobby = state.lobby;
+            syncQuizSettingsFromLobby(lobby);
             lastRevision = lobby.revision;
             renderHostLobby(lobby);
             bindHostButton();

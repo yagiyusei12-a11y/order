@@ -169,6 +169,12 @@
       },
       async startQuiz(playId, opts) {
         const token = getToken();
+        const body = { guestDeviceId: getOrCreateDeviceId() };
+        if (opts && typeof opts === "object") {
+          if (opts.genre) body.genre = opts.genre;
+          if (opts.difficulty) body.difficulty = opts.difficulty;
+          if (opts.questionCount != null) body.questionCount = opts.questionCount;
+        }
         return api(
           "/guest/" +
             encodeURIComponent(token) +
@@ -177,12 +183,7 @@
             "/buzzer/start",
           {
             method: "POST",
-            body: {
-              guestDeviceId: getOrCreateDeviceId(),
-              genre: opts.genre,
-              difficulty: opts.difficulty,
-              questionCount: opts.questionCount,
-            },
+            body,
           },
         );
       },
@@ -401,7 +402,7 @@
       if (String(slug).indexOf("ai-") === 0) {
         await loadScript("/games-modules/ai-shared.js");
       }
-      await loadScript("/games-modules/" + encodeURIComponent(slug) + ".js");
+      await loadScript("/games-modules/" + encodeURIComponent(slug) + ".js?v=3");
       const mod = window.__gameModules && window.__gameModules[slug];
       if (!mod) throw new Error("module not registered");
       return mod;

@@ -323,7 +323,7 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
     }
     return reply
       .type("application/javascript; charset=utf-8")
-      .header("Cache-Control", "public, max-age=3600")
+      .header("Cache-Control", "no-store")
       .send(createReadStream(path));
   });
 

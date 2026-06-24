@@ -194,9 +194,28 @@ export function parseBuzzerQuizStartInput(raw: unknown): {
   return parseQuizBattleInput(o);
 }
 
+export function resolveBuzzerQuizStartInput(
+  state: BuzzerQuizState,
+  raw: unknown,
+): { genre: string; difficulty: string; questionCount: number } {
+  const fromState =
+    state.genre.trim() && state.difficulty.trim() && state.questionCount >= 3
+      ? {
+          genre: state.genre,
+          difficulty: state.difficulty,
+          questionCount: state.questionCount,
+        }
+      : null;
+  if (fromState) return fromState;
+  return parseBuzzerQuizStartInput(raw);
+}
+
 export function createBuzzerQuizLobby(params: {
   hostDeviceId: string;
   maxPlayers: number;
+  genre?: string;
+  difficulty?: string;
+  questionCount?: number;
 }): BuzzerQuizState {
   const now = new Date().toISOString();
   return {
@@ -204,9 +223,9 @@ export function createBuzzerQuizLobby(params: {
     phase: "joining",
     hostDeviceId: params.hostDeviceId,
     maxPlayers: params.maxPlayers,
-    genre: "",
-    difficulty: "",
-    questionCount: 5,
+    genre: params.genre ?? "",
+    difficulty: params.difficulty ?? "",
+    questionCount: params.questionCount ?? 5,
     players: [
       {
         guestDeviceId: params.hostDeviceId,

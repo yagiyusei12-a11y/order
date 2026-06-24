@@ -71,6 +71,7 @@ import {
   joinBuzzerQuizLobby,
   parseBuzzerQuizConfig,
   parseBuzzerQuizStartInput,
+  resolveBuzzerQuizStartInput,
   parseBuzzerQuizState,
   type BuzzerQuizChoiceKey,
 } from "../lib/buzzer-quiz-lobby.js";
@@ -379,9 +380,19 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
 
         if (game.slug === BUZZER_QUIZ_SLUG) {
           const buzzerCfg = parseBuzzerQuizConfig(game.configJson);
+          const startBody = req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
+          let setup = { genre: "", difficulty: "", questionCount: 5 };
+          try {
+            setup = parseBuzzerQuizStartInput(startBody);
+          } catch {
+            /* 課金時に未送信ならロビー作成後に司会者が再設定 */
+          }
           const lobby = createBuzzerQuizLobby({
             hostDeviceId: guestDeviceId!,
             maxPlayers: buzzerCfg.maxPlayers,
+            genre: setup.genre,
+            difficulty: setup.difficulty,
+            questionCount: setup.questionCount,
           });
           await tx.gamePlay.update({
             where: { id: play.id },
@@ -1411,7 +1422,7 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
     }
     let input;
     try {
-      input = parseBuzzerQuizStartInput(req.body ?? {});
+      input = resolveBuzzerQuizStartInput(state, req.body ?? {});
     } catch (e) {
       return reply.code(400).send({ error: e instanceof Error ? e.message : "設定が不正です" });
     }

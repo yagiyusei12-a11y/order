@@ -78,6 +78,34 @@ import {
   type BuzzerQuizState,
 } from "../lib/buzzer-quiz-lobby.js";
 import { generateBuzzerQuizQuestions } from "../lib/buzzer-quiz-ai.js";
+import {
+  ORDER_HISTORY_QUIZ_SLUG,
+  ORDER_HISTORY_QUIZ_QUESTION_COUNT,
+  buildOrderHistoryQuiz,
+  gradeOrderHistoryQuiz,
+  loadOrderHistoryQuizEntries,
+  orderHistoryQuizPublicQuestions,
+  orderHistoryQuizStateToJson,
+  parseOrderHistoryQuizState,
+} from "../lib/order-history-quiz.js";
+import {
+  ANONYMOUS_SURVEY_SLUG,
+  advanceAnonSurveyQuestion,
+  anonSurveyPublicView,
+  anonSurveyStateToJson,
+  beginAnonSurveyVoting,
+  buildAnonSurveyJoinUrl,
+  castAnonSurveyVote,
+  createAnonSurveyLobby,
+  isAnonSurveyHost,
+  joinAnonSurveyLobby,
+  openAnonSurveyReveal,
+  parseAnonSurveyConfig,
+  parseAnonSurveyLobby,
+  setAnonSurveyCandidatesFromNames,
+  setAnonSurveyQuestions,
+  syncAnonSurveyCandidatesFromPlayers,
+} from "../lib/anonymous-survey-lobby.js";
 
 async function syncBuzzerQuizPlayState(
   playId: string,
@@ -266,6 +294,171 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
       return reply.code(summary.status).send({ error: summary.error });
     }
     return summary;
+  });
+
+  function orderHistoryQuizErrorMessage(code: string): string {
+    if (code === "QUIZ_TOO_FEW_ORDERS") {
+      return "注文が少なすぎます。あと1品頼んでから遊んでください！";
+    }
+    if (code === "QUIZ_TOO_FEW_MENU_NAMES") {
+      return "メニューの種類が少なすぎます。もう少し頼んでから遊びましょう！";
+    }
+    if (code === "QUIZ_NOT_ENOUGH_QUESTIONS") {
+      return "この注文内容ではクイズを作れませんでした。もう少し頼んでからお試しください。";
+    }
+    return "クイズの作成に失敗しました";
+  }
+
+  app.post<{ Params: { token: string } }>(
+    "/guest/:token/games/order-history-quiz/generate",
+    async (req, reply) => {
+      const tokenSession = await prisma.diningSession.findUnique({
+        where: { guestToken: req.params.token },
+        select: {
+          id: true,
+          status: true,
+          storeId: true,
+          tableId: true,
+          mergedIntoSessionId: true,
+        },
+      });
+      if (!tokenSession) {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+      const billing = await resolveGuestBillingContext(tokenSession);
+      if (!billing.ok) {
+        return reply.code(billing.status).send(billing.body);
+      }
+
+      const game = await prisma.storeGame.findFirst({
+        where: {
+          storeId: tokenSession.storeId,
+          slug: ORDER_HISTORY_QUIZ_SLUG,
+          enabled: true,
+          kind: "tool",
+        },
+      });
+      if (!game) {
+        return reply.code(404).send({ error: "game not found" });
+      }
+
+      const billingId = billing.ctx.billingSessionId;
+
+      try {
+        const entries = await loadOrderHistoryQuizEntries(billingId);
+        if (entries.length < 2) {
+          return reply
+            .code(400)
+            .send({ error: orderHistoryQuizErrorMessage("QUIZ_TOO_FEW_ORDERS") });
+        }
+        if (new Set(entries.map((e) => e.name)).size < 3) {
+          return reply
+            .code(400)
+            .send({ error: orderHistoryQuizErrorMessage("QUIZ_TOO_FEW_MENU_NAMES") });
+        }
+
+        const built = buildOrderHistoryQuiz(
+          entries,
+          ORDER_HISTORY_QUIZ_QUESTION_COUNT,
+          Date.now(),
+        );
+        const state = {
+          v: 1 as const,
+          kind: "orderHistoryQuiz" as const,
+          questionCount: built.questions.length,
+          questions: built.questions,
+          generatedAt: new Date().toISOString(),
+        };
+
+        await abandonStaleStartedPlays(billingId);
+        const play = await prisma.gamePlay.create({
+          data: {
+            storeGameId: game.id,
+            billingSessionId: billingId,
+            status: "started",
+            resultJson: orderHistoryQuizStateToJson(state) as Prisma.InputJsonValue,
+          },
+        });
+
+        broadcastOpsSessionUpdated(tokenSession.storeId, billingId);
+        return {
+          playId: play.id,
+          questions: orderHistoryQuizPublicQuestions(state),
+          lineCount: entries.length,
+          totalQty: entries.reduce((s, e) => s + e.qty, 0),
+        };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "";
+        return reply.code(400).send({ error: orderHistoryQuizErrorMessage(msg) });
+      }
+    },
+  );
+
+  app.post<{
+    Params: { token: string; playId: string };
+    Body: { picks?: Record<string, unknown> };
+  }>("/guest/:token/games/plays/:playId/order-history-quiz/grade", async (req, reply) => {
+    const tokenSession = await prisma.diningSession.findUnique({
+      where: { guestToken: req.params.token },
+      select: {
+        id: true,
+        status: true,
+        storeId: true,
+        tableId: true,
+        mergedIntoSessionId: true,
+      },
+    });
+    if (!tokenSession) {
+      return reply.code(404).send({ error: "session not found or closed" });
+    }
+    const billing = await resolveGuestBillingContext(tokenSession);
+    if (!billing.ok) {
+      return reply.code(billing.status).send(billing.body);
+    }
+
+    const play = await prisma.gamePlay.findUnique({
+      where: { id: req.params.playId },
+      include: { storeGame: true },
+    });
+    if (!play || play.billingSessionId !== billing.ctx.billingSessionId) {
+      return reply.code(404).send({ error: "play not found" });
+    }
+    if (play.storeGame.storeId !== tokenSession.storeId) {
+      return reply.code(403).send({ error: "forbidden" });
+    }
+    if (play.storeGame.slug !== ORDER_HISTORY_QUIZ_SLUG) {
+      return reply.code(400).send({ error: "not an order history quiz play" });
+    }
+    if (play.status !== "started") {
+      return reply.code(409).send({ error: "play already completed" });
+    }
+
+    const quiz = parseOrderHistoryQuizState(play.resultJson);
+    if (!quiz) {
+      return reply.code(409).send({ error: "クイズが見つかりません" });
+    }
+
+    const picks =
+      req.body?.picks && typeof req.body.picks === "object" && !Array.isArray(req.body.picks)
+        ? req.body.picks
+        : {};
+    const graded = gradeOrderHistoryQuiz(quiz, picks);
+
+    await prisma.gamePlay.update({
+      where: { id: play.id },
+      data: {
+        status: "finished",
+        completedAt: new Date(),
+        resultJson: orderHistoryQuizStateToJson(graded.doneState) as Prisma.InputJsonValue,
+      },
+    });
+    broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
+    return {
+      orderHistoryQuiz: true,
+      score: graded.score,
+      total: graded.total,
+      recap: graded.recap,
+    };
   });
 
   app.post<{ Params: { token: string; gameId: string }; Body: { guestDeviceId?: string; tension?: string; intensity?: string } }>(
@@ -1731,6 +1924,578 @@ export async function registerGames(app: FastifyInstance): Promise<void> {
         return {
           playId: play.id,
           lobby: buzzerQuizPublicView(next, guestDeviceId),
+        };
+      } catch (e) {
+        return reply.code(400).send({ error: e instanceof Error ? e.message : "進められませんでした" });
+      }
+    },
+  );
+
+  app.post<{ Params: { token: string }; Body: { guestDeviceId?: string } }>(
+    "/guest/:token/games/anonymous-survey/start",
+    async (req, reply) => {
+      const tokenSession = await prisma.diningSession.findUnique({
+        where: { guestToken: req.params.token },
+        select: {
+          id: true,
+          status: true,
+          storeId: true,
+          tableId: true,
+          mergedIntoSessionId: true,
+        },
+      });
+      if (!tokenSession) {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+      const billing = await resolveGuestBillingContext(tokenSession);
+      if (!billing.ok) {
+        return reply.code(billing.status).send(billing.body);
+      }
+      const guestDeviceId =
+        typeof req.body?.guestDeviceId === "string" && req.body.guestDeviceId.trim()
+          ? req.body.guestDeviceId.trim().slice(0, 64)
+          : "";
+      if (!guestDeviceId) {
+        return reply.code(400).send({ error: "guestDeviceId required" });
+      }
+
+      const game = await prisma.storeGame.findFirst({
+        where: {
+          storeId: tokenSession.storeId,
+          slug: ANONYMOUS_SURVEY_SLUG,
+          enabled: true,
+          kind: "tool",
+        },
+      });
+      if (!game) {
+        return reply.code(404).send({ error: "game not found" });
+      }
+
+      const billingId = billing.ctx.billingSessionId;
+      const cfg = parseAnonSurveyConfig(game.configJson);
+      const lobby = createAnonSurveyLobby({
+        hostDeviceId: guestDeviceId,
+        maxPlayers: cfg.maxPlayers,
+      });
+
+      await abandonStaleStartedPlays(billingId);
+      const play = await prisma.gamePlay.create({
+        data: {
+          storeGameId: game.id,
+          billingSessionId: billingId,
+          status: "started",
+          guestDeviceId,
+          resultJson: anonSurveyStateToJson(lobby),
+        },
+      });
+
+      broadcastOpsSessionUpdated(tokenSession.storeId, billingId);
+      return {
+        playId: play.id,
+        lobby: anonSurveyPublicView(lobby, guestDeviceId),
+      };
+    },
+  );
+
+  app.get<{
+    Params: { storeId: string };
+    Querystring: { key?: string; token?: string; playId?: string };
+  }>("/games/api/:storeId/anonymous-survey-join-qr.svg", async (req, reply) => {
+    if (!(await assertGamesHubAccess(req, reply))) return;
+    const token = typeof req.query.token === "string" ? req.query.token.trim() : "";
+    const playId = typeof req.query.playId === "string" ? req.query.playId.trim() : "";
+    const hubKey = keyFromRequest(req);
+    if (!token || !playId) {
+      return reply.code(400).type("text/plain; charset=utf-8").send("token and playId required");
+    }
+    const tokenSession = await prisma.diningSession.findUnique({
+      where: { guestToken: token },
+      select: { storeId: true },
+    });
+    if (!tokenSession || tokenSession.storeId !== req.params.storeId) {
+      return reply.code(404).type("text/plain; charset=utf-8").send("session not found");
+    }
+    const play = await prisma.gamePlay.findUnique({
+      where: { id: playId },
+      select: { storeGame: { select: { slug: true, storeId: true } }, status: true },
+    });
+    if (
+      !play ||
+      play.storeGame.storeId !== req.params.storeId ||
+      play.storeGame.slug !== ANONYMOUS_SURVEY_SLUG
+    ) {
+      return reply.code(404).type("text/plain; charset=utf-8").send("lobby not found");
+    }
+    if (play.status !== "started") {
+      return reply.code(409).type("text/plain; charset=utf-8").send("lobby closed");
+    }
+    const origin = `${req.protocol}://${req.hostname}`;
+    const url = buildAnonSurveyJoinUrl(origin, req.params.storeId, hubKey, token, playId);
+    try {
+      const svg = await QRCode.toString(url, {
+        type: "svg",
+        margin: 1,
+        width: 220,
+        errorCorrectionLevel: "M",
+        color: { dark: "#1a1d24ff", light: "#ffffffff" },
+      });
+      return reply
+        .type("image/svg+xml; charset=utf-8")
+        .header("Cache-Control", "no-store")
+        .send(svg);
+    } catch {
+      return reply.code(500).type("text/plain; charset=utf-8").send("qr failed");
+    }
+  });
+
+  app.get<{ Params: { token: string; playId: string }; Querystring: { guestDeviceId?: string } }>(
+    "/guest/:token/games/plays/:playId/anonymous-survey",
+    async (req, reply) => {
+      const tokenSession = await prisma.diningSession.findUnique({
+        where: { guestToken: req.params.token },
+        select: {
+          id: true,
+          status: true,
+          storeId: true,
+          tableId: true,
+          mergedIntoSessionId: true,
+        },
+      });
+      if (!tokenSession) {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+      const billing = await resolveGuestBillingContext(tokenSession);
+      if (!billing.ok) {
+        return reply.code(billing.status).send(billing.body);
+      }
+      const play = await prisma.gamePlay.findUnique({
+        where: { id: req.params.playId },
+        include: { storeGame: true },
+      });
+      if (!play || play.billingSessionId !== billing.ctx.billingSessionId) {
+        return reply.code(404).send({ error: "play not found" });
+      }
+      if (play.storeGame.slug !== ANONYMOUS_SURVEY_SLUG) {
+        return reply.code(400).send({ error: "not an anonymous survey" });
+      }
+      const state = parseAnonSurveyLobby(play.resultJson);
+      if (!state) {
+        return reply.code(409).send({ error: "lobby not ready" });
+      }
+      const guestDeviceId =
+        typeof req.query.guestDeviceId === "string" && req.query.guestDeviceId.trim()
+          ? req.query.guestDeviceId.trim().slice(0, 64)
+          : null;
+      return {
+        playId: play.id,
+        status: play.status,
+        lobby: anonSurveyPublicView(state, guestDeviceId),
+      };
+    },
+  );
+
+  app.post<{
+    Params: { token: string; playId: string };
+    Body: { guestDeviceId?: string; displayName?: string };
+  }>("/guest/:token/games/plays/:playId/anonymous-survey/join", async (req, reply) => {
+    const tokenSession = await prisma.diningSession.findUnique({
+      where: { guestToken: req.params.token },
+      select: {
+        id: true,
+        status: true,
+        storeId: true,
+        tableId: true,
+        mergedIntoSessionId: true,
+      },
+    });
+    if (!tokenSession) {
+      return reply.code(404).send({ error: "session not found or closed" });
+    }
+    const billing = await resolveGuestBillingContext(tokenSession);
+    if (!billing.ok) {
+      return reply.code(billing.status).send(billing.body);
+    }
+    const guestDeviceId =
+      typeof req.body?.guestDeviceId === "string" && req.body.guestDeviceId.trim()
+        ? req.body.guestDeviceId.trim().slice(0, 64)
+        : "";
+    if (!guestDeviceId) {
+      return reply.code(400).send({ error: "guestDeviceId required" });
+    }
+    const displayName =
+      typeof req.body?.displayName === "string" ? req.body.displayName.trim().slice(0, 20) : "";
+    const play = await prisma.gamePlay.findUnique({
+      where: { id: req.params.playId },
+      include: { storeGame: true },
+    });
+    if (!play || play.billingSessionId !== billing.ctx.billingSessionId) {
+      return reply.code(404).send({ error: "play not found" });
+    }
+    if (play.storeGame.slug !== ANONYMOUS_SURVEY_SLUG) {
+      return reply.code(400).send({ error: "not an anonymous survey" });
+    }
+    if (play.status !== "started") {
+      return reply.code(409).send({ error: "このゲームはすでに終了しています" });
+    }
+    const state = parseAnonSurveyLobby(play.resultJson);
+    if (!state) {
+      return reply.code(409).send({ error: "lobby not ready" });
+    }
+    try {
+      const joined = joinAnonSurveyLobby(state, guestDeviceId, displayName || undefined);
+      if (joined.created) {
+        await prisma.gamePlay.update({
+          where: { id: play.id },
+          data: { resultJson: anonSurveyStateToJson(joined.state) },
+        });
+        broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
+      }
+      return {
+        playId: play.id,
+        myNumber: joined.player.number,
+        created: joined.created,
+        lobby: anonSurveyPublicView(joined.state, guestDeviceId),
+      };
+    } catch (e) {
+      return reply.code(400).send({ error: e instanceof Error ? e.message : "参加できませんでした" });
+    }
+  });
+
+  app.post<{
+    Params: { token: string; playId: string };
+    Body: {
+      guestDeviceId?: string;
+      candidates?: string[];
+      questions?: string[];
+      syncCandidatesFromPlayers?: boolean;
+    };
+  }>("/guest/:token/games/plays/:playId/anonymous-survey/setup", async (req, reply) => {
+    const tokenSession = await prisma.diningSession.findUnique({
+      where: { guestToken: req.params.token },
+      select: {
+        id: true,
+        status: true,
+        storeId: true,
+        tableId: true,
+        mergedIntoSessionId: true,
+      },
+    });
+    if (!tokenSession) {
+      return reply.code(404).send({ error: "session not found or closed" });
+    }
+    const billing = await resolveGuestBillingContext(tokenSession);
+    if (!billing.ok) {
+      return reply.code(billing.status).send(billing.body);
+    }
+    const guestDeviceId =
+      typeof req.body?.guestDeviceId === "string" && req.body.guestDeviceId.trim()
+        ? req.body.guestDeviceId.trim().slice(0, 64)
+        : "";
+    if (!guestDeviceId) {
+      return reply.code(400).send({ error: "guestDeviceId required" });
+    }
+    const play = await prisma.gamePlay.findUnique({
+      where: { id: req.params.playId },
+      include: { storeGame: true },
+    });
+    if (!play || play.billingSessionId !== billing.ctx.billingSessionId) {
+      return reply.code(404).send({ error: "play not found" });
+    }
+    if (play.storeGame.slug !== ANONYMOUS_SURVEY_SLUG) {
+      return reply.code(400).send({ error: "not an anonymous survey" });
+    }
+    if (play.status !== "started") {
+      return reply.code(409).send({ error: "このゲームはすでに終了しています" });
+    }
+    const state = parseAnonSurveyLobby(play.resultJson);
+    if (!state) {
+      return reply.code(409).send({ error: "lobby not ready" });
+    }
+    if (!isAnonSurveyHost(state, guestDeviceId)) {
+      return reply.code(403).send({ error: "司会者だけが設定できます" });
+    }
+    if (state.phase !== "joining") {
+      return reply.code(400).send({ error: "準備中だけ設定できます" });
+    }
+    try {
+      let next = state;
+      if (req.body?.syncCandidatesFromPlayers) {
+        next = syncAnonSurveyCandidatesFromPlayers(next);
+      } else if (Array.isArray(req.body?.candidates)) {
+        next = setAnonSurveyCandidatesFromNames(next, req.body.candidates);
+      }
+      if (Array.isArray(req.body?.questions) && req.body.questions.length > 0) {
+        next = setAnonSurveyQuestions(next, req.body.questions);
+      }
+      await prisma.gamePlay.update({
+        where: { id: play.id },
+        data: { resultJson: anonSurveyStateToJson(next) },
+      });
+      broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
+      return {
+        playId: play.id,
+        lobby: anonSurveyPublicView(next, guestDeviceId),
+      };
+    } catch (e) {
+      return reply.code(400).send({ error: e instanceof Error ? e.message : "設定できませんでした" });
+    }
+  });
+
+  app.post<{ Params: { token: string; playId: string }; Body: { guestDeviceId?: string } }>(
+    "/guest/:token/games/plays/:playId/anonymous-survey/begin",
+    async (req, reply) => {
+      const tokenSession = await prisma.diningSession.findUnique({
+        where: { guestToken: req.params.token },
+        select: {
+          id: true,
+          status: true,
+          storeId: true,
+          tableId: true,
+          mergedIntoSessionId: true,
+        },
+      });
+      if (!tokenSession) {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+      const billing = await resolveGuestBillingContext(tokenSession);
+      if (!billing.ok) {
+        return reply.code(billing.status).send(billing.body);
+      }
+      const guestDeviceId =
+        typeof req.body?.guestDeviceId === "string" && req.body.guestDeviceId.trim()
+          ? req.body.guestDeviceId.trim().slice(0, 64)
+          : "";
+      if (!guestDeviceId) {
+        return reply.code(400).send({ error: "guestDeviceId required" });
+      }
+      const play = await prisma.gamePlay.findUnique({
+        where: { id: req.params.playId },
+        include: { storeGame: true },
+      });
+      if (!play || play.billingSessionId !== billing.ctx.billingSessionId) {
+        return reply.code(404).send({ error: "play not found" });
+      }
+      if (play.storeGame.slug !== ANONYMOUS_SURVEY_SLUG) {
+        return reply.code(400).send({ error: "not an anonymous survey" });
+      }
+      if (play.status !== "started") {
+        return reply.code(409).send({ error: "このゲームはすでに終了しています" });
+      }
+      const state = parseAnonSurveyLobby(play.resultJson);
+      if (!state) {
+        return reply.code(409).send({ error: "lobby not ready" });
+      }
+      if (!isAnonSurveyHost(state, guestDeviceId)) {
+        return reply.code(403).send({ error: "司会者だけが開始できます" });
+      }
+      try {
+        const next = beginAnonSurveyVoting(state);
+        await prisma.gamePlay.update({
+          where: { id: play.id },
+          data: { resultJson: anonSurveyStateToJson(next) },
+        });
+        broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
+        return {
+          playId: play.id,
+          lobby: anonSurveyPublicView(next, guestDeviceId),
+        };
+      } catch (e) {
+        return reply.code(400).send({ error: e instanceof Error ? e.message : "開始できませんでした" });
+      }
+    },
+  );
+
+  app.post<{
+    Params: { token: string; playId: string };
+    Body: { guestDeviceId?: string; candidateId?: string };
+  }>("/guest/:token/games/plays/:playId/anonymous-survey/vote", async (req, reply) => {
+    const tokenSession = await prisma.diningSession.findUnique({
+      where: { guestToken: req.params.token },
+      select: {
+        id: true,
+        status: true,
+        storeId: true,
+        tableId: true,
+        mergedIntoSessionId: true,
+      },
+    });
+    if (!tokenSession) {
+      return reply.code(404).send({ error: "session not found or closed" });
+    }
+    const billing = await resolveGuestBillingContext(tokenSession);
+    if (!billing.ok) {
+      return reply.code(billing.status).send(billing.body);
+    }
+    const guestDeviceId =
+      typeof req.body?.guestDeviceId === "string" && req.body.guestDeviceId.trim()
+        ? req.body.guestDeviceId.trim().slice(0, 64)
+        : "";
+    const candidateId =
+      typeof req.body?.candidateId === "string" ? req.body.candidateId.trim() : "";
+    if (!guestDeviceId || !candidateId) {
+      return reply.code(400).send({ error: "guestDeviceId and candidateId required" });
+    }
+    const play = await prisma.gamePlay.findUnique({
+      where: { id: req.params.playId },
+      include: { storeGame: true },
+    });
+    if (!play || play.billingSessionId !== billing.ctx.billingSessionId) {
+      return reply.code(404).send({ error: "play not found" });
+    }
+    if (play.storeGame.slug !== ANONYMOUS_SURVEY_SLUG) {
+      return reply.code(400).send({ error: "not an anonymous survey" });
+    }
+    if (play.status !== "started") {
+      return reply.code(409).send({ error: "このゲームはすでに終了しています" });
+    }
+    const state = parseAnonSurveyLobby(play.resultJson);
+    if (!state) {
+      return reply.code(409).send({ error: "lobby not ready" });
+    }
+    try {
+      const next = castAnonSurveyVote(state, guestDeviceId, candidateId);
+      await prisma.gamePlay.update({
+        where: { id: play.id },
+        data: { resultJson: anonSurveyStateToJson(next) },
+      });
+      broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
+      return {
+        playId: play.id,
+        lobby: anonSurveyPublicView(next, guestDeviceId),
+      };
+    } catch (e) {
+      return reply.code(400).send({ error: e instanceof Error ? e.message : "投票できませんでした" });
+    }
+  });
+
+  app.post<{ Params: { token: string; playId: string }; Body: { guestDeviceId?: string } }>(
+    "/guest/:token/games/plays/:playId/anonymous-survey/reveal",
+    async (req, reply) => {
+      const tokenSession = await prisma.diningSession.findUnique({
+        where: { guestToken: req.params.token },
+        select: {
+          id: true,
+          status: true,
+          storeId: true,
+          tableId: true,
+          mergedIntoSessionId: true,
+        },
+      });
+      if (!tokenSession) {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+      const billing = await resolveGuestBillingContext(tokenSession);
+      if (!billing.ok) {
+        return reply.code(billing.status).send(billing.body);
+      }
+      const guestDeviceId =
+        typeof req.body?.guestDeviceId === "string" && req.body.guestDeviceId.trim()
+          ? req.body.guestDeviceId.trim().slice(0, 64)
+          : "";
+      if (!guestDeviceId) {
+        return reply.code(400).send({ error: "guestDeviceId required" });
+      }
+      const play = await prisma.gamePlay.findUnique({
+        where: { id: req.params.playId },
+        include: { storeGame: true },
+      });
+      if (!play || play.billingSessionId !== billing.ctx.billingSessionId) {
+        return reply.code(404).send({ error: "play not found" });
+      }
+      if (play.storeGame.slug !== ANONYMOUS_SURVEY_SLUG) {
+        return reply.code(400).send({ error: "not an anonymous survey" });
+      }
+      if (play.status !== "started") {
+        return reply.code(409).send({ error: "このゲームはすでに終了しています" });
+      }
+      const state = parseAnonSurveyLobby(play.resultJson);
+      if (!state) {
+        return reply.code(409).send({ error: "lobby not ready" });
+      }
+      if (!isAnonSurveyHost(state, guestDeviceId)) {
+        return reply.code(403).send({ error: "司会者だけが結果を表示できます" });
+      }
+      try {
+        const next = openAnonSurveyReveal(state);
+        await prisma.gamePlay.update({
+          where: { id: play.id },
+          data: { resultJson: anonSurveyStateToJson(next) },
+        });
+        broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
+        return {
+          playId: play.id,
+          lobby: anonSurveyPublicView(next, guestDeviceId),
+        };
+      } catch (e) {
+        return reply.code(400).send({ error: e instanceof Error ? e.message : "結果を表示できませんでした" });
+      }
+    },
+  );
+
+  app.post<{ Params: { token: string; playId: string }; Body: { guestDeviceId?: string } }>(
+    "/guest/:token/games/plays/:playId/anonymous-survey/next",
+    async (req, reply) => {
+      const tokenSession = await prisma.diningSession.findUnique({
+        where: { guestToken: req.params.token },
+        select: {
+          id: true,
+          status: true,
+          storeId: true,
+          tableId: true,
+          mergedIntoSessionId: true,
+        },
+      });
+      if (!tokenSession) {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+      const billing = await resolveGuestBillingContext(tokenSession);
+      if (!billing.ok) {
+        return reply.code(billing.status).send(billing.body);
+      }
+      const guestDeviceId =
+        typeof req.body?.guestDeviceId === "string" && req.body.guestDeviceId.trim()
+          ? req.body.guestDeviceId.trim().slice(0, 64)
+          : "";
+      if (!guestDeviceId) {
+        return reply.code(400).send({ error: "guestDeviceId required" });
+      }
+      const play = await prisma.gamePlay.findUnique({
+        where: { id: req.params.playId },
+        include: { storeGame: true },
+      });
+      if (!play || play.billingSessionId !== billing.ctx.billingSessionId) {
+        return reply.code(404).send({ error: "play not found" });
+      }
+      if (play.storeGame.slug !== ANONYMOUS_SURVEY_SLUG) {
+        return reply.code(400).send({ error: "not an anonymous survey" });
+      }
+      if (play.status !== "started") {
+        return reply.code(409).send({ error: "このゲームはすでに終了しています" });
+      }
+      const state = parseAnonSurveyLobby(play.resultJson);
+      if (!state) {
+        return reply.code(409).send({ error: "lobby not ready" });
+      }
+      if (!isAnonSurveyHost(state, guestDeviceId)) {
+        return reply.code(403).send({ error: "司会者だけが次へ進められます" });
+      }
+      try {
+        const next = advanceAnonSurveyQuestion(state);
+        const data: { resultJson: Prisma.InputJsonValue; status?: string; completedAt?: Date } = {
+          resultJson: anonSurveyStateToJson(next),
+        };
+        if (next.phase === "done") {
+          data.status = "finished";
+          data.completedAt = new Date();
+        }
+        await prisma.gamePlay.update({
+          where: { id: play.id },
+          data,
+        });
+        broadcastOpsSessionUpdated(tokenSession.storeId, billing.ctx.billingSessionId);
+        return {
+          playId: play.id,
+          lobby: anonSurveyPublicView(next, guestDeviceId),
         };
       } catch (e) {
         return reply.code(400).send({ error: e instanceof Error ? e.message : "進められませんでした" });

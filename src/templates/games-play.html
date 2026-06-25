@@ -234,6 +234,125 @@
       },
     };
 
+    const anonymousSurveyApi = {
+      getToken,
+      async startSession() {
+        const token = getToken();
+        return api(
+          "/guest/" + encodeURIComponent(token) + "/games/anonymous-survey/start",
+          {
+            method: "POST",
+            body: { guestDeviceId: getOrCreateDeviceId() },
+          },
+        );
+      },
+      async fetchLobby(playId) {
+        const token = getToken();
+        const dev = getOrCreateDeviceId();
+        return api(
+          "/guest/" +
+            encodeURIComponent(token) +
+            "/games/plays/" +
+            encodeURIComponent(playId) +
+            "/anonymous-survey?guestDeviceId=" +
+            encodeURIComponent(dev),
+        );
+      },
+      async joinLobby(playId, displayName) {
+        const token = getToken();
+        return api(
+          "/guest/" +
+            encodeURIComponent(token) +
+            "/games/plays/" +
+            encodeURIComponent(playId) +
+            "/anonymous-survey/join",
+          {
+            method: "POST",
+            body: {
+              guestDeviceId: getOrCreateDeviceId(),
+              displayName: displayName || undefined,
+            },
+          },
+        );
+      },
+      async setup(playId, opts) {
+        const token = getToken();
+        const body = { guestDeviceId: getOrCreateDeviceId() };
+        if (opts && typeof opts === "object") {
+          if (opts.syncCandidatesFromPlayers) body.syncCandidatesFromPlayers = true;
+          if (Array.isArray(opts.candidates)) body.candidates = opts.candidates;
+          if (Array.isArray(opts.questions)) body.questions = opts.questions;
+        }
+        return api(
+          "/guest/" +
+            encodeURIComponent(token) +
+            "/games/plays/" +
+            encodeURIComponent(playId) +
+            "/anonymous-survey/setup",
+          { method: "POST", body },
+        );
+      },
+      async begin(playId) {
+        const token = getToken();
+        return api(
+          "/guest/" +
+            encodeURIComponent(token) +
+            "/games/plays/" +
+            encodeURIComponent(playId) +
+            "/anonymous-survey/begin",
+          {
+            method: "POST",
+            body: { guestDeviceId: getOrCreateDeviceId() },
+          },
+        );
+      },
+      async vote(playId, candidateId) {
+        const token = getToken();
+        return api(
+          "/guest/" +
+            encodeURIComponent(token) +
+            "/games/plays/" +
+            encodeURIComponent(playId) +
+            "/anonymous-survey/vote",
+          {
+            method: "POST",
+            body: {
+              guestDeviceId: getOrCreateDeviceId(),
+              candidateId,
+            },
+          },
+        );
+      },
+      async reveal(playId) {
+        const token = getToken();
+        return api(
+          "/guest/" +
+            encodeURIComponent(token) +
+            "/games/plays/" +
+            encodeURIComponent(playId) +
+            "/anonymous-survey/reveal",
+          {
+            method: "POST",
+            body: { guestDeviceId: getOrCreateDeviceId() },
+          },
+        );
+      },
+      async next(playId) {
+        const token = getToken();
+        return api(
+          "/guest/" +
+            encodeURIComponent(token) +
+            "/games/plays/" +
+            encodeURIComponent(playId) +
+            "/anonymous-survey/next",
+          {
+            method: "POST",
+            body: { guestDeviceId: getOrCreateDeviceId() },
+          },
+        );
+      },
+    };
+
     function hubUrl() {
       return "/games/" + encodeURIComponent(STORE_ID) + "?key=" + encodeURIComponent(HUB_KEY);
     }
@@ -615,6 +734,7 @@
           lobbyPlayId: parseLobbyPlayId(),
           kingsApi,
           buzzerApi,
+          anonymousSurveyApi,
           savedFortune:
             savedFortunePayload && savedFortunePayload.saved && savedFortunePayload.result
               ? savedFortunePayload.result
@@ -633,6 +753,8 @@
                 encodeURIComponent(token),
             );
           },
+          getGuestToken: getToken,
+          api,
         };
         if (ctx.savedFortune) {
           await loadScript("/games-modules/fortune-save.js");

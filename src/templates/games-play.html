@@ -521,7 +521,7 @@
       if (String(slug).indexOf("ai-") === 0) {
         await loadScript("/games-modules/ai-shared.js");
       }
-      await loadScript("/games-modules/" + encodeURIComponent(slug) + ".js?v=4");
+      await loadScript("/games-modules/" + encodeURIComponent(slug) + ".js?v=5");
       const mod = window.__gameModules && window.__gameModules[slug];
       if (!mod) throw new Error("module not registered");
       return mod;

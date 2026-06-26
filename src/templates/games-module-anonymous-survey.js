@@ -83,6 +83,11 @@
         }
       }
 
+      function showActionBtn(disabled) {
+        btn.style.display = "block";
+        btn.disabled = !!disabled;
+      }
+
       function startPoll() {
         stopPoll();
         pollTimer = setInterval(function () {
@@ -236,25 +241,11 @@
         injectStyles();
         if (!lobby) {
           root.innerHTML =
-            '<div class="as-wrap"><p class="as-hint">匿名ぶっちゃけアンケートを始めます。司会者のスマホでQRを出し、みんなで参加してください。</p></div>';
+            '<div class="as-wrap"><p class="as-hint">匿名ぶっちゃけアンケートを始めます。参加用QRをこの画面に表示するので、みんなに読み取ってもらってください。</p></div>';
+          showActionBtn(false);
           btn.textContent = "ルームを作る（無料）";
           btn.onclick = function () {
-            btn.disabled = true;
-            anonymousSurveyApi
-              .startSession()
-              .then(function (res) {
-                playId = res.playId;
-                lobby = res.lobby;
-                mode = "host";
-                startPoll();
-                render();
-              })
-              .catch(function (e) {
-                showErr(e instanceof Error ? e.message : "開始できませんでした");
-              })
-              .finally(function () {
-                btn.disabled = false;
-              });
+            void ensureHostLobby();
           };
           return;
         }
@@ -359,6 +350,7 @@
                 });
             };
           }
+          showActionBtn(false);
           btn.textContent = "アンケート開始";
           btn.onclick = function () {
             if (!playId) return;
@@ -392,6 +384,7 @@
         } else if (phase === "voting") {
           bindVoteButtons();
           if (lobby.isHost && lobby.votedCount < lobby.playerCount) {
+            showActionBtn(false);
             btn.textContent = "結果を先に表示";
             btn.onclick = function () {
               if (!playId) return;
@@ -410,15 +403,15 @@
                 });
             };
           } else {
+            showActionBtn(true);
             btn.textContent = "待機中…";
             btn.onclick = null;
-            btn.disabled = true;
           }
         } else if (phase === "reveal") {
           if (lobby.isHost) {
             const isLast = lobby.currentIndex + 1 >= lobby.questionCount;
+            showActionBtn(false);
             btn.textContent = isLast ? "終了" : "次のお題へ";
-            btn.disabled = false;
             btn.onclick = function () {
               if (!playId) return;
               btn.disabled = true;
@@ -436,14 +429,14 @@
                 });
             };
           } else {
+            showActionBtn(true);
             btn.textContent = "司会者が次へ進みます";
-            btn.disabled = true;
             btn.onclick = null;
           }
         } else if (phase === "done") {
           stopPoll();
+          showActionBtn(false);
           btn.textContent = defaultPlayAgainLabel || "もう一度";
-          btn.disabled = false;
           btn.onclick = function () {
             playId = null;
             lobby = null;
@@ -451,9 +444,30 @@
             render();
           };
         } else {
+          showActionBtn(true);
           btn.textContent = "待機中…";
-          btn.disabled = true;
           btn.onclick = null;
+        }
+      }
+
+      async function ensureHostLobby() {
+        if (lobby || lobbyPlayId) return;
+        showActionBtn(true);
+        btn.textContent = "ルーム準備中…";
+        root.innerHTML =
+          '<div class="as-wrap"><p class="as-hint">参加用QRを用意しています…</p></div>';
+        try {
+          const res = await anonymousSurveyApi.startSession();
+          playId = res.playId;
+          lobby = res.lobby;
+          mode = "host";
+          startPoll();
+          render();
+        } catch (e) {
+          lobby = null;
+          playId = null;
+          render();
+          showErr(e instanceof Error ? e.message : "開始できませんでした");
         }
       }
 
@@ -480,8 +494,8 @@
             '<div class="as-field"><span class="as-label">ニックネーム</span>' +
             '<input type="text" id="asJoinName" maxlength="20" placeholder="例：たろう" /></div>' +
             "</div>";
+          showActionBtn(false);
           btn.textContent = "参加する";
-          btn.disabled = false;
           btn.onclick = function () {
             const el = document.getElementById("asJoinName");
             const name = el ? String(el.value || "").trim() : "";
@@ -516,7 +530,7 @@
       if (lobbyPlayId) {
         void initJoiner();
       } else {
-        render();
+        void ensureHostLobby();
       }
 
       return function cleanup() {

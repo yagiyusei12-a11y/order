@@ -21,7 +21,7 @@
     #msg.win { color:var(--ok); }
     #msg.lose { color:var(--bad); }
     #err { color:var(--bad); font-size:0.85rem; margin-top:0.5rem; display:none; }
-    #gameRoot { min-height:8rem; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:0.5rem; }
+    #gameRoot { min-height:8rem; display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start; text-align:center; gap:0.5rem; width:100%; }
     .timer-display { font-size:2.5rem; font-weight:900; font-variant-numeric:tabular-nums; }
     .fortune-result { font-size:1.5rem; font-weight:900; }
     .fortune-text { color:var(--muted); font-size:0.88rem; line-height:1.55; max-width:18rem; }
@@ -521,7 +521,7 @@
       if (String(slug).indexOf("ai-") === 0) {
         await loadScript("/games-modules/ai-shared.js");
       }
-      await loadScript("/games-modules/" + encodeURIComponent(slug) + ".js?v=5");
+      await loadScript("/games-modules/" + encodeURIComponent(slug) + ".js?v=6");
       const mod = window.__gameModules && window.__gameModules[slug];
       if (!mod) throw new Error("module not registered");
       return mod;

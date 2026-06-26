@@ -46,7 +46,7 @@
         const st = document.createElement("style");
         st.id = "asurvey-styles";
         st.textContent =
-          ".as-wrap{width:100%;display:flex;flex-direction:column;gap:0.65rem;text-align:center}" +
+          ".as-wrap{width:100%;align-self:stretch;display:flex;flex-direction:column;gap:0.65rem;text-align:center}" +
           ".as-hint{color:var(--muted);font-size:0.82rem;line-height:1.55;margin:0}" +
           ".as-stage{padding:0.85rem;border:1px solid var(--line);border-radius:12px;background:#121820}" +
           ".as-q{font-size:1.05rem;font-weight:900;line-height:1.45;margin:0 0 0.5rem;color:#f0c060}" +
@@ -56,12 +56,14 @@
           ".as-players{display:flex;flex-wrap:wrap;gap:0.35rem;justify-content:center;margin:0.25rem 0}" +
           ".as-chip{display:inline-flex;align-items:center;gap:0.2rem;padding:0.3rem 0.55rem;border-radius:999px;background:#1e2735;border:1px solid var(--line);font-size:0.82rem;font-weight:800}" +
           ".as-chip.host{border-color:#c9a227;color:#f0c060}" +
-          ".as-field{text-align:left;margin:0}" +
+          ".as-field{text-align:left;margin:0;width:100%}" +
           ".as-label{font-size:0.72rem;font-weight:800;color:var(--muted);display:block;margin:0 0 0.2rem}" +
           ".as-field textarea,.as-field input{width:100%;padding:0.5rem;border:1px solid var(--line);border-radius:8px;background:#0f1419;color:var(--text);font-size:0.88rem;box-sizing:border-box}" +
           ".as-field textarea{min-height:5.5rem;resize:vertical}" +
-          ".as-qlist{text-align:left;max-height:9rem;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:0.45rem;background:#0f1419}" +
-          ".as-qitem{display:flex;align-items:flex-start;gap:0.35rem;font-size:0.82rem;line-height:1.4;margin:0.2rem 0}" +
+          ".as-qlist{display:flex;flex-direction:column;gap:0.15rem;border:1px solid var(--line);border-radius:8px;padding:0.35rem 0.45rem;background:#0f1419}" +
+          ".as-qitem{display:flex;align-items:flex-start;gap:0.5rem;width:100%;text-align:left;font-size:0.82rem;line-height:1.45;margin:0;padding:0.4rem 0.15rem;cursor:pointer;-webkit-tap-highlight-color:transparent}" +
+          ".as-qitem input[type=checkbox]{flex-shrink:0;width:1.05rem;height:1.05rem;margin:0.12rem 0 0 0;accent-color:#c9a227}" +
+          ".as-qitem span{flex:1;min-width:0}" +
           ".as-vote-grid{display:flex;flex-direction:column;gap:0.4rem;margin:0.35rem 0}" +
           ".as-vote-btn{width:100%;padding:0.65rem 0.75rem;border-radius:10px;border:1px solid var(--line);background:#1a2330;color:var(--text);font-size:0.92rem;font-weight:800;cursor:pointer}" +
           ".as-vote-btn:active{transform:scale(0.98)}" +
@@ -110,6 +112,10 @@
       }
 
       function renderPlayerChips(players) {
+        return '<div id="asPlayerChips">' + renderPlayerChipsInner(players) + "</div>";
+      }
+
+      function renderPlayerChipsInner(players) {
         if (!players || !players.length) return '<p class="as-hint">まだ参加者がいません</p>';
         return (
           '<div class="as-players">' +
@@ -131,6 +137,33 @@
         );
       }
 
+      function joiningHostHintText() {
+        return (
+          "QRを読み取って参加してもらいましょう（" +
+          String(lobby.playerCount) +
+          "/" +
+          String(lobby.maxPlayers) +
+          "人）"
+        );
+      }
+
+      function updateJoiningHostLobby() {
+        const hint = document.getElementById("asJoinHint");
+        if (hint) hint.textContent = joiningHostHintText();
+        const chips = document.getElementById("asPlayerChips");
+        if (chips) chips.innerHTML = renderPlayerChipsInner(lobby.players);
+      }
+
+      function shouldPatchJoiningHost(nextLobby) {
+        return (
+          lobby &&
+          lobby.phase === "joining" &&
+          mode === "host" &&
+          nextLobby.phase === "joining" &&
+          !!document.getElementById("asJoinHint")
+        );
+      }
+
       function renderQuestionPicker(selected) {
         const set = new Set(selected || []);
         return (
@@ -143,9 +176,9 @@
               i +
               '"' +
               checked +
-              " /> " +
+              ' /><span>' +
               esc(q) +
-              "</label>"
+              "</span></label>"
             );
           }).join("") +
           "</div></div>"
@@ -256,11 +289,9 @@
         if (phase === "joining") {
           if (mode === "host" && playId) {
             html +=
-              '<p class="as-hint">QRを読み取って参加してもらいましょう（' +
-              esc(String(lobby.playerCount)) +
-              "/" +
-              esc(String(lobby.maxPlayers)) +
-              "人）</p>" +
+              '<p class="as-hint" id="asJoinHint">' +
+              esc(joiningHostHintText()) +
+              "</p>" +
               '<div class="as-qr-box"><img src="' +
               esc(qrUrl(playId)) +
               '" alt="参加QR" /></div>' +
@@ -476,7 +507,13 @@
         return anonymousSurveyApi
           .fetchLobby(playId)
           .then(function (res) {
-            lobby = res.lobby;
+            const next = res.lobby;
+            if (shouldPatchJoiningHost(next)) {
+              lobby = next;
+              updateJoiningHostLobby();
+              return;
+            }
+            lobby = next;
             render();
           })
           .catch(function (e) {

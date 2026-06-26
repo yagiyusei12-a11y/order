@@ -1,23 +1,26 @@
 <!DOCTYPE html>
-<!-- guest-ui-build: 20260520-utf8-fix -->
+<!-- guest-ui-build: 20260520-light-sticky-tabs -->
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0c0e12" />
+  <meta name="theme-color" content="#faf8f5" />
   <title>ご注文</title>
   <style>
     :root {
-      --bg: #0c0e12;
-      --surface: #151922;
-      --surface2: #1c2230;
-      --line: #2a3142;
-      --text: #f1f5f9;
-      --muted: #94a3b8;
-      --accent: #f97316;
-      --accent-dim: rgba(249, 115, 22, 0.15);
-      --ok: #22c55e;
-      --danger: #fb7185;
+      --bg: #faf8f5;
+      --surface: #ffffff;
+      --surface2: #f3f4f6;
+      --line: #e5e7eb;
+      --text: #1a1d24;
+      --muted: #6b7280;
+      --accent: #ea580c;
+      --accent-dim: rgba(234, 88, 12, 0.1);
+      --ok: #16a34a;
+      --danger: #e11d48;
+      --overlay: rgba(15, 23, 42, 0.45);
+      --card-media-bg: #f3f4f6;
+      --sticky-shadow: 0 2px 14px rgba(15, 23, 42, 0.08);
     }
     * { box-sizing: border-box; }
     html { scroll-behavior: smooth; }
@@ -30,18 +33,22 @@
       min-height: 100dvh;
     }
 
-    /* ========== トップバー（アイコン） ========== */
-    .go-topbar {
+    /* ========== ヘッダー＋カテゴリ（一体で画面上部に固定） ========== */
+    .go-sticky-shell {
       position: sticky;
       top: 0;
       z-index: 50;
+      background: var(--bg);
+      border-bottom: 1px solid var(--line);
+      box-shadow: var(--sticky-shadow);
+    }
+    .go-topbar {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 0.35rem;
       padding: 0.5rem 0.65rem calc(0.45rem + env(safe-area-inset-top));
-      background: linear-gradient(180deg, #12161f 0%, #0c0e12 100%);
-      border-bottom: 1px solid var(--line);
+      background: var(--bg);
     }
     .go-topicons {
       display: flex;
@@ -101,17 +108,13 @@
       overflow: visible;
       text-overflow: clip;
       line-height: 1.25;
-      color: rgba(226, 232, 240, 0.86);
+      color: var(--muted);
     }
 
     /* ========== カテゴリタブ ========== */
     .go-tabs-wrap {
-      position: sticky;
-      top: calc(52px + env(safe-area-inset-top));
-      z-index: 40;
-      background: linear-gradient(180deg, #0c0e12 70%, transparent);
-      padding: 0.35rem 0 0.65rem;
-      margin-top: -1px;
+      background: var(--bg);
+      padding: 0.2rem 0 0.55rem;
     }
     .go-tabs {
       display: flex;
@@ -137,7 +140,7 @@
     }
     .go-tab.is-active {
       background: var(--accent-dim);
-      border-color: rgba(249, 115, 22, 0.45);
+      border-color: rgba(234, 88, 12, 0.35);
       color: var(--accent);
     }
 
@@ -161,12 +164,13 @@
       display: flex;
       flex-direction: column;
       min-height: 0;
+      box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06);
     }
     .go-card:active { transform: scale(0.98); }
     .go-card.is-dim { opacity: 0.45; pointer-events: none; }
     .go-card-media {
       aspect-ratio: 4 / 3;
-      background: linear-gradient(145deg, #1e293b, #0f172a);
+      background: var(--card-media-bg);
       position: relative;
     }
     .go-card-media img {
@@ -235,7 +239,7 @@
     }
     .go-set-step-lab {
       font-weight: 700;
-      color: color-mix(in srgb, var(--muted) 70%, #fff 30%);
+      color: color-mix(in srgb, var(--muted) 55%, var(--text) 45%);
     }
     .go-set-step-sep {
       font-weight: 500;
@@ -315,29 +319,29 @@
       font-size: 0.58rem; font-weight: 800; color: #fff7ed; background: rgba(234, 88, 12, 0.85);
       padding: 0.12rem 0.4rem; border-radius: 4px;
     }
-    .course-included-price { color: #34d399; font-weight: 800; }
+    .course-included-price { color: #047857; font-weight: 800; }
     #lastOrderBanner {
       display: none;
-      position: sticky;
-      top: calc(52px + env(safe-area-inset-top));
-      z-index: 45;
       margin: 0;
       padding: 0.45rem 0.75rem;
-      background: linear-gradient(180deg, rgba(30, 58, 95, 0.95), rgba(15, 23, 42, 0.98));
-      border-bottom: 1px solid #334155;
+      background: #eff6ff;
+      border-bottom: 1px solid #bfdbfe;
       font-size: 0.78rem;
       text-align: center;
       line-height: 1.35;
+      color: #1e3a5f;
     }
     #lastOrderBanner.lo-ended {
-      background: linear-gradient(180deg, rgba(127, 29, 29, 0.9), rgba(69, 10, 10, 0.95));
+      background: #fef2f2;
+      border-bottom-color: #fecaca;
+      color: #991b1b;
     }
-    #lastOrderBanner strong { font-variant-numeric: tabular-nums; color: #fde68a; }
+    #lastOrderBanner strong { font-variant-numeric: tabular-nums; color: #b45309; }
 
     .course-menu-filter-wrap {
       display: none;
       padding: 0.35rem 0.75rem 0.5rem;
-      background: linear-gradient(180deg, rgba(22, 26, 32, 0.98), rgba(15, 17, 21, 0.96));
+      background: var(--bg);
       border-bottom: 1px solid var(--line);
       text-align: center;
     }
@@ -354,16 +358,16 @@
       font-size: 0.78rem;
       font-weight: 700;
       color: var(--text);
-      background: rgba(255, 255, 255, 0.06);
+      background: var(--surface);
       border: 1px solid var(--line);
       border-radius: 10px;
       cursor: pointer;
       -webkit-tap-highlight-color: transparent;
     }
     .course-menu-filter-btn.is-active {
-      background: rgba(5, 150, 105, 0.22);
-      border-color: rgba(52, 211, 153, 0.45);
-      color: #6ee7b7;
+      background: rgba(5, 150, 105, 0.1);
+      border-color: rgba(5, 150, 105, 0.35);
+      color: #047857;
     }
 
     /* ========== フッターカート ========== */
@@ -373,9 +377,10 @@
       left: 0;
       right: 0;
       padding: 0.65rem 0.85rem calc(0.65rem + env(safe-area-inset-bottom));
-      background: linear-gradient(180deg, rgba(12, 14, 18, 0.92) 0%, #0c0e12 40%);
+      background: rgba(255, 255, 255, 0.96);
       backdrop-filter: blur(10px);
       border-top: 1px solid var(--line);
+      box-shadow: 0 -4px 20px rgba(15, 23, 42, 0.08);
       display: flex;
       gap: 0.65rem;
       align-items: center;
@@ -415,7 +420,7 @@
       box-shadow: 0 -8px 28px rgba(249, 115, 22, 0.18);
     }
     footer.go-cart.has-pending-order .count {
-      color: #fdba74;
+      color: #c2410c;
       font-weight: 700;
     }
     footer.go-cart.has-pending-order button.submit:not(:disabled) {
@@ -432,9 +437,9 @@
       margin: 0 0 0.65rem;
       padding: 0.55rem 0.65rem;
       border-radius: 10px;
-      background: rgba(249, 115, 22, 0.12);
-      border: 1px solid rgba(251, 146, 60, 0.35);
-      color: #fdba74;
+      background: rgba(234, 88, 12, 0.08);
+      border: 1px solid rgba(234, 88, 12, 0.25);
+      color: #c2410c;
       font-size: 0.78rem;
       font-weight: 700;
       line-height: 1.45;
@@ -621,8 +626,8 @@
       cursor: pointer;
     }
     .guest-cart-btn.danger {
-      color: #fecaca;
-      border-color: rgba(248, 113, 113, 0.35);
+      color: #b91c1c;
+      border-color: rgba(225, 29, 72, 0.25);
     }
     .guest-cart-qty {
       font-weight: 800;
@@ -638,7 +643,7 @@
       display: flex;
       gap: 0.55rem;
       align-items: center;
-      background: #0f131a;
+      background: var(--surface);
     }
     .guest-sheet-bar .guest-sheet-sum {
       flex: 1;
@@ -828,7 +833,7 @@
       max-width: 28rem;
       max-height: 92vh;
       min-height: 0;
-      background: #12161f;
+      background: var(--surface);
       border: 1px solid var(--line);
       border-radius: 20px 20px 0 0;
       overflow: hidden;
@@ -859,7 +864,7 @@
       aspect-ratio: 16 / 10;
       /* 縦長画像の intrinsic 高さや aspect-ratio 非対応端末でもシートを食いつぶさない */
       max-height: min(42dvh, 260px);
-      background: linear-gradient(145deg, #1e293b, #0f172a);
+      background: var(--card-media-bg);
       position: relative;
       flex-shrink: 0;
       overflow: hidden;
@@ -880,14 +885,14 @@
       -webkit-overflow-scrolling: touch;
     }
     .detail-title { margin: 0 0 0.35rem; font-size: 1.2rem; font-weight: 800; line-height: 1.35; }
-    .detail-desc { margin: 0 0 1rem; font-size: 0.9rem; color: rgba(226, 232, 240, 0.82); line-height: 1.6; }
+    .detail-desc { margin: 0 0 1rem; font-size: 0.9rem; color: var(--muted); line-height: 1.6; }
 
     .opt-block {
       margin-bottom: 1.1rem;
       padding: 0.75rem 0.75rem 0.6rem;
-      border: 1px solid rgba(148, 163, 184, 0.18);
+      border: 1px solid var(--line);
       border-radius: 14px;
-      background: rgba(2, 6, 23, 0.45);
+      background: var(--surface2);
     }
     .opt-step-choices {
       max-height: min(52vh, 320px);
@@ -1043,7 +1048,7 @@
       flex-shrink: 0;
       padding: 0.75rem 1rem calc(0.85rem + env(safe-area-inset-bottom));
       border-top: 1px solid var(--line);
-      background: #0f131a;
+      background: var(--surface);
       display: flex;
       flex-direction: column;
       gap: 0.65rem;
@@ -1100,9 +1105,9 @@
       margin: 0.55rem 0 0;
       padding: 0.6rem 0.65rem;
       border-radius: 12px;
-      border: 1px solid rgba(251, 146, 60, 0.45);
-      background: rgba(249, 115, 22, 0.12);
-      color: #fdba74;
+      border: 1px solid rgba(234, 88, 12, 0.35);
+      background: var(--accent-dim);
+      color: var(--accent);
       font-weight: 900;
       font-size: 0.85rem;
       cursor: pointer;
@@ -1116,7 +1121,7 @@
       padding: 0.5rem 0.6rem;
       border-radius: 10px;
       border: 1px solid var(--line);
-      background: #0f131a;
+      background: var(--surface2);
       color: var(--text);
       font-size: 0.9rem;
       margin-bottom: 0.15rem;
@@ -1355,6 +1360,7 @@
   </style>
 </head>
 <body>
+  <div class="go-sticky-shell">
   <header class="go-topbar">
     <div class="go-topicons">
       <button type="button" class="go-iconbtn" id="btnHistory" title="注文履歴を表示" aria-label="注文履歴を表示">
@@ -1373,6 +1379,11 @@
       </button>
     </div>
   </header>
+
+  <div class="go-tabs-wrap">
+    <div class="go-tabs" id="catTabs"></div>
+  </div>
+  </div>
 
   <div id="lastOrderBanner" role="status" aria-live="polite"></div>
   <div id="guestOrderGateBanner" class="guest-order-gate-banner" role="alert"></div>
@@ -1404,9 +1415,6 @@
     </div>
   </div>
 
-  <div class="go-tabs-wrap">
-    <div class="go-tabs" id="catTabs"></div>
-  </div>
   <div id="menu" class="go-menu-grid"></div>
   <div id="orders"></div>
 

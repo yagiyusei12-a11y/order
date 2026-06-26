@@ -165,13 +165,6 @@
       return [...set].sort((p, q) => p.localeCompare(q, "ja"));
     }
 
-    /** receptionConfig.receptionGuestSeatTypePriority: 「どこでも」のとき席種別の優先（上ほど先に案内） */
-    function guestSeatTypePriorityList() {
-      const raw = receptionConf && receptionConf.receptionGuestSeatTypePriority;
-      if (!Array.isArray(raw)) return [];
-      return raw.map((x) => normalizeSeatTypeLabel(x)).filter(Boolean);
-    }
-
     /** receptionConfig.receptionWalkInPartySizeMax: ゲスト端末で 1〜N 名までボタン表示、N+1 名以上はスタッフ呼出 */
     function getWalkInPartySizeMax() {
       const n = Number(receptionConf.receptionWalkInPartySizeMax);
@@ -179,34 +172,21 @@
       return Math.max(1, Math.min(20, Math.floor(n)));
     }
 
-    function assignmentTypePriorityScore(ids, byMap, priorityList) {
-      let s = 0;
-      for (const id of ids) {
-        const st = normalizeSeatTypeLabel(byMap.get(id)?.seatType);
-        let idx = -1;
-        for (let i = 0; i < priorityList.length; i++) {
-          if (normalizeSeatTypeLabel(priorityList[i]) === st) {
-            idx = i;
-            break;
-          }
-        }
-        if (idx >= 0) s += idx;
-        else if (!st) s += 10000;
-        else s += 5000;
-      }
-      return s;
-    }
-
-    function isBetterGuestSeatAssignment(cand, best, byMap, priorityList) {
-      if (!best) return true;
-      if (cand.cap !== best.cap) return cand.cap < best.cap;
-      if (priorityList.length) {
-        const sc = assignmentTypePriorityScore(cand.ids, byMap, priorityList);
-        const sb = assignmentTypePriorityScore(best.ids, byMap, priorityList);
-        if (sc !== sb) return sc < sb;
-      }
-      if (cand.ids.length !== best.ids.length) return cand.ids.length < best.ids.length;
-      return cand.ids.join(",").localeCompare(best.ids.join(",")) < 0;
+    async function suggestWalkInSeats(num, pref, requirePure) {
+      const res = await fetch(API_BASE + "/suggest-walk-in-seats", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          num,
+          seatPreference: pref,
+          shiftKey: activeShiftKey || getActiveShiftKey(),
+          requirePure: !!requirePure,
+        }),
+      });
+      const text = await res.text();
+      if (!res.ok) throw new Error(text || "suggest seats failed");
+      const data = JSON.parse(text);
+      return Array.isArray(data.seatIds) ? data.seatIds.filter((x) => typeof x === "string" && x.trim()) : [];
     }
 
     async function refreshSeatTypesCatalog() {
@@ -358,128 +338,15 @@
       const num = selectedNum;
       const wait = parseInt(document.getElementById("viewWaitTime").innerText || "0", 10) || 0;
 
-      // 旧 front.html の席割りAI（完全空席→それ以外）
-      function getMasterTables(pref) {
-        const all = (Array.isArray(tableMaster) ? tableMaster : []).map((t) => ({
-          code: String(t.code || ""),
-          capacity: Number(t.capacity || 2),
-          mergeWith: Array.isArray(t.mergeWith) ? t.mergeWith.filter((x) => typeof x === "string").map(String) : [],
-          seatType: String(t.seatType || "").trim(),
-        })).filter((t) => t.code);
-        if (pref === "any") return all;
-        const p = normalizeSeatTypeLabel(pref);
-        return all.filter((t) => normalizeSeatTypeLabel(t.seatType) === p);
+      let foundIds = [];
+      try {
+        foundIds = await suggestWalkInSeats(num, selectedType, true);
+        if (foundIds.length === 0) foundIds = await suggestWalkInSeats(num, selectedType, false);
+      } catch (e) {
+        console.error("reception-front suggestWalkInSeats", e);
+        await triggerStaffCall("お席の確認をいたします。", "normal");
+        return;
       }
-
-      function pickSeats(n, pref, requirePure) {
-        const guestPri = pref === "any" ? guestSeatTypePriorityList() : [];
-        const tables = getMasterTables(pref);
-        const by = new Map(tables.map((t) => [t.code, t]));
-        const used = new Set();
-        for (const [id, s] of Object.entries(seatStates || {})) {
-          if (!s) continue;
-          const st = s.status === "vacant" ? "empty" : s.status;
-          if (st !== "empty" && st !== "reserved") used.add(id);
-          if (requirePure && s.hasFutureRes) used.add(id);
-        }
-        const freeCodes = tables.map((t) => t.code).filter((c) => c && !used.has(c));
-        const freeSet = new Set(freeCodes);
-
-        const maxMergeSize = Number.isFinite(Number(receptionConf.maxMergeSize))
-          ? Math.floor(Number(receptionConf.maxMergeSize))
-          : 10;
-
-        const adj = new Map();
-        for (const c of freeCodes) adj.set(c, new Set());
-        for (const t of tables) {
-          if (!freeSet.has(t.code)) continue;
-          const a = adj.get(t.code);
-          if (!a) continue;
-          for (const o of (t.mergeWith || []).map(String)) {
-            if (!freeSet.has(o)) continue;
-            const b = adj.get(o);
-            if (!b) continue;
-            a.add(o);
-            b.add(t.code);
-          }
-        }
-
-        // ゲスト受付では mergeAllOrNothingGroups を使わない。スタッフ設定の「全卓一括」は
-        // 貸し切り想定で、2名でも T52–54 がまとめて選ばれるだけになる。
-        const groups = [];
-
-        function violatesAllOrNothing(sub) {
-          for (const g of groups) {
-            let hit = false;
-            for (const x of g.arr) { if (sub.has(x)) { hit = true; break; } }
-            if (!hit) continue;
-            for (const x of g.arr) { if (!sub.has(x)) return true; }
-          }
-          return false;
-        }
-
-        function isConnected(subArr) {
-          if (subArr.length <= 1) return true;
-          const sub = new Set(subArr);
-          const q = [subArr[0]];
-          const seen = new Set([subArr[0]]);
-          while (q.length) {
-            const cur = q.pop();
-            for (const nx of (adj.get(cur) || [])) {
-              if (!sub.has(nx) || seen.has(nx)) continue;
-              seen.add(nx);
-              q.push(nx);
-            }
-          }
-          return seen.size === sub.size;
-        }
-
-        let best = null;
-        const visited = new Set();
-        for (const start of freeCodes) {
-          if (visited.has(start)) continue;
-          const comp = [];
-          const stack = [start];
-          visited.add(start);
-          while (stack.length) {
-            const cur = stack.pop();
-            comp.push(cur);
-            for (const nx of (adj.get(cur) || [])) {
-              if (visited.has(nx)) continue;
-              visited.add(nx);
-              stack.push(nx);
-            }
-          }
-          const compSorted = comp.slice().sort();
-          const limit = Math.min(maxMergeSize, compSorted.length);
-
-          function backtrack(idx, chosen) {
-            if (chosen.length > 0) {
-              const sub = new Set(chosen);
-              if (!violatesAllOrNothing(sub) && isConnected(chosen)) {
-                const cap = chosen.reduce((acc, id) => acc + (by.get(id)?.capacity || 0), 0);
-                if (cap >= n) {
-                  const ids = chosen.slice().sort();
-                  const cand = { ids, cap };
-                  if (isBetterGuestSeatAssignment(cand, best, by, guestPri)) best = cand;
-                }
-              }
-            }
-            if (idx >= compSorted.length) return;
-            if (chosen.length >= limit) return;
-            chosen.push(compSorted[idx]);
-            backtrack(idx + 1, chosen);
-            chosen.pop();
-            backtrack(idx + 1, chosen);
-          }
-          backtrack(0, []);
-        }
-
-        return best ? best.ids : [];
-      }
-
-      let foundIds = pickSeats(num, selectedType, true);
-      if (foundIds.length === 0) foundIds = pickSeats(num, selectedType, false);
       if (foundIds.length === 0) {
         await triggerStaffCall("お席の確認をいたします。", "normal");
         return;

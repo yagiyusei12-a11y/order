@@ -49,6 +49,10 @@ import {
   normalizeReceptionSeatStatus,
 } from "../lib/reception-seat-status.js";
 import { broadcastReceptionUpdated } from "../lib/ops-seat-socket.js";
+import {
+  HARUNOYUKOTO_STORE_ID,
+  pickHarunoyukotoSeats,
+} from "../lib/harunoyukoto-seat-priority.js";
 
 function netReserveReservationPrevStatus(
   row: { status: string | null; data: unknown } | null,
@@ -293,6 +297,7 @@ function resolveReservationSeatIds(tables: { publicCode: string }[], inputs: str
 }
 
 function pickReservationSeats(input: {
+  storeId?: string;
   tables: { code: string; capacity: number; mergeWith: string[]; seatType?: string }[];
   used: Set<string>;
   num: number;
@@ -307,6 +312,10 @@ function pickReservationSeats(input: {
   skipAllOrNothingGroups?: boolean;
 }): string[] | null {
   const { tables, used, num } = input;
+  if (input.storeId === HARUNOYUKOTO_STORE_ID) {
+    const picked = pickHarunoyukotoSeats(num, tables, used);
+    if (picked) return picked;
+  }
   const maxMergeSize = Math.max(1, Number.isFinite(Number(input.maxMergeSize)) ? Math.floor(Number(input.maxMergeSize)) : 10);
   const allOrNothingGroups = Array.isArray(input.allOrNothingGroups) ? input.allOrNothingGroups : [];
   const skipAon = input.skipAllOrNothingGroups === true;
@@ -770,6 +779,20 @@ async function syncSeatToSessions(storeId: string, seatId: string, next: SeatSta
   // empty/vacant によるセッション切断は cleaning→empty の明示操作のみ（updateSeats 内）で行う
 }
 
+function collectWalkInUsedFromSeatRows(seats: unknown[], requirePure: boolean): Set<string> {
+  const used = new Set<string>();
+  for (const raw of seats) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const s = raw as Record<string, unknown>;
+    const id = typeof s.id === "string" ? s.id.trim() : "";
+    if (!id) continue;
+    const st = normalizeReceptionSeatStatus(s.status);
+    if (st !== "empty" && st !== "reserved") used.add(id);
+    if (requirePure && s.hasFutureRes === true) used.add(id);
+  }
+  return used;
+}
+
 export async function registerReception(app: FastifyInstance): Promise<void> {
   /** 受付端末用: DB の席種別だけ返す（軽量・304 なし） */
   app.get<{ Params: { storeId: string } }>("/reception/:storeId/table-seat-types", async (req, reply) => {
@@ -778,6 +801,107 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
     const seatTypes = await listAllDistinctTableSeatTypes(store.id);
     reply.header("Cache-Control", "no-store");
     return { seatTypes };
+  });
+
+  /** ゲスト受付端末: 人数・席種別から案内席を提案（はるのゆことは店舗専用優先順） */
+  app.post<{
+    Params: { storeId: string };
+    Body: { num?: number; seatPreference?: string; shiftKey?: string; requirePure?: boolean };
+  }>("/reception/:storeId/suggest-walk-in-seats", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    await ensureReceptionRows(store.id);
+
+    const num = Math.floor(Number(req.body?.num));
+    if (!Number.isFinite(num) || num < 1 || num > 20) {
+      return reply.code(400).send({ error: "num must be 1..20" });
+    }
+    const seatPreference =
+      typeof req.body?.seatPreference === "string" && req.body.seatPreference.trim()
+        ? req.body.seatPreference.trim()
+        : "any";
+    const requirePure = req.body?.requirePure === true;
+
+    const stSet = mergeStoreSettings(store.settings);
+    const confRow = await prisma.receptionConfig.findUnique({ where: { storeId: store.id } });
+    const cData = (confRow?.data as Record<string, unknown>) || {};
+    const lunchEnd = receptionLunchEndHour(cData);
+    const shiftKey =
+      (typeof req.body?.shiftKey === "string" ? req.body.shiftKey.trim() : "") ||
+      buildTodayShiftKey(stSet.timezone, lunchEnd);
+    const isLiveShift = isCurrentReceptionShiftKey(shiftKey, stSet.timezone, lunchEnd);
+
+    await ensureShift(store.id, shiftKey);
+
+    const [sh, reservations, derivedLive, allTables] = await Promise.all([
+      prisma.receptionShift.findUnique({
+        where: { storeId_shiftKey: { storeId: store.id, shiftKey } },
+      }),
+      prisma.receptionReservation.findMany({ where: { storeId: store.id } }),
+      computeDefaultSeatsForShift(store.id),
+      prisma.table.findMany({
+        where: { storeId: store.id, active: true },
+        orderBy: { sortOrder: "asc" },
+        select: { publicCode: true, capacity: true, mergeWith: true, seatType: true },
+      }),
+    ]);
+
+    let seats = Array.isArray(sh?.seats) ? (sh?.seats as unknown[]) : [];
+    if (!seats.length) {
+      seats = (isLiveShift ? derivedLive : emptyDerivedSeatRows(derivedLive)) as unknown[];
+    } else if (isLiveShift) {
+      seats = mergeShiftSeatsWithLiveDerived(seats, derivedLive) as unknown[];
+    } else {
+      seats = stripLiveSessionStatesFromFutureShiftSeats(seats, shiftKey, stSet.timezone);
+    }
+
+    let seatsWithBlocks = applyReservationBlocksToSeats({
+      shiftKey,
+      seats,
+      reservations: reservations.map((r) => r.data) as unknown[],
+      storeTimeZone: stSet.timezone,
+    });
+    const legacyClear = clearLegacyStaffCountBlocks(seatsWithBlocks);
+    seatsWithBlocks = legacyClear.seats;
+
+    const used = collectWalkInUsedFromSeatRows(seatsWithBlocks, requirePure);
+
+    const prefNorm =
+      seatPreference === "any" ? "any" : normalizeSeatTypeLabel(seatPreference);
+    const bookable = netReserveBookableTableRows(allTables);
+    const filtered =
+      prefNorm === "any"
+        ? bookable
+        : bookable.filter((t) => normalizeSeatTypeLabel(t.seatType) === prefNorm);
+
+    const tableMaster = filtered.map((t) => ({
+      code: t.publicCode,
+      capacity: Number(t.capacity || 2),
+      mergeWith: Array.isArray(t.mergeWith)
+        ? (t.mergeWith.filter((x) => typeof x === "string") as string[])
+        : [],
+      seatType: normalizeSeatTypeLabel(t.seatType),
+    }));
+
+    const maxMergeSize = Number.isFinite(Number(cData.maxMergeSize)) ? Number(cData.maxMergeSize) : 10;
+    const allOrNothingGroups = Array.isArray(cData.mergeAllOrNothingGroups)
+      ? cData.mergeAllOrNothingGroups
+      : [];
+    const seatTypePriority =
+      prefNorm === "any" ? guestSeatTypePriorityList(cData) : [];
+
+    const seatIds = pickReservationSeats({
+      storeId: store.id,
+      tables: tableMaster,
+      used,
+      num,
+      maxMergeSize,
+      allOrNothingGroups,
+      skipAllOrNothingGroups: true,
+      seatTypePriority,
+    });
+
+    return { seatIds: seatIds ?? [] };
   });
 
   /**
@@ -1341,6 +1465,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
       for (const time of slotTimes) {
         const used = await collectUsedSeatsForNetReservation(tx, store.id, date, time, lunchH);
         const seats = pickReservationSeats({
+          storeId: store.id,
           tables: tableMaster,
           used,
           num: n,
@@ -1478,6 +1603,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           const maxMergeSize = Number.isFinite(Number(c.maxMergeSize)) ? Number(c.maxMergeSize) : 10;
           const allOrNothingGroups = Array.isArray(c.mergeAllOrNothingGroups) ? c.mergeAllOrNothingGroups : [];
           const seats = pickReservationSeats({
+            storeId: store.id,
             tables: tableMaster,
             used,
             num: Math.floor(num),

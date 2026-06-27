@@ -607,26 +607,109 @@ function filterNetSlotsNotPast(dateYmd: string, slotTimes: string[], timezone: s
   });
 }
 
-async function assertReservationSeatsFree(input: {
-  storeId: string;
-  resKey: string;
-  shiftKeys: string[];
-  seatIds: string[];
-}): Promise<string | null> {
+type ReservationSeatDb = Pick<typeof prisma, "receptionReservationSeat">;
+
+function reservationSeatShiftKeys(
+  resKey: string,
+  date: string,
+  shift: string,
+  timeRaw?: string,
+): string[] {
+  const time = typeof timeRaw === "string" ? timeRaw.trim() : "";
+  const legacyKey = legacyDaypartShiftKey(date, shift === "dinner" ? "dinner" : "lunch");
+  const isNet = resKey.startsWith("N");
+  const slotKey = isNet && time ? netReserveSlotKey(date, time) : null;
+  return slotKey ? [slotKey, legacyKey] : [legacyKey];
+}
+
+async function assertReservationSeatsFree(
+  db: ReservationSeatDb,
+  input: {
+    storeId: string;
+    resKey: string;
+    shiftKeys: string[];
+    seatIds: string[];
+    excludeResKeys?: string[];
+  },
+): Promise<string | null> {
   const shiftKeys = [...new Set(input.shiftKeys.filter(Boolean))];
   const seatIds = [...new Set(input.seatIds.filter(Boolean))];
   if (!shiftKeys.length || !seatIds.length) return null;
-  const conflict = await prisma.receptionReservationSeat.findFirst({
+  const exclude = [...new Set([input.resKey, ...(input.excludeResKeys ?? [])].filter(Boolean))];
+  const conflict = await db.receptionReservationSeat.findFirst({
     where: {
       storeId: input.storeId,
       shiftKey: { in: shiftKeys },
       seatId: { in: seatIds },
-      NOT: { resKey: input.resKey },
+      resKey: { notIn: exclude },
     },
     select: { seatId: true, resKey: true },
   });
   if (!conflict) return null;
   return `席 ${displayTableCode(conflict.seatId)} は別の予約（${conflict.resKey}）で使用中です`;
+}
+
+function assertBulkReservationSeatAssignments(
+  rows: {
+    resId: string;
+    date: string;
+    shift: string;
+    time: string;
+    status: string | null;
+    seats: string[];
+  }[],
+): string | null {
+  const slotOwner = new Map<string, string>();
+  for (const row of rows) {
+    if (row.status === "キャンセル") continue;
+    const shiftKeys = reservationSeatShiftKeys(row.resId, row.date, row.shift, row.time);
+    for (const seatId of row.seats) {
+      for (const sk of shiftKeys) {
+        const key = `${sk}\0${seatId}`;
+        const prev = slotOwner.get(key);
+        if (prev && prev !== row.resId) {
+          return `一括保存内で席 ${displayTableCode(seatId)} が重複しています（${prev} と ${row.resId}）`;
+        }
+        slotOwner.set(key, row.resId);
+      }
+    }
+  }
+  return null;
+}
+
+async function writeReservationSeatLocks(
+  db: ReservationSeatDb,
+  input: {
+    storeId: string;
+    resKey: string;
+    date: string;
+    shift: string;
+    time?: string;
+    seats: string[];
+  },
+): Promise<void> {
+  const { storeId, resKey, date, shift, seats } = input;
+  const time = typeof input.time === "string" ? input.time.trim() : "";
+  const uniqueSeats = [...new Set(seats.filter((s) => typeof s === "string" && s))];
+  if (uniqueSeats.length === 0) return;
+
+  const legacyKey = legacyDaypartShiftKey(date, shift === "dinner" ? "dinner" : "lunch");
+  const isNet = resKey.startsWith("N");
+  const slotKey = isNet && time ? netReserveSlotKey(date, time) : null;
+
+  if (slotKey) {
+    const rows: { storeId: string; shiftKey: string; seatId: string; resKey: string }[] = [];
+    for (const seatId of uniqueSeats) {
+      rows.push({ storeId, shiftKey: slotKey, seatId, resKey });
+      rows.push({ storeId, shiftKey: legacyKey, seatId, resKey });
+    }
+    await db.receptionReservationSeat.createMany({ data: rows });
+    return;
+  }
+
+  await db.receptionReservationSeat.createMany({
+    data: uniqueSeats.map((seatId) => ({ storeId, resKey, shiftKey: legacyKey, seatId })),
+  });
 }
 
 async function syncReservationSeatLocks(input: {
@@ -637,34 +720,31 @@ async function syncReservationSeatLocks(input: {
   time?: string;
   seats: string[];
   status: string | null | undefined;
+  excludeResKeysFromConflict?: string[];
+  skipDelete?: boolean;
+  db?: ReservationSeatDb;
 }): Promise<void> {
+  const db = input.db ?? prisma;
   const { storeId, resKey, date, shift, seats, status } = input;
   const time = typeof input.time === "string" ? input.time.trim() : "";
-  await prisma.receptionReservationSeat.deleteMany({ where: { storeId, resKey } });
+  if (!input.skipDelete) {
+    await db.receptionReservationSeat.deleteMany({ where: { storeId, resKey } });
+  }
   if (status === "キャンセル") return;
   const uniqueSeats = [...new Set(seats.filter((s) => typeof s === "string" && s))];
   if (uniqueSeats.length === 0) return;
 
-  const legacyKey = legacyDaypartShiftKey(date, shift === "dinner" ? "dinner" : "lunch");
-  const isNet = resKey.startsWith("N");
-  const slotKey = isNet && time ? netReserveSlotKey(date, time) : null;
-  const shiftKeys = slotKey ? [slotKey, legacyKey] : [legacyKey];
-  const conflictMsg = await assertReservationSeatsFree({ storeId, resKey, shiftKeys, seatIds: uniqueSeats });
+  const shiftKeys = reservationSeatShiftKeys(resKey, date, shift, time);
+  const conflictMsg = await assertReservationSeatsFree(db, {
+    storeId,
+    resKey,
+    shiftKeys,
+    seatIds: uniqueSeats,
+    excludeResKeys: input.excludeResKeysFromConflict,
+  });
   if (conflictMsg) throw new Error(conflictMsg);
 
-  if (slotKey) {
-    const rows: { storeId: string; shiftKey: string; seatId: string; resKey: string }[] = [];
-    for (const seatId of uniqueSeats) {
-      rows.push({ storeId, shiftKey: slotKey, seatId, resKey });
-      rows.push({ storeId, shiftKey: legacyKey, seatId, resKey });
-    }
-    await prisma.receptionReservationSeat.createMany({ data: rows });
-    return;
-  }
-
-  await prisma.receptionReservationSeat.createMany({
-    data: uniqueSeats.map((seatId) => ({ storeId, resKey, shiftKey: legacyKey, seatId })),
-  });
+  await writeReservationSeatLocks(db, { storeId, resKey, date, shift, time, seats: uniqueSeats });
 }
 
 /** ネット予約: 時刻枠キーに加え、昼/夜シフト（date_lunch / date_dinner）でもロック（同一シフト内の別時刻の二重割当防止） */
@@ -1200,13 +1280,25 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
         });
         const bulkOrigin = staffRequestOrigin(req);
         const bulkReceptionUrl = `${bulkOrigin}/staff-app/${encodeURIComponent(store.id)}/reception`;
+
+        type BulkPrepared = {
+          resId: string;
+          date: string;
+          shift: string;
+          time: string;
+          status: string | null;
+          seats: string[];
+          data: Record<string, unknown>;
+          prevRow: Awaited<ReturnType<typeof prisma.receptionReservation.findUnique>>;
+        };
+        const prepared: BulkPrepared[] = [];
         for (const row of arr) {
           if (!row || typeof row !== "object" || Array.isArray(row)) continue;
           const r = row as Record<string, unknown>;
-          const resId = typeof r.resId === "string" ? r.resId : "";
-          const date = typeof r.date === "string" ? r.date : "";
-          const shift = typeof r.shift === "string" ? r.shift : "";
-          const time = typeof r.time === "string" ? r.time : "";
+          const resId = typeof r.resId === "string" ? r.resId.trim() : "";
+          const date = typeof r.date === "string" ? r.date.trim() : "";
+          const shift = typeof r.shift === "string" ? r.shift.trim() : "";
+          const time = typeof r.time === "string" ? r.time.trim() : "";
           const status = typeof r.status === "string" ? r.status : null;
           if (!resId || !date || !shift) continue;
           const rawSeats = Array.isArray(r.seats)
@@ -1217,32 +1309,75 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
           const prevRow = await prisma.receptionReservation.findUnique({
             where: { storeId_resKey: { storeId: store.id, resKey: resId } },
           });
-          const prevStatus = netReserveReservationPrevStatus(prevRow);
-          try {
-            await prisma.receptionReservation.upsert({
-              where: { storeId_resKey: { storeId: store.id, resKey: resId } },
-              create: { storeId: store.id, resKey: resId, data: r as never, date, shift, status },
-              update: { data: r as never, date, shift, status },
+          prepared.push({ resId, date, shift, time, status, seats, data: r, prevRow });
+        }
+
+        if (prepared.length === 0) {
+          return reply.code(400).send({ error: "reservations required" });
+        }
+
+        const batchResKeys = prepared.map((p) => p.resId);
+        const batchConflict = assertBulkReservationSeatAssignments(prepared);
+        if (batchConflict) {
+          return reply.code(409).send({ error: batchConflict });
+        }
+
+        try {
+          await prisma.$transaction(async (tx) => {
+            await tx.receptionReservationSeat.deleteMany({
+              where: { storeId: store.id, resKey: { in: batchResKeys } },
             });
-            await syncReservationSeatLocks({
-              storeId: store.id,
-              resKey: resId,
-              date,
-              shift,
-              time,
-              seats,
-              status,
-            });
-          } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : String(e);
-            return reply.code(409).send({ error: msg || "seat lock failed" });
-          }
+            for (const row of prepared) {
+              if (row.status === "キャンセル" || row.seats.length === 0) continue;
+              const shiftKeys = reservationSeatShiftKeys(row.resId, row.date, row.shift, row.time);
+              const conflictMsg = await assertReservationSeatsFree(tx, {
+                storeId: store.id,
+                resKey: row.resId,
+                shiftKeys,
+                seatIds: row.seats,
+                excludeResKeys: batchResKeys,
+              });
+              if (conflictMsg) throw new Error(conflictMsg);
+            }
+            for (const row of prepared) {
+              await tx.receptionReservation.upsert({
+                where: { storeId_resKey: { storeId: store.id, resKey: row.resId } },
+                create: {
+                  storeId: store.id,
+                  resKey: row.resId,
+                  data: row.data as never,
+                  date: row.date,
+                  shift: row.shift,
+                  status: row.status,
+                },
+                update: { data: row.data as never, date: row.date, shift: row.shift, status: row.status },
+              });
+              await syncReservationSeatLocks({
+                storeId: store.id,
+                resKey: row.resId,
+                date: row.date,
+                shift: row.shift,
+                time: row.time,
+                seats: row.seats,
+                status: row.status,
+                skipDelete: true,
+                excludeResKeysFromConflict: batchResKeys,
+                db: tx,
+              });
+            }
+          });
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          return reply.code(409).send({ error: msg || "seat lock failed" });
+        }
+
+        for (const row of prepared) {
           await maybeNotifyNetReserveCancelled(
             store,
-            resId,
-            prevStatus,
-            r,
-            status,
+            row.resId,
+            netReserveReservationPrevStatus(row.prevRow),
+            row.data,
+            row.status,
             bulkReceptionUrl,
             req.log,
           );

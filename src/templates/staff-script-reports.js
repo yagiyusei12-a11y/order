@@ -421,10 +421,14 @@ function qsFromInputs() {
   const toEl = document.getElementById("repTo");
   const fromIso = parseDtLocalToIso(fromEl && fromEl.value);
   let toIso = parseDtLocalToIso(toEl && toEl.value);
-  /** 終了が「その日の 0:00」のとき、日付だけ選んだ想定でその日終わりまで含める（0:00 だとその瞬間より前のみになり当日分が全部落ちる） */
+  /** 終了が「その日の 0:00」かつ開始と同日のときだけ、その日終わりまで含める（月跨ぎの上限 0:00 は含めない） */
   if (toEl && toEl.value && toIso) {
-    const d = new Date(toEl.value);
+    const fromVal = fromEl && fromEl.value ? String(fromEl.value) : "";
+    const toVal = String(toEl.value);
+    const sameDay = fromVal.slice(0, 10) === toVal.slice(0, 10);
+    const d = new Date(toVal);
     if (
+      sameDay &&
       Number.isFinite(d.getTime()) &&
       d.getHours() === 0 &&
       d.getMinutes() === 0 &&

@@ -36,12 +36,11 @@ import {
   setMenuItemBlockedByBusyStop,
 } from "../lib/kitchen-busy-stop.js";
 import {
-  baseNetFromStoredPrice,
   eatModeTaxRatePercent,
   normalizeEatMode,
   optionPriceDeltaTaxIncluded,
   resolveItemPriceTaxMode,
-  taxIncludedFromNet,
+  menuItemTaxIncludedUnitPrice,
   type EatMode,
 } from "../lib/order-line-tax.js";
 import { evaluatePublicOrderGate } from "../lib/store-order-gate.js";
@@ -1301,9 +1300,13 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
               }
             }
 
-            const priceTaxMode = resolveItemPriceTaxMode(setItem.priceTaxMode, st.menuPriceTaxMode);
-            const baseNet = baseNetFromStoredPrice(setItem.price, priceTaxMode, storeTaxRatePercent);
-            const baseTaxIncluded = taxIncludedFromNet(baseNet, taxRatePercent);
+            const baseTaxIncluded = menuItemTaxIncludedUnitPrice(
+              setItem.price,
+              setItem.priceTaxMode,
+              st.menuPriceTaxMode,
+              storeTaxRatePercent,
+              taxRatePercent,
+            );
             let surcharge = 0;
             for (const st of setItem.setSteps) {
               const picked = byStep.get(st.id) ?? [];
@@ -1569,9 +1572,13 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
             const vOpt = validateGuestOptionSelections(linkedGroups, l.optionSelections);
             if (!vOpt.ok) throw new Error("BAD_OPTIONS");
 
-            const priceTaxMode = resolveItemPriceTaxMode(plainItem.priceTaxMode, st.menuPriceTaxMode);
-            const baseNet = baseNetFromStoredPrice(plainItem.price, priceTaxMode, storeTaxRatePercent);
-            const baseTaxIncluded = taxIncludedFromNet(baseNet, taxRatePercent);
+            const baseTaxIncluded = menuItemTaxIncludedUnitPrice(
+              plainItem.price,
+              plainItem.priceTaxMode,
+              st.menuPriceTaxMode,
+              storeTaxRatePercent,
+              taxRatePercent,
+            );
             const discRows0 = plainItem.timeDiscounts.map((d) => ({
               discountKind: d.discountKind,
               value: d.value,
@@ -1650,10 +1657,13 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
             throw new Error("BAD_STOCK");
           }
           const priceTaxMode = resolveItemPriceTaxMode(item.priceTaxMode, st.menuPriceTaxMode);
-          const baseTaxIncluded =
-            priceTaxMode === "exclusive"
-              ? Math.round(item.price * (1 + st.taxRatePercent / 100))
-              : item.price;
+          const baseTaxIncluded = menuItemTaxIncludedUnitPrice(
+            item.price,
+            item.priceTaxMode,
+            st.menuPriceTaxMode,
+            st.taxRatePercent,
+            st.taxRatePercent,
+          );
           const discRows = item.timeDiscounts.map((d) => ({
             discountKind: d.discountKind,
             value: d.value,

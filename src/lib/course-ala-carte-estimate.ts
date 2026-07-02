@@ -7,11 +7,9 @@ import {
   type OpsBillDiscountJson,
 } from "./ops-discount.js";
 import {
-  baseNetFromStoredPrice,
   eatModeTaxRatePercent,
   normalizeEatMode,
-  resolveItemPriceTaxMode,
-  taxIncludedFromNet,
+  menuItemTaxIncludedUnitPrice,
 } from "./order-line-tax.js";
 import { SET_SERVE_LATER_LINE_KIND } from "./set-order-bundle.js";
 
@@ -100,10 +98,14 @@ function menuItemUnitTaxIncluded(
   eatMode: string,
   store: StoreTaxSettings,
 ): number {
-  const storedMode = resolveItemPriceTaxMode(item.priceTaxMode, store.menuPriceTaxMode);
   const taxRate = eatModeTaxRatePercent(normalizeEatMode(eatMode), store.taxRatePercent);
-  const net = baseNetFromStoredPrice(item.price, storedMode, store.taxRatePercent);
-  return taxIncludedFromNet(net, taxRate);
+  return menuItemTaxIncludedUnitPrice(
+    item.price,
+    item.priceTaxMode,
+    store.menuPriceTaxMode,
+    store.taxRatePercent,
+    taxRate,
+  );
 }
 
 /** 単品行の税込小計（割引前）。コース内0円行はメニュー定価ベースで試算。 */

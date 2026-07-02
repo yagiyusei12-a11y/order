@@ -44,6 +44,22 @@ export function taxIncludedFromNet(netExclusiveYen: number, taxRatePercent: numb
   return Math.round(netExclusiveYen * (1 + taxRatePercent / 100));
 }
 
+/**
+ * 商品マスタの保存価格から注文行の税込単価（時間割引前）を算出。
+ * 税込設定の商品は店内・テイクアウトとも保存価格をそのまま使う。
+ */
+export function menuItemTaxIncludedUnitPrice(
+  storedPrice: number,
+  itemPriceTaxMode: string | null | undefined,
+  storeMenuPriceTaxMode: PriceTaxMode,
+  storeTaxRatePercent: number,
+  lineTaxRatePercent: number,
+): number {
+  const mode = resolveItemPriceTaxMode(itemPriceTaxMode, storeMenuPriceTaxMode);
+  if (mode === "inclusive") return storedPrice;
+  return taxIncludedFromNet(storedPrice, lineTaxRatePercent);
+}
+
 /** オプション priceDelta（商品価格と同じく menuPriceTaxMode の意味で保存）を行税率の税込加算額へ */
 export function optionPriceDeltaTaxIncluded(
   storedDelta: number,

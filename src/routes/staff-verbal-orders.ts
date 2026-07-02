@@ -18,12 +18,10 @@ import {
   type SetStepForValidation,
 } from "../lib/menu-set-order.js";
 import {
-  baseNetFromStoredPrice,
   eatModeTaxRatePercent,
   normalizeEatMode,
   optionPriceDeltaTaxIncluded,
-  resolveItemPriceTaxMode,
-  taxIncludedFromNet,
+  menuItemTaxIncludedUnitPrice,
   type EatMode,
 } from "../lib/order-line-tax.js";
 import { courseIncludedSingleMenuItemIds } from "../lib/course-included-singles.js";
@@ -310,9 +308,13 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
               }
             }
 
-            const priceTaxMode = resolveItemPriceTaxMode(item.priceTaxMode, st.menuPriceTaxMode);
-            const baseNet = baseNetFromStoredPrice(item.price, priceTaxMode, st.taxRatePercent);
-            const baseTaxIncluded = taxIncludedFromNet(baseNet, lineTaxPct);
+            const baseTaxIncluded = menuItemTaxIncludedUnitPrice(
+              item.price,
+              item.priceTaxMode,
+              st.menuPriceTaxMode,
+              st.taxRatePercent,
+              lineTaxPct,
+            );
             let surcharge = 0;
             for (const stp of item.setSteps) {
               const picked = byStep.get(stp.id) ?? [];
@@ -462,9 +464,13 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
           );
           if (!vOpt.ok) throw new Error("BAD_OPTIONS");
 
-          const priceTaxMode = resolveItemPriceTaxMode(item.priceTaxMode, st.menuPriceTaxMode);
-          const baseNet = baseNetFromStoredPrice(item.price, priceTaxMode, st.taxRatePercent);
-          const baseTaxIncluded = taxIncludedFromNet(baseNet, lineTaxPct);
+          const baseTaxIncluded = menuItemTaxIncludedUnitPrice(
+            item.price,
+            item.priceTaxMode,
+            st.menuPriceTaxMode,
+            st.taxRatePercent,
+            lineTaxPct,
+          );
           const discRows = item.timeDiscounts.map((d) => ({
             discountKind: d.discountKind,
             value: d.value,
@@ -533,11 +539,13 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
           if (row.stockQty !== null && row.stockQty < needQty) {
             throw new Error("BAD_STOCK");
           }
-          const priceTaxMode = resolveItemPriceTaxMode(row.priceTaxMode, st.menuPriceTaxMode);
-          const baseTaxIncluded =
-            priceTaxMode === "exclusive"
-              ? Math.round(row.price * (1 + st.taxRatePercent / 100))
-              : row.price;
+          const baseTaxIncluded = menuItemTaxIncludedUnitPrice(
+            row.price,
+            row.priceTaxMode,
+            st.menuPriceTaxMode,
+            st.taxRatePercent,
+            st.taxRatePercent,
+          );
           const discRows = row.timeDiscounts.map((d) => ({
             discountKind: d.discountKind,
             value: d.value,

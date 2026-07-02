@@ -34,7 +34,7 @@ import {
 import { sendMailSafe, isMailConfigured } from "../lib/mail.js";
 import { sendNotifyEmailList, takeoutNetStaffNotifyEmails } from "../lib/notify-emails.js";
 import { staffRequestOrigin } from "../lib/guest-display-url.js";
-import { optionPriceDeltaTaxIncluded, resolveItemPriceTaxMode } from "../lib/order-line-tax.js";
+import { optionPriceDeltaTaxIncluded, menuItemTaxIncludedUnitPrice, resolveItemPriceTaxMode } from "../lib/order-line-tax.js";
 
 type EatMode = "dine_in" | "takeout";
 function retaxInclusiveYen(taxIncludedYen: number, fromTaxRatePercent: number, toTaxRatePercent: number): number {
@@ -194,8 +194,13 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
       name: c.name,
       items: c.items.map((it) => {
         const priceTaxMode = resolveItemPriceTaxMode(it.priceTaxMode, st.menuPriceTaxMode);
-        const baseNet = baseNetFromStoredPrice(it.price, priceTaxMode, storeTaxRatePercent);
-        const takeoutTaxIncluded = taxIncludedFromNet(baseNet, takeoutTaxRatePercent);
+        const takeoutTaxIncluded = menuItemTaxIncludedUnitPrice(
+          it.price,
+          it.priceTaxMode,
+          st.menuPriceTaxMode,
+          storeTaxRatePercent,
+          takeoutTaxRatePercent,
+        );
         const discRows = (it.timeDiscounts || []).map((d) => ({
           discountKind: d.discountKind,
           value: d.value,
@@ -526,9 +531,13 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
             if (!v.ok) throw new Error("BAD_SET");
             const byStep = v.byStep;
 
-            const priceTaxMode = resolveItemPriceTaxMode(it.priceTaxMode, st.menuPriceTaxMode);
-            const baseNet = baseNetFromStoredPrice(it.price, priceTaxMode, storeTaxRatePercent);
-            const baseTaxIncluded = taxIncludedFromNet(baseNet, taxRatePercent);
+            const baseTaxIncluded = menuItemTaxIncludedUnitPrice(
+              it.price,
+              it.priceTaxMode,
+              st.menuPriceTaxMode,
+              storeTaxRatePercent,
+              taxRatePercent,
+            );
             let surcharge = 0;
             for (const stp of it.setSteps) {
               const picked = byStep.get(stp.id) ?? [];
@@ -645,9 +654,13 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
             const vOpt = validateGuestOptionSelections(linkedGroups, l.optionSelections);
             if (!vOpt.ok) throw new Error("BAD_OPTIONS");
 
-            const priceTaxMode = resolveItemPriceTaxMode(it.priceTaxMode, st.menuPriceTaxMode);
-            const baseNet = baseNetFromStoredPrice(it.price, priceTaxMode, storeTaxRatePercent);
-            const baseTaxIncluded = taxIncludedFromNet(baseNet, taxRatePercent);
+            const baseTaxIncluded = menuItemTaxIncludedUnitPrice(
+              it.price,
+              it.priceTaxMode,
+              st.menuPriceTaxMode,
+              storeTaxRatePercent,
+              taxRatePercent,
+            );
             const discRows = (it.timeDiscounts || []).map((d) => ({
               discountKind: d.discountKind,
               value: d.value,

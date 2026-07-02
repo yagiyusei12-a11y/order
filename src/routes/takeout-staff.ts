@@ -24,7 +24,7 @@ import {
   takeoutTablePrimaryPublicCode,
   takeoutTableWhereForStore,
 } from "../lib/takeout-table-code.js";
-import { optionPriceDeltaTaxIncluded } from "../lib/order-line-tax.js";
+import { optionPriceDeltaTaxIncluded, resolveItemPriceTaxMode } from "../lib/order-line-tax.js";
 
 type EatMode = "dine_in" | "takeout";
 
@@ -260,7 +260,7 @@ export async function registerTakeoutStaff(app: FastifyInstance): Promise<void> 
             if (!v.ok) throw new Error("BAD_SET");
             const byStep = v.byStep;
 
-            const priceTaxMode = it.priceTaxMode === "exclusive" ? "exclusive" : st.menuPriceTaxMode;
+            const priceTaxMode = resolveItemPriceTaxMode(it.priceTaxMode, st.menuPriceTaxMode);
             const baseNet = baseNetFromStoredPrice(it.price, priceTaxMode, storeTaxRatePercent);
             const baseTaxIncluded = taxIncludedFromNet(baseNet, taxRatePercent);
             let surcharge = 0;
@@ -336,7 +336,7 @@ export async function registerTakeoutStaff(app: FastifyInstance): Promise<void> 
             const vOpt = validateGuestOptionSelections(linkedGroups, l.optionSelections);
             if (!vOpt.ok) throw new Error("BAD_OPTIONS");
 
-            const priceTaxMode = it.priceTaxMode === "exclusive" ? "exclusive" : st.menuPriceTaxMode;
+            const priceTaxMode = resolveItemPriceTaxMode(it.priceTaxMode, st.menuPriceTaxMode);
             const baseNet = baseNetFromStoredPrice(it.price, priceTaxMode, storeTaxRatePercent);
             const baseTaxIncluded = taxIncludedFromNet(baseNet, taxRatePercent);
             const discRows = (it.timeDiscounts || []).map((d) => ({

@@ -1,6 +1,18 @@
 /** 店内 / テイクアウト（ゲスト注文・口頭注文の明細税率に使用） */
 export type EatMode = "dine_in" | "takeout";
 
+export type PriceTaxMode = "inclusive" | "exclusive";
+
+/** 商品マスタの priceTaxMode を解決（inclusive 明示時は店舗デフォルトに上書きしない） */
+export function resolveItemPriceTaxMode(
+  itemPriceTaxMode: string | null | undefined,
+  storeMenuPriceTaxMode: PriceTaxMode,
+): PriceTaxMode {
+  if (itemPriceTaxMode === "exclusive") return "exclusive";
+  if (itemPriceTaxMode === "inclusive") return "inclusive";
+  return storeMenuPriceTaxMode;
+}
+
 export function normalizeEatMode(raw: unknown): EatMode {
   return raw === "takeout" ? "takeout" : "dine_in";
 }

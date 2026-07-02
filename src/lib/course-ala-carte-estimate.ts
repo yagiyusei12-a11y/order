@@ -10,6 +10,7 @@ import {
   baseNetFromStoredPrice,
   eatModeTaxRatePercent,
   normalizeEatMode,
+  resolveItemPriceTaxMode,
   taxIncludedFromNet,
 } from "./order-line-tax.js";
 import { SET_SERVE_LATER_LINE_KIND } from "./set-order-bundle.js";
@@ -99,8 +100,7 @@ function menuItemUnitTaxIncluded(
   eatMode: string,
   store: StoreTaxSettings,
 ): number {
-  const storedMode =
-    item.priceTaxMode === "exclusive" ? "exclusive" : store.menuPriceTaxMode;
+  const storedMode = resolveItemPriceTaxMode(item.priceTaxMode, store.menuPriceTaxMode);
   const taxRate = eatModeTaxRatePercent(normalizeEatMode(eatMode), store.taxRatePercent);
   const net = baseNetFromStoredPrice(item.price, storedMode, store.taxRatePercent);
   return taxIncludedFromNet(net, taxRate);

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { prisma } from "../db.js";
-import { baseNetFromStoredPrice, taxIncludedFromNet } from "./order-line-tax.js";
+import { baseNetFromStoredPrice, resolveItemPriceTaxMode, taxIncludedFromNet } from "./order-line-tax.js";
 import { templatePath } from "./paths.js";
 import { customerFacingStoreName, mergeStoreSettings } from "./store-settings.js";
 
@@ -36,7 +36,7 @@ function menuItemNetAndIncl(
   defaultMode: "inclusive" | "exclusive",
   taxRatePercent: number,
 ): { net: number; incl: number } {
-  const mode = priceTaxMode === "exclusive" ? "exclusive" : defaultMode;
+  const mode = resolveItemPriceTaxMode(priceTaxMode, defaultMode);
   const net = baseNetFromStoredPrice(storedPrice, mode, taxRatePercent);
   const incl = taxIncludedFromNet(net, taxRatePercent);
   return { net, incl };

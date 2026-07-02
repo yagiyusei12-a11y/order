@@ -22,6 +22,7 @@ import {
   eatModeTaxRatePercent,
   normalizeEatMode,
   optionPriceDeltaTaxIncluded,
+  resolveItemPriceTaxMode,
   taxIncludedFromNet,
   type EatMode,
 } from "../lib/order-line-tax.js";
@@ -309,7 +310,7 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
               }
             }
 
-            const priceTaxMode = item.priceTaxMode === "exclusive" ? "exclusive" : st.menuPriceTaxMode;
+            const priceTaxMode = resolveItemPriceTaxMode(item.priceTaxMode, st.menuPriceTaxMode);
             const baseNet = baseNetFromStoredPrice(item.price, priceTaxMode, st.taxRatePercent);
             const baseTaxIncluded = taxIncludedFromNet(baseNet, lineTaxPct);
             let surcharge = 0;
@@ -461,7 +462,7 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
           );
           if (!vOpt.ok) throw new Error("BAD_OPTIONS");
 
-          const priceTaxMode = item.priceTaxMode === "exclusive" ? "exclusive" : st.menuPriceTaxMode;
+          const priceTaxMode = resolveItemPriceTaxMode(item.priceTaxMode, st.menuPriceTaxMode);
           const baseNet = baseNetFromStoredPrice(item.price, priceTaxMode, st.taxRatePercent);
           const baseTaxIncluded = taxIncludedFromNet(baseNet, lineTaxPct);
           const discRows = item.timeDiscounts.map((d) => ({
@@ -532,8 +533,9 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
           if (row.stockQty !== null && row.stockQty < needQty) {
             throw new Error("BAD_STOCK");
           }
+          const priceTaxMode = resolveItemPriceTaxMode(row.priceTaxMode, st.menuPriceTaxMode);
           const baseTaxIncluded =
-            (row.priceTaxMode === "exclusive" ? "exclusive" : st.menuPriceTaxMode) === "exclusive"
+            priceTaxMode === "exclusive"
               ? Math.round(row.price * (1 + st.taxRatePercent / 100))
               : row.price;
           const discRows = row.timeDiscounts.map((d) => ({

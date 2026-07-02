@@ -40,6 +40,7 @@ import {
   eatModeTaxRatePercent,
   normalizeEatMode,
   optionPriceDeltaTaxIncluded,
+  resolveItemPriceTaxMode,
   taxIncludedFromNet,
   type EatMode,
 } from "../lib/order-line-tax.js";
@@ -105,7 +106,7 @@ function mapGuestMenuItem(
   taxRatePercent: number,
   nowMin: number,
 ) {
-  const priceTaxMode = it.priceTaxMode === "exclusive" ? "exclusive" : defaultPriceTaxMode;
+  const priceTaxMode = resolveItemPriceTaxMode(it.priceTaxMode, defaultPriceTaxMode);
   const taxIncludedPrice =
     priceTaxMode === "exclusive"
       ? Math.round(it.price * (1 + taxRatePercent / 100))
@@ -1300,7 +1301,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
               }
             }
 
-            const priceTaxMode = setItem.priceTaxMode === "exclusive" ? "exclusive" : st.menuPriceTaxMode;
+            const priceTaxMode = resolveItemPriceTaxMode(setItem.priceTaxMode, st.menuPriceTaxMode);
             const baseNet = baseNetFromStoredPrice(setItem.price, priceTaxMode, storeTaxRatePercent);
             const baseTaxIncluded = taxIncludedFromNet(baseNet, taxRatePercent);
             let surcharge = 0;
@@ -1568,7 +1569,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
             const vOpt = validateGuestOptionSelections(linkedGroups, l.optionSelections);
             if (!vOpt.ok) throw new Error("BAD_OPTIONS");
 
-            const priceTaxMode = plainItem.priceTaxMode === "exclusive" ? "exclusive" : st.menuPriceTaxMode;
+            const priceTaxMode = resolveItemPriceTaxMode(plainItem.priceTaxMode, st.menuPriceTaxMode);
             const baseNet = baseNetFromStoredPrice(plainItem.price, priceTaxMode, storeTaxRatePercent);
             const baseTaxIncluded = taxIncludedFromNet(baseNet, taxRatePercent);
             const discRows0 = plainItem.timeDiscounts.map((d) => ({
@@ -1648,9 +1649,9 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
           if (item.stockQty !== null && item.stockQty < needQty) {
             throw new Error("BAD_STOCK");
           }
-          const priceTaxMode = item.priceTaxMode === "exclusive" ? "exclusive" : st.menuPriceTaxMode;
+          const priceTaxMode = resolveItemPriceTaxMode(item.priceTaxMode, st.menuPriceTaxMode);
           const baseTaxIncluded =
-            (item.priceTaxMode === "exclusive" ? "exclusive" : st.menuPriceTaxMode) === "exclusive"
+            priceTaxMode === "exclusive"
               ? Math.round(item.price * (1 + st.taxRatePercent / 100))
               : item.price;
           const discRows = item.timeDiscounts.map((d) => ({

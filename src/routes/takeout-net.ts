@@ -34,7 +34,7 @@ import {
 import { sendMailSafe, isMailConfigured } from "../lib/mail.js";
 import { sendNotifyEmailList, takeoutNetStaffNotifyEmails } from "../lib/notify-emails.js";
 import { staffRequestOrigin } from "../lib/guest-display-url.js";
-import { optionPriceDeltaTaxIncluded } from "../lib/order-line-tax.js";
+import { optionPriceDeltaTaxIncluded, resolveItemPriceTaxMode } from "../lib/order-line-tax.js";
 
 type EatMode = "dine_in" | "takeout";
 function retaxInclusiveYen(taxIncludedYen: number, fromTaxRatePercent: number, toTaxRatePercent: number): number {
@@ -193,7 +193,7 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
       id: c.id,
       name: c.name,
       items: c.items.map((it) => {
-        const priceTaxMode = it.priceTaxMode === "exclusive" ? "exclusive" : st.menuPriceTaxMode;
+        const priceTaxMode = resolveItemPriceTaxMode(it.priceTaxMode, st.menuPriceTaxMode);
         const baseNet = baseNetFromStoredPrice(it.price, priceTaxMode, storeTaxRatePercent);
         const takeoutTaxIncluded = taxIncludedFromNet(baseNet, takeoutTaxRatePercent);
         const discRows = (it.timeDiscounts || []).map((d) => ({
@@ -526,7 +526,7 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
             if (!v.ok) throw new Error("BAD_SET");
             const byStep = v.byStep;
 
-            const priceTaxMode = it.priceTaxMode === "exclusive" ? "exclusive" : st.menuPriceTaxMode;
+            const priceTaxMode = resolveItemPriceTaxMode(it.priceTaxMode, st.menuPriceTaxMode);
             const baseNet = baseNetFromStoredPrice(it.price, priceTaxMode, storeTaxRatePercent);
             const baseTaxIncluded = taxIncludedFromNet(baseNet, taxRatePercent);
             let surcharge = 0;
@@ -645,7 +645,7 @@ export async function registerTakeoutNet(app: FastifyInstance): Promise<void> {
             const vOpt = validateGuestOptionSelections(linkedGroups, l.optionSelections);
             if (!vOpt.ok) throw new Error("BAD_OPTIONS");
 
-            const priceTaxMode = it.priceTaxMode === "exclusive" ? "exclusive" : st.menuPriceTaxMode;
+            const priceTaxMode = resolveItemPriceTaxMode(it.priceTaxMode, st.menuPriceTaxMode);
             const baseNet = baseNetFromStoredPrice(it.price, priceTaxMode, storeTaxRatePercent);
             const baseTaxIncluded = taxIncludedFromNet(baseNet, taxRatePercent);
             const discRows = (it.timeDiscounts || []).map((d) => ({

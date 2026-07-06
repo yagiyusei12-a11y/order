@@ -68,6 +68,55 @@
         margin: 0.75rem 0 0.35rem;
         color: var(--accent);
       }
+      .cat-tabs-wrap {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        margin: 0 0 0.75rem;
+        padding: 0.35rem 0;
+        background: linear-gradient(to bottom, var(--bg) 70%, transparent);
+      }
+      .cat-tabs {
+        display: flex;
+        gap: 0.4rem;
+        overflow-x: auto;
+        padding-bottom: 0.15rem;
+        scrollbar-width: thin;
+        -webkit-overflow-scrolling: touch;
+      }
+      .cat-tabs::-webkit-scrollbar { height: 4px; }
+      .cat-tab {
+        flex-shrink: 0;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0.45rem 0.8rem;
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--muted);
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: background 0.15s, color 0.15s, border-color 0.15s;
+      }
+      .cat-tab.is-on {
+        background: rgba(56, 189, 248, 0.18);
+        border-color: rgba(56, 189, 248, 0.45);
+        color: var(--text);
+      }
+      .cat-tab__badge {
+        display: inline-block;
+        min-width: 1.1rem;
+        margin-left: 0.25rem;
+        padding: 0 0.3rem;
+        border-radius: 999px;
+        background: rgba(56, 189, 248, 0.35);
+        color: #fff;
+        font-size: 0.68rem;
+        line-height: 1.35;
+        text-align: center;
+      }
+      .cat-tab__badge[hidden] { display: none; }
+      .menu-panel.card { margin-bottom: 0; }
       .item-row {
         display: flex;
         align-items: center;
@@ -181,6 +230,10 @@
       const btnSubmit = qs("#btnSubmit");
       const resultsLink = qs("#resultsLink");
 
+      let categories = [];
+      let activeCatId = "";
+      const selectedIds = new Set();
+
       resultsLink.href = RESULTS_PATH + "?key=" + encodeURIComponent(KEY);
 
       function api(path, opts) {
@@ -209,9 +262,47 @@
       }
 
       function updateCount() {
-        const n = menuArea.querySelectorAll('input[type="checkbox"]:checked').length;
+        const n = selectedIds.size;
         selCountEl.textContent = n + " 件選択";
-        btnSubmit.disabled = !staffNameEl.value.trim() || menuArea.querySelectorAll("input[type=checkbox]").length === 0;
+        btnSubmit.disabled = !staffNameEl.value.trim() || categories.length === 0;
+        updateTabBadges();
+      }
+
+      function countSelectedInCategory(cat) {
+        let n = 0;
+        for (const item of cat.items) {
+          if (selectedIds.has(item.id)) n++;
+        }
+        return n;
+      }
+
+      function updateTabBadges() {
+        menuArea.querySelectorAll(".cat-tab").forEach((btn) => {
+          const catId = btn.getAttribute("data-cat-id");
+          const cat = categories.find((c) => c.id === catId);
+          if (!cat) return;
+          const badge = btn.querySelector(".cat-tab__badge");
+          if (!badge) return;
+          const n = countSelectedInCategory(cat);
+          if (n > 0) {
+            badge.hidden = false;
+            badge.textContent = String(n);
+          } else {
+            badge.hidden = true;
+          }
+        });
+      }
+
+      function toggleSelected(id, checked) {
+        if (checked) selectedIds.add(id);
+        else selectedIds.delete(id);
+        updateCount();
+      }
+
+      function applySelectedToCheckboxes() {
+        menuArea.querySelectorAll('input[type="checkbox"][data-id]').forEach((cb) => {
+          cb.checked = selectedIds.has(cb.getAttribute("data-id"));
+        });
       }
 
       function itemThumbHtml(item) {
@@ -226,36 +317,88 @@
         return '<div class="item-thumb item-thumb--empty" aria-hidden="true">🍽</div>';
       }
 
+      function renderCategoryItems(cat) {
+        let html = "";
+        for (const item of cat.items) {
+          const checked = selectedIds.has(item.id);
+          html +=
+            '<label class="item-row">' +
+            '<input type="checkbox" data-id="' +
+            escapeHtml(item.id) +
+            '"' +
+            (checked ? " checked" : "") +
+            " />" +
+            itemThumbHtml(item) +
+            '<span class="item-name">' +
+            escapeHtml(item.name) +
+            '<div class="item-meta">' +
+            yen(item.price) +
+            (item.isAvailable ? "" : ' <span class="unavail">（販売停止中）</span>') +
+            "</div></span></label>";
+        }
+        return html;
+      }
+
+      function renderTabs() {
+        let html = '<div class="cat-tabs-wrap"><div class="cat-tabs" role="tablist">';
+        for (const cat of categories) {
+          const isOn = cat.id === activeCatId;
+          html +=
+            '<button type="button" class="cat-tab' +
+            (isOn ? " is-on" : "") +
+            '" role="tab" aria-selected="' +
+            (isOn ? "true" : "false") +
+            '" data-cat-id="' +
+            escapeHtml(cat.id) +
+            '">' +
+            escapeHtml(cat.name) +
+            '<span class="cat-tab__badge" hidden></span></button>';
+        }
+        html += "</div></div>";
+        return html;
+      }
+
+      function renderActivePanel() {
+        const cat = categories.find((c) => c.id === activeCatId);
+        if (!cat) return "";
+        return '<div class="card menu-panel" role="tabpanel">' + renderCategoryItems(cat) + "</div>";
+      }
+
+      function bindMenuEvents() {
+        menuArea.querySelectorAll(".cat-tab").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const catId = btn.getAttribute("data-cat-id");
+            if (!catId || catId === activeCatId) return;
+            activeCatId = catId;
+            renderMenuView();
+          });
+        });
+        menuArea.querySelectorAll('input[type="checkbox"][data-id]').forEach((cb) => {
+          cb.addEventListener("change", () => {
+            toggleSelected(cb.getAttribute("data-id"), cb.checked);
+          });
+        });
+      }
+
+      function renderMenuView() {
+        menuArea.innerHTML = renderTabs() + renderActivePanel();
+        bindMenuEvents();
+        updateTabBadges();
+        updateCount();
+      }
+
       function renderMenu(data) {
         qs("#pageTitle").textContent = (data.storeName || "店舗") + " — メニュー廃止投票";
-        if (!data.categories || data.categories.length === 0) {
+        categories = data.categories || [];
+        if (categories.length === 0) {
           menuArea.innerHTML = '<p class="loading">投票対象のメニューがありません</p>';
+          updateCount();
           return;
         }
-        let html = "";
-        for (const cat of data.categories) {
-          html += '<div class="card"><div class="cat-title">' + escapeHtml(cat.name) + "</div>";
-          for (const item of cat.items) {
-            html +=
-              '<label class="item-row">' +
-              '<input type="checkbox" data-id="' +
-              escapeHtml(item.id) +
-              '" />' +
-              itemThumbHtml(item) +
-              '<span class="item-name">' +
-              escapeHtml(item.name) +
-              '<div class="item-meta">' +
-              yen(item.price) +
-              (item.isAvailable ? "" : ' <span class="unavail">（販売停止中）</span>') +
-              "</div></span></label>";
-          }
-          html += "</div>";
+        if (!activeCatId || !categories.some((c) => c.id === activeCatId)) {
+          activeCatId = categories[0].id;
         }
-        menuArea.innerHTML = html;
-        menuArea.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-          cb.addEventListener("change", updateCount);
-        });
-        updateCount();
+        renderMenuView();
       }
 
       function escapeHtml(s) {
@@ -271,11 +414,12 @@
         if (!name) return;
         try {
           const data = await api("/my-vote?name=" + encodeURIComponent(name));
-          const ids = new Set(data.menuItemIds || []);
-          menuArea.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-            cb.checked = ids.has(cb.getAttribute("data-id"));
-          });
-          updateCount();
+          selectedIds.clear();
+          for (const id of data.menuItemIds || []) selectedIds.add(id);
+          if (categories.length > 0) {
+            applySelectedToCheckboxes();
+            updateCount();
+          }
         } catch {
           /* ignore */
         }
@@ -294,10 +438,7 @@
           showMsg("お名前を入力してください", false);
           return;
         }
-        const menuItemIds = [];
-        menuArea.querySelectorAll('input[type="checkbox"]:checked').forEach((cb) => {
-          menuItemIds.push(cb.getAttribute("data-id"));
-        });
+        const menuItemIds = [...selectedIds];
         btnSubmit.disabled = true;
         try {
           await api("/vote", {

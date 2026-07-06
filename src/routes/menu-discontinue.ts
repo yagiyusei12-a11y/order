@@ -51,6 +51,7 @@ async function loadMenuForVote(storeId: string) {
           id: true,
           name: true,
           price: true,
+          imageUrl: true,
           isAvailable: true,
           sortOrder: true,
         },

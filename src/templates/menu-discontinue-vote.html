@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>メニュー廃止投票</title>
+    <style>
+      :root {
+        --bg: #0f1419;
+        --surface: rgba(255, 255, 255, 0.06);
+        --line: rgba(255, 255, 255, 0.12);
+        --text: rgba(255, 255, 255, 0.92);
+        --muted: rgba(255, 255, 255, 0.65);
+        --accent: #38bdf8;
+        --danger: #f87171;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans JP", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(800px 480px at 10% 0%, rgba(56, 189, 248, 0.12), transparent 60%),
+          var(--bg);
+        min-height: 100vh;
+      }
+      .wrap {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 1rem;
+        padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
+      }
+      h1 {
+        margin: 0 0 0.25rem;
+        font-size: 1.25rem;
+      }
+      .sub {
+        color: var(--muted);
+        font-size: 0.85rem;
+        margin: 0 0 1rem;
+        line-height: 1.5;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 0.85rem;
+        margin-bottom: 0.85rem;
+      }
+      label.field {
+        display: block;
+        font-size: 0.78rem;
+        color: var(--muted);
+        margin-bottom: 0.35rem;
+      }
+      input[type="text"] {
+        width: 100%;
+        padding: 0.65rem 0.75rem;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: rgba(0, 0, 0, 0.25);
+        color: var(--text);
+        font-size: 1rem;
+      }
+      .cat-title {
+        font-size: 0.92rem;
+        font-weight: 700;
+        margin: 0.75rem 0 0.35rem;
+        color: var(--accent);
+      }
+      .item-row {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0.55rem 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      .item-row:last-child { border-bottom: none; }
+      .item-row input { width: 18px; height: 18px; flex-shrink: 0; }
+      .item-name { flex: 1; font-size: 0.92rem; }
+      .item-meta { font-size: 0.72rem; color: var(--muted); }
+      .unavail { color: var(--danger); }
+      .bar {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 0.75rem 1rem;
+        padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
+        background: rgba(10, 14, 20, 0.92);
+        border-top: 1px solid var(--line);
+        backdrop-filter: blur(8px);
+      }
+      .bar-inner {
+        max-width: 720px;
+        margin: 0 auto;
+        display: flex;
+        gap: 0.6rem;
+        align-items: center;
+      }
+      .count { font-size: 0.82rem; color: var(--muted); flex: 1; }
+      button {
+        border: none;
+        border-radius: 10px;
+        padding: 0.7rem 1.1rem;
+        font-size: 0.95rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .btn-primary {
+        background: linear-gradient(135deg, #0ea5e9, #0284c7);
+        color: #fff;
+      }
+      .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+      .btn-link {
+        background: transparent;
+        color: var(--accent);
+        text-decoration: none;
+        font-size: 0.85rem;
+        padding: 0.35rem 0;
+      }
+      .msg {
+        padding: 0.65rem 0.75rem;
+        border-radius: 10px;
+        font-size: 0.85rem;
+        margin-bottom: 0.75rem;
+        display: none;
+      }
+      .msg.ok { display: block; background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.35); }
+      .msg.err { display: block; background: rgba(248, 113, 113, 0.12); border: 1px solid rgba(248, 113, 113, 0.35); }
+      .loading { color: var(--muted); text-align: center; padding: 2rem 0; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1 id="pageTitle">メニュー廃止投票</h1>
+      <p class="sub">
+        廃止したいメニューにチェックを入れ、お名前を入力して送信してください。同じ名前で再送信すると内容を上書きします。
+      </p>
+      <p><a class="btn-link" id="resultsLink" href="#">集計結果を見る</a></p>
+      <div id="msg" class="msg"></div>
+      <div class="card">
+        <label class="field" for="staffName">お名前</label>
+        <input id="staffName" type="text" placeholder="例: 田中" autocomplete="name" maxlength="40" />
+      </div>
+      <div id="menuArea" class="loading">読み込み中…</div>
+    </div>
+    <div class="bar">
+      <div class="bar-inner">
+        <span class="count" id="selCount">0 件選択</span>
+        <button type="button" class="btn-primary" id="btnSubmit" disabled>送信</button>
+      </div>
+    </div>
+    <script>
+      const STORE_ID = __STORE_ID_JS__;
+      const KEY = __KEY_JS__;
+      const RESULTS_PATH = __RESULTS_PATH_JS__;
+
+      const qs = (sel) => document.querySelector(sel);
+      const msgEl = qs("#msg");
+      const menuArea = qs("#menuArea");
+      const staffNameEl = qs("#staffName");
+      const selCountEl = qs("#selCount");
+      const btnSubmit = qs("#btnSubmit");
+      const resultsLink = qs("#resultsLink");
+
+      resultsLink.href = RESULTS_PATH + "?key=" + encodeURIComponent(KEY);
+
+      function api(path, opts) {
+        const sep = path.includes("?") ? "&" : "?";
+        const u =
+          "/menu-discontinue/api/" +
+          encodeURIComponent(STORE_ID) +
+          path +
+          sep +
+          "key=" +
+          encodeURIComponent(KEY);
+        return fetch(u, opts).then(async (r) => {
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.error || r.statusText || "error");
+          return j;
+        });
+      }
+
+      function showMsg(text, ok) {
+        msgEl.textContent = text;
+        msgEl.className = "msg " + (ok ? "ok" : "err");
+      }
+
+      function yen(n) {
+        return "¥" + Number(n).toLocaleString("ja-JP");
+      }
+
+      function updateCount() {
+        const n = menuArea.querySelectorAll('input[type="checkbox"]:checked').length;
+        selCountEl.textContent = n + " 件選択";
+        btnSubmit.disabled = !staffNameEl.value.trim() || menuArea.querySelectorAll("input[type=checkbox]").length === 0;
+      }
+
+      function renderMenu(data) {
+        qs("#pageTitle").textContent = (data.storeName || "店舗") + " — メニュー廃止投票";
+        if (!data.categories || data.categories.length === 0) {
+          menuArea.innerHTML = '<p class="loading">投票対象のメニューがありません</p>';
+          return;
+        }
+        let html = "";
+        for (const cat of data.categories) {
+          html += '<div class="card"><div class="cat-title">' + escapeHtml(cat.name) + "</div>";
+          for (const item of cat.items) {
+            html +=
+              '<label class="item-row">' +
+              '<input type="checkbox" data-id="' +
+              escapeHtml(item.id) +
+              '" />' +
+              '<span class="item-name">' +
+              escapeHtml(item.name) +
+              '<div class="item-meta">' +
+              yen(item.price) +
+              (item.isAvailable ? "" : ' <span class="unavail">（販売停止中）</span>') +
+              "</div></span></label>";
+          }
+          html += "</div>";
+        }
+        menuArea.innerHTML = html;
+        menuArea.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+          cb.addEventListener("change", updateCount);
+        });
+        updateCount();
+      }
+
+      function escapeHtml(s) {
+        return String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      async function loadExistingVote() {
+        const name = staffNameEl.value.trim();
+        if (!name) return;
+        try {
+          const data = await api("/my-vote?name=" + encodeURIComponent(name));
+          const ids = new Set(data.menuItemIds || []);
+          menuArea.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+            cb.checked = ids.has(cb.getAttribute("data-id"));
+          });
+          updateCount();
+        } catch {
+          /* ignore */
+        }
+      }
+
+      let loadVoteTimer = null;
+      staffNameEl.addEventListener("input", () => {
+        updateCount();
+        clearTimeout(loadVoteTimer);
+        loadVoteTimer = setTimeout(loadExistingVote, 400);
+      });
+
+      btnSubmit.addEventListener("click", async () => {
+        const staffName = staffNameEl.value.trim();
+        if (!staffName) {
+          showMsg("お名前を入力してください", false);
+          return;
+        }
+        const menuItemIds = [];
+        menuArea.querySelectorAll('input[type="checkbox"]:checked').forEach((cb) => {
+          menuItemIds.push(cb.getAttribute("data-id"));
+        });
+        btnSubmit.disabled = true;
+        try {
+          await api("/vote", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ staffName, menuItemIds }),
+          });
+          showMsg("送信しました（" + menuItemIds.length + " 件）。ありがとうございました。", true);
+        } catch (e) {
+          showMsg(e.message || "送信に失敗しました", false);
+        } finally {
+          updateCount();
+        }
+      });
+
+      api("/menu")
+        .then(renderMenu)
+        .catch((e) => {
+          menuArea.innerHTML = '<p class="loading">' + escapeHtml(e.message) + "</p>";
+        });
+    </script>
+  </body>
+</html>

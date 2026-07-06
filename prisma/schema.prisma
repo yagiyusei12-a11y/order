@@ -33,6 +33,7 @@ model Store {
   staffAuditLogs   StaffAuditLog[]
   cashDrawerEntries CashDrawerEntry[]
   storeGames       StoreGame[]
+  menuDiscontinueBallots MenuDiscontinueBallot[]
   createdAt        DateTime             @default(now())
 }
 
@@ -404,9 +405,34 @@ model MenuItem {
   setSteps          MenuSetStep[]   @relation("MenuSetOfItem")
   setChoiceAsComponent MenuSetChoice[] @relation("MenuSetChoiceComponent")
   storeGameRewards  StoreGame[]     @relation("StoreGameReward")
+  discontinueBallotItems MenuDiscontinueBallotItem[]
 
   @@index([categoryId])
   @@index([kitchenStationId])
+}
+
+/// スタッフによるメニュー廃止投票（1人1票・名前単位）
+model MenuDiscontinueBallot {
+  id        String   @id @default(cuid())
+  storeId   String
+  staffName String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  items     MenuDiscontinueBallotItem[]
+
+  @@unique([storeId, staffName])
+  @@index([storeId])
+}
+
+model MenuDiscontinueBallotItem {
+  ballotId   String
+  menuItemId String
+  ballot     MenuDiscontinueBallot @relation(fields: [ballotId], references: [id], onDelete: Cascade)
+  menuItem   MenuItem              @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  @@id([ballotId, menuItemId])
+  @@index([menuItemId])
 }
 
 /// セット商品の選択項目（例: 焼き鳥・一品など）

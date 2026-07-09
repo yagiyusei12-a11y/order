@@ -51,7 +51,11 @@ function courseOptionPackNameWithPeople(nameSnapshot: string, peopleCount: numbe
   const base = String(nameSnapshot || "").replace(/（×\d+名）\s*$/, "");
   return `${base}（×${peopleCount}名）`;
 }
-import { orderLineNetAfterLineDiscount, sumOrderLineNetsByTaxRate } from "../lib/report-line-tax.js";
+import {
+  allocateAmountByTaxBuckets,
+  orderLineNetAfterLineDiscount,
+  sumOrderLineNetsByTaxRate,
+} from "../lib/report-line-tax.js";
 import { syncReceptionShiftSeatsForTable } from "../lib/reception-seat-state.js";
 import { applyPostSettleSessionStatusInTx } from "../lib/post-settle-session.js";
 import { broadcastOpsSessionUpdatedMany } from "../lib/ops-seat-socket.js";
@@ -964,7 +968,23 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     }));
     const methodCodes = new Set(methods.map((m) => m.methodCode));
 
-    const byDate: Record<string, { billIds: Set<string>; byMethod: Record<string, number> }> = {};
+    type MethodCell = { total: number; tax8: number; tax10: number };
+    type DateCell = { billIds: Set<string>; byMethod: Record<string, MethodCell> };
+    const emptyMethodCell = (): MethodCell => ({ total: 0, tax8: 0, tax10: 0 });
+    const bumpMethod = (cell: DateCell, methodCode: string, amount: number, tax8: number, tax10: number) => {
+      if (!cell.byMethod[methodCode]) cell.byMethod[methodCode] = emptyMethodCell();
+      const m = cell.byMethod[methodCode];
+      m.total += amount;
+      m.tax8 += tax8;
+      m.tax10 += tax10;
+    };
+
+    const paymentRows: {
+      billId: string;
+      amount: number;
+      methodCode: string;
+      settledAt: Date;
+    }[] = [];
     let payCursor: string | undefined;
     for (;;) {
       const batch = await prisma.payment.findMany({
@@ -991,15 +1011,59 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       for (const p of batch) {
         const settledAt = p.bill?.settledAt;
         if (!settledAt) continue;
-        const ymd = wallDateYmdInZone(settledAt, tz);
-        if (!byDate[ymd]) byDate[ymd] = { billIds: new Set(), byMethod: {} };
-        const cell = byDate[ymd];
-        cell.billIds.add(p.billId);
-        cell.byMethod[p.methodCode] = (cell.byMethod[p.methodCode] ?? 0) + p.amount;
+        paymentRows.push({
+          billId: p.billId,
+          amount: p.amount,
+          methodCode: p.methodCode,
+          settledAt,
+        });
         if (!methodCodes.has(p.methodCode)) methodCodes.add(p.methodCode);
       }
       payCursor = batch[batch.length - 1]!.id;
       if (batch.length < 200) break;
+    }
+
+    const billTaxById = new Map<string, ReturnType<typeof sumOrderLineNetsByTaxRate>>();
+    const billIds = [...new Set(paymentRows.map((p) => p.billId))];
+    for (let i = 0; i < billIds.length; i += 50) {
+      const chunk = billIds.slice(i, i + 50);
+      const bills = await prisma.bill.findMany({
+        where: { id: { in: chunk } },
+        select: {
+          id: true,
+          session: {
+            select: {
+              orders: {
+                select: {
+                  lines: {
+                    select: {
+                      unitPrice: true,
+                      qty: true,
+                      status: true,
+                      discountJson: true,
+                      taxRatePercent: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+      for (const b of bills) {
+        billTaxById.set(b.id, sumOrderLineNetsByTaxRate(b.session?.orders ?? []));
+      }
+    }
+
+    const byDate: Record<string, DateCell> = {};
+    for (const p of paymentRows) {
+      const ymd = wallDateYmdInZone(p.settledAt, tz);
+      if (!byDate[ymd]) byDate[ymd] = { billIds: new Set(), byMethod: {} };
+      const cell = byDate[ymd];
+      cell.billIds.add(p.billId);
+      const buckets = billTaxById.get(p.billId) ?? { tax8: 0, tax10: 0, other: 0 };
+      const alloc = allocateAmountByTaxBuckets(p.amount, buckets);
+      bumpMethod(cell, p.methodCode, p.amount, alloc.tax8, alloc.tax10);
     }
 
     const extraCodes = [...methodCodes].filter((c) => !methods.some((m) => m.methodCode === c));
@@ -1021,14 +1085,17 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       rows: Object.entries(byDate)
         .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
         .map(([date, v]) => {
-          const totalAmount = Object.values(v.byMethod).reduce((s, n) => s + n, 0);
+          const byMethod: Record<string, MethodCell> = {};
+          for (const [code, m] of Object.entries(v.byMethod)) {
+            byMethod[code] = { total: m.total, tax8: m.tax8, tax10: m.tax10 };
+          }
+          const totalAmount = Object.values(byMethod).reduce((s, m) => s + m.total, 0);
           const count = v.billIds.size;
           return {
             date,
             count,
             totalAmount,
-            avgAmount: count > 0 ? Math.round(totalAmount / count) : 0,
-            byMethod: v.byMethod,
+            byMethod,
           };
         }),
     };

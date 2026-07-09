@@ -546,10 +546,16 @@ function repFormatYmdLabel(ymd) {
   }).format(inst);
 }
 
-function repMonthDailyMethodAmount(row, methodCode) {
+function repMonthDailyMethodCell(row, methodCode) {
   const m = row && row.byMethod;
-  if (!m || typeof m !== "object") return 0;
-  return Number(m[methodCode] || 0);
+  if (!m || typeof m !== "object") return { total: 0, tax8: 0, tax10: 0 };
+  const v = m[methodCode];
+  if (!v || typeof v !== "object") return { total: 0, tax8: 0, tax10: 0 };
+  return {
+    total: Number(v.total || 0),
+    tax8: Number(v.tax8 || 0),
+    tax10: Number(v.tax10 || 0),
+  };
 }
 
 function repMergeMonthDailyRows(ym, apiRows, methods) {
@@ -562,7 +568,7 @@ function repMergeMonthDailyRows(ym, apiRows, methods) {
     const hit = byDate.get(date);
     const emptyByMethod = {};
     for (const m of methods || []) {
-      emptyByMethod[m.methodCode] = 0;
+      emptyByMethod[m.methodCode] = { total: 0, tax8: 0, tax10: 0 };
     }
     out.push(
       hit
@@ -574,7 +580,6 @@ function repMergeMonthDailyRows(ym, apiRows, methods) {
             date,
             count: 0,
             totalAmount: 0,
-            avgAmount: 0,
             byMethod: emptyByMethod,
           },
     );
@@ -590,15 +595,17 @@ function renderMonthDailyTable(rows, ym, methods) {
   let sumCount = 0;
   let sumTotal = 0;
   const sumByMethod = {};
-  for (const m of cols) sumByMethod[m.methodCode] = 0;
+  for (const m of cols) sumByMethod[m.methodCode] = { total: 0, tax8: 0, tax10: 0 };
   for (const r of rows) {
     sumCount += Number(r.count || 0);
     sumTotal += Number(r.totalAmount || 0);
     for (const m of cols) {
-      sumByMethod[m.methodCode] += repMonthDailyMethodAmount(r, m.methodCode);
+      const c = repMonthDailyMethodCell(r, m.methodCode);
+      sumByMethod[m.methodCode].total += c.total;
+      sumByMethod[m.methodCode].tax8 += c.tax8;
+      sumByMethod[m.methodCode].tax10 += c.tax10;
     }
   }
-  const avgAll = sumCount > 0 ? Math.round(sumTotal / sumCount) : 0;
   const th =
     " style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border);white-space:nowrap\"";
   const td =
@@ -621,19 +628,24 @@ function renderMonthDailyTable(rows, ym, methods) {
     ">件数</th>" +
     "<th" +
     th +
-    ">売上</th>" +
-    "<th" +
-    th +
-    ">平均</th>";
+    ">売上</th>";
   for (const m of cols) {
+    const label = escapeHtml(m.labelJa || m.methodCode);
     h +=
       "<th" +
       th +
       " title=\"" +
       escapeHtml(m.methodCode) +
-      "\">" +
-      escapeHtml(m.labelJa || m.methodCode) +
-      "</th>";
+      " 税8%\">" +
+      label +
+      " 8%</th>" +
+      "<th" +
+      th +
+      " title=\"" +
+      escapeHtml(m.methodCode) +
+      " 税10%\">" +
+      label +
+      " 10%</th>";
   }
   h += "</tr></thead><tbody>";
   for (const r of rows) {
@@ -652,17 +664,18 @@ function renderMonthDailyTable(rows, ym, methods) {
       td +
       ">" +
       Number(r.totalAmount || 0).toLocaleString("ja-JP") +
-      " 円</td><td" +
-      td +
-      ">" +
-      Number(r.avgAmount || 0).toLocaleString("ja-JP") +
       " 円</td>";
     for (const m of cols) {
+      const c = repMonthDailyMethodCell(r, m.methodCode);
       h +=
         "<td" +
         td +
         ">" +
-        repMonthDailyMethodAmount(r, m.methodCode).toLocaleString("ja-JP") +
+        c.tax8.toLocaleString("ja-JP") +
+        " 円</td><td" +
+        td +
+        ">" +
+        c.tax10.toLocaleString("ja-JP") +
         " 円</td>";
     }
     h += "</tr>";
@@ -674,13 +687,14 @@ function renderMonthDailyTable(rows, ym, methods) {
     sumCount.toLocaleString("ja-JP") +
     "</td><td style=\"text-align:right;padding:0.45rem 0.35rem;border-top:2px solid var(--border)\">" +
     sumTotal.toLocaleString("ja-JP") +
-    " 円</td><td style=\"text-align:right;padding:0.45rem 0.35rem;border-top:2px solid var(--border)\">" +
-    avgAll.toLocaleString("ja-JP") +
     " 円</td>";
   for (const m of cols) {
+    const s = sumByMethod[m.methodCode];
     h +=
       "<td style=\"text-align:right;padding:0.45rem 0.35rem;border-top:2px solid var(--border)\">" +
-      sumByMethod[m.methodCode].toLocaleString("ja-JP") +
+      s.tax8.toLocaleString("ja-JP") +
+      " 円</td><td style=\"text-align:right;padding:0.45rem 0.35rem;border-top:2px solid var(--border)\">" +
+      s.tax10.toLocaleString("ja-JP") +
       " 円</td>";
   }
   h += "</tr></tfoot></table></div>";
@@ -716,11 +730,18 @@ function downloadMonthDailyCsv() {
     return s;
   };
   const cols = methods && methods.length ? methods : [];
-  const header = ["日付", "件数", "売上", "平均"].concat(cols.map((m) => m.labelJa || m.methodCode));
+  const header = ["日付", "件数", "売上"];
+  for (const m of cols) {
+    const label = m.labelJa || m.methodCode;
+    header.push(label + " 8%", label + " 10%");
+  }
   const lines = [header.map(escCsv).join(",")];
   for (const r of rows) {
-    const cells = [r.date, r.count, r.totalAmount, r.avgAmount];
-    for (const m of cols) cells.push(repMonthDailyMethodAmount(r, m.methodCode));
+    const cells = [r.date, r.count, r.totalAmount];
+    for (const m of cols) {
+      const c = repMonthDailyMethodCell(r, m.methodCode);
+      cells.push(c.tax8, c.tax10);
+    }
     lines.push(cells.map(escCsv).join(","));
   }
   const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });

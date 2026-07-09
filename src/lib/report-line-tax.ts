@@ -39,3 +39,17 @@ export function sumOrderLineNetsByTaxRate(
   }
   return out;
 }
+
+/** 支払い金額を伝票明細の税区分比率で按分（円・整数） */
+export function allocateAmountByTaxBuckets(
+  amount: number,
+  buckets: TaxBucketSums,
+): { tax8: number; tax10: number; other: number } {
+  const n = Math.max(0, Math.round(amount));
+  if (n === 0) return { tax8: 0, tax10: 0, other: 0 };
+  const lineTotal = buckets.tax8 + buckets.tax10 + buckets.other;
+  if (lineTotal <= 0) return { tax8: 0, tax10: 0, other: n };
+  const tax8 = Math.round((n * buckets.tax8) / lineTotal);
+  const tax10 = Math.round((n * buckets.tax10) / lineTotal);
+  return { tax8, tax10, other: n - tax8 - tax10 };
+}

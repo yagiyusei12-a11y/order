@@ -72,6 +72,12 @@ function managerOpsAllowed() {
   return typeof window !== "undefined" && window.STAFF_ROLE === "manager";
 }
 
+/** 操作ログ表示時にメイン画面を下へスクロールしない（タブレット向け） */
+const __frameLog = log;
+function log(t, options) {
+  __frameLog(t, { skipScroll: true, ...options });
+}
+
 let opsSocket = null;
 let opsSocketInitPromise = null;
 let opsSocketRefreshBound = false;

@@ -1775,8 +1775,7 @@ async function mountRegisterFlow(panel, ctx) {
       }
       const others = ctx.sessionsAtTable(table.id).filter((s) => s.status === "open" && s.id !== session.id);
       const box = document.createElement("div");
-      box.style.cssText =
-        "position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:13000;padding:1rem";
+      box.className = "ops-move-lines-overlay";
       const destOpts =
         "<option value=\"\">新しい別会計（伝票を追加）</option>" +
         others
@@ -1854,20 +1853,21 @@ async function mountRegisterFlow(panel, ctx) {
         })
         .join("");
       box.innerHTML =
-        "<div class=\"card\" style=\"max-width:440px;padding:1.1rem;background:#fff;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.12)\">" +
-        "<p style=\"margin:0 0 0.55rem;font-weight:900\">選択明細を別会計へ</p>" +
-        "<p class=\"muted\" style=\"margin:0 0 0.65rem;font-size:0.82rem;line-height:1.45\">同じ商品がまとまって表示されていても、移動する個数だけ別会計に分けられます。コースは人数分を指定して按分できます。</p>" +
-        "<div style=\"margin:0 0 0.75rem\">" +
+        "<div class=\"card ops-move-lines-dialog\">" +
+        "<p class=\"ops-move-lines-dialog__title\">選択明細を別会計へ</p>" +
+        "<p class=\"muted ops-move-lines-dialog__intro\">同じ商品がまとまって表示されていても、移動する個数だけ別会計に分けられます。コースは人数分を指定して按分できます。</p>" +
+        "<div class=\"ops-move-lines-dialog__items\">" +
         qtyRowsHtml +
         "</div>" +
-        "<label style=\"display:block;font-size:0.78rem;font-weight:800;margin-bottom:0.25rem\">移動先</label>" +
-        "<select id=\"moveOrderLinesTargetSel\" style=\"width:100%;padding:0.5rem;margin-bottom:1rem;border-radius:8px;border:1px solid var(--border)\">" +
+        "<div class=\"ops-move-lines-dialog__foot\">" +
+        "<label class=\"ops-move-lines-dialog__dest-label\">移動先</label>" +
+        "<select id=\"moveOrderLinesTargetSel\" class=\"ops-move-lines-dialog__dest-select\">" +
         destOpts +
         "</select>" +
-        "<div class=\"row\" style=\"gap:0.5rem;justify-content:flex-end\">" +
+        "<div class=\"row ops-move-lines-dialog__actions\">" +
         "<button type=\"button\" class=\"btn-ghost\" id=\"moveLinesCancel\">キャンセル</button>" +
         "<button type=\"button\" class=\"btn-primary\" id=\"moveLinesOk\" style=\"width:auto;padding:0.45rem 0.85rem\">移動する</button>" +
-        "</div></div>";
+        "</div></div></div>";
       document.body.appendChild(box);
       const close = () => box.remove();
       box.querySelector("#moveLinesCancel").onclick = close;

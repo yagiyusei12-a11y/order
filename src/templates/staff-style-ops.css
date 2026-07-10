@@ -552,3 +552,74 @@ body.native-pos .page-title {
     max-height: none;
   }
 }
+
+/* 別会計へ移す確認モーダル（明細が多いときもフッターボタンを表示） */
+.ops-move-lines-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  z-index: 13000;
+  padding: 1rem;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ops-move-lines-dialog {
+  max-width: 440px;
+  width: 100%;
+  max-height: calc(100dvh - 2rem);
+  margin: auto;
+  padding: 1.1rem;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ops-move-lines-dialog__title {
+  margin: 0 0 0.55rem;
+  font-weight: 900;
+}
+
+.ops-move-lines-dialog__intro {
+  margin: 0 0 0.65rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.ops-move-lines-dialog__items {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 0 0.75rem;
+}
+
+.ops-move-lines-dialog__foot {
+  flex-shrink: 0;
+}
+
+.ops-move-lines-dialog__dest-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 800;
+  margin-bottom: 0.25rem;
+}
+
+.ops-move-lines-dialog__dest-select {
+  width: 100%;
+  padding: 0.5rem;
+  margin-bottom: 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.ops-move-lines-dialog__actions {
+  gap: 0.5rem;
+  justify-content: flex-end;
+}

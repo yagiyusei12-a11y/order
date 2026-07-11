@@ -1,26 +1,27 @@
 <!DOCTYPE html>
-<!-- guest-ui-build: 20260520-dark-sticky-tabs -->
+<!-- guest-ui-build: 20260711-sale-light -->
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0c0e12" />
+  <meta name="theme-color" content="#f7f8fa" />
   <title>ご注文</title>
   <style>
     :root {
-      --bg: #0c0e12;
-      --surface: #151922;
-      --surface2: #1c2230;
-      --line: #2a3142;
-      --text: #f1f5f9;
-      --muted: #94a3b8;
+      --bg: #f7f8fa;
+      --surface: #ffffff;
+      --surface2: #f1f3f6;
+      --line: #e2e5ea;
+      --text: #1a1d23;
+      --muted: #6b7280;
       --accent: #f97316;
-      --accent-dim: rgba(249, 115, 22, 0.15);
-      --ok: #22c55e;
-      --danger: #fb7185;
-      --overlay: rgba(0, 0, 0, 0.55);
-      --card-media-bg: linear-gradient(145deg, #1e293b, #0f172a);
-      --sticky-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+      --accent-dim: rgba(249, 115, 22, 0.12);
+      --price: #dc2626;
+      --ok: #16a34a;
+      --danger: #dc2626;
+      --overlay: rgba(15, 23, 42, 0.4);
+      --card-media-bg: linear-gradient(145deg, #e8ecf1, #dfe4ea);
+      --sticky-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
     }
     * { box-sizing: border-box; }
     html { scroll-behavior: smooth; }
@@ -32,13 +33,14 @@
       padding-bottom: calc(5.75rem + env(safe-area-inset-bottom));
       min-height: 100dvh;
     }
+    .muted { color: var(--muted); }
 
     /* ========== ヘッダー＋カテゴリ（一体で画面上部に固定） ========== */
     .go-sticky-shell {
       position: sticky;
       top: 0;
       z-index: 50;
-      background: linear-gradient(180deg, #12161f 0%, #0c0e12 100%);
+      background: linear-gradient(180deg, #ffffff 0%, #f7f8fa 100%);
       border-bottom: 1px solid var(--line);
       box-shadow: var(--sticky-shadow);
     }
@@ -108,7 +110,7 @@
       overflow: visible;
       text-overflow: clip;
       line-height: 1.25;
-      color: rgba(226, 232, 240, 0.86);
+      color: var(--muted);
     }
 
     /* ========== カテゴリタブ ========== */
@@ -159,6 +161,7 @@
       overflow: hidden;
       background: var(--surface);
       border: 1px solid var(--line);
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
       cursor: pointer;
       transition: transform 0.12s, box-shadow 0.12s;
       display: flex;
@@ -195,7 +198,7 @@
       font-weight: 800;
       padding: 0.15rem 0.4rem;
       border-radius: 6px;
-      background: rgba(0, 0, 0, 0.55);
+      background: rgba(220, 38, 38, 0.92);
       color: #fff;
     }
     .go-card-body { padding: 0.55rem 0.65rem 0.65rem; flex: 1; display: flex; flex-direction: column; }
@@ -238,7 +241,7 @@
     }
     .go-set-step-lab {
       font-weight: 700;
-      color: color-mix(in srgb, var(--muted) 70%, #fff 30%);
+      color: color-mix(in srgb, var(--muted) 75%, var(--text) 25%);
     }
     .go-set-step-sep {
       font-weight: 500;
@@ -251,9 +254,9 @@
     }
     .go-card-price {
       margin-top: 0.45rem;
-      font-size: 0.88rem;
-      font-weight: 800;
-      color: var(--accent);
+      font-size: 0.95rem;
+      font-weight: 900;
+      color: var(--price);
       font-variant-numeric: tabular-nums;
     }
     .go-card-price .incl {
@@ -280,9 +283,9 @@
     }
     .go-time-disc-now {
       display: block;
-      font-size: 0.92rem;
-      font-weight: 800;
-      color: #ea580c;
+      font-size: 0.98rem;
+      font-weight: 900;
+      color: var(--price);
       margin-top: 0.12rem;
     }
     .go-time-disc .incl {
@@ -299,45 +302,48 @@
     .badge-time-disc {
       font-size: 0.58rem;
       font-weight: 800;
-      color: #fff7ed;
-      background: rgba(234, 88, 12, 0.88);
+      color: #fff;
+      background: #ea580c;
       padding: 0.12rem 0.4rem;
       border-radius: 4px;
     }
 
-    .badge-low { font-size: 0.6rem; font-weight: 700; color: #fde68a; background: rgba(180, 83, 9, 0.5); padding: 0.1rem 0.35rem; border-radius: 4px; }
-    .badge-sold { font-size: 0.6rem; font-weight: 700; color: #fecaca; background: rgba(127, 29, 29, 0.6); padding: 0.1rem 0.35rem; border-radius: 4px; }
-    .badge-busy-stop { font-size: 0.6rem; font-weight: 700; color: #fde68a; background: rgba(120, 53, 15, 0.75); padding: 0.1rem 0.35rem; border-radius: 4px; }
-    .badge-set { font-size: 0.6rem; font-weight: 700; color: #bfdbfe; background: rgba(30, 58, 95, 0.7); padding: 0.1rem 0.35rem; border-radius: 4px; }
-    .badge-alcohol { font-size: 0.6rem; font-weight: 700; color: #ffedd5; background: rgba(124, 45, 18, 0.65); padding: 0.1rem 0.35rem; border-radius: 4px; }
+    .badge-low { font-size: 0.6rem; font-weight: 700; color: #92400e; background: #fef3c7; padding: 0.1rem 0.35rem; border-radius: 4px; }
+    .badge-sold { font-size: 0.6rem; font-weight: 700; color: #fff; background: #dc2626; padding: 0.1rem 0.35rem; border-radius: 4px; }
+    .badge-busy-stop { font-size: 0.6rem; font-weight: 700; color: #92400e; background: #ffedd5; padding: 0.1rem 0.35rem; border-radius: 4px; }
+    .badge-set { font-size: 0.6rem; font-weight: 700; color: #1e40af; background: #dbeafe; padding: 0.1rem 0.35rem; border-radius: 4px; }
+    .badge-alcohol { font-size: 0.6rem; font-weight: 700; color: #9a3412; background: #ffedd5; padding: 0.1rem 0.35rem; border-radius: 4px; }
     .badge-course-in {
-      font-size: 0.58rem; font-weight: 800; color: #ecfdf5; background: rgba(5, 150, 105, 0.85);
+      font-size: 0.58rem; font-weight: 800; color: #fff; background: #059669;
       padding: 0.12rem 0.4rem; border-radius: 4px;
     }
     .badge-course-add {
-      font-size: 0.58rem; font-weight: 800; color: #fff7ed; background: rgba(234, 88, 12, 0.85);
+      font-size: 0.58rem; font-weight: 800; color: #fff; background: #ea580c;
       padding: 0.12rem 0.4rem; border-radius: 4px;
     }
-    .course-included-price { color: #34d399; font-weight: 800; }
+    .course-included-price { color: #059669; font-weight: 800; }
     #lastOrderBanner {
       display: none;
       margin: 0;
       padding: 0.45rem 0.75rem;
-      background: linear-gradient(180deg, rgba(30, 58, 95, 0.95), rgba(15, 23, 42, 0.98));
-      border-bottom: 1px solid #334155;
+      background: linear-gradient(180deg, #eff6ff, #dbeafe);
+      border-bottom: 1px solid #bfdbfe;
+      color: #1e3a8a;
       font-size: 0.78rem;
       text-align: center;
       line-height: 1.35;
     }
     #lastOrderBanner.lo-ended {
-      background: linear-gradient(180deg, rgba(127, 29, 29, 0.9), rgba(69, 10, 10, 0.95));
+      background: linear-gradient(180deg, #fef2f2, #fee2e2);
+      border-bottom-color: #fecaca;
+      color: #991b1b;
     }
-    #lastOrderBanner strong { font-variant-numeric: tabular-nums; color: #fde68a; }
+    #lastOrderBanner strong { font-variant-numeric: tabular-nums; color: var(--price); }
 
     .course-menu-filter-wrap {
       display: none;
       padding: 0.35rem 0.75rem 0.5rem;
-      background: linear-gradient(180deg, rgba(22, 26, 32, 0.98), rgba(15, 17, 21, 0.96));
+      background: #ffffff;
       border-bottom: 1px solid var(--line);
       text-align: center;
     }
@@ -354,16 +360,16 @@
       font-size: 0.78rem;
       font-weight: 700;
       color: var(--text);
-      background: rgba(255, 255, 255, 0.06);
+      background: var(--surface2);
       border: 1px solid var(--line);
       border-radius: 10px;
       cursor: pointer;
       -webkit-tap-highlight-color: transparent;
     }
     .course-menu-filter-btn.is-active {
-      background: rgba(5, 150, 105, 0.22);
-      border-color: rgba(52, 211, 153, 0.45);
-      color: #6ee7b7;
+      background: rgba(5, 150, 105, 0.12);
+      border-color: rgba(5, 150, 105, 0.45);
+      color: #047857;
     }
 
     /* ========== フッターカート ========== */
@@ -373,13 +379,14 @@
       left: 0;
       right: 0;
       padding: 0.65rem 0.85rem calc(0.65rem + env(safe-area-inset-bottom));
-      background: linear-gradient(180deg, rgba(12, 14, 18, 0.92) 0%, #0c0e12 40%);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, #ffffff 40%);
       backdrop-filter: blur(10px);
       border-top: 1px solid var(--line);
       display: flex;
       gap: 0.65rem;
       align-items: center;
       z-index: 30;
+      box-shadow: 0 -4px 18px rgba(15, 23, 42, 0.06);
     }
     footer.go-cart .info {
       flex: 1;
@@ -392,7 +399,7 @@
     }
     footer.go-cart .info:active { opacity: 0.85; }
     footer.go-cart .count { font-size: 0.72rem; color: var(--muted); }
-    footer.go-cart .sum { font-size: 1.05rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+    footer.go-cart .sum { font-size: 1.12rem; font-weight: 900; font-variant-numeric: tabular-nums; color: var(--price); }
     footer.go-cart button.submit {
       flex-shrink: 0;
       padding: 0.75rem 1.35rem;
@@ -415,7 +422,7 @@
       box-shadow: 0 -8px 28px rgba(249, 115, 22, 0.18);
     }
     footer.go-cart.has-pending-order .count {
-      color: #fdba74;
+      color: #c2410c;
       font-weight: 700;
     }
     footer.go-cart.has-pending-order button.submit:not(:disabled) {
@@ -432,9 +439,9 @@
       margin: 0 0 0.65rem;
       padding: 0.55rem 0.65rem;
       border-radius: 10px;
-      background: rgba(249, 115, 22, 0.12);
-      border: 1px solid rgba(251, 146, 60, 0.35);
-      color: #fdba74;
+      background: rgba(249, 115, 22, 0.1);
+      border: 1px solid rgba(251, 146, 60, 0.4);
+      color: #c2410c;
       font-size: 0.78rem;
       font-weight: 700;
       line-height: 1.45;
@@ -452,7 +459,7 @@
       align-items: center;
       justify-content: center;
       padding: 1.25rem;
-      background: rgba(0, 0, 0, 0.62);
+      background: var(--overlay);
     }
     .order-done-dialog.is-open {
       display: flex;
@@ -462,10 +469,10 @@
       max-width: 18rem;
       padding: 1.35rem 1.25rem 1.15rem;
       border-radius: 16px;
-      background: var(--surface2);
+      background: var(--surface);
       border: 1px solid var(--line);
       text-align: center;
-      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+      box-shadow: 0 16px 48px rgba(15, 23, 42, 0.18);
     }
     .order-done-icon {
       width: 3rem;
@@ -533,7 +540,7 @@
       align-items: flex-end;
       justify-content: center;
       padding: 0;
-      background: rgba(0, 0, 0, 0.55);
+      background: var(--overlay);
     }
     .guest-sheet.is-open {
       display: flex;
@@ -590,8 +597,8 @@
       flex: 1;
     }
     .guest-cart-line-head .pr {
-      font-weight: 800;
-      color: var(--accent);
+      font-weight: 900;
+      color: var(--price);
       flex-shrink: 0;
       font-variant-numeric: tabular-nums;
     }
@@ -621,8 +628,9 @@
       cursor: pointer;
     }
     .guest-cart-btn.danger {
-      color: #fecaca;
-      border-color: rgba(248, 113, 113, 0.35);
+      color: #b91c1c;
+      border-color: rgba(220, 38, 38, 0.35);
+      background: #fef2f2;
     }
     .guest-cart-qty {
       font-weight: 800;
@@ -643,10 +651,10 @@
     .guest-sheet-bar .guest-sheet-sum {
       flex: 1;
       min-width: 0;
-      font-size: 0.95rem;
-      font-weight: 800;
+      font-size: 1.05rem;
+      font-weight: 900;
       font-variant-numeric: tabular-nums;
-      color: var(--accent);
+      color: var(--price);
     }
     .guest-sheet-bar .submit {
       flex-shrink: 0;
@@ -689,7 +697,7 @@
       gap: 0.45rem 0.65rem;
       padding: 0.45rem 0;
       margin-top: 0;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      border-bottom: 1px solid var(--line);
     }
     .guest-history-line--reorder:last-child {
       border-bottom: none;
@@ -720,7 +728,7 @@
       padding: 0;
       border-radius: 8px;
       border: 1px solid var(--line);
-      background: rgba(255, 255, 255, 0.06);
+      background: var(--surface2);
       color: var(--text);
       font-size: 1rem;
       font-weight: 800;
@@ -742,8 +750,8 @@
       margin-left: 0.15rem;
       border-radius: 8px;
       border: 1px solid rgba(249, 115, 22, 0.55);
-      background: rgba(249, 115, 22, 0.18);
-      color: #fdba74;
+      background: rgba(249, 115, 22, 0.12);
+      color: #c2410c;
       font-size: 0.72rem;
       font-weight: 800;
       cursor: pointer;
@@ -770,7 +778,7 @@
       display: block;
       font-size: 1.35rem;
       font-weight: 900;
-      color: #fb923c;
+      color: var(--price);
       letter-spacing: 0.02em;
     }
     .guest-history-total-note {
@@ -784,12 +792,12 @@
     #err {
       margin: 0.65rem;
       padding: 0.75rem;
-      background: rgba(127, 29, 29, 0.35);
+      background: #fef2f2;
       border-radius: 12px;
-      color: #fecaca;
+      color: #991b1b;
       font-size: 0.85rem;
       display: none;
-      border: 1px solid rgba(248, 113, 113, 0.35);
+      border: 1px solid #fecaca;
     }
 
     /* 注文履歴はシート表示に統一（メニュー下の埋め込みは使わない） */
@@ -816,7 +824,7 @@
       position: fixed;
       inset: 0;
       z-index: 100;
-      background: rgba(0, 0, 0, 0.55);
+      background: var(--overlay);
       display: none;
       align-items: flex-end;
       justify-content: center;
@@ -849,7 +857,7 @@
       height: 40px;
       border-radius: 50%;
       border: none;
-      background: rgba(0, 0, 0, 0.45);
+      background: rgba(15, 23, 42, 0.45);
       color: #fff;
       font-size: 1.35rem;
       line-height: 1;
@@ -880,14 +888,14 @@
       -webkit-overflow-scrolling: touch;
     }
     .detail-title { margin: 0 0 0.35rem; font-size: 1.2rem; font-weight: 800; line-height: 1.35; }
-    .detail-desc { margin: 0 0 1rem; font-size: 0.9rem; color: rgba(226, 232, 240, 0.82); line-height: 1.6; }
+    .detail-desc { margin: 0 0 1rem; font-size: 0.9rem; color: var(--muted); line-height: 1.6; }
 
     .opt-block {
       margin-bottom: 1.1rem;
       padding: 0.75rem 0.75rem 0.6rem;
-      border: 1px solid rgba(148, 163, 184, 0.18);
+      border: 1px solid var(--line);
       border-radius: 14px;
-      background: rgba(2, 6, 23, 0.45);
+      background: var(--surface2);
     }
     .opt-step-choices {
       max-height: min(52vh, 320px);
@@ -898,13 +906,13 @@
     }
     .opt-step-choices::-webkit-scrollbar { width: 10px; }
     .opt-step-choices::-webkit-scrollbar-thumb {
-      background: rgba(226, 232, 240, 0.25);
+      background: rgba(100, 116, 139, 0.35);
       border-radius: 999px;
       border: 2px solid rgba(0, 0, 0, 0);
       background-clip: padding-box;
     }
     .opt-step-choices::-webkit-scrollbar-track {
-      background: rgba(255, 255, 255, 0.04);
+      background: rgba(15, 23, 42, 0.06);
       border-radius: 999px;
     }
     .opt-block-head {
@@ -915,22 +923,22 @@
     }
     .opt-block-head strong {
       font-size: 1.05rem;
-      color: #f8fafc;
+      color: var(--text);
       letter-spacing: 0.02em;
     }
     .tag-req {
       font-size: 0.7rem;
       font-weight: 800;
-      color: #fee2e2;
-      background: rgba(220, 38, 38, 0.55);
+      color: #fff;
+      background: #dc2626;
       padding: 0.12rem 0.4rem;
       border-radius: 4px;
     }
     .tag-opt {
       font-size: 0.7rem;
       font-weight: 700;
-      color: rgba(241, 245, 249, 0.86);
-      background: rgba(148, 163, 184, 0.20);
+      color: #475569;
+      background: #e2e8f0;
       padding: 0.12rem 0.4rem;
       border-radius: 4px;
     }
@@ -941,9 +949,8 @@
       padding: 0.7rem 0.75rem;
       margin-bottom: 0.35rem;
       border-radius: 12px;
-      /* 環境によって白飛びしないよう、濃い面に固定 */
-      border: 1px solid rgba(148, 163, 184, 0.32);
-      background: rgba(15, 23, 42, 0.92);
+      border: 1px solid var(--line);
+      background: #ffffff;
       cursor: pointer;
       font-size: 1.05rem;
     }
@@ -954,7 +961,7 @@
       height: 1.25rem;
       flex-shrink: 0;
       margin-top: 0.1rem;
-      outline: 2px solid rgba(226, 232, 240, 0.35);
+      outline: 2px solid rgba(100, 116, 139, 0.25);
       outline-offset: 2px;
       border-radius: 999px;
     }
@@ -964,14 +971,14 @@
       white-space: normal;
       word-break: break-word;
       line-height: 1.5;
-      color: #f8fafc;
+      color: var(--text);
       font-weight: 800;
-      text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+      text-shadow: none;
     }
     .opt-row .opt-price {
       font-size: 0.92rem;
-      font-weight: 700;
-      color: var(--accent);
+      font-weight: 800;
+      color: var(--price);
       font-variant-numeric: tabular-nums;
       flex-shrink: 0;
       align-self: flex-start;
@@ -979,15 +986,15 @@
     }
     .opt-row .opt-price { min-width: 3.2rem; text-align: right; }
     .opt-row:hover {
-      border-color: rgba(226, 232, 240, 0.45);
-      background: rgba(30, 41, 59, 0.95);
+      border-color: rgba(249, 115, 22, 0.45);
+      background: #fff7ed;
     }
     .opt-row input:focus-visible { outline: 2px solid rgba(251, 146, 60, 0.55); outline-offset: 3px; border-radius: 999px; }
     .opt-row:has(input:checked) {
-      border-color: rgba(251, 146, 60, 0.65);
-      background: rgba(251, 146, 60, 0.16);
+      border-color: rgba(249, 115, 22, 0.65);
+      background: rgba(249, 115, 22, 0.1);
     }
-    .opt-row:has(input:checked) .opt-name { color: #fff; font-weight: 800; }
+    .opt-row:has(input:checked) .opt-name { color: var(--text); font-weight: 800; }
     .opt-row:focus-within {
       outline: 2px solid rgba(251, 146, 60, 0.55);
       outline-offset: 1px;
@@ -995,16 +1002,16 @@
     .opt-row.is-disabled {
       opacity: 0.55;
       pointer-events: none;
-      background: rgba(15, 23, 42, 0.6);
+      background: var(--surface2);
     }
 
-    /* セット構成単品の「オプション」(opt-comp) が白飛びして読めない環境があるため、濃い面に統一 */
+    /* セット構成単品の「オプション」(opt-comp) */
     .opt-comp {
       display: none;
       margin: 0.35rem 0 0.55rem 0.8rem !important;
       padding: 0.55rem 0.6rem !important;
-      border-left: 3px solid rgba(251, 146, 60, 0.75) !important;
-      background: rgba(2, 6, 23, 0.65) !important;
+      border-left: 3px solid rgba(249, 115, 22, 0.75) !important;
+      background: #fff7ed !important;
       border-radius: 12px !important;
     }
     /* 標準付属はチェックボックスがないため、直後の opt-comp を常に表示 */
@@ -1014,18 +1021,18 @@
     }
     /* チェックした行の直後だけ展開（対応ブラウザ用）。JSでも同じ制御を行う */
     label.opt-row:has(> input[type=checkbox]:checked) + .opt-comp { display: block; }
-    .opt-comp .muted { color: rgba(241, 245, 249, 0.78) !important; }
+    .opt-comp .muted { color: var(--muted) !important; }
     .opt-comp [data-comp-opt-group].opt-block {
-      background: rgba(15, 23, 42, 0.92) !important;
-      border: 1px solid rgba(148, 163, 184, 0.22) !important;
+      background: #ffffff !important;
+      border: 1px solid var(--line) !important;
     }
     .opt-comp [data-comp-opt-group] .opt-row {
-      background: rgba(2, 6, 23, 0.45) !important;
-      border-color: rgba(148, 163, 184, 0.28) !important;
+      background: #ffffff !important;
+      border-color: var(--line) !important;
     }
     .opt-row-fixed {
       padding-left: 0.15rem;
-      background: rgba(255, 255, 255, 0.06);
+      background: var(--surface2);
       border-radius: 8px;
     }
     .opt-fixed-tag {
@@ -1036,14 +1043,14 @@
       letter-spacing: 0.06em;
       padding: 0.12rem 0.38rem;
       border-radius: 6px;
-      background: rgba(255, 255, 255, 0.12);
+      background: #e2e8f0;
     }
 
     .detail-footer {
       flex-shrink: 0;
       padding: 0.75rem 1rem calc(0.85rem + env(safe-area-inset-bottom));
       border-top: 1px solid var(--line);
-      background: #0f131a;
+      background: #ffffff;
       display: flex;
       flex-direction: column;
       gap: 0.65rem;
@@ -1101,8 +1108,8 @@
       padding: 0.6rem 0.65rem;
       border-radius: 12px;
       border: 1px solid rgba(251, 146, 60, 0.45);
-      background: rgba(249, 115, 22, 0.12);
-      color: #fdba74;
+      background: rgba(249, 115, 22, 0.1);
+      color: #c2410c;
       font-weight: 900;
       font-size: 0.85rem;
       cursor: pointer;
@@ -1116,7 +1123,7 @@
       padding: 0.5rem 0.6rem;
       border-radius: 10px;
       border: 1px solid var(--line);
-      background: #0f131a;
+      background: #ffffff;
       color: var(--text);
       font-size: 0.9rem;
       margin-bottom: 0.15rem;
@@ -1142,9 +1149,9 @@
       margin: 0.5rem 0.75rem 0;
       padding: 0.55rem 0.65rem;
       border-radius: 10px;
-      border: 1px solid rgba(185, 28, 28, 0.45);
-      background: rgba(69, 10, 10, 0.45);
-      color: #fecaca;
+      border: 1px solid #fecaca;
+      background: #fef2f2;
+      color: #991b1b;
       font-size: 0.75rem;
     }
 
@@ -1193,7 +1200,7 @@
       position: fixed;
       inset: 0;
       z-index: 200;
-      background: rgba(0, 0, 0, 0.72);
+      background: var(--overlay);
       display: flex;
       align-items: center;
       justify-content: center;

@@ -825,7 +825,7 @@
       const el = document.getElementById("log");
       if (el) {
         el.textContent = t || "";
-        const skipScroll = options && options.skipScroll;
+        const skipScroll = (options && options.skipScroll) || Boolean(window.__staffLogSkipScroll);
         if (t && !skipScroll) el.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
     }

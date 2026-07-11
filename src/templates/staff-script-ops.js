@@ -72,11 +72,10 @@ function managerOpsAllowed() {
   return typeof window !== "undefined" && window.STAFF_ROLE === "manager";
 }
 
-/** 操作ログ表示時にメイン画面を下へスクロールしない（タブレット向け） */
-const __frameLog = log;
-function log(t, options) {
-  __frameLog(t, { skipScroll: true, ...options });
-}
+/** 操作ログ表示時にメイン画面を下へスクロールしない（タブレット向け）
+ *  ※ function log でラップすると同一 script 内のホイスティングで自己参照になり
+ *    Maximum call stack で落ち、requestOpsRefresh の finally が走らず自動更新が止まる */
+if (typeof window !== "undefined") window.__staffLogSkipScroll = true;
 
 let opsSocket = null;
 let opsSocketInitPromise = null;

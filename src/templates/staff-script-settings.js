@@ -1195,6 +1195,11 @@ async function loadAll() {
     enabled.checked = m.enabled;
     enabled.title = "会計画面の入金手段として使うか";
 
+    const excludeSales = document.createElement("input");
+    excludeSales.type = "checkbox";
+    excludeSales.checked = m.excludeFromSales === true;
+    excludeSales.title = "売上レポートの「売上」合計から除外する（ポイント等）";
+
     const reg = document.createElement("input");
     reg.type = "checkbox";
     reg.checked = registerCodes.has(m.code);
@@ -1227,6 +1232,7 @@ async function loadAll() {
             labelJa,
             enabled: enabled.checked,
             sortOrder: so,
+            excludeFromSales: excludeSales.checked,
           }),
         });
         // レジ機能・選択金額（店舗 settings）も保存
@@ -1293,6 +1299,15 @@ async function loadAll() {
     lab.appendChild(enabled);
     lab.appendChild(document.createTextNode("会計で選べるようにする"));
 
+    const labExclude = document.createElement("label");
+    labExclude.className = "row";
+    labExclude.style.margin = "0";
+    labExclude.style.alignItems = "center";
+    labExclude.style.gap = "0.35rem";
+    labExclude.style.fontSize = "0.78rem";
+    labExclude.appendChild(excludeSales);
+    labExclude.appendChild(document.createTextNode("売上から除外（ポイント等）"));
+
     const labReg = document.createElement("label");
     labReg.className = "row";
     labReg.style.margin = "0";
@@ -1320,6 +1335,7 @@ async function loadAll() {
     actions.style.flexWrap = "wrap";
     actions.style.alignItems = "flex-end";
     actions.appendChild(lab);
+    actions.appendChild(labExclude);
     actions.appendChild(labReg);
     actions.appendChild(ordWrap);
     actions.appendChild(save);

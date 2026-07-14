@@ -176,6 +176,8 @@ model StorePaymentMethod {
   definitionId String
   enabled      Boolean                 @default(true)
   sortOrder    Int                     @default(0)
+  /// true のとき売上レポートの「売上」合計から除外（ポイント・割など）
+  excludeFromSales Boolean             @default(false)
   store        Store                   @relation(fields: [storeId], references: [id], onDelete: Cascade)
   definition   PaymentMethodDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
 

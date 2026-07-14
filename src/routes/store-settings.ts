@@ -445,7 +445,13 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
 
   app.post<{
     Params: { storeId: string };
-    Body: { code: string; labelJa: string; sortOrder?: number; enabled?: boolean };
+    Body: {
+      code: string;
+      labelJa: string;
+      sortOrder?: number;
+      enabled?: boolean;
+      excludeFromSales?: boolean;
+    };
   }>("/stores/:storeId/payment-methods", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
     if (!store) return reply.code(404).send({ error: "store not found" });
@@ -463,6 +469,7 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
         ? req.body.sortOrder
         : 0;
     const enabled = req.body?.enabled === false ? false : true;
+    const excludeFromSales = req.body?.excludeFromSales === true;
 
     const existingLink = await prisma.storePaymentMethod.findFirst({
       where: { storeId: store.id, definition: { code } },
@@ -484,6 +491,7 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
         definitionId: def.id,
         sortOrder,
         enabled,
+        excludeFromSales,
       },
       include: { definition: true },
     });
@@ -497,12 +505,13 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
       labelJa: row.definition.labelJa,
       enabled: row.enabled,
       sortOrder: row.sortOrder,
+      excludeFromSales: row.excludeFromSales,
     };
   });
 
   app.patch<{
     Params: { storeId: string; storePaymentMethodId: string };
-    Body: { enabled?: boolean; sortOrder?: number; labelJa?: string };
+    Body: { enabled?: boolean; sortOrder?: number; labelJa?: string; excludeFromSales?: boolean };
   }>("/stores/:storeId/payment-methods/:storePaymentMethodId", async (req, reply) => {
     if (!assertManagerRole(reply, req.user)) return;
     const row = await prisma.storePaymentMethod.findFirst({
@@ -511,7 +520,7 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
     });
     if (!row) return reply.code(404).send({ error: "payment method row not found" });
 
-    const data: { enabled?: boolean; sortOrder?: number } = {};
+    const data: { enabled?: boolean; sortOrder?: number; excludeFromSales?: boolean } = {};
     if (typeof req.body?.enabled === "boolean") {
       data.enabled = req.body.enabled;
     }
@@ -520,6 +529,9 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
         return reply.code(400).send({ error: "sortOrder must be integer" });
       }
       data.sortOrder = req.body.sortOrder;
+    }
+    if (typeof req.body?.excludeFromSales === "boolean") {
+      data.excludeFromSales = req.body.excludeFromSales;
     }
 
     let labelJa = row.definition.labelJa;
@@ -556,6 +568,7 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
       labelJa,
       enabled: updated.enabled,
       sortOrder: updated.sortOrder,
+      excludeFromSales: updated.excludeFromSales,
     };
   });
 

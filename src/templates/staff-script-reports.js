@@ -888,21 +888,35 @@ async function loadByMethod(q) {
     el.innerHTML = "<span class=\"muted\">データがありません。</span>";
     return;
   }
-  let total = 0;
-  for (const r of rows) total += Number(r.amount || 0);
+  let payTotal = 0;
+  for (const r of rows) payTotal += Number(r.amount || 0);
+  const salesTotal =
+    res.salesTotal != null
+      ? Number(res.salesTotal || 0)
+      : rows.reduce((s, r) => (r.excludeFromSales ? s : s + Number(r.amount || 0)), 0);
   let h =
-    "<p style=\"margin:0 0 0.65rem;font-weight:700\">合計 " +
-    total.toLocaleString("ja-JP") +
-    " 円</p>" +
+    "<p style=\"margin:0 0 0.65rem;font-weight:700\">売上 " +
+    salesTotal.toLocaleString("ja-JP") +
+    " 円" +
+    (salesTotal !== payTotal
+      ? " <span class=\"muted\" style=\"font-weight:500;font-size:0.82rem\">（入金合計 " +
+        payTotal.toLocaleString("ja-JP") +
+        " 円・売上除外あり）</span>"
+      : "") +
+    "</p>" +
     "<table style=\"width:100%;border-collapse:collapse;font-size:0.88rem\"><thead><tr>" +
     "<th style=\"text-align:left;padding:0.35rem;border-bottom:1px solid var(--border)\">手段</th>" +
     "<th style=\"text-align:right;padding:0.35rem;border-bottom:1px solid var(--border)\">金額</th>" +
     "</tr></thead><tbody>";
   for (const r of rows) {
+    const excl = r.excludeFromSales === true;
     h +=
       "<tr><td style=\"padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
       escapeHtml(r.labelJa || r.methodCode) +
-      "</td><td style=\"text-align:right;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)\">" +
+      (excl ? ' <span class="muted" style="font-size:0.72rem">（売上外）</span>' : "") +
+      "</td><td style=\"text-align:right;padding:0.4rem 0.35rem;border-bottom:1px solid var(--border)" +
+      (excl ? ";color:var(--muted)" : "") +
+      "\">" +
       Number(r.amount || 0).toLocaleString("ja-JP") +
       " 円</td></tr>";
   }

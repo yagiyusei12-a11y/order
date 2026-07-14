@@ -56,6 +56,7 @@ import {
   orderLineNetAfterLineDiscount,
   sumOrderLineNetsByTaxRate,
 } from "../lib/report-line-tax.js";
+import { billSalesAmount, loadSalesExcludedMethodCodes } from "../lib/report-sales.js";
 import { syncReceptionShiftSeatsForTable } from "../lib/reception-seat-state.js";
 import { applyPostSettleSessionStatusInTx } from "../lib/post-settle-session.js";
 import { broadcastOpsSessionUpdatedMany } from "../lib/ops-seat-socket.js";
@@ -543,6 +544,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
           labelJa: r.definition.labelJa,
           enabled: r.enabled,
           sortOrder: r.sortOrder,
+          excludeFromSales: r.excludeFromSales,
           presetAmounts: presetFor(r.definition.code),
         })),
       };
@@ -551,6 +553,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       code: r.definition.code,
       labelJa: r.definition.labelJa,
       sortOrder: r.sortOrder,
+      excludeFromSales: r.excludeFromSales,
       presetAmounts: presetFor(r.definition.code),
     }));
   });
@@ -748,6 +751,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: String((e as Error).message || e) });
     }
 
+    const excludedCodes = await loadSalesExcludedMethodCodes(store.id);
     let confirmedTotal = 0;
     let confirmedCount = 0;
     let lineTax8 = 0;
@@ -767,6 +771,10 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
         select: {
           id: true,
           totalAmount: true,
+          payments: {
+            where: { voidedAt: null },
+            select: { methodCode: true, amount: true },
+          },
           session: {
             select: {
               orders: {
@@ -789,12 +797,23 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       if (batch.length === 0) break;
       for (const b of batch) {
         confirmedCount += 1;
-        confirmedTotal += b.totalAmount;
+        const sales = billSalesAmount(b.totalAmount, b.payments, excludedCodes);
+        confirmedTotal += sales;
         if (b.session?.orders?.length) {
           const t = sumOrderLineNetsByTaxRate(b.session.orders);
-          lineTax8 += t.tax8;
-          lineTax10 += t.tax10;
-          lineTaxOther += t.other;
+          if (excludedCodes.size === 0 || b.payments.length === 0) {
+            lineTax8 += t.tax8;
+            lineTax10 += t.tax10;
+            lineTaxOther += t.other;
+          } else {
+            for (const p of b.payments) {
+              if (excludedCodes.has(p.methodCode)) continue;
+              const alloc = allocateAmountByTaxBuckets(p.amount, t);
+              lineTax8 += alloc.tax8;
+              lineTax10 += alloc.tax10;
+              lineTaxOther += alloc.other;
+            }
+          }
         }
       }
       billCursor = batch[batch.length - 1]!.id;
@@ -839,6 +858,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       storeId: store.id,
       timeZone: tz,
       range: { from: req.query.from ?? null, to: req.query.to ?? null },
+      salesExcludedMethodCodes: [...excludedCodes],
       confirmed: {
         count: confirmedCount,
         totalAmount: confirmedTotal,
@@ -865,6 +885,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: String((e as Error).message || e) });
     }
 
+    const excludedCodes = await loadSalesExcludedMethodCodes(store.id);
     const byDate: Record<
       string,
       { count: number; totalAmount: number; tax8: number; tax10: number; taxOther: number }
@@ -884,6 +905,10 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
           id: true,
           settledAt: true,
           totalAmount: true,
+          payments: {
+            where: { voidedAt: null },
+            select: { methodCode: true, amount: true },
+          },
           session: {
             select: {
               orders: {
@@ -911,12 +936,22 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
           byDate[ymd] = { count: 0, totalAmount: 0, tax8: 0, tax10: 0, taxOther: 0 };
         const cell = byDate[ymd];
         cell.count += 1;
-        cell.totalAmount += b.totalAmount;
+        cell.totalAmount += billSalesAmount(b.totalAmount, b.payments, excludedCodes);
         if (b.session?.orders?.length) {
           const t = sumOrderLineNetsByTaxRate(b.session.orders);
-          cell.tax8 += t.tax8;
-          cell.tax10 += t.tax10;
-          cell.taxOther += t.other;
+          if (excludedCodes.size === 0 || b.payments.length === 0) {
+            cell.tax8 += t.tax8;
+            cell.tax10 += t.tax10;
+            cell.taxOther += t.other;
+          } else {
+            for (const p of b.payments) {
+              if (excludedCodes.has(p.methodCode)) continue;
+              const alloc = allocateAmountByTaxBuckets(p.amount, t);
+              cell.tax8 += alloc.tax8;
+              cell.tax10 += alloc.tax10;
+              cell.taxOther += alloc.other;
+            }
+          }
         }
       }
       dailyCursor = batch[batch.length - 1]!.id;
@@ -962,10 +997,20 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       include: { definition: true },
       orderBy: { sortOrder: "asc" },
     });
-    const methods: { methodCode: string; labelJa: string }[] = storeMethods.map((r) => ({
-      methodCode: r.definition.code,
-      labelJa: r.definition.labelJa,
-    }));
+    const excludedCodes = new Set(
+      storeMethods.filter((r) => r.excludeFromSales).map((r) => r.definition.code),
+    );
+    // 無効化済みでも exclude 設定は売上計算に反映する
+    const excludedExtra = await loadSalesExcludedMethodCodes(store.id);
+    for (const c of excludedExtra) excludedCodes.add(c);
+
+    const methods: { methodCode: string; labelJa: string; excludeFromSales: boolean }[] = storeMethods.map(
+      (r) => ({
+        methodCode: r.definition.code,
+        labelJa: r.definition.labelJa,
+        excludeFromSales: r.excludeFromSales || excludedCodes.has(r.definition.code),
+      }),
+    );
     const methodCodes = new Set(methods.map((m) => m.methodCode));
 
     type MethodCell = { total: number; tax8: number; tax10: number };
@@ -1073,7 +1118,11 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       });
       const labelByCode = Object.fromEntries(defs.map((d) => [d.code, d.labelJa]));
       for (const code of extraCodes.sort()) {
-        methods.push({ methodCode: code, labelJa: labelByCode[code] ?? code });
+        methods.push({
+          methodCode: code,
+          labelJa: labelByCode[code] ?? code,
+          excludeFromSales: excludedCodes.has(code),
+        });
       }
     }
 
@@ -1082,6 +1131,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       timeZone: tz,
       range: { from: req.query.from ?? null, to: req.query.to ?? null },
       methods,
+      salesExcludedMethodCodes: [...excludedCodes],
       rows: Object.entries(byDate)
         .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
         .map(([date, v]) => {
@@ -1089,7 +1139,10 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
           for (const [code, m] of Object.entries(v.byMethod)) {
             byMethod[code] = { total: m.total, tax8: m.tax8, tax10: m.tax10 };
           }
-          const totalAmount = Object.values(byMethod).reduce((s, m) => s + m.total, 0);
+          const totalAmount = Object.entries(byMethod).reduce((s, [code, m]) => {
+            if (excludedCodes.has(code)) return s;
+            return s + m.total;
+          }, 0);
           const count = v.billIds.size;
           return {
             date,
@@ -1118,6 +1171,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: String((e as Error).message || e) });
     }
 
+    const excludedCodes = await loadSalesExcludedMethodCodes(store.id);
     const payments = await prisma.payment.findMany({
       where: {
         bill: {
@@ -1137,23 +1191,30 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     const defs = await prisma.paymentMethodDefinition.findMany();
     const labelByCode = Object.fromEntries(defs.map((d) => [d.code, d.labelJa]));
 
+    const rows = Object.entries(byMethod)
+      .map(([code, amount]) => ({
+        methodCode: code,
+        labelJa: labelByCode[code] ?? code,
+        amount,
+        excludeFromSales: excludedCodes.has(code),
+      }))
+      .sort((a, b) => b.amount - a.amount);
+    const salesTotal = rows.reduce((s, r) => (r.excludeFromSales ? s : s + r.amount), 0);
+
     return {
       storeId: store.id,
       timeZone: tz,
       range: { from: req.query.from ?? null, to: req.query.to ?? null },
-      rows: Object.entries(byMethod)
-        .map(([code, amount]) => ({
-          methodCode: code,
-          labelJa: labelByCode[code] ?? code,
-          amount,
-        }))
-        .sort((a, b) => b.amount - a.amount),
+      salesTotal,
+      salesExcludedMethodCodes: [...excludedCodes],
+      rows,
     };
   });
 
   /**
    * reports: 割引した売上一覧（確定=settledAt基準）
-   * - bill.discountJson と orderLine.discountJson を拾う\n+   */
+   * - bill.discountJson と orderLine.discountJson を拾う
+   */
   app.get<{
     Params: { storeId: string };
     Querystring: { from?: string; to?: string; kind?: string };

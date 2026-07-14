@@ -40,7 +40,12 @@ export function sumOrderLineNetsByTaxRate(
   return out;
 }
 
-/** 支払い金額を伝票明細の税区分比率で按分（円・整数） */
+/**
+ * 支払い金額を伝票明細の税区分比率で按分（円・整数）。
+ * 明細が無い／税率不明分は税10%側へ寄せる（月間日別は 8%/10% 列のみ表示のため、
+ * 不可視の「その他」に落とすと売上と列合計がずれる）。
+ * 常に tax8 + tax10 === amount（other は 0）。
+ */
 export function allocateAmountByTaxBuckets(
   amount: number,
   buckets: TaxBucketSums,
@@ -48,8 +53,7 @@ export function allocateAmountByTaxBuckets(
   const n = Math.max(0, Math.round(amount));
   if (n === 0) return { tax8: 0, tax10: 0, other: 0 };
   const lineTotal = buckets.tax8 + buckets.tax10 + buckets.other;
-  if (lineTotal <= 0) return { tax8: 0, tax10: 0, other: n };
-  const tax8 = Math.round((n * buckets.tax8) / lineTotal);
-  const tax10 = Math.round((n * buckets.tax10) / lineTotal);
-  return { tax8, tax10, other: n - tax8 - tax10 };
+  if (lineTotal <= 0) return { tax8: 0, tax10: n, other: 0 };
+  const tax8 = Math.min(n, Math.round((n * buckets.tax8) / lineTotal));
+  return { tax8, tax10: n - tax8, other: 0 };
 }

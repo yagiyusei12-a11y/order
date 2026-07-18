@@ -155,6 +155,46 @@ function applyKitOrderBoxWrap(boxEl, blockCount) {
   boxEl.style.setProperty("--kit-wrap-cols", String(cols));
 }
 
+/**
+ * 優先明細を通常明細から分離（セット束は構成に1つでも優先があれば束ごと優先側へ）。
+ * @param {unknown[]} lines
+ * @returns {{ fast: unknown[]; rest: unknown[] }}
+ */
+function splitKitOrderLinesByPriority(lines) {
+  const list = lines || [];
+  const bundleHasFast = new Map();
+  for (const ln of list) {
+    if (!ln || !ln.isSetComponent || !ln.setBundleInstanceKey) continue;
+    const k = String(ln.setBundleInstanceKey);
+    if (lineKitchenServeFast(ln)) bundleHasFast.set(k, true);
+    else if (!bundleHasFast.has(k)) bundleHasFast.set(k, false);
+  }
+  const fast = [];
+  const rest = [];
+  for (const ln of list) {
+    let isFast = false;
+    if (ln && ln.isSetComponent && ln.setBundleInstanceKey) {
+      isFast = bundleHasFast.get(String(ln.setBundleInstanceKey)) === true;
+    } else {
+      isFast = lineKitchenServeFast(ln);
+    }
+    (isFast ? fast : rest).push(ln);
+  }
+  return { fast, rest };
+}
+
+function compareKitOrderGroupsByTime(a, b) {
+  const pickA = kitOrderGroupPickupMs(a);
+  const pickB = kitOrderGroupPickupMs(b);
+  if (pickA != null && pickB != null && pickA !== pickB) return pickA - pickB;
+  if (pickA != null && pickB == null) return -1;
+  if (pickA == null && pickB != null) return 1;
+  const ta = new Date(a.orderCreatedAt || 0).getTime();
+  const tb = new Date(b.orderCreatedAt || 0).getTime();
+  if (ta !== tb) return ta - tb;
+  return String(a.orderId).localeCompare(String(b.orderId));
+}
+
 function lineGroupKey(ln) {
   const base = ln.menuItemId ? "mid:" + ln.menuItemId : "name:" + ln.nameSnapshot;
   if (ln && ln.isSetComponent && ln.setPickOptionSubtext) {
@@ -992,8 +1032,15 @@ function applyKitOrderGroupHead(el, og, opts) {
   const headText = kitOrderGroupHeadText(og, opts);
   el.title = headText;
   const ln0 = og.lines && og.lines[0];
+  const priorityOnly = Boolean(og && og.priorityOnly);
   if (lineTakeoutMeta(ln0)) {
-    el.textContent = headText;
+    if (priorityOnly) {
+      el.innerHTML =
+        "<span class=\"kit-priority-order-badge\">優先</span> " + escapeHtml(headText);
+      el.classList.add("kit-order-box-head-priority");
+    } else {
+      el.textContent = headText;
+    }
     return;
   }
   const history = Boolean(opts && opts.history);
@@ -1003,6 +1050,9 @@ function applyKitOrderGroupHead(el, og, opts) {
     minute: "2-digit",
   });
   let html = "";
+  if (priorityOnly) {
+    html += "<span class=\"kit-priority-order-badge\">優先</span> ";
+  }
   if (kitDisplayCache.showCourseBadge && isCourse) {
     html += "<span class=\"kit-hodai-badge\">" + escapeHtml(kitDisplayCache.courseBadgeText) + "</span> ";
   }
@@ -1014,6 +1064,7 @@ function applyKitOrderGroupHead(el, og, opts) {
   }
   html += " · " + (history ? "注文 " : "") + escapeHtml(hm);
   el.innerHTML = html;
+  if (priorityOnly) el.classList.add("kit-order-box-head-priority");
   if (kitDisplayCache.showCourseBadge && isCourse) {
     el.classList.add("kit-order-box-head-course");
   }
@@ -1946,7 +1997,7 @@ function renderKitList() {
     finishKitListRender();
     return;
   }
-  /** 通常表示: 1注文（orderId）= 1ブロック、行内は調理場のみ（カテゴリなし） */
+  /** 通常表示: 1注文（orderId）= 1ブロック。優先明細は別ブロックにして先頭へ */
   const byOrder = new Map();
   for (const ln of linesNormal) {
     const oid = ln.orderId || ln.id;
@@ -1962,28 +2013,38 @@ function renderKitList() {
     }
     g.lines.push(ln);
   }
-  const orderGroups = [...byOrder.values()].sort((a, b) => {
-    const pickA = kitOrderGroupPickupMs(a);
-    const pickB = kitOrderGroupPickupMs(b);
-    if (pickA != null && pickB != null && pickA !== pickB) return pickA - pickB;
-    if (pickA != null && pickB == null) return -1;
-    if (pickA == null && pickB != null) return 1;
-    const ta = new Date(a.orderCreatedAt || 0).getTime();
-    const tb = new Date(b.orderCreatedAt || 0).getTime();
-    if (ta !== tb) return ta - tb;
-    return String(a.orderId).localeCompare(String(b.orderId));
-  });
+  const priorityGroups = [];
+  const normalGroups = [];
+  for (const g of byOrder.values()) {
+    const split = splitKitOrderLinesByPriority(g.lines);
+    if (split.fast.length) {
+      priorityGroups.push({
+        orderId: g.orderId,
+        tableName: g.tableName,
+        orderCreatedAt: g.orderCreatedAt,
+        lines: split.fast,
+        priorityOnly: true,
+      });
+    }
+    if (split.rest.length) {
+      normalGroups.push({
+        orderId: g.orderId,
+        tableName: g.tableName,
+        orderCreatedAt: g.orderCreatedAt,
+        lines: split.rest,
+        priorityOnly: false,
+      });
+    }
+  }
+  priorityGroups.sort(compareKitOrderGroupsByTime);
+  normalGroups.sort(compareKitOrderGroupsByTime);
+  const orderGroups = priorityGroups.concat(normalGroups);
   box.className = "card kit-layout-normal";
   box.innerHTML = "";
   for (const og of orderGroups) {
-    og.lines.sort((a, b) => {
-      const fa = lineKitchenServeFast(a) ? 1 : 0;
-      const fb = lineKitchenServeFast(b) ? 1 : 0;
-      if (fb !== fa) return fb - fa;
-      return String(a.id).localeCompare(String(b.id));
-    });
+    og.lines.sort((a, b) => String(a.id).localeCompare(String(b.id)));
     const d = document.createElement("div");
-    d.className = "kit-order-box";
+    d.className = "kit-order-box" + (og.priorityOnly ? " kit-order-box-priority" : "");
     applyKitOrderBoxWrap(d, kitOrderVisualBlockCount(og.lines));
 
     const head = document.createElement("div");

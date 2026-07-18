@@ -1017,10 +1017,33 @@ function handyEatModeSelected() {
   return t && t.checked ? "takeout" : "dine_in";
 }
 
+/** @param {"dine_in" | "takeout"} mode */
+function setHandyEatMode(mode) {
+  const takeout = document.getElementById("handyEatTakeout");
+  const dineIn = document.getElementById("handyEatDineIn");
+  const wantTakeout = mode === "takeout";
+  if (takeout) takeout.checked = wantTakeout;
+  if (dineIn) dineIn.checked = !wantTakeout;
+  const active = wantTakeout ? takeout : dineIn;
+  if (active) active.dispatchEvent(new Event("change", { bubbles: true }));
+  else {
+    renderItems();
+    renderCart();
+  }
+}
+
+function isHandyTakeoutSession(sess) {
+  if (!sess || !sess.table) return false;
+  const name = String(sess.table.name || "").trim();
+  const code = String(sess.table.publicCode || "").trim();
+  return name === "テイクアウト" || code.indexOf("takeout-") === 0;
+}
+
 function wireHandyEatModeRadios() {
   for (const el of document.querySelectorAll('input[name="handyEatMode"]')) {
     el.addEventListener("change", () => {
       renderItems();
+      renderCart();
       log("");
     });
   }
@@ -1574,6 +1597,7 @@ async function confirmSeparateBill() {
 /** テイクアウト卓の新規セッションを開始（レジ不要） */
 async function startTakeoutSession() {
   log("");
+  setHandyEatMode("takeout");
   const btn = document.getElementById("handyOpenTakeoutSession");
   if (btn) btn.disabled = true;
   try {
@@ -1582,11 +1606,11 @@ async function startTakeoutSession() {
       headers: { "Content-Type": "application/json" },
       body: "{}",
     });
-    const takeoutRadio = document.getElementById("handyEatTakeout");
-    if (takeoutRadio) takeoutRadio.checked = true;
+    setHandyEatMode("takeout");
     log("テイクアウト会計を開始しました。商品をカートに入れて送信してください");
     const newId = created && created.id ? created.id : null;
     await loadSessions(newId);
+    setHandyEatMode("takeout");
     renderItems();
     renderCart();
   } catch (e) {
@@ -1625,6 +1649,8 @@ async function loadSessions(preferSessionId) {
     sel.value = prevPreferred;
   }
   updateHandySeparateBtn();
+  const selected = sessionsCache.find((x) => x.id === sel.value);
+  if (isHandyTakeoutSession(selected)) setHandyEatMode("takeout");
   refreshHandyCoursePricing();
   renderHandyCourseSection().catch(() => {});
   renderItems();
@@ -2095,6 +2121,9 @@ if (handyStickySubmitEl) handyStickySubmitEl.onclick = () => submitOrder();
   if (sessSel) {
     sessSel.addEventListener("change", () => {
       updateHandySeparateBtn();
+      const sid = sessSel.value;
+      const sess = sid ? sessionsCache.find((x) => x.id === sid) : null;
+      if (isHandyTakeoutSession(sess)) setHandyEatMode("takeout");
       refreshHandyCoursePricing();
       renderHandyCourseSection().catch(() => {});
       renderItems();

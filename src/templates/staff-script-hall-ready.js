@@ -19,6 +19,12 @@ let hallChimePlaying = false;
 let hallChimeInitialized = false;
 /** @type {Set<string>} */
 const hallServeInFlight = new Set();
+/**
+ * 提供待ちの表示順固定（行 id → 初回出現順）。
+ * 提供済みで行が消えても他卓・他商品の位置が動かないようにする。
+ * @type {Map<string, number> | null}
+ */
+let hallWaitLineOrder = null;
 
 function log(t) {
   const el = document.getElementById("log");
@@ -552,6 +558,46 @@ function appendHallSetBundle(grid, bundle) {
   grid.appendChild(wrap);
 }
 
+function hallWaitLineOrderKey(ln) {
+  if (!ln) return "";
+  if (ln.id != null && String(ln.id)) return String(ln.id);
+  return kitchenPatchLineId(ln);
+}
+
+/**
+ * 提供待ちの自然順ソート結果を、固定順に載せ替える（新規行は末尾）。
+ * @param {typeof lastDoneLines} naturalSorted
+ */
+function applyHallWaitStableOrder(naturalSorted) {
+  const list = naturalSorted || [];
+  if (hallWaitLineOrder == null) {
+    hallWaitLineOrder = new Map();
+    list.forEach((ln, i) => {
+      const k = hallWaitLineOrderKey(ln);
+      if (k) hallWaitLineOrder.set(k, i);
+    });
+    return list;
+  }
+  let next = 0;
+  for (const ord of hallWaitLineOrder.values()) {
+    if (ord >= next) next = ord + 1;
+  }
+  for (const ln of list) {
+    const k = hallWaitLineOrderKey(ln);
+    if (k && !hallWaitLineOrder.has(k)) hallWaitLineOrder.set(k, next++);
+  }
+  return [...list].sort((a, b) => {
+    const ia = hallWaitLineOrder.get(hallWaitLineOrderKey(a)) ?? 0;
+    const ib = hallWaitLineOrder.get(hallWaitLineOrderKey(b)) ?? 0;
+    if (ia !== ib) return ia - ib;
+    return hallWaitLineOrderKey(a).localeCompare(hallWaitLineOrderKey(b));
+  });
+}
+
+function resetHallWaitStableOrder() {
+  hallWaitLineOrder = null;
+}
+
 function groupByTable(sortedLines, mode) {
   /** @type {Map<string, { tableName: string; lines: typeof sortedLines }>} */
   const m = new Map();
@@ -571,6 +617,14 @@ function groupByTable(sortedLines, mode) {
       const ta = Math.max(...a.lines.map(servedAtMs));
       const tb = Math.max(...b.lines.map(servedAtMs));
       if (ta !== tb) return tb - ta;
+    } else if (hallWaitLineOrder) {
+      const ta = Math.min(
+        ...a.lines.map((ln) => hallWaitLineOrder.get(hallWaitLineOrderKey(ln)) ?? Number.MAX_SAFE_INTEGER),
+      );
+      const tb = Math.min(
+        ...b.lines.map((ln) => hallWaitLineOrder.get(hallWaitLineOrderKey(ln)) ?? Number.MAX_SAFE_INTEGER),
+      );
+      if (ta !== tb) return ta - tb;
     } else {
       const ta = Math.min(...a.lines.map(readyAtMs));
       const tb = Math.min(...b.lines.map(readyAtMs));
@@ -586,7 +640,7 @@ function renderHallList() {
   if (!root) return;
   const source = hallTab === "served" ? lastServedLines : lastDoneLines;
   const filtered = filterLines(source);
-  const sorted =
+  const sortedNatural =
     hallTab === "served"
       ? [...filtered].sort((a, b) => {
           const d = servedAtMs(b) - servedAtMs(a);
@@ -606,8 +660,11 @@ function renderHallList() {
           }
           return String(a.id).localeCompare(String(b.id));
         });
+  const sorted =
+    hallTab === "done" ? applyHallWaitStableOrder(sortedNatural) : sortedNatural;
 
   if (sorted.length === 0) {
+    if (hallTab === "done") resetHallWaitStableOrder();
     if (source.length === 0) {
       if (hallTab === "served") {
         root.innerHTML =
@@ -728,6 +785,7 @@ async function refreshHall() {
 }
 
 document.getElementById("btnRefHall").onclick = () => {
+  resetHallWaitStableOrder();
   refreshHallIntervalFromServer()
     .then(() => {
       scheduleHall();

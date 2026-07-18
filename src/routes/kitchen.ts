@@ -7,12 +7,14 @@ import {
 } from "../lib/kitchen-busy-stop.js";
 import {
   applyKitDonePartIdsToLineExtra,
+  applyKitServedPartIdsToLineExtra,
   deriveSetComponentRowStatus,
   extractSetComponentsFromLineExtra,
   formatSetComponentPickDisplayName,
   formatSetPartDoneKey,
   listSetPartDoneKeysForLine,
   readKitDonePartIds,
+  readKitServedPartIds,
   stripSetNameSnapshotBracket,
 } from "../lib/kitchen-expand-set-lines.js";
 import {
@@ -149,6 +151,7 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
 
     const lineStatus = req.query.lineStatus;
     const hallWaitMode = lineStatus === "hall_wait";
+    const servedListMode = lineStatus === "served";
     const whereLine: Prisma.OrderLineWhereInput = hallWaitMode
       ? {
           OR: [
@@ -173,9 +176,12 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
             },
           ],
         }
-      : lineStatus && LINE_STATUSES.includes(lineStatus as (typeof LINE_STATUSES)[number])
-        ? { status: lineStatus }
-        : { status: { in: ["queued", "cooking", "done"] } };
+      : servedListMode
+        ? // セットの部分提供済み（親は done のまま）も含める
+          { status: { in: ["served", "done"] } }
+        : lineStatus && LINE_STATUSES.includes(lineStatus as (typeof LINE_STATUSES)[number])
+          ? { status: lineStatus }
+          : { status: { in: ["queued", "cooking", "done"] } };
 
     const orderBy =
       lineStatus === "done" || hallWaitMode
@@ -260,6 +266,9 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
 
       if (picks.length === 0 || resolved.length === 0) {
         if (hallWaitMode && !includeLineInHallWait(l.status, parentHallPrep, parentHallPrep)) {
+          continue;
+        }
+        if (servedListMode && l.status !== "served") {
           continue;
         }
         outLines.push({
@@ -347,6 +356,15 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
           const pickDisplay = formatSetComponentPickDisplayName(p.pickName, p.optionSubtext);
           const instLabel =
             setQty > 1 ? `${setTitle}（${instanceIndex}/${setQty}）` : setTitle;
+          const rowStatus = deriveSetComponentRowStatus(
+            l.status,
+            l.lineExtra,
+            p.menuItemId,
+            instanceIndex,
+            setQty,
+          );
+          if (hallWaitMode && rowStatus === "served") continue;
+          if (servedListMode && rowStatus !== "served") continue;
           outLines.push({
             id: `${l.id}::i${inst0}::${p.menuItemId}`,
             kitchenPatchLineId: l.id,
@@ -356,13 +374,7 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
             setInstanceCount: setQty,
             setComponentStepLabel: p.stepLabel ? p.stepLabel : null,
             setComponentPickName: pickDisplay,
-            status: deriveSetComponentRowStatus(
-              l.status,
-              l.lineExtra,
-              p.menuItemId,
-              instanceIndex,
-              setQty,
-            ),
+            status: rowStatus,
             dbStatus: l.status,
             nameSnapshot: p.stepLabel
               ? `${instLabel} › ${p.stepLabel}: ${pickDisplay}`
@@ -514,12 +526,41 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
 
     if (picks.length > 0) {
       if (status === "served") {
-        data.lineExtra = applyKitDonePartIdsToLineExtra(line.lineExtra, null);
+        if (componentMenuItemId) {
+          if (!compKeys.includes(componentMenuItemId)) {
+            return reply.code(400).send({ error: "component not in set line" });
+          }
+          const partKey = formatSetPartDoneKey(componentMenuItemId, setInstanceIndex, setQty);
+          const existing = readKitServedPartIds(line.lineExtra);
+          const idSet = new Set(existing ?? []);
+          idSet.add(partKey);
+          const arr = [...idSet].sort();
+          const allServedKeys = listSetPartDoneKeysForLine(compKeys, setQty);
+          const allServed = allServedKeys.length > 0 && allServedKeys.every((k) => idSet.has(k));
+          data.lineExtra = applyKitServedPartIdsToLineExtra(line.lineExtra, arr);
+          if (allServed) {
+            data.status = "served";
+            data.servedAt = new Date();
+          } else {
+            // 親は done のまま（他の構成は提供待ちに残す）
+            data.status = line.status === "served" ? "served" : "done";
+            data.readyAt = line.readyAt ?? new Date();
+            data.servedAt = null;
+          }
+        } else {
+          // セット一括提供
+          data.lineExtra = applyKitServedPartIdsToLineExtra(
+            applyKitDonePartIdsToLineExtra(line.lineExtra, null),
+            [...listSetPartDoneKeysForLine(compKeys, setQty)].sort(),
+          );
+          data.status = "served";
+          data.servedAt = new Date();
+        }
       } else if (componentMenuItemId) {
         if (status === "cooking") {
           return reply
             .code(400)
-            .send({ error: "componentMenuItemId is only valid with status done or queued" });
+            .send({ error: "componentMenuItemId is only valid with status done, queued, or served" });
         }
         if (!compKeys.includes(componentMenuItemId)) {
           return reply.code(400).send({ error: "component not in set line" });

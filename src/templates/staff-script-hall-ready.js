@@ -660,7 +660,11 @@ function renderHallList() {
 
 async function setLineServed(lineId, ln) {
   if (!lineId) return;
-  if (hallServeInFlight.has(lineId)) return;
+  const flightKey =
+    ln && ln.isSetComponent && ln.id
+      ? String(ln.id)
+      : String(lineId);
+  if (hallServeInFlight.has(flightKey)) return;
   const early = ln && isHallPrepEarlyLine(ln);
   if (early && ln.eatMode !== "takeout") {
     const name = ln.nameSnapshot ? String(ln.nameSnapshot) : "この商品";
@@ -672,18 +676,25 @@ async function setLineServed(lineId, ln) {
       return;
     }
   }
-  hallServeInFlight.add(lineId);
+  hallServeInFlight.add(flightKey);
   log("");
   try {
+    const body = { status: "served" };
+    if (ln && ln.isSetComponent && ln.menuItemId) {
+      body.componentMenuItemId = String(ln.menuItemId);
+      if (ln.setInstanceIndex != null && Number(ln.setInstanceIndex) >= 1) {
+        body.setInstanceIndex = Number(ln.setInstanceIndex);
+      }
+    }
     await api(
       "/stores/" + encodeURIComponent(STORE) + "/kitchen/order-lines/" + encodeURIComponent(lineId),
-      { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "served" }) }
+      { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
     );
     await refreshHall();
   } catch (e) {
     log(String(e.message || e));
   } finally {
-    hallServeInFlight.delete(lineId);
+    hallServeInFlight.delete(flightKey);
   }
 }
 

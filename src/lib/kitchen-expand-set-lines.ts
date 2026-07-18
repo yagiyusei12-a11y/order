@@ -164,7 +164,35 @@ export function applyKitDonePartIdsToLineExtra(
   return base;
 }
 
-/** 展開行の表示用 status（親は queued のまま、単品だけ done にできる） */
+/** ホール提供: 構成単品ごとの提供済み（親 lineExtra）。未定義なら親 status のみ */
+export function readKitServedPartIds(lineExtra: unknown): string[] | undefined {
+  if (lineExtra == null || typeof lineExtra !== "object" || Array.isArray(lineExtra)) return undefined;
+  if (!Object.prototype.hasOwnProperty.call(lineExtra, "kitServedPartIds")) return undefined;
+  const v = (lineExtra as Record<string, unknown>).kitServedPartIds;
+  if (!Array.isArray(v)) return undefined;
+  return v
+    .filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+    .map((x) => x.trim());
+}
+
+/** kitServedPartIds をマージ（null でキー削除） */
+export function applyKitServedPartIdsToLineExtra(
+  lineExtra: unknown,
+  partIds: string[] | null,
+): Record<string, unknown> {
+  const base =
+    lineExtra != null && typeof lineExtra === "object" && !Array.isArray(lineExtra)
+      ? { ...(lineExtra as Record<string, unknown>) }
+      : {};
+  if (partIds === null) {
+    delete base.kitServedPartIds;
+  } else {
+    base.kitServedPartIds = partIds;
+  }
+  return base;
+}
+
+/** 展開行の表示用 status（親は queued/done のまま、単品だけ done / served にできる） */
 export function deriveSetComponentRowStatus(
   parentStatus: string,
   lineExtra: unknown,
@@ -172,13 +200,23 @@ export function deriveSetComponentRowStatus(
   instanceIndex = 1,
   instanceCount = 1,
 ): string {
+  if (parentStatus === "cancelled") return parentStatus;
+
+  const servedTracked = readKitServedPartIds(lineExtra);
+  if (servedTracked !== undefined) {
+    const served = new Set(servedTracked);
+    if (isSetPartDoneInTracked(served, componentMenuItemId, instanceIndex, instanceCount)) {
+      return "served";
+    }
+  }
+  if (parentStatus === "served") return "served";
+
   const tracked = readKitDonePartIds(lineExtra);
   if (tracked === undefined) {
     return parentStatus;
   }
   const done = new Set(tracked);
   if (isSetPartDoneInTracked(done, componentMenuItemId, instanceIndex, instanceCount)) return "done";
-  if (parentStatus === "served" || parentStatus === "cancelled") return parentStatus;
   if (parentStatus === "done") return "done";
   return parentStatus;
 }

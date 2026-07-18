@@ -18,7 +18,8 @@ import {
   transferSessionCourseBetweenSessionsTx,
   type LineMoveSpec,
 } from "../lib/move-session-order-lines.js";
-import { broadcastOpsSessionUpdatedMany, broadcastOpsSessionUpdated, broadcastGuestSessionAlcoholUpdated } from "../lib/ops-seat-socket.js";
+import { broadcastOpsSessionUpdatedMany, broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
+import { setGuestAlcoholForOpenSessionsOnTable } from "../lib/guest-alcohol-table.js";
 import {
   packChargeScopeFromDb,
   purchaseCourseOptionPackErrorToHttp,
@@ -262,14 +263,13 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       if (!billing || billing.status !== "open") {
         return reply.code(400).send({ error: "only open billing sessions can update guest alcohol" });
       }
-      const updated = await prisma.diningSession.update({
-        where: { id: billingId },
-        data: { guestAlcoholAllowed: v },
+      if (!billing.tableId) {
+        return reply.code(400).send({ error: "only open billing sessions can update guest alcohol" });
+      }
+      await setGuestAlcoholForOpenSessionsOnTable(req.params.storeId, billing.tableId, v);
+      const updated = await prisma.diningSession.findFirst({
+        where: { id: billingId, storeId: req.params.storeId },
         include: { table: true, course: true },
-      });
-      broadcastGuestSessionAlcoholUpdated(req.params.storeId, {
-        billingSessionId: billingId,
-        guestAlcoholAllowed: v,
       });
       return updated;
     }

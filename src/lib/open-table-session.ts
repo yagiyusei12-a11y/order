@@ -1,6 +1,7 @@
 import type { Course, CoursePriceTier, DiningSession } from "@prisma/client";
 import { prisma } from "../db.js";
 import { resolveCourseAndTierForSession } from "./course-tier-resolve.js";
+import { resolveGuestAlcoholForTable } from "./guest-alcohol-table.js";
 import { syncReceptionShiftSeatsForTable } from "./reception-seat-state.js";
 import { newGuestToken } from "./token.js";
 
@@ -135,6 +136,9 @@ export async function openSessionForTable(options: {
     guestToken = newGuestToken();
   }
 
+  // 別会計など同一卓に既存 open がある場合、飲酒確認は卓単位で引き継ぐ
+  const inheritedAlcohol = await resolveGuestAlcoholForTable(table.id);
+
   const session = await prisma.diningSession.create({
     data: {
       storeId,
@@ -145,6 +149,7 @@ export async function openSessionForTable(options: {
       courseId: resolvedCourseId,
       coursePriceTierId: resolvedTierId,
       status: "open",
+      ...(inheritedAlcohol !== null ? { guestAlcoholAllowed: inheritedAlcohol } : {}),
     },
     include: { course: true, coursePriceTier: true },
   });

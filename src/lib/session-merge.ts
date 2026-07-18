@@ -6,7 +6,8 @@ function asStringIdArray(raw: unknown): string[] {
   return raw.filter((x): x is string => typeof x === "string" && x.length > 0);
 }
 
-function mergeGuestAlcoholAllowed(
+/** false 優先。どちらかが boolean なら null より優先（同一卓・合算の飲酒確認マージ） */
+export function mergeGuestAlcoholAllowed(
   a: boolean | null | undefined,
   b: boolean | null | undefined,
 ): boolean | null {

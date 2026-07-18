@@ -29,6 +29,7 @@ import {
 } from "../lib/set-order-bundle.js";
 import { broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
 import { resolveGuestBillingContext } from "../lib/guest-billing-context.js";
+import { setGuestAlcoholForOpenSessionsOnTable } from "../lib/guest-alcohol-table.js";
 import {
   GUEST_BUSY_STOP_MESSAGE,
   isItemBusyStoppedByStations,
@@ -822,10 +823,15 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
       if (!billing.ok) {
         return reply.code(billing.status).send(billing.body);
       }
-      await prisma.diningSession.update({
+      // 請求セッションの卓上の open（別会計含む）へ一括反映
+      const billingRow = await prisma.diningSession.findUnique({
         where: { id: billing.ctx.billingSessionId },
-        data: { guestAlcoholAllowed: v },
+        select: { tableId: true, storeId: true, status: true },
       });
+      if (!billingRow || billingRow.status !== "open" || !billingRow.tableId) {
+        return reply.code(404).send({ error: "session not found or closed" });
+      }
+      await setGuestAlcoholForOpenSessionsOnTable(billingRow.storeId, billingRow.tableId, v);
       return { ok: true };
     },
   );

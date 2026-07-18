@@ -5479,12 +5479,22 @@
     }
 
     async function ensureSafetyGate() {
+      // サーバ（同一卓の別会計含む）で既に確認済みならダイアログを出さない
+      try {
+        const data = await api("/guest/" + encodeURIComponent(TOKEN) + "/alcohol-status");
+        const allowed = data && data.guestAlcoholAllowed;
+        if (allowed === true || allowed === false) {
+          alcoholRestricted = allowed === false;
+          writeGuestSafetyStorage(allowed);
+          return;
+        }
+      } catch (_) {}
       const key = guestSafetyStorageKey();
       try {
         const raw = sessionStorage.getItem(key);
         if (raw) {
           const parsed = JSON.parse(raw);
-          alcoholRestricted = !(parsed && parsed.allowAlcohol === false);
+          alcoholRestricted = !(parsed && parsed.allowAlcohol);
           return;
         }
       } catch (_) {}

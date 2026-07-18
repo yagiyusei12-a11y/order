@@ -1297,18 +1297,6 @@ async function runKitSummaryTableDone(lineIds, summaryComponentMenuItemId, sampl
   if (uniq.length === 0) return;
   const key = "summary:" + uniq.join(",") + "|" + String(summaryComponentMenuItemId || "");
   if (kitLineDoneInFlight.has(key)) return;
-  const label = sampleLn ? orderLineDisplayName(sampleLn) : "対象商品";
-  if (
-    !confirm(
-      "「" +
-        label +
-        "」の " +
-        uniq.length +
-        " 件を調理済にしますか？\n（まとめ表示の一括操作です）",
-    )
-  ) {
-    return;
-  }
   kitLineDoneInFlight.add(key);
   try {
     await setLinesDone(uniq, summaryComponentMenuItemId);

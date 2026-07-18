@@ -1571,6 +1571,31 @@ async function confirmSeparateBill() {
   }
 }
 
+/** テイクアウト卓の新規セッションを開始（レジ不要） */
+async function startTakeoutSession() {
+  log("");
+  const btn = document.getElementById("handyOpenTakeoutSession");
+  if (btn) btn.disabled = true;
+  try {
+    const created = await api("/stores/" + encodeURIComponent(STORE) + "/takeout/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const takeoutRadio = document.getElementById("handyEatTakeout");
+    if (takeoutRadio) takeoutRadio.checked = true;
+    log("テイクアウト会計を開始しました。商品をカートに入れて送信してください");
+    const newId = created && created.id ? created.id : null;
+    await loadSessions(newId);
+    renderItems();
+    renderCart();
+  } catch (e) {
+    log(String(e.message || e));
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 /** @param {string | null | undefined} [preferSessionId] */
 async function loadSessions(preferSessionId) {
   const res = await api("/stores/" + encodeURIComponent(STORE) + "/sessions?status=open&includeTotals=1");
@@ -1584,7 +1609,7 @@ async function loadSessions(preferSessionId) {
   if (!sessionsCache.length) {
     const o = document.createElement("option");
     o.value = "";
-    o.textContent = "開店中のセッションがありません（卓・会計で開始）";
+    o.textContent = "開店中のセッションがありません（店内は卓・会計／テイクアウトは下のボタン）";
     sel.appendChild(o);
     updateHandySeparateBtn();
     return;
@@ -1936,7 +1961,7 @@ function renderCart() {
 async function submitOrder() {
   log("");
   const sid = document.getElementById("handySession").value;
-  if (!sid) return log("セッションを選んでください（開店中がない場合は卓・会計で開始）");
+  if (!sid) return log("セッションを選んでください（店内は卓・会計／テイクアウトは「テイクアウト会計を開始」）");
   if (cart.size === 0) return log("カートが空です");
 
   const eatMode = handyEatModeSelected();
@@ -2052,6 +2077,10 @@ if (handyStickySubmitEl) handyStickySubmitEl.onclick = () => submitOrder();
     bs.addEventListener("click", (ev) => {
       if (ev.target === bs) closeSeparateBillModal();
     });
+  }
+  const takeoutB = document.getElementById("handyOpenTakeoutSession");
+  if (takeoutB) {
+    takeoutB.onclick = () => startTakeoutSession().catch((e) => log(String(e.message || e)));
   }
   const openB = document.getElementById("handyOpenSeparateBill");
   if (openB) {

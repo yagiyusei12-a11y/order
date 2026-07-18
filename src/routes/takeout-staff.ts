@@ -20,11 +20,36 @@ import {
   type SetStepForValidation,
 } from "../lib/menu-set-order.js";
 import { openOrReuseSessionForTable } from "../lib/open-table-session.js";
+import { broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
 import {
   takeoutTablePrimaryPublicCode,
   takeoutTableWhereForStore,
 } from "../lib/takeout-table-code.js";
 import { optionPriceDeltaTaxIncluded, menuItemTaxIncludedUnitPrice, resolveItemPriceTaxMode } from "../lib/order-line-tax.js";
+
+/** テイクアウト仮想卓を確保（非アクティブなら再有効化）。なければ作成。 */
+async function ensureTakeoutTable(storeId: string) {
+  const inactive = await prisma.table.findFirst({
+    where: { ...takeoutTableWhereForStore(storeId), active: false },
+  });
+  if (inactive) {
+    await prisma.table.update({
+      where: { id: inactive.id },
+      data: { active: true },
+    });
+  }
+  return (
+    (await prisma.table.findFirst({ where: takeoutTableWhereForStore(storeId) })) ??
+    (await prisma.table.create({
+      data: {
+        storeId,
+        name: "テイクアウト",
+        publicCode: takeoutTablePrimaryPublicCode(storeId),
+        active: true,
+      },
+    }))
+  );
+}
 
 type EatMode = "dine_in" | "takeout";
 
@@ -119,6 +144,43 @@ export async function registerTakeoutStaff(app: FastifyInstance): Promise<void> 
     return { ok: true };
   });
 
+  /** ハンディ等: テイクアウト卓のセッションだけ開始（注文なし）。毎回別会計。 */
+  app.post<{ Params: { storeId: string } }>("/stores/:storeId/takeout/sessions", async (req, reply) => {
+    const store = await prisma.store.findUnique({
+      where: { id: req.params.storeId },
+      select: { id: true },
+    });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+
+    const table = await ensureTakeoutTable(store.id);
+    const open = await openOrReuseSessionForTable({
+      tableId: table.id,
+      storeId: store.id,
+      guestCount: 1,
+      childCount: 0,
+      courseId: null,
+      coursePriceTierId: undefined,
+      takeoutOrderSeparateBill: true,
+    });
+    if (!open.ok) {
+      if (open.code === "CONFLICT") {
+        return reply.code(400).send({
+          error: open.error,
+          ...(open.existingSessionId ? { sessionId: open.existingSessionId } : {}),
+        });
+      }
+      if (open.code === "BAD_TABLE") return reply.code(400).send({ error: "table not found or inactive" });
+      return reply.code(400).send({ error: open.error });
+    }
+
+    const full = await prisma.diningSession.findUniqueOrThrow({
+      where: { id: open.session.id },
+      include: { table: true, course: true, coursePriceTier: true },
+    });
+    broadcastOpsSessionUpdated(store.id, full.id);
+    return full;
+  });
+
   app.post<{
     Params: { storeId: string };
     Body: {
@@ -155,29 +217,10 @@ export async function registerTakeoutStaff(app: FastifyInstance): Promise<void> 
     const linesIn = Array.isArray(req.body?.lines) ? req.body.lines : [];
     if (!linesIn.length) return reply.code(400).send({ error: "lines[] required" });
 
-    const inactiveTakeoutTable = await prisma.table.findFirst({
-      where: { ...takeoutTableWhereForStore(store.id), active: false },
-    });
-    if (inactiveTakeoutTable) {
-      await prisma.table.update({
-        where: { id: inactiveTakeoutTable.id },
-        data: { active: true },
-      });
-    }
+    const table = await ensureTakeoutTable(store.id);
 
     try {
       const result = await prisma.$transaction(async (tx) => {
-        const table =
-          (await tx.table.findFirst({ where: takeoutTableWhereForStore(store.id) })) ??
-          (await tx.table.create({
-            data: {
-              storeId: store.id,
-              name: "テイクアウト",
-              publicCode: takeoutTablePrimaryPublicCode(store.id),
-              active: true,
-            },
-          }));
-
         const open = await openOrReuseSessionForTable({
           tableId: table.id,
           storeId: store.id,

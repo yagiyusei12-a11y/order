@@ -2,7 +2,7 @@
   <div class="handy-bright-inner">
     <h2 class="page-title handy-page-title">口頭注文（ハンディ）</h2>
     <p class="muted handy-lead">
-      電話・カウンター受付の代行注文です。先に<strong>卓・会計</strong>でセッションを開いてから、卓を選んで商品を追加してください。
+      電話・カウンター受付の代行注文です。店内は<strong>卓・会計</strong>でセッションを開いてから卓を選ぶか、テイクアウトは下の<strong>テイクアウト会計を開始</strong>から開けます。
       コースの適用・<strong>＋オプション</strong>の追加もここから行えます。オプション付き・セット商品は「＋」で内容を選んでからカートに入れます。
     </p>
 
@@ -17,8 +17,12 @@
             <option value="">読込中…</option>
           </select>
           <p class="muted handy-hint">
+            テイクアウトの電話注文などは、<strong>テイクアウト会計を開始</strong>してから商品を入れてください（毎回別伝票になります）。
             同一卓でもう一つの会計（別伝票）を増やすときは、先に<strong>その卓のセッション</strong>を選んでから次を押してください。
           </p>
+          <button type="button" class="btn-primary handy-btn-inline" id="handyOpenTakeoutSession">
+            テイクアウト会計を開始
+          </button>
           <button type="button" class="btn-ghost handy-btn-inline" id="handyOpenSeparateBill" disabled>
             この卓でもう一会計を開始
           </button>
@@ -296,6 +300,9 @@
 
   .handy-btn-inline {
     width: auto;
+  }
+  #handyOpenTakeoutSession {
+    margin-bottom: 0.35rem;
   }
 
   .handy-course-actions {

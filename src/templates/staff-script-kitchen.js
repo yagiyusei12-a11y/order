@@ -125,13 +125,34 @@ function appendKitStationBusyStopBadge(nameRow, ln) {
   nameRow.appendChild(bb);
 }
 
-/** 通常表示: 1注文ブロック内に優先行が1件でもあればその卓タイルを先に並べる */
-function orderGroupHasKitchenServeFast(og) {
-  if (!og || !og.lines) return false;
-  for (const ln of og.lines) {
-    if (lineKitchenServeFast(ln)) return true;
+/** 通常表示の見た目ブロック数（セット束は1）。右折り返しの列幅判定用 */
+function kitOrderVisualBlockCount(lines) {
+  let n = 0;
+  const seenBundles = new Set();
+  for (const ln of lines || []) {
+    if (ln && ln.isSetComponent && ln.setBundleInstanceKey) {
+      const k = String(ln.setBundleInstanceKey);
+      if (seenBundles.has(k)) continue;
+      seenBundles.add(k);
+      n += 1;
+    } else {
+      n += 1;
+    }
   }
-  return false;
+  return n;
+}
+
+/**
+ * 明細が多い注文ブロックを右方向に折り返す（grid span + 多段カラム）。
+ * @param {HTMLElement} boxEl
+ * @param {number} blockCount
+ */
+function applyKitOrderBoxWrap(boxEl, blockCount) {
+  if (!boxEl || !(blockCount > 3)) return;
+  const cols = Math.min(4, Math.ceil(blockCount / 3));
+  boxEl.classList.add("kit-order-box-wrap");
+  boxEl.style.gridColumn = "span " + cols;
+  boxEl.style.setProperty("--kit-wrap-cols", String(cols));
 }
 
 function lineGroupKey(ln) {
@@ -1942,9 +1963,6 @@ function renderKitList() {
     g.lines.push(ln);
   }
   const orderGroups = [...byOrder.values()].sort((a, b) => {
-    const pa = orderGroupHasKitchenServeFast(a) ? 1 : 0;
-    const pb = orderGroupHasKitchenServeFast(b) ? 1 : 0;
-    if (pb !== pa) return pb - pa;
     const pickA = kitOrderGroupPickupMs(a);
     const pickB = kitOrderGroupPickupMs(b);
     if (pickA != null && pickB != null && pickA !== pickB) return pickA - pickB;
@@ -1966,6 +1984,7 @@ function renderKitList() {
     });
     const d = document.createElement("div");
     d.className = "kit-order-box";
+    applyKitOrderBoxWrap(d, kitOrderVisualBlockCount(og.lines));
 
     const head = document.createElement("div");
     head.className = "kit-order-box-head";

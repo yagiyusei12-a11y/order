@@ -302,6 +302,36 @@
       flex-direction: column;
       gap: 0.4rem;
     }
+    /* 明細が多い注文: 縦に伸ばさず右隣の列へ折り返す */
+    .kit-order-box-wrap .kit-order-box-body {
+      display: block;
+      column-count: var(--kit-wrap-cols, 2);
+      column-gap: 0.45rem;
+      column-fill: balance;
+    }
+    .kit-order-box-wrap .kit-line-box,
+    .kit-order-box-wrap .kit-set-bundle {
+      break-inside: avoid;
+      -webkit-column-break-inside: avoid;
+      page-break-inside: avoid;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 0.4rem;
+      margin: 0 0 0.4rem;
+      background: #fff;
+    }
+    .kit-order-box-wrap .kit-line-box {
+      border-top: 1px solid #e2e8f0;
+      padding-top: 0.4rem;
+      margin-top: 0;
+    }
+    .kit-order-box-wrap .kit-line-box:first-child {
+      border-top: 1px solid #e2e8f0;
+      padding-top: 0.4rem;
+    }
+    .kit-order-box-wrap .kit-set-bundle {
+      margin-top: 0;
+    }
     .kit-line-box {
       border-top: 1px solid #f1f5f9;
       padding-top: 0.4rem;

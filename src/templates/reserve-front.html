@@ -67,7 +67,9 @@
       </div>
       <div>
         <label>時間（人数に応じた空き）</label>
-        <select id="rTime" required></select>
+        <select id="rTime" required>
+          <option value="" disabled selected>まず日付を選んでください</option>
+        </select>
       </div>
     </div>
 
@@ -419,19 +421,28 @@
       }
     }
 
+    function setTimePlaceholder(text) {
+      const sel = document.getElementById("rTime");
+      sel.innerHTML = "";
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = text;
+      opt.disabled = true;
+      opt.selected = true;
+      sel.appendChild(opt);
+    }
+
     async function refreshSlots() {
       const date = document.getElementById("rDate").value;
       const num = Number(document.getElementById("rNum").value);
       const sel = document.getElementById("rTime");
-      sel.innerHTML = "";
-      if (!date || !Number.isFinite(num) || num < 1 || num > 20) return;
+      if (!date || !Number.isFinite(num) || num < 1 || num > 20) {
+        setTimePlaceholder("まず日付を選んでください");
+        return;
+      }
       const stParam = currentSeatTypeParam();
       if (cfg.seatTypeMode === "require_select" && !stParam) {
-        const opt = document.createElement("option");
-        opt.value = "";
-        opt.textContent = "先に席の種別を選んでください";
-        opt.disabled = true;
-        sel.appendChild(opt);
+        setTimePlaceholder("先に席の種別を選んでください");
         return;
       }
       try {
@@ -442,14 +453,17 @@
         if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
         const slots = data.slots || [];
+        sel.innerHTML = "";
         if (!slots.length) {
-          const opt = document.createElement("option");
-          opt.value = "";
-          opt.textContent = "この日は予約枠がありません";
-          opt.disabled = true;
-          sel.appendChild(opt);
+          setTimePlaceholder("この日は予約枠がありません");
           return;
         }
+        const ph = document.createElement("option");
+        ph.value = "";
+        ph.textContent = "時間を選んでください";
+        ph.disabled = true;
+        ph.selected = true;
+        sel.appendChild(ph);
         for (const s of slots) {
           const opt = document.createElement("option");
           opt.value = s.time;
@@ -457,14 +471,9 @@
           if (!s.available) opt.disabled = true;
           sel.appendChild(opt);
         }
-        const firstOk = [...sel.options].find((o) => !o.disabled && o.value);
-        if (firstOk) sel.value = firstOk.value;
+        sel.value = "";
       } catch (_) {
-        const opt = document.createElement("option");
-        opt.value = "";
-        opt.textContent = "空き状況の取得に失敗しました";
-        opt.disabled = true;
-        sel.appendChild(opt);
+        setTimePlaceholder("空き状況の取得に失敗しました");
       }
     }
 
@@ -498,7 +507,9 @@
           : today;
       document.getElementById("rDate").min = today;
       document.getElementById("rDate").max = maxYmd;
-      document.getElementById("rDate").value = today;
+      // 日付・時間は最初から埋めず、お客さんが選ぶ
+      document.getElementById("rDate").value = "";
+      setTimePlaceholder("まず日付を選んでください");
 
       document.getElementById("noteWrap").style.display = enableNote ? "" : "none";
       const wins = Array.isArray(cfg.businessWindows) ? cfg.businessWindows : [];
@@ -514,8 +525,6 @@
       applySeatTypeUi();
       const rSeatType = document.getElementById("rSeatType");
       if (rSeatType) rSeatType.addEventListener("change", () => refreshSlots());
-
-      await refreshSlots();
 
       document.getElementById("btnSubmit").onclick = async () => {
         const date = document.getElementById("rDate").value;

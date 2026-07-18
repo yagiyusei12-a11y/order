@@ -28,6 +28,8 @@ const TAKEOUT_NET_STATUS_LABELS = {
 const TAKEOUT_NET_STATUS_FLOW = ["new", "preparing", "ready", "picked_up"];
 /** まとめ表示: 自動更新で合算が変わらないよう凍結する */
 let kitSummaryFrozenLines = null;
+/** まとめ表示中のカード並び（groupKey → 初回出現順）。部分調理済みでも並べ替えない */
+let kitSummaryCardOrder = null;
 /** 調理済タップ〜API完了まで自動再描画を抑える */
 let kitKitchenUiLock = 0;
 let kitRenderPendingAfterLock = false;
@@ -1681,6 +1683,18 @@ function renderKitList() {
     return;
   }
   if (summaryMode) {
+    /** ソート用の最古時刻は done 行も含める（部分調理済みでカード位置が動かないように） */
+    const sortOldestByKey = new Map();
+    for (const ln of lines) {
+      if (!ln) continue;
+      const key = lineGroupKey(ln);
+      const createdAtMs = new Date(ln.orderCreatedAt).getTime();
+      if (!Number.isFinite(createdAtMs)) continue;
+      const prev = sortOldestByKey.get(key);
+      if (!prev || createdAtMs < prev.ms) {
+        sortOldestByKey.set(key, { ms: createdAtMs, at: ln.orderCreatedAt });
+      }
+    }
     const grouped = new Map();
     for (const ln of lines) {
       if (ln.status === "done" || ln.status === "served") continue;
@@ -1693,6 +1707,7 @@ function renderKitList() {
         const pid = kitchenPatchLineId(ln);
         byTable.set(tk, { qty: Number(ln.qty || 0), lineIds: pid ? [pid] : [] });
         const extraTxt = orderLineExtraSubtext(ln);
+        const sortOldest = sortOldestByKey.get(key);
         grouped.set(key, {
           key,
           nameSnapshot: orderLineDisplayName(ln),
@@ -1702,8 +1717,8 @@ function renderKitList() {
           kitchenStationId: ln.kitchenStationId ?? null,
           kitchenStationName: ln.kitchenStationName,
           stationBusyStopped: lineStationBusyStopped(ln),
-          oldestMs: createdAtMs,
-          oldestAt: ln.orderCreatedAt,
+          oldestMs: sortOldest ? sortOldest.ms : createdAtMs,
+          oldestAt: sortOldest ? sortOldest.at : ln.orderCreatedAt,
           byTable,
           cookTimerSec: normCookTimerSec(ln.cookTimerSec),
           cookTimerSec2: normCookTimerSec(ln.cookTimerSec2),
@@ -1723,10 +1738,6 @@ function renderKitList() {
         prev.qty += Number(ln.qty || 0);
         prev.kitchenServeFast = prev.kitchenServeFast || lineKitchenServeFast(ln);
         prev.stationBusyStopped = prev.stationBusyStopped || lineStationBusyStopped(ln);
-        if (createdAtMs < prev.oldestMs) {
-          prev.oldestMs = createdAtMs;
-          prev.oldestAt = ln.orderCreatedAt;
-        }
         if (prev.cookTimerSec == null) {
           const t = normCookTimerSec(ln.cookTimerSec);
           if (t != null) prev.cookTimerSec = t;
@@ -1746,12 +1757,31 @@ function renderKitList() {
         }
       }
     }
-    const arr = [...grouped.values()].sort((a, b) => {
-      const pa = a.kitchenServeFast ? 1 : 0;
-      const pb = b.kitchenServeFast ? 1 : 0;
-      if (pb !== pa) return pb - pa;
-      return a.oldestMs - b.oldestMs || a.nameSnapshot.localeCompare(b.nameSnapshot, "ja");
-    });
+    let arr = [...grouped.values()];
+    if (kitSummaryCardOrder == null) {
+      arr.sort((a, b) => {
+        const pa = a.kitchenServeFast ? 1 : 0;
+        const pb = b.kitchenServeFast ? 1 : 0;
+        if (pb !== pa) return pb - pa;
+        return a.oldestMs - b.oldestMs || a.nameSnapshot.localeCompare(b.nameSnapshot, "ja");
+      });
+      kitSummaryCardOrder = new Map();
+      arr.forEach((g, i) => kitSummaryCardOrder.set(g.key, i));
+    } else {
+      let next = 0;
+      for (const ord of kitSummaryCardOrder.values()) {
+        if (ord >= next) next = ord + 1;
+      }
+      for (const g of arr) {
+        if (!kitSummaryCardOrder.has(g.key)) kitSummaryCardOrder.set(g.key, next++);
+      }
+      arr.sort((a, b) => {
+        const ia = kitSummaryCardOrder.get(a.key) ?? 0;
+        const ib = kitSummaryCardOrder.get(b.key) ?? 0;
+        if (ia !== ib) return ia - ib;
+        return a.nameSnapshot.localeCompare(b.nameSnapshot, "ja");
+      });
+    }
 
     if (arr.length === 0) {
       box.className = "card";
@@ -2305,6 +2335,7 @@ async function refreshKitchen() {
       lastLines = fetchedLines;
       if (summaryMode && kitMainTab === "active" && kitSummaryFrozenLines !== null) {
         kitSummaryFrozenLines = fetchedLines;
+        kitSummaryCardOrder = null;
         kitSummaryPendingLines = null;
         kitSummaryHasPending = false;
       }
@@ -2569,10 +2600,12 @@ function toggleSummaryMode() {
   summaryMode = !summaryMode;
   if (summaryMode && kitMainTab === "active") {
     kitSummaryFrozenLines = Array.isArray(lastLines) ? [...lastLines] : [];
+    kitSummaryCardOrder = null;
     kitSummaryPendingLines = null;
     kitSummaryHasPending = false;
   } else {
     kitSummaryFrozenLines = null;
+    kitSummaryCardOrder = null;
     if (kitSummaryPendingLines) lastLines = kitSummaryPendingLines;
     kitSummaryPendingLines = null;
     kitSummaryHasPending = false;

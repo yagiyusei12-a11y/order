@@ -9,6 +9,7 @@ import { verifyGamesHubKey } from "../lib/games-hub-auth.js";
 import { gamesHubPublicUrl } from "../lib/games-hub-url.js";
 import { verifyMenuDiscontinueKey } from "../lib/menu-discontinue-auth.js";
 import { buildMenuPrintHtml } from "../lib/menu-print-html.js";
+import { buildTableQrPrintHtml } from "../lib/table-qr-print-html.js";
 import { prisma } from "../db.js";
 import QRCode from "qrcode";
 
@@ -470,6 +471,15 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
     if (!(await assertStaffStore(req, reply))) return;
     const id = encodeURIComponent(req.params.storeId);
     return reply.redirect(`/staff-app/${id}/settings?tab=tables`, 302);
+  });
+
+  /** 席QRを A4・1枚9席で並べた印刷／PDF用（スタッフ認証必須） */
+  app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/table-qr-print", async (req, reply) => {
+    if (!(await assertStaffStore(req, reply))) return;
+    const origin = staffRequestOrigin(req);
+    const page = await buildTableQrPrintHtml(req.params.storeId, origin);
+    if (!page) return reply.code(404).type("text/plain; charset=utf-8").send("store not found");
+    return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(page);
   });
 
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/kitchen", async (req, reply) => {

@@ -734,9 +734,20 @@
       卓の追加・並び・QR用コード・席種別を管理します。POS「卓」一覧の表示順はここでの並びに追随します。
     </p>
     <div class="row" style="margin-bottom:0.75rem;justify-content:space-between;flex-wrap:wrap;gap:0.35rem">
-      <button type="button" class="btn-ghost" id="btnRefTables">一覧を再読込</button>
+      <div class="row" style="gap:0.35rem;flex-wrap:wrap">
+        <button type="button" class="btn-ghost" id="btnRefTables">一覧を再読込</button>
+        <a
+          class="btn-primary"
+          id="btnTableQrPrint"
+          href="/staff-app/__STORE_PATH__/table-qr-print"
+          target="_blank"
+          rel="noopener"
+          style="text-decoration:none;display:inline-block"
+        >席QRをA4印刷（PDF可）</a>
+      </div>
       <span class="muted" style="font-size:0.78rem">左の⋮⋮をドラッグして並び替え（POS「卓」一覧の順・利用中は先頭固定）</span>
       <span class="muted" style="font-size:0.78rem">卓QRのURLは固定コードごとに不変。お客様がQRから人数・単品／コースを選んで注文開始できます（オペのセッション開始は任意）</span>
+      <span class="muted" style="font-size:0.78rem">「席QRをA4印刷」は有効な全席を1枚9席で出力。ブラウザの印刷からPDF保存もできます。</span>
     </div>
     <div id="tablesMaster" class="card" style="padding:0;overflow:hidden"></div>
     <div class="card" style="margin-top:1rem">

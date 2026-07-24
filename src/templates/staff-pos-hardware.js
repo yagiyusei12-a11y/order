@@ -143,6 +143,51 @@
     await writeBytes(escPosFromTextLines(lines));
   };
 
+  /**
+   * 卓QRスリップ（Epson 互換 GS ( k）。UTF-8 でデータストア。
+   * @param {{ data: string, title?: string }} opts
+   */
+  window.posThermalPrintQr = async function posThermalPrintQr(opts) {
+    const data = String((opts && opts.data) || "").trim();
+    if (!data) throw new Error("QR data required");
+    if (data.length > 2048) throw new Error("QR data too long");
+    const title = String((opts && opts.title) || "")
+      .replace(/\r\n/g, " ")
+      .replace(/\n/g, " ")
+      .replace(/\r/g, " ")
+      .trim();
+    const enc = new TextEncoder();
+    const chunks = [];
+    chunks.push(new Uint8Array([0x1b, 0x40]));
+    chunks.push(new Uint8Array([0x1b, 0x61, 0x01]));
+    function pushLine(text) {
+      chunks.push(enc.encode(String(text) + "\n"));
+    }
+    pushLine("こちらからご注文ください");
+    pushLine("");
+    if (title) {
+      pushLine(title);
+      pushLine("");
+    }
+    const payload = enc.encode(data);
+    const moduleSize = 6;
+    chunks.push(new Uint8Array([0x1d, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]));
+    chunks.push(new Uint8Array([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, moduleSize]));
+    chunks.push(new Uint8Array([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45, 0x31]));
+    const storeLen = 3 + payload.length;
+    chunks.push(
+      new Uint8Array([0x1d, 0x28, 0x6b, storeLen & 0xff, (storeLen >> 8) & 0xff, 0x31, 0x50, 0x30])
+    );
+    chunks.push(payload);
+    chunks.push(new Uint8Array([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x51, 0x30]));
+    pushLine("");
+    pushLine("お帰りの際はこちらを");
+    pushLine("レジまでお持ちください");
+    chunks.push(new Uint8Array([0x0a, 0x0a]));
+    chunks.push(new Uint8Array([0x1d, 0x56, 0x00]));
+    await writeBytes(uint8Concat(chunks));
+  };
+
   window.posPrinterConnected = function () {
     return !!writer;
   };

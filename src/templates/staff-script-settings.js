@@ -371,6 +371,72 @@ function tablesGhostBtn(label, onClick) {
   return b;
 }
 
+/** レジアプリ or Web Serial。なければブラウザで1席スリップを印刷 */
+async function printTableQrSlip(seatName, url) {
+  const title = String(seatName || "").trim() || "席";
+  const data = String(url || "").trim();
+  if (!data) {
+    log("QR用URLがありません");
+    return;
+  }
+  try {
+    var ch = typeof HarunoyukotoPos !== "undefined" ? HarunoyukotoPos : null;
+    if (ch && typeof ch.postMessage === "function") {
+      ch.postMessage(
+        JSON.stringify({
+          cmd: "printQr",
+          data: data,
+          title: title,
+        })
+      );
+      log("レシートプリンタへ送信しました（" + title + "）");
+      return;
+    }
+  } catch (e) {
+    log(String(e.message || e));
+  }
+  if (typeof window.posThermalPrintQr === "function" && window.posPrinterConnected && window.posPrinterConnected()) {
+    try {
+      await window.posThermalPrintQr({ data: data, title: title });
+      log("レシートプリンタへ送信しました（" + title + "）");
+      return;
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  }
+  const qrSrc =
+    "/staff-app/" + encodeURIComponent(STORE) + "/table-qr.svg?d=" + encodeURIComponent(data);
+  const w = window.open("", "_blank", "noopener,noreferrer,width=420,height=640");
+  if (!w) {
+    log("印刷ウィンドウを開けませんでした（ポップアップを許可してください）");
+    return;
+  }
+  w.document.write(
+    "<!DOCTYPE html><html lang=\"ja\"><head><meta charset=\"UTF-8\" />" +
+      "<title>" +
+      title.replace(/</g, "") +
+      " 席QR</title>" +
+      "<style>" +
+      "body{margin:0;font-family:sans-serif;text-align:center;padding:1.25rem;color:#1a1d24}" +
+      "h1{font-size:0.95rem;margin:0 0 0.35rem}h2{font-size:1.35rem;margin:0 0 0.75rem}" +
+      "img{width:220px;height:220px}p{font-size:0.85rem;margin:0.75rem 0 0;line-height:1.45;font-weight:600}" +
+      "@media print{body{padding:0.5rem}}" +
+      "</style></head><body>" +
+      "<h1>こちらからご注文ください</h1>" +
+      "<h2>" +
+      title.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") +
+      "</h2>" +
+      "<img src=\"" +
+      qrSrc.replace(/\"/g, "") +
+      "\" alt=\"QR\" width=\"220\" height=\"220\" />" +
+      "<p>お帰りの際はこちらを<br />レジまでお持ちください</p>" +
+      "<script>window.onload=function(){setTimeout(function(){window.print()},200)}<\/script>" +
+      "</body></html>"
+  );
+  w.document.close();
+  log("ブラウザ印刷を開きました（POSアプリ外の場合）");
+}
+
 function tablesMoveInArray(arr, from, to) {
   const a = arr.slice();
   const [el] = a.splice(from, 1);
@@ -482,6 +548,11 @@ async function renderTablesMaster(list) {
         } catch (e) {
           log(String(e.message || e));
         }
+      })
+    );
+    rowBtns.appendChild(
+      tablesGhostBtn("レシート印刷", () => {
+        printTableQrSlip(t.name, url).catch((e) => log(String(e.message || e)));
       })
     );
     rowBtns.appendChild(

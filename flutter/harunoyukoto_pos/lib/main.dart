@@ -112,6 +112,29 @@ class _OpsShellPageState extends State<OpsShellPage> {
       }
       final map = Map<String, dynamic>.from(decoded);
       final cmd = map['cmd'];
+      if (cmd == 'printQr') {
+        final dataRaw = map['data'];
+        final titleRaw = map['title'];
+        if (dataRaw is! String || dataRaw.trim().isEmpty) {
+          _showPosSnack('エラー: QR印刷データの形式が不正です', isError: true);
+          return;
+        }
+        final data = dataRaw.trim();
+        if (data.length > 2048) {
+          _showPosSnack('エラー: QRのデータが長すぎます', isError: true);
+          return;
+        }
+        final title = titleRaw == null
+            ? ''
+            : titleRaw
+                .toString()
+                .replaceAll('\r\n', ' ')
+                .replaceAll('\n', ' ')
+                .replaceAll('\r', ' ')
+                .trim();
+        _printThermalQr(data: data, title: title);
+        return;
+      }
       if (cmd != 'printLines') {
         return;
       }
@@ -276,7 +299,64 @@ class _OpsShellPageState extends State<OpsShellPage> {
     return b.takeBytes();
   }
 
-  Future<void> _printThermalLines(List<String> lines) async {
+  /// Epson 互換 QR（Model 2）。[data] は UTF-8 バイトでストアする。
+  void _appendEscPosQr(BytesBuilder b, String data, {int moduleSize = 6}) {
+    final payload = utf8.encode(data);
+    final size = moduleSize.clamp(3, 16);
+
+    // QR: select model 2
+    b.add([0x1d, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]);
+    // QR: module size
+    b.add([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, size]);
+    // QR: error correction M
+    b.add([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45, 0x31]);
+    // QR: store data (fn=80, m=48)
+    final storeLen = 3 + payload.length;
+    final pL = storeLen & 0xff;
+    final pH = (storeLen >> 8) & 0xff;
+    b.add([0x1d, 0x28, 0x6b, pL, pH, 0x31, 0x50, 0x30]);
+    b.add(payload);
+    // QR: print
+    b.add([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x51, 0x30]);
+  }
+
+  Future<Uint8List> _escPosTableQrSlip({
+    required String data,
+    required String title,
+  }) async {
+    final b = BytesBuilder(copy: false);
+    b.addByte(0x1b);
+    b.addByte(0x40);
+    b.addByte(0x1c);
+    b.addByte(0x26);
+    // 中央寄せ
+    b.addByte(0x1b);
+    b.addByte(0x61);
+    b.addByte(0x01);
+
+    Future<void> line(String text) async {
+      b.add(await _encodePrinterSjis('$text\n'));
+    }
+
+    await line('こちらからご注文ください');
+    await line('');
+    if (title.isNotEmpty) {
+      await line(title);
+      await line('');
+    }
+    _appendEscPosQr(b, data, moduleSize: 6);
+    await line('');
+    await line('お帰りの際はこちらを');
+    await line('レジまでお持ちください');
+    b.addByte(0x0a);
+    b.addByte(0x0a);
+    b.addByte(0x1d);
+    b.addByte(0x56);
+    b.addByte(0x00);
+    return b.takeBytes();
+  }
+
+  Future<void> _sendThermalBytes(Uint8List bytes) async {
     final ip = _printerIp.trim();
     if (ip.isEmpty) {
       if (mounted) {
@@ -302,7 +382,7 @@ class _OpsShellPageState extends State<OpsShellPage> {
         _printerPort,
         timeout: _connectTimeout,
       );
-      socket.add(await _escPosFromTextLines(lines));
+      socket.add(bytes);
       await socket.flush();
       if (mounted) {
         _showPosSnack('プリンターへデータを送信しました');
@@ -319,6 +399,17 @@ class _OpsShellPageState extends State<OpsShellPage> {
         socket?.destroy();
       } catch (_) {}
     }
+  }
+
+  Future<void> _printThermalLines(List<String> lines) async {
+    await _sendThermalBytes(await _escPosFromTextLines(lines));
+  }
+
+  Future<void> _printThermalQr({
+    required String data,
+    required String title,
+  }) async {
+    await _sendThermalBytes(await _escPosTableQrSlip(data: data, title: title));
   }
 
   Future<void> _openSettings() async {

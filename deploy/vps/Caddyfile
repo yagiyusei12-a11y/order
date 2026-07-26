@@ -6,5 +6,157 @@ morder.harunoyukoto.jp {
 
 # 代行業向け Daiko API（同一 VPS 上の Node、既定ポート 3001）
 daiko.harunoyukoto.jp {
+	# シフト管理 Supabase API（Kong :18080）— HTTPS 経由
+	handle /shift-api/* {
+		uri strip_prefix /shift-api
+		reverse_proxy host.docker.internal:18080
+	}
+	handle /shift-privacy-policy.html {
+		root * /srv/shift-privacy
+		file_server
+	}
+	handle /shift-account-deletion.html {
+		root * /srv/shift-privacy
+		file_server
+	}
+	handle /portal-member* {
+		reverse_proxy host.docker.internal:9080
+	}
 	reverse_proxy host.docker.internal:3001
 }
+
+# sport-app: app.harunoyukoto.jp
+# スポーツチーム管理アプリ（PM2: frontend :3010, backend :4000）
+app.harunoyukoto.jp {
+	handle_path /depth-vision/* {
+		reverse_proxy host.docker.internal:13333
+	}
+	redir /depth-vision /depth-vision/ 308
+	handle /api/* {
+		reverse_proxy host.docker.internal:4000
+	}
+	reverse_proxy host.docker.internal:3010
+}
+
+# 店舗公式HP（Next.js standalone）
+# /sougei・/zaiko は同VPSの Nginx(:9083)+PHP-FPM。
+# 禁止: php_fastcgi …:9000（PHP-FPM はソケットのみ → 502 になる）
+# 適用: bash deploy/vps/install-harunoyukoto-php.sh または up-proxy.sh
+harunoyukoto.com, www.harunoyukoto.com {
+	# 送迎・在庫（Nginx :9083 + PHP-FPM）— 変更時は install-harunoyukoto-php.sh 必須
+	@sougei path /sougei /sougei/* /zaiko /zaiko/*
+	handle @sougei {
+		header X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
+		encode gzip
+		reverse_proxy host.docker.internal:9083
+	}
+
+	# Mixhost 上の旧システム（未移行）
+	@legacy path /clover /clover/* /staff /staff/* /uketsuke /uketsuke/* /test /test/* /new /new/*
+	handle @legacy {
+		reverse_proxy https://133.125.148.18 {
+			header_up Host harunoyukoto.com
+			header_up X-Forwarded-Host harunoyukoto.com
+			header_up X-Forwarded-Proto https
+			transport http {
+				tls_server_name harunoyukoto.com
+			}
+		}
+	}
+
+	handle {
+		header {
+			Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+			X-Content-Type-Options nosniff
+			X-Frame-Options DENY
+			Referrer-Policy strict-origin-when-cross-origin
+			Permissions-Policy "camera=(), microphone=(), geolocation=()"
+			Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://analytics.harunoyukoto.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://morder.harunoyukoto.jp https://harunoyukoto.com https://*.cdninstagram.com https://*.fbcdn.net; font-src 'self' data:; connect-src 'self' https://analytics.harunoyukoto.com https://morder.harunoyukoto.jp; frame-src 'self' https://www.google.com https://maps.google.com https://www.google.co.jp https://maps.google.co.jp; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https:"
+			-Server
+		}
+		encode gzip
+		reverse_proxy host.docker.internal:3002
+	}
+}
+
+# Umami analytics
+analytics.harunoyukoto.com {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+	encode gzip
+
+	@public path /script.js /api/send /api/collect
+	handle @public {
+		reverse_proxy umami:3000
+	}
+
+	handle {
+		basic_auth {
+			protect $2a$14$aIzWhl12QfoHNxbFhVdWgeUQSIE/SSGXJJQJveJ3ZRDEEP8V6dHT6
+		}
+		reverse_proxy umami:3000
+	}
+}
+
+# WINFINITY 公式HP（Next.js standalone）
+# WINFINITY 公式HP（Next.js）
+# 旧 WordPress（Mixhost）上の PDF / アップロードだけパス単位でプロキシ
+winfinity.jp, www.winfinity.jp {
+	@legacy path /pdf /pdf/* /wp-content/uploads /wp-content/uploads/*
+	handle @legacy {
+		reverse_proxy https://133.125.148.18 {
+			header_up Host winfinity.jp
+			header_up X-Forwarded-Host winfinity.jp
+			header_up X-Forwarded-Proto https
+			transport http {
+				tls_server_name winfinity.jp
+			}
+		}
+	}
+
+	handle {
+		reverse_proxy host.docker.internal:3004
+	}
+}
+
+
+# 請求書システム（Nginx :9082 + Basic認証）
+invoice.harunoyukoto.com {
+	reverse_proxy host.docker.internal:9082
+}
+
+# 和SABI 公式HP（静的 / Nginx :9081）
+# レート制限は Nginx（limit_req / limit_conn）側で実施
+yakinikuwasabi.com {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		Cross-Origin-Opener-Policy same-origin
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self' mailto:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https://tabiiro.jp; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://www.google.com https://maps.google.com; connect-src 'self'"
+		-Server
+	}
+
+	encode gzip
+
+	reverse_proxy host.docker.internal:9081
+}
+
+# www → apex（www の A/CNAME が有効になると証明書も自動取得）
+www.yakinikuwasabi.com {
+	redir https://yakinikuwasabi.com{uri} permanent
+}
+
+# IP 直アクセスは正規ドメインへ誘導
+http://133.18.141.239 {
+	redir https://yakinikuwasabi.com{uri} permanent
+}
+

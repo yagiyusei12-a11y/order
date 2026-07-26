@@ -29,7 +29,16 @@ HTML テンプレだけの変更でも **ビルド＋再起動** でよい（ス
 
 **Daiko** はリポジトリが分かれ、ディスク上は多くの場合 `order` の親と同階層の `daiko/` に置く。変更したら **`order/order` で `npm run deploy:vps:daiko`**（スクリプトは `../daiko/scripts/deploy-vps.ps1`）。VPS では `DAIKO_VPS_PATH` / `ORDER_VPS_DAIKO_PATH` を **daiko 専用 clone のルート**（既定 `~/daiko`）に合わせる。
 
+## 送迎 / 在庫（harunoyukoto.com/sougei・/zaiko）
+
+- Caddy は **`reverse_proxy host.docker.internal:9083`** のみ。  
+  **`php_fastcgi …:9000` は禁止**（PHP-FPM は Unix ソケットのみで、:9000 は 502 になる）。
+- Nginx 設定は `deploy/vps/harunoyukoto-php.nginx`。  
+  適用は `bash deploy/vps/install-harunoyukoto-php.sh`（`up-proxy.sh` / `deploy:vps` からも実行される）。
+- Caddyfile や PHP 経路を触ったら、必ず上記スクリプトが通る状態でデプロイする。
+
 ## やらないこと
 
 - 本番反映が必要な変更を **コミット・プッシュだけで終わらせない**。
 - ユーザーに「サーバーでこれを実行」とだけ言って終わらない（SSH・鍵がエージェントから使えるなら `npm run deploy:vps` を使う）。
+- `/sougei` `/zaiko` を **`php_fastcgi :9000` に戻さない**。

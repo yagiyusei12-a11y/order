@@ -28,6 +28,14 @@ VPS デプロイ（概要）
 
 4) HTTPS（DNS がサーバ IP を向いたあと）
    bash deploy/vps/up-proxy.sh
+   （内部で install-harunoyukoto-php.sh も実行し、/sougei・/zaiko を Nginx:9083 に固定）
+
+送迎・在庫（harunoyukoto.com/sougei・/zaiko）
+--------------------------------------
+- 経路: Caddy → Nginx :9083 → PHP-FPM（ソケット）。php_fastcgi :9000 は使わない（502 になる）。
+- Nginx 設定ファイル: deploy/vps/harunoyukoto-php.nginx
+- 手動適用: bash deploy/vps/install-harunoyukoto-php.sh
+- Caddyfile に :9000 が入っていると install / up-proxy がエラーで止まる（再発防止）
 
 止めたい:
   sudo systemctl stop order-app

@@ -232,6 +232,14 @@
           return "単品メニュー";
         }
 
+        function sessionHasCourse(s) {
+          return !!(s && ((s.course && s.course.id) || s.courseId));
+        }
+
+        function tableHasCourseSession(sessions) {
+          return (sessions || []).some(sessionHasCourse);
+        }
+
         function tryResumeStoredSession(sessions) {
           const t = readStoredGuestToken();
           if (!t || !Array.isArray(sessions) || sessions.length === 0) return false;
@@ -254,17 +262,17 @@
         }
 
         async function startSeparateSessionFrom(ref) {
+          if (sessionHasCourse(ref) || tableHasCourseSession(openList)) {
+            throw new Error("コース利用中の卓では別会計を始められません。同じ会計で続けてください");
+          }
           const gc = Math.max(1, Math.min(99, Math.floor(Number(ref.guestCount) || 2)));
           const childN = Math.max(0, Math.min(gc, Math.floor(Number(ref.childCount) || 0)));
           const body = {
             guestCount: gc,
             childCount: childN,
-            courseId: ref.course && ref.course.id ? ref.course.id : null,
+            courseId: null,
             separateBill: true,
           };
-          if (ref.coursePriceTier && ref.coursePriceTier.id) {
-            body.coursePriceTierId = ref.coursePriceTier.id;
-          }
           const r2 = await fetch("/public/tables/" + encodeURIComponent(code) + "/session", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -291,16 +299,65 @@
         const btnJoin = document.getElementById("btnJoinShared");
         const btnSep = document.getElementById("btnSeparate");
 
-        if (openList.length > 0) {
-          choiceCard.style.display = "block";
-          formCard.style.display = "none";
-          const ref0 = openList[0];
-          document.getElementById("deskLine").textContent =
-            "卓コード " + dispCode + " · すでに" + sessionMenuSummary(ref0) + "で注文中です。";
-          choiceIntro.innerHTML =
-            "この卓では<strong>すでに注文が始まっています</strong>（" +
-            esc(sessionMenuSummary(ref0)) +
-            "）。<br />同伴と<strong>同じ会計（お支払いをまとめる）</strong>ですか？それとも<strong>別々の会計</strong>ですか？";
+        function refreshChoiceIntro(ref) {
+          const courseLocked = tableHasCourseSession(openList) || sessionHasCourse(ref);
+          if (courseLocked) {
+            choiceIntro.innerHTML =
+              "この卓では<strong>すでに" +
+              esc(sessionMenuSummary(ref)) +
+              "で注文が始まっています</strong>。<br />コース利用中は別会計にできないため、<strong>同じ会計で続けて</strong>ください。";
+            btnSep.style.display = "none";
+            btnSep.disabled = true;
+          } else {
+            choiceIntro.innerHTML =
+              "この卓では<strong>すでに注文が始まっています</strong>（" +
+              esc(sessionMenuSummary(ref)) +
+              "）。<br />同伴と<strong>同じ会計（お支払いをまとめる）</strong>ですか？それとも<strong>別々の会計</strong>ですか？";
+            btnSep.style.display = "";
+            btnSep.disabled = false;
+            btnSep.textContent = "別の会計で始める";
+          }
+        }
+
+        function bindExistingSessionChoiceHandlers() {
+          btnJoin.disabled = false;
+          btnJoin.onclick = function () {
+            const ref = pickedOpenSession();
+            if (!ref || !ref.guestToken) return;
+            goGuest(ref.guestToken);
+          };
+          btnSep.onclick = async function () {
+            err.style.display = "none";
+            const ref = pickedOpenSession();
+            if (!ref) return;
+            if (sessionHasCourse(ref) || tableHasCourseSession(openList)) {
+              refreshChoiceIntro(ref);
+              err.textContent = "コース利用中の卓では別会計を始められません。同じ会計で続けてください";
+              err.style.display = "block";
+              return;
+            }
+            btnJoin.disabled = true;
+            btnSep.disabled = true;
+            btnSep.textContent = "準備中…";
+            try {
+              await startSeparateSessionFrom(ref);
+            } catch (e) {
+              err.textContent = String(e.message || e);
+              err.style.display = "block";
+              btnJoin.disabled = false;
+              refreshChoiceIntro(pickedOpenSession() || ref);
+            }
+          };
+          sessionPickWrap.querySelectorAll("input[name=\"sessionPick\"]").forEach((inp) => {
+            inp.addEventListener("change", () => {
+              const ref = pickedOpenSession();
+              if (!ref) return;
+              refreshChoiceIntro(ref);
+            });
+          });
+        }
+
+        function renderSessionPickList() {
           if (openList.length > 1) {
             sessionPickWrap.style.display = "block";
             sessionPickWrap.innerHTML = openList
@@ -329,43 +386,27 @@
                 );
               })
               .join("");
-            sessionPickWrap.querySelectorAll("input[name=\"sessionPick\"]").forEach((inp) => {
-              inp.addEventListener("change", () => {
-                const ref = pickedOpenSession();
-                if (!ref) return;
-                choiceIntro.innerHTML =
-                  "この卓では<strong>すでに注文が始まっています</strong>（" +
-                  esc(sessionMenuSummary(ref)) +
-                  "）。<br />同伴と<strong>同じ会計（お支払いをまとめる）</strong>ですか？それとも<strong>別々の会計</strong>ですか？";
-              });
-            });
           } else {
             sessionPickWrap.style.display = "none";
             sessionPickWrap.innerHTML = "";
           }
+        }
 
-          btnJoin.onclick = function () {
-            const ref = pickedOpenSession();
-            if (!ref || !ref.guestToken) return;
-            goGuest(ref.guestToken);
-          };
-          btnSep.onclick = async function () {
-            err.style.display = "none";
-            const ref = pickedOpenSession();
-            if (!ref) return;
-            btnJoin.disabled = true;
-            btnSep.disabled = true;
-            btnSep.textContent = "準備中…";
-            try {
-              await startSeparateSessionFrom(ref);
-            } catch (e) {
-              err.textContent = String(e.message || e);
-              err.style.display = "block";
-              btnJoin.disabled = false;
-              btnSep.disabled = false;
-              btnSep.textContent = "別の会計で始める";
-            }
-          };
+        function showExistingSessionChoice(freshOpenList) {
+          if (tryResumeStoredSession(freshOpenList)) return;
+          openList = freshOpenList.slice();
+          choiceCard.style.display = "block";
+          formCard.style.display = "none";
+          const ref0 = openList[0];
+          document.getElementById("deskLine").textContent =
+            "卓コード " + dispCode + " · すでに" + sessionMenuSummary(ref0) + "で注文中です。";
+          renderSessionPickList();
+          refreshChoiceIntro(ref0);
+          bindExistingSessionChoiceHandlers();
+        }
+
+        if (openList.length > 0) {
+          showExistingSessionChoice(openList);
         } else {
           choiceCard.style.display = "none";
           formCard.style.display = "block";
@@ -382,95 +423,15 @@
           return [];
         }
 
-        function showExistingSessionChoice(freshOpenList) {
-          if (tryResumeStoredSession(freshOpenList)) return;
-          openList = freshOpenList.slice();
-          choiceCard.style.display = "block";
-          formCard.style.display = "none";
-          const ref0 = openList[0];
-          document.getElementById("deskLine").textContent =
-            "卓コード " + dispCode + " · すでに" + sessionMenuSummary(ref0) + "で注文中です。";
-          choiceIntro.innerHTML =
-            "この卓では<strong>すでに注文が始まっています</strong>（" +
-            esc(sessionMenuSummary(ref0)) +
-            "）。<br />同伴と<strong>同じ会計（お支払いをまとめる）</strong>ですか？それとも<strong>別々の会計</strong>ですか？";
-          if (openList.length > 1) {
-            sessionPickWrap.style.display = "block";
-            sessionPickWrap.innerHTML = openList
-              .map(function (s, i) {
-                const when = s.openedAt ? fmtSessionWhen(s.openedAt) : "";
-                const lab =
-                  sessionMenuSummary(s) +
-                  (when ? " · " + when : "") +
-                  " · " +
-                  Number(s.guestCount || 0) +
-                  "名" +
-                  (Number(s.childCount || 0) > 0 ? "（子" + s.childCount + "）" : "");
-                const sid = "sessPick-" + i;
-                return (
-                  "<label class=\"row\" style=\"cursor:pointer\"><input type=\"radio\" name=\"sessionPick\" id=\"" +
-                  esc(sid) +
-                  "\" value=\"" +
-                  esc(s.guestToken) +
-                  "\"" +
-                  (i === 0 ? " checked" : "") +
-                  " /><div><strong>会計 " +
-                  (i + 1) +
-                  "</strong><div class=\"course-meta\">" +
-                  esc(lab) +
-                  "</div></div></label>"
-                );
-              })
-              .join("");
-          } else {
-            sessionPickWrap.style.display = "none";
-            sessionPickWrap.innerHTML = "";
-          }
-          btnJoin.disabled = false;
-          btnSep.disabled = false;
-          btnSep.textContent = "別の会計で始める";
-          btnJoin.onclick = function () {
-            const ref = pickedOpenSession();
-            if (!ref || !ref.guestToken) return;
-            goGuest(ref.guestToken);
-          };
-          btnSep.onclick = async function () {
-            err.style.display = "none";
-            const ref = pickedOpenSession();
-            if (!ref) return;
-            btnJoin.disabled = true;
-            btnSep.disabled = true;
-            btnSep.textContent = "準備中…";
-            try {
-              await startSeparateSessionFrom(ref);
-            } catch (e) {
-              err.textContent = String(e.message || e);
-              err.style.display = "block";
-              btnJoin.disabled = false;
-              btnSep.disabled = false;
-              btnSep.textContent = "別の会計で始める";
-            }
-          };
-          sessionPickWrap.querySelectorAll("input[name=\"sessionPick\"]").forEach((inp) => {
-            inp.addEventListener("change", () => {
-              const ref = pickedOpenSession();
-              if (!ref) return;
-              choiceIntro.innerHTML =
-                "この卓では<strong>すでに注文が始まっています</strong>（" +
-                esc(sessionMenuSummary(ref)) +
-                "）。<br />同伴と<strong>同じ会計（お支払いをまとめる）</strong>ですか？それとも<strong>別々の会計</strong>ですか？";
-            });
-          });
-        }
-
         document.getElementById("btnStart").onclick = async () => {
           err.style.display = "none";
           try {
             const freshOpen = await fetchOpenSessionsFromServer();
             if (freshOpen.length > 0) {
               showExistingSessionChoice(freshOpen);
-              err.textContent =
-                "すでに注文が始まっています。人数は先に始めた方のままです。同じ会計で続けるか、別会計を選んでください。";
+              err.textContent = tableHasCourseSession(freshOpen)
+                ? "すでにコースで注文が始まっています。同じ会計で続けてください。"
+                : "すでに注文が始まっています。人数は先に始めた方のままです。同じ会計で続けるか、別会計を選んでください。";
               err.style.display = "block";
               return;
             }
@@ -526,8 +487,9 @@
               const freshOpen = await fetchOpenSessionsFromServer();
               if (freshOpen.length > 0) {
                 showExistingSessionChoice(freshOpen);
-                err.textContent =
-                  "すでに注文が始まっています。人数は先に始めた方のままです。同じ会計で続けるか選んでください。";
+                err.textContent = tableHasCourseSession(freshOpen)
+                  ? "すでにコースで注文が始まっています。同じ会計で続けてください。"
+                  : "すでに注文が始まっています。人数は先に始めた方のままです。同じ会計で続けるか選んでください。";
                 err.style.display = "block";
                 btn.disabled = false;
                 return;

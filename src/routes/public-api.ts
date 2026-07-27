@@ -176,6 +176,7 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
       if (result.code === "BAD_COURSE") return reply.code(400).send({ error: "course not found" });
       if (result.code === "BAD_TIER") return reply.code(400).send({ error: result.error });
       if (result.code === "COURSE_REQUIRED") return reply.code(400).send({ error: result.error });
+      if (result.code === "SEPARATE_BILL_FORBIDDEN") return reply.code(400).send({ error: result.error });
       return reply.code(400).send({ error: result.error });
     }
     return {

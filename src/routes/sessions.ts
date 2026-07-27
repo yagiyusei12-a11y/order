@@ -106,7 +106,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       courseId,
       coursePriceTierId,
       mode: dineInSeparateBill ? "reuseIfOpen" : "failIfOpen",
-      ...(dineInSeparateBill ? { skipReuse: true as const } : {}),
+      ...(dineInSeparateBill ? { skipReuse: true as const, dineInSeparateBill: true as const } : {}),
       requireCourseWhenStarting: st.requireCourseWhenStartingSession,
     });
     if (!result.ok) {
@@ -121,6 +121,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       if (result.code === "BAD_COURSE") return reply.code(400).send({ error: "course not found" });
       if (result.code === "BAD_TIER") return reply.code(400).send({ error: result.error });
       if (result.code === "COURSE_REQUIRED") return reply.code(400).send({ error: result.error });
+      if (result.code === "SEPARATE_BILL_FORBIDDEN") return reply.code(400).send({ error: result.error });
       return reply.code(400).send({ error: result.error });
     }
     const full = await prisma.diningSession.findUniqueOrThrow({

@@ -14,7 +14,14 @@ export type OpenSessionResult =
   | {
       ok: false;
       error: string;
-      code: "BAD_TABLE" | "BAD_COUNT" | "BAD_COURSE" | "CONFLICT" | "BAD_TIER" | "COURSE_REQUIRED";
+      code:
+        | "BAD_TABLE"
+        | "BAD_COUNT"
+        | "BAD_COURSE"
+        | "CONFLICT"
+        | "BAD_TIER"
+        | "COURSE_REQUIRED"
+        | "SEPARATE_BILL_FORBIDDEN";
       existingSessionId?: string;
     };
 
@@ -44,6 +51,10 @@ export async function openSessionForTable(options: {
    * ネット／口頭テイクアウトで注文ごとに別会計にするために使用。
    */
   skipReuse?: boolean;
+  /**
+   * 卓QR／スタッフの店内「別会計」。コース利用中（既存 open にコース、または新規がコース）は不可。
+   */
+  dineInSeparateBill?: boolean;
 }): Promise<OpenSessionResult> {
   const { tableId, storeId, guestCount, courseId, mode } = options;
   const childCountRaw = options.childCount;
@@ -92,6 +103,20 @@ export async function openSessionForTable(options: {
       };
     }
     // reuseIfOpen && skipReuse: 卓QR共有をせず新規セッションを追加する（同一卓に複数 open）
+    if (options.dineInSeparateBill === true) {
+      const openWithCourse = await prisma.diningSession.findFirst({
+        where: { tableId: table.id, status: "open", courseId: { not: null } },
+        select: { id: true },
+      });
+      if (openWithCourse || resolvedCourseId) {
+        return {
+          ok: false,
+          error: "コース利用中の卓では別会計を始められません。同じ会計で続けてください",
+          code: "SEPARATE_BILL_FORBIDDEN",
+          existingSessionId: openOnTable.id,
+        };
+      }
+    }
   }
 
   const mergedOnTable = await prisma.diningSession.findFirst({
@@ -196,5 +221,6 @@ export function openOrReuseSessionForTable(input: {
     requireGuestVisibleCourse,
     mode: "reuseIfOpen",
     skipReuse: takeoutOrderSeparateBill === true || dineInSeparateBill === true,
+    ...(dineInSeparateBill === true ? { dineInSeparateBill: true as const } : {}),
   });
 }

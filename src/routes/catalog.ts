@@ -3,6 +3,7 @@ import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { parseGuestHourFieldsFromBody } from "../lib/guest-category-hours.js";
 import { pruneOrphanSetStructure } from "../lib/menu-set-cleanup.js";
+import { recipeInputPublicUrl, staffRequestOrigin } from "../lib/recipe-input-url.js";
 import { prisma } from "../db.js";
 
 async function validateMenuItemIdsForStore(
@@ -630,6 +631,16 @@ function copiedCategoryName(name: string): string {
 }
 
 export async function registerCatalog(app: FastifyInstance): Promise<void> {
+  app.get<{ Params: { storeId: string } }>("/stores/:storeId/recipe-input-link", async (req, reply) => {
+    const store = await prisma.store.findUnique({
+      where: { id: req.params.storeId },
+      select: { id: true, name: true },
+    });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    const url = recipeInputPublicUrl(staffRequestOrigin(req), store.id);
+    return { storeId: store.id, storeName: store.name, url };
+  });
+
   app.get<{ Params: { storeId: string } }>("/stores/:storeId/menu", async (req, reply) => {
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
     if (!store) return reply.code(404).send({ error: "store not found" });

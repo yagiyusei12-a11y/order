@@ -1644,6 +1644,26 @@ function renderKitchensTab(layout) {
 }
 
 document.getElementById("btnRefMenu").onclick = () => loadAll().catch((e) => log(String(e.message || e)));
+
+const btnCopyRecipeInputUrl = document.getElementById("btnCopyRecipeInputUrl");
+if (btnCopyRecipeInputUrl) {
+  btnCopyRecipeInputUrl.onclick = async () => {
+    try {
+      const r = await api("/stores/" + encodeURIComponent(STORE) + "/recipe-input-link");
+      const url = r && r.url ? String(r.url) : "";
+      if (!url) throw new Error("URLを取得できませんでした");
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(url);
+        log("レシピ入力用URLをコピーしました");
+      } else {
+        window.prompt("レシピ入力用URL（コピーしてください）", url);
+        log("レシピ入力用URLを表示しました");
+      }
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+}
 const saveTaxModeBtn = document.getElementById("btnSaveMenuTaxMode");
 if (saveTaxModeBtn) {
   saveTaxModeBtn.onclick = async () => {

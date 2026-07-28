@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>レシピ一括入力</title>
+    <style>
+      :root {
+        --bg: #0f1419;
+        --surface: rgba(255, 255, 255, 0.06);
+        --line: rgba(255, 255, 255, 0.12);
+        --text: rgba(255, 255, 255, 0.92);
+        --muted: rgba(255, 255, 255, 0.65);
+        --accent: #38bdf8;
+        --ok: #4ade80;
+        --warn: #fbbf24;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans JP", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(800px 480px at 10% 0%, rgba(56, 189, 248, 0.12), transparent 60%),
+          var(--bg);
+        min-height: 100vh;
+      }
+      .wrap {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 1rem;
+        padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
+      }
+      h1 { margin: 0 0 0.25rem; font-size: 1.25rem; }
+      .sub {
+        color: var(--muted);
+        font-size: 0.85rem;
+        margin: 0 0 1rem;
+        line-height: 1.5;
+      }
+      .toolbar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        margin: 0 0 0.85rem;
+        padding: 0.5rem 0 0.65rem;
+        background: linear-gradient(to bottom, var(--bg) 75%, transparent);
+        display: flex;
+        flex-direction: column;
+        gap: 0.45rem;
+      }
+      .toolbar-row {
+        display: flex;
+        gap: 0.45rem;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      input[type="search"], select {
+        flex: 1;
+        min-width: 8rem;
+        padding: 0.55rem 0.7rem;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: rgba(0, 0, 0, 0.25);
+        color: var(--text);
+        font-size: 0.95rem;
+      }
+      .chk {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        font-size: 0.82rem;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .stats {
+        font-size: 0.78rem;
+        color: var(--muted);
+      }
+      .cat-title {
+        font-size: 0.92rem;
+        font-weight: 700;
+        margin: 0.9rem 0 0.4rem;
+        color: var(--accent);
+      }
+      .item {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 0.75rem;
+        margin-bottom: 0.65rem;
+      }
+      .item.is-empty { border-color: rgba(251, 191, 36, 0.35); }
+      .item-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.5rem;
+        align-items: flex-start;
+        margin-bottom: 0.45rem;
+      }
+      .item-name { font-weight: 700; font-size: 0.95rem; line-height: 1.35; }
+      .badges { display: flex; gap: 0.3rem; flex-wrap: wrap; justify-content: flex-end; }
+      .badge {
+        font-size: 0.68rem;
+        font-weight: 700;
+        padding: 0.15rem 0.4rem;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+      }
+      .badge.warn { color: var(--warn); border-color: rgba(251, 191, 36, 0.45); }
+      .badge.ok { color: var(--ok); border-color: rgba(74, 222, 128, 0.4); }
+      .badge.off { opacity: 0.7; }
+      textarea {
+        width: 100%;
+        min-height: 5.5rem;
+        padding: 0.6rem 0.7rem;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: rgba(0, 0, 0, 0.25);
+        color: var(--text);
+        font-size: 0.92rem;
+        line-height: 1.45;
+        resize: vertical;
+        font-family: inherit;
+      }
+      textarea.is-dirty { border-color: rgba(56, 189, 248, 0.55); }
+      .item-actions {
+        display: flex;
+        gap: 0.45rem;
+        align-items: center;
+        margin-top: 0.45rem;
+        flex-wrap: wrap;
+      }
+      button {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 0.5rem 0.85rem;
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--text);
+        font-weight: 700;
+        font-size: 0.85rem;
+        cursor: pointer;
+      }
+      button.primary {
+        background: var(--accent);
+        color: #0b1220;
+        border-color: transparent;
+      }
+      button:disabled { opacity: 0.45; cursor: not-allowed; }
+      .status {
+        font-size: 0.75rem;
+        color: var(--muted);
+        min-height: 1.1em;
+      }
+      .status.ok { color: var(--ok); }
+      .status.err { color: #f87171; }
+      .foot {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 0.65rem 1rem calc(0.65rem + env(safe-area-inset-bottom));
+        background: rgba(15, 20, 25, 0.92);
+        border-top: 1px solid var(--line);
+        backdrop-filter: blur(8px);
+      }
+      .foot-inner {
+        max-width: 720px;
+        margin: 0 auto;
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+      }
+      .foot-inner button { flex: 1; }
+      .foot .hint { font-size: 0.72rem; color: var(--muted); flex: 1.2; }
+      #errBanner {
+        display: none;
+        color: #fecaca;
+        background: rgba(248, 113, 113, 0.12);
+        border: 1px solid rgba(248, 113, 113, 0.35);
+        border-radius: 10px;
+        padding: 0.65rem 0.75rem;
+        margin-bottom: 0.85rem;
+        font-size: 0.85rem;
+      }
+      #loading { color: var(--muted); padding: 2rem 0; text-align: center; }
+      .empty-msg { color: var(--muted); text-align: center; padding: 2rem 0.5rem; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1 id="pageTitle">レシピ一括入力</h1>
+      <p class="sub">キッチン向けの調理メモを入力します。保存すると商品マスタへすぐ反映されます（お客様画面には出ません）。</p>
+      <div id="errBanner"></div>
+      <div id="loading">読み込み中…</div>
+      <div id="main" style="display: none">
+        <div class="toolbar">
+          <div class="toolbar-row">
+            <input id="search" type="search" placeholder="商品名で検索" autocomplete="off" />
+            <select id="catFilter" aria-label="カテゴリ">
+              <option value="">全カテゴリ</option>
+            </select>
+          </div>
+          <div class="toolbar-row">
+            <label class="chk"><input type="checkbox" id="emptyOnly" /> 未入力のみ</label>
+            <span class="stats" id="stats"></span>
+          </div>
+        </div>
+        <div id="list"></div>
+      </div>
+    </div>
+    <div class="foot" id="foot" style="display: none">
+      <div class="foot-inner">
+        <span class="hint" id="dirtyHint">未保存の変更はありません</span>
+        <button type="button" class="primary" id="btnSaveAll" disabled>変更をまとめて保存</button>
+      </div>
+    </div>
+    <script>
+      const STORE_ID = __STORE_ID_JS__;
+      const KEY = __KEY_JS__;
+
+      function qs(sel) {
+        return document.querySelector(sel);
+      }
+      function esc(s) {
+        return String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+      function apiUrl(path) {
+        return (
+          "/recipe-input/api/" +
+          encodeURIComponent(STORE_ID) +
+          path +
+          (path.includes("?") ? "&" : "?") +
+          "key=" +
+          encodeURIComponent(KEY)
+        );
+      }
+
+      /** @type {{ id: string; name: string; items: any[] }[]} */
+      let categories = [];
+      /** @type {Map<string, { saved: string; current: string; statusEl: HTMLElement | null; ta: HTMLTextAreaElement | null; card: HTMLElement | null }>} */
+      const state = new Map();
+
+      function recipeText(v) {
+        return typeof v === "string" ? v : "";
+      }
+
+      function dirtyCount() {
+        let n = 0;
+        for (const st of state.values()) {
+          if (st.current !== st.saved) n += 1;
+        }
+        return n;
+      }
+
+      function refreshDirtyUi() {
+        const n = dirtyCount();
+        const btn = qs("#btnSaveAll");
+        const hint = qs("#dirtyHint");
+        if (btn) btn.disabled = n === 0;
+        if (hint) hint.textContent = n === 0 ? "未保存の変更はありません" : "未保存 " + n + " 件";
+      }
+
+      function countEmpty() {
+        let total = 0;
+        let empty = 0;
+        for (const c of categories) {
+          for (const it of c.items) {
+            total += 1;
+            const st = state.get(it.id);
+            const text = st ? st.saved : recipeText(it.recipe);
+            if (!text.trim()) empty += 1;
+          }
+        }
+        return { total, empty };
+      }
+
+      function updateStats() {
+        const { total, empty } = countEmpty();
+        qs("#stats").textContent = "全 " + total + " 件 / 未入力 " + empty + " 件";
+      }
+
+      function applyFilters() {
+        const q = String(qs("#search").value || "")
+          .trim()
+          .toLowerCase();
+        const catId = String(qs("#catFilter").value || "");
+        const emptyOnly = qs("#emptyOnly").checked;
+        const list = qs("#list");
+        list.innerHTML = "";
+        let shown = 0;
+
+        for (const cat of categories) {
+          if (catId && cat.id !== catId) continue;
+          const items = cat.items
+            .filter(function (it) {
+              if (q && !String(it.name || "").toLowerCase().includes(q)) return false;
+              const st = state.get(it.id);
+              const text = st ? st.current : recipeText(it.recipe);
+              if (emptyOnly && text.trim()) return false;
+              return true;
+            })
+            .slice()
+            .sort(function (a, b) {
+              const ta = (state.get(a.id)?.current ?? recipeText(a.recipe)).trim() ? 1 : 0;
+              const tb = (state.get(b.id)?.current ?? recipeText(b.recipe)).trim() ? 1 : 0;
+              return ta - tb || String(a.name).localeCompare(String(b.name), "ja");
+            });
+          if (!items.length) continue;
+
+          const h = document.createElement("div");
+          h.className = "cat-title";
+          h.textContent = cat.name;
+          list.appendChild(h);
+
+          for (const it of items) {
+            shown += 1;
+            const st = state.get(it.id) || {
+              saved: recipeText(it.recipe),
+              current: recipeText(it.recipe),
+              statusEl: null,
+              ta: null,
+              card: null,
+            };
+            const card = document.createElement("article");
+            card.className = "item" + (!st.current.trim() ? " is-empty" : "");
+            card.dataset.id = it.id;
+
+            const head = document.createElement("div");
+            head.className = "item-head";
+            const name = document.createElement("div");
+            name.className = "item-name";
+            name.textContent = it.name;
+            const badges = document.createElement("div");
+            badges.className = "badges";
+            if (!it.isAvailable) {
+              const b = document.createElement("span");
+              b.className = "badge off";
+              b.textContent = "売切れ/非表示";
+              badges.appendChild(b);
+            }
+            if (it.sellKind === "set") {
+              const b = document.createElement("span");
+              b.className = "badge";
+              b.textContent = "セット";
+              badges.appendChild(b);
+            }
+            const filled = document.createElement("span");
+            filled.className = "badge " + (st.current.trim() ? "ok" : "warn");
+            filled.textContent = st.current.trim() ? "入力済" : "未入力";
+            badges.appendChild(filled);
+            head.appendChild(name);
+            head.appendChild(badges);
+
+            const ta = document.createElement("textarea");
+            ta.value = st.current;
+            ta.placeholder = "材料・手順・盛り付け・注意点など";
+            ta.rows = 4;
+            if (st.current !== st.saved) ta.classList.add("is-dirty");
+
+            const actions = document.createElement("div");
+            actions.className = "item-actions";
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "primary";
+            btn.textContent = "保存";
+            const status = document.createElement("span");
+            status.className = "status";
+            if (st.current !== st.saved) status.textContent = "未保存";
+            actions.appendChild(btn);
+            actions.appendChild(status);
+
+            card.appendChild(head);
+            card.appendChild(ta);
+            card.appendChild(actions);
+            list.appendChild(card);
+
+            st.statusEl = status;
+            st.ta = ta;
+            st.card = card;
+            state.set(it.id, st);
+
+            ta.addEventListener("input", function () {
+              st.current = ta.value;
+              ta.classList.toggle("is-dirty", st.current !== st.saved);
+              status.className = "status";
+              status.textContent = st.current !== st.saved ? "未保存" : "";
+              card.classList.toggle("is-empty", !st.current.trim());
+              filled.className = "badge " + (st.current.trim() ? "ok" : "warn");
+              filled.textContent = st.current.trim() ? "入力済" : "未入力";
+              refreshDirtyUi();
+            });
+
+            btn.addEventListener("click", function () {
+              saveOne(it.id).catch(function (e) {
+                status.className = "status err";
+                status.textContent = String(e.message || e);
+              });
+            });
+          }
+        }
+
+        if (!shown) {
+          const empty = document.createElement("p");
+          empty.className = "empty-msg";
+          empty.textContent = "該当する商品がありません";
+          list.appendChild(empty);
+        }
+        refreshDirtyUi();
+      }
+
+      async function saveOne(id) {
+        const st = state.get(id);
+        if (!st) return;
+        const recipe = st.current.trim() ? st.current : null;
+        if (st.statusEl) {
+          st.statusEl.className = "status";
+          st.statusEl.textContent = "保存中…";
+        }
+        const r = await fetch(apiUrl("/items/" + encodeURIComponent(id)), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ recipe: recipe }),
+        });
+        const j = await r.json().catch(function () {
+          return {};
+        });
+        if (!r.ok) throw new Error(j.error || r.statusText);
+        st.saved = recipeText(j.recipe);
+        st.current = st.saved;
+        if (st.ta) {
+          st.ta.value = st.saved;
+          st.ta.classList.remove("is-dirty");
+        }
+        if (st.statusEl) {
+          st.statusEl.className = "status ok";
+          st.statusEl.textContent = "保存済み";
+        }
+        const it = findItem(id);
+        if (it) it.recipe = j.recipe;
+        updateStats();
+        refreshDirtyUi();
+        if (qs("#emptyOnly").checked && st.saved.trim()) applyFilters();
+      }
+
+      function findItem(id) {
+        for (const c of categories) {
+          for (const it of c.items) {
+            if (it.id === id) return it;
+          }
+        }
+        return null;
+      }
+
+      async function saveAll() {
+        const items = [];
+        for (const [id, st] of state.entries()) {
+          if (st.current === st.saved) continue;
+          items.push({ id: id, recipe: st.current.trim() ? st.current : null });
+        }
+        if (!items.length) return;
+        const btn = qs("#btnSaveAll");
+        btn.disabled = true;
+        qs("#dirtyHint").textContent = "保存中…";
+        try {
+          const r = await fetch(apiUrl("/items/bulk"), {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ items: items }),
+          });
+          const j = await r.json().catch(function () {
+            return {};
+          });
+          if (!r.ok) throw new Error(j.error || r.statusText);
+          for (const u of j.updated || []) {
+            const st = state.get(u.id);
+            if (!st) continue;
+            st.saved = recipeText(u.recipe);
+            st.current = st.saved;
+            if (st.ta) {
+              st.ta.value = st.saved;
+              st.ta.classList.remove("is-dirty");
+            }
+            if (st.statusEl) {
+              st.statusEl.className = "status ok";
+              st.statusEl.textContent = "保存済み";
+            }
+            const it = findItem(u.id);
+            if (it) it.recipe = u.recipe;
+          }
+          updateStats();
+          applyFilters();
+        } catch (e) {
+          qs("#dirtyHint").textContent = String(e.message || e);
+          refreshDirtyUi();
+          throw e;
+        }
+      }
+
+      async function boot() {
+        const r = await fetch(apiUrl("/menu"));
+        const j = await r.json().catch(function () {
+          return {};
+        });
+        if (!r.ok) throw new Error(j.error || r.statusText || "load failed");
+        categories = j.categories || [];
+        state.clear();
+        for (const c of categories) {
+          for (const it of c.items) {
+            const text = recipeText(it.recipe);
+            state.set(it.id, {
+              saved: text,
+              current: text,
+              statusEl: null,
+              ta: null,
+              card: null,
+            });
+          }
+        }
+        qs("#pageTitle").textContent = (j.storeName || "店舗") + " — レシピ一括入力";
+        const sel = qs("#catFilter");
+        sel.innerHTML = '<option value="">全カテゴリ</option>';
+        for (const c of categories) {
+          const opt = document.createElement("option");
+          opt.value = c.id;
+          opt.textContent = c.name + "（" + c.items.length + "）";
+          sel.appendChild(opt);
+        }
+        qs("#loading").style.display = "none";
+        qs("#main").style.display = "block";
+        qs("#foot").style.display = "block";
+        updateStats();
+        applyFilters();
+      }
+
+      qs("#search").addEventListener("input", applyFilters);
+      qs("#catFilter").addEventListener("change", applyFilters);
+      qs("#emptyOnly").addEventListener("change", applyFilters);
+      qs("#btnSaveAll").addEventListener("click", function () {
+        saveAll().catch(function (e) {
+          const banner = qs("#errBanner");
+          banner.style.display = "block";
+          banner.textContent = String(e.message || e);
+        });
+      });
+
+      boot().catch(function (e) {
+        qs("#loading").style.display = "none";
+        const banner = qs("#errBanner");
+        banner.style.display = "block";
+        banner.textContent = String(e.message || e);
+      });
+    </script>
+  </body>
+</html>

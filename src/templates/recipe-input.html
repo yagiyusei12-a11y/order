@@ -111,6 +111,39 @@
       .badge.warn { color: var(--warn); border-color: rgba(251, 191, 36, 0.45); }
       .badge.ok { color: var(--ok); border-color: rgba(74, 222, 128, 0.4); }
       .badge.off { opacity: 0.7; }
+      .badge.range {
+        color: #93c5fd;
+        border-color: rgba(147, 197, 253, 0.45);
+      }
+      .range-row {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        margin-bottom: 0.45rem;
+        flex-wrap: wrap;
+      }
+      .range-row label {
+        font-size: 0.78rem;
+        color: var(--muted);
+        font-weight: 700;
+      }
+      .range-row input[type="number"] {
+        width: 5.5rem;
+        padding: 0.45rem 0.55rem;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: rgba(0, 0, 0, 0.25);
+        color: var(--text);
+        font-size: 1rem;
+        font-weight: 700;
+      }
+      .range-row input.is-dirty,
+      textarea.is-dirty { border-color: rgba(56, 189, 248, 0.55); }
+      .range-row .unit {
+        font-size: 0.85rem;
+        color: var(--muted);
+        font-weight: 700;
+      }
       textarea {
         width: 100%;
         min-height: 5.5rem;
@@ -124,7 +157,6 @@
         resize: vertical;
         font-family: inherit;
       }
-      textarea.is-dirty { border-color: rgba(56, 189, 248, 0.55); }
       .item-actions {
         display: flex;
         gap: 0.45rem;
@@ -191,7 +223,9 @@
   <body>
     <div class="wrap">
       <h1 id="pageTitle">レシピ一括入力</h1>
-      <p class="sub">キッチン向けの調理メモを入力します。保存すると商品マスタへすぐ反映されます（お客様画面には出ません）。</p>
+      <p class="sub">
+        キッチン向けの調理メモを入力します。「レンジ○分」はレシピ本文の先頭に合体して商品マスタへ保存されます（お客様画面には出ません）。
+      </p>
       <div id="errBanner"></div>
       <div id="loading">読み込み中…</div>
       <div id="main" style="display: none">
@@ -219,16 +253,10 @@
     <script>
       const STORE_ID = __STORE_ID_JS__;
       const KEY = __KEY_JS__;
+      const RANGE_LINE_RE = /^【レンジ】\s*(\d+(?:\.\d+)?)\s*分\s*(?:\r?\n|$)/;
 
       function qs(sel) {
         return document.querySelector(sel);
-      }
-      function esc(s) {
-        return String(s)
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;")
-          .replace(/"/g, "&quot;");
       }
       function apiUrl(path) {
         return (
@@ -241,19 +269,67 @@
         );
       }
 
+      function normalizeRangeMinutesInput(raw) {
+        if (raw === null || raw === undefined) return "";
+        const s = String(raw).trim();
+        if (!s) return "";
+        if (!/^\d+(?:\.\d+)?$/.test(s)) return "";
+        const n = Number(s);
+        if (!Number.isFinite(n) || n <= 0 || n > 999) return "";
+        if (Number.isInteger(n)) return String(n);
+        return String(n);
+      }
+
+      function parseRecipeParts(recipe) {
+        const raw = typeof recipe === "string" ? recipe : "";
+        const m = RANGE_LINE_RE.exec(raw);
+        if (!m) return { rangeMinutes: "", body: raw };
+        return {
+          rangeMinutes: m[1],
+          body: raw.slice(m[0].length).replace(/^\r?\n/, ""),
+        };
+      }
+
+      function composeRecipeText(rangeMinutes, body) {
+        const range = normalizeRangeMinutesInput(rangeMinutes);
+        const bodyText = typeof body === "string" ? body : "";
+        const cleanedBody = bodyText.replace(RANGE_LINE_RE, "").replace(/^\r?\n/, "");
+        const parts = [];
+        if (range) parts.push("【レンジ】" + range + "分");
+        if (cleanedBody.trim()) parts.push(cleanedBody.replace(/\s+$/, ""));
+        if (!parts.length) return null;
+        return parts.join("\n");
+      }
+
+      function hasContent(rangeMinutes, body) {
+        return !!(normalizeRangeMinutesInput(rangeMinutes) || String(body || "").trim());
+      }
+
+      function isDirty(st) {
+        return (
+          normalizeRangeMinutesInput(st.rangeMinutes) !== normalizeRangeMinutesInput(st.savedRangeMinutes) ||
+          String(st.body || "") !== String(st.savedBody || "")
+        );
+      }
+
       /** @type {{ id: string; name: string; items: any[] }[]} */
       let categories = [];
-      /** @type {Map<string, { saved: string; current: string; statusEl: HTMLElement | null; ta: HTMLTextAreaElement | null; card: HTMLElement | null }>} */
+      /**
+       * @type {Map<string, {
+       *   rangeMinutes: string; body: string;
+       *   savedRangeMinutes: string; savedBody: string;
+       *   statusEl: HTMLElement | null;
+       *   rangeInput: HTMLInputElement | null;
+       *   ta: HTMLTextAreaElement | null;
+       *   card: HTMLElement | null;
+       * }>}
+       */
       const state = new Map();
-
-      function recipeText(v) {
-        return typeof v === "string" ? v : "";
-      }
 
       function dirtyCount() {
         let n = 0;
         for (const st of state.values()) {
-          if (st.current !== st.saved) n += 1;
+          if (isDirty(st)) n += 1;
         }
         return n;
       }
@@ -273,8 +349,12 @@
           for (const it of c.items) {
             total += 1;
             const st = state.get(it.id);
-            const text = st ? st.saved : recipeText(it.recipe);
-            if (!text.trim()) empty += 1;
+            if (st) {
+              if (!hasContent(st.savedRangeMinutes, st.savedBody)) empty += 1;
+            } else {
+              const p = parseRecipeParts(it.recipe);
+              if (!hasContent(p.rangeMinutes, p.body)) empty += 1;
+            }
           }
         }
         return { total, empty };
@@ -283,6 +363,23 @@
       function updateStats() {
         const { total, empty } = countEmpty();
         qs("#stats").textContent = "全 " + total + " 件 / 未入力 " + empty + " 件";
+      }
+
+      function markItemUi(st, filledBadge) {
+        const dirty = isDirty(st);
+        const filled = hasContent(st.rangeMinutes, st.body);
+        if (st.rangeInput) st.rangeInput.classList.toggle("is-dirty", dirty);
+        if (st.ta) st.ta.classList.toggle("is-dirty", dirty);
+        if (st.card) st.card.classList.toggle("is-empty", !filled);
+        if (st.statusEl) {
+          st.statusEl.className = "status";
+          st.statusEl.textContent = dirty ? "未保存" : "";
+        }
+        if (filledBadge) {
+          filledBadge.className = "badge " + (filled ? "ok" : "warn");
+          filledBadge.textContent = filled ? "入力済" : "未入力";
+        }
+        refreshDirtyUi();
       }
 
       function applyFilters() {
@@ -301,14 +398,19 @@
             .filter(function (it) {
               if (q && !String(it.name || "").toLowerCase().includes(q)) return false;
               const st = state.get(it.id);
-              const text = st ? st.current : recipeText(it.recipe);
-              if (emptyOnly && text.trim()) return false;
+              const range = st ? st.rangeMinutes : parseRecipeParts(it.recipe).rangeMinutes;
+              const body = st ? st.body : parseRecipeParts(it.recipe).body;
+              if (emptyOnly && hasContent(range, body)) return false;
               return true;
             })
             .slice()
             .sort(function (a, b) {
-              const ta = (state.get(a.id)?.current ?? recipeText(a.recipe)).trim() ? 1 : 0;
-              const tb = (state.get(b.id)?.current ?? recipeText(b.recipe)).trim() ? 1 : 0;
+              const sa = state.get(a.id);
+              const sb = state.get(b.id);
+              const pa = sa || parseRecipeParts(a.recipe);
+              const pb = sb || parseRecipeParts(b.recipe);
+              const ta = hasContent(sa ? sa.rangeMinutes : pa.rangeMinutes, sa ? sa.body : pa.body) ? 1 : 0;
+              const tb = hasContent(sb ? sb.rangeMinutes : pb.rangeMinutes, sb ? sb.body : pb.body) ? 1 : 0;
               return ta - tb || String(a.name).localeCompare(String(b.name), "ja");
             });
           if (!items.length) continue;
@@ -320,15 +422,24 @@
 
           for (const it of items) {
             shown += 1;
-            const st = state.get(it.id) || {
-              saved: recipeText(it.recipe),
-              current: recipeText(it.recipe),
-              statusEl: null,
-              ta: null,
-              card: null,
-            };
+            let st = state.get(it.id);
+            if (!st) {
+              const p = parseRecipeParts(it.recipe);
+              st = {
+                rangeMinutes: p.rangeMinutes,
+                body: p.body,
+                savedRangeMinutes: p.rangeMinutes,
+                savedBody: p.body,
+                statusEl: null,
+                rangeInput: null,
+                ta: null,
+                card: null,
+              };
+              state.set(it.id, st);
+            }
+
             const card = document.createElement("article");
-            card.className = "item" + (!st.current.trim() ? " is-empty" : "");
+            card.className = "item" + (!hasContent(st.rangeMinutes, st.body) ? " is-empty" : "");
             card.dataset.id = it.id;
 
             const head = document.createElement("div");
@@ -350,18 +461,43 @@
               b.textContent = "セット";
               badges.appendChild(b);
             }
+            const rangeBadge = document.createElement("span");
+            rangeBadge.className = "badge range";
+            const rangeNorm = normalizeRangeMinutesInput(st.rangeMinutes);
+            rangeBadge.textContent = rangeNorm ? "レンジ" + rangeNorm + "分" : "レンジ未設定";
+            rangeBadge.style.display = rangeNorm || isDirty(st) ? "" : "none";
+            badges.appendChild(rangeBadge);
             const filled = document.createElement("span");
-            filled.className = "badge " + (st.current.trim() ? "ok" : "warn");
-            filled.textContent = st.current.trim() ? "入力済" : "未入力";
+            filled.className = "badge " + (hasContent(st.rangeMinutes, st.body) ? "ok" : "warn");
+            filled.textContent = hasContent(st.rangeMinutes, st.body) ? "入力済" : "未入力";
             badges.appendChild(filled);
             head.appendChild(name);
             head.appendChild(badges);
 
+            const rangeRow = document.createElement("div");
+            rangeRow.className = "range-row";
+            const rangeLab = document.createElement("label");
+            rangeLab.textContent = "レンジ";
+            const rangeInput = document.createElement("input");
+            rangeInput.type = "number";
+            rangeInput.min = "0";
+            rangeInput.max = "999";
+            rangeInput.step = "0.5";
+            rangeInput.inputMode = "decimal";
+            rangeInput.placeholder = "分";
+            rangeInput.value = st.rangeMinutes;
+            rangeInput.setAttribute("aria-label", "レンジ分数");
+            const unit = document.createElement("span");
+            unit.className = "unit";
+            unit.textContent = "分";
+            rangeRow.appendChild(rangeLab);
+            rangeRow.appendChild(rangeInput);
+            rangeRow.appendChild(unit);
+
             const ta = document.createElement("textarea");
-            ta.value = st.current;
+            ta.value = st.body;
             ta.placeholder = "材料・手順・盛り付け・注意点など";
             ta.rows = 4;
-            if (st.current !== st.saved) ta.classList.add("is-dirty");
 
             const actions = document.createElement("div");
             actions.className = "item-actions";
@@ -371,30 +507,36 @@
             btn.textContent = "保存";
             const status = document.createElement("span");
             status.className = "status";
-            if (st.current !== st.saved) status.textContent = "未保存";
             actions.appendChild(btn);
             actions.appendChild(status);
 
             card.appendChild(head);
+            card.appendChild(rangeRow);
             card.appendChild(ta);
             card.appendChild(actions);
             list.appendChild(card);
 
             st.statusEl = status;
+            st.rangeInput = rangeInput;
             st.ta = ta;
             st.card = card;
             state.set(it.id, st);
+            markItemUi(st, filled);
+            rangeBadge.style.display = normalizeRangeMinutesInput(st.rangeMinutes) ? "" : "none";
+            if (normalizeRangeMinutesInput(st.rangeMinutes)) {
+              rangeBadge.textContent = "レンジ" + normalizeRangeMinutesInput(st.rangeMinutes) + "分";
+            }
 
-            ta.addEventListener("input", function () {
-              st.current = ta.value;
-              ta.classList.toggle("is-dirty", st.current !== st.saved);
-              status.className = "status";
-              status.textContent = st.current !== st.saved ? "未保存" : "";
-              card.classList.toggle("is-empty", !st.current.trim());
-              filled.className = "badge " + (st.current.trim() ? "ok" : "warn");
-              filled.textContent = st.current.trim() ? "入力済" : "未入力";
-              refreshDirtyUi();
-            });
+            function onEdit() {
+              st.rangeMinutes = String(rangeInput.value || "").trim();
+              st.body = ta.value;
+              const rn = normalizeRangeMinutesInput(st.rangeMinutes);
+              rangeBadge.style.display = rn ? "" : "none";
+              if (rn) rangeBadge.textContent = "レンジ" + rn + "分";
+              markItemUi(st, filled);
+            }
+            rangeInput.addEventListener("input", onEdit);
+            ta.addEventListener("input", onEdit);
 
             btn.addEventListener("click", function () {
               saveOne(it.id).catch(function (e) {
@@ -414,10 +556,28 @@
         refreshDirtyUi();
       }
 
+      function applySaved(st, recipe) {
+        const p = parseRecipeParts(recipe);
+        st.savedRangeMinutes = p.rangeMinutes;
+        st.savedBody = p.body;
+        st.rangeMinutes = p.rangeMinutes;
+        st.body = p.body;
+        if (st.rangeInput) {
+          st.rangeInput.value = p.rangeMinutes;
+          st.rangeInput.classList.remove("is-dirty");
+        }
+        if (st.ta) {
+          st.ta.value = p.body;
+          st.ta.classList.remove("is-dirty");
+        }
+      }
+
       async function saveOne(id) {
         const st = state.get(id);
         if (!st) return;
-        const recipe = st.current.trim() ? st.current : null;
+        if (st.rangeInput) st.rangeMinutes = String(st.rangeInput.value || "").trim();
+        if (st.ta) st.body = st.ta.value;
+        const recipe = composeRecipeText(st.rangeMinutes, st.body);
         if (st.statusEl) {
           st.statusEl.className = "status";
           st.statusEl.textContent = "保存中…";
@@ -431,21 +591,18 @@
           return {};
         });
         if (!r.ok) throw new Error(j.error || r.statusText);
-        st.saved = recipeText(j.recipe);
-        st.current = st.saved;
-        if (st.ta) {
-          st.ta.value = st.saved;
-          st.ta.classList.remove("is-dirty");
-        }
+        applySaved(st, j.recipe);
         if (st.statusEl) {
           st.statusEl.className = "status ok";
           st.statusEl.textContent = "保存済み";
         }
+        if (st.card) st.card.classList.toggle("is-empty", !hasContent(st.rangeMinutes, st.body));
         const it = findItem(id);
         if (it) it.recipe = j.recipe;
         updateStats();
         refreshDirtyUi();
-        if (qs("#emptyOnly").checked && st.saved.trim()) applyFilters();
+        if (qs("#emptyOnly").checked && hasContent(st.savedRangeMinutes, st.savedBody)) applyFilters();
+        else applyFilters();
       }
 
       function findItem(id) {
@@ -460,8 +617,10 @@
       async function saveAll() {
         const items = [];
         for (const [id, st] of state.entries()) {
-          if (st.current === st.saved) continue;
-          items.push({ id: id, recipe: st.current.trim() ? st.current : null });
+          if (st.rangeInput) st.rangeMinutes = String(st.rangeInput.value || "").trim();
+          if (st.ta) st.body = st.ta.value;
+          if (!isDirty(st)) continue;
+          items.push({ id: id, recipe: composeRecipeText(st.rangeMinutes, st.body) });
         }
         if (!items.length) return;
         const btn = qs("#btnSaveAll");
@@ -480,12 +639,7 @@
           for (const u of j.updated || []) {
             const st = state.get(u.id);
             if (!st) continue;
-            st.saved = recipeText(u.recipe);
-            st.current = st.saved;
-            if (st.ta) {
-              st.ta.value = st.saved;
-              st.ta.classList.remove("is-dirty");
-            }
+            applySaved(st, u.recipe);
             if (st.statusEl) {
               st.statusEl.className = "status ok";
               st.statusEl.textContent = "保存済み";
@@ -512,11 +666,14 @@
         state.clear();
         for (const c of categories) {
           for (const it of c.items) {
-            const text = recipeText(it.recipe);
+            const p = parseRecipeParts(it.recipe);
             state.set(it.id, {
-              saved: text,
-              current: text,
+              rangeMinutes: p.rangeMinutes,
+              body: p.body,
+              savedRangeMinutes: p.rangeMinutes,
+              savedBody: p.body,
               statusEl: null,
+              rangeInput: null,
               ta: null,
               card: null,
             });

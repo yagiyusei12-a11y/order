@@ -1488,6 +1488,105 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
   );
 
   /**
+   * 日毎の予約一覧（スマホ向け日次画面用）
+   * GET /reception/:storeId/reservations?date=YYYY-MM-DD
+   * date 省略時は店舗タイムゾーンの当日。
+   */
+  app.get<{ Params: { storeId: string }; Querystring: { date?: string } }>(
+    "/reception/:storeId/reservations",
+    async (req, reply) => {
+      const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+      if (!store) return reply.code(404).send({ error: "store not found" });
+      const st = mergeStoreSettings(store.settings);
+      const tz = st.timezone || "Asia/Tokyo";
+      const todayYmd = storeNowWallClock(tz).dateYmd;
+      const rawDate = typeof req.query.date === "string" ? req.query.date.trim() : "";
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : todayYmd;
+      const prevDate = addCalendarDaysInWallZone(date, -1, tz) ?? date;
+      const nextDate = addCalendarDaysInWallZone(date, 1, tz) ?? date;
+
+      const rows = await prisma.receptionReservation.findMany({
+        where: { storeId: store.id, date },
+        orderBy: [{ shift: "asc" }, { updatedAt: "asc" }],
+      });
+
+      type ResBlob = {
+        resId?: unknown;
+        date?: unknown;
+        shift?: unknown;
+        time?: unknown;
+        name?: unknown;
+        phone?: unknown;
+        tel?: unknown;
+        num?: unknown;
+        status?: unknown;
+        seats?: unknown;
+        note?: unknown;
+        seatType?: unknown;
+        email?: unknown;
+      };
+
+      const reservations = rows
+        .map((row) => {
+          const d = (row.data && typeof row.data === "object" ? row.data : {}) as ResBlob;
+          const phoneRaw =
+            typeof d.phone === "string" && d.phone.trim()
+              ? d.phone.trim()
+              : typeof d.tel === "string" && d.tel.trim()
+                ? d.tel.trim()
+                : "";
+          const seatsRaw = Array.isArray(d.seats) ? d.seats.map((s) => String(s ?? "").trim()).filter(Boolean) : [];
+          const shift =
+            d.shift === "dinner" || row.shift === "dinner"
+              ? "dinner"
+              : d.shift === "lunch" || row.shift === "lunch"
+                ? "lunch"
+                : String(d.shift || row.shift || "");
+          return {
+            resId: String(d.resId || row.resKey || ""),
+            date: String(d.date || row.date || date),
+            shift,
+            time: typeof d.time === "string" ? d.time : "",
+            name: typeof d.name === "string" ? d.name : "",
+            phone: phoneRaw,
+            num: Number.isFinite(Number(d.num)) ? Math.floor(Number(d.num)) : 0,
+            status: typeof d.status === "string" && d.status ? d.status : row.status || "予約確定",
+            seats: seatsRaw,
+            seatLabels: seatsRaw.map((s) => displayTableCode(s) || s),
+            note: typeof d.note === "string" ? d.note : "",
+            seatType: typeof d.seatType === "string" ? d.seatType : "",
+            email: typeof d.email === "string" ? d.email : "",
+          };
+        })
+        .sort((a, b) => {
+          const sa = a.shift === "lunch" ? 0 : a.shift === "dinner" ? 1 : 2;
+          const sb = b.shift === "lunch" ? 0 : b.shift === "dinner" ? 1 : 2;
+          if (sa !== sb) return sa - sb;
+          return String(a.time || "").localeCompare(String(b.time || ""));
+        });
+
+      const counts = {
+        total: reservations.filter((r) => r.status !== "キャンセル").length,
+        confirmed: reservations.filter((r) => r.status === "予約確定").length,
+        arrived: reservations.filter((r) => r.status === "来店済み").length,
+        cancelled: reservations.filter((r) => r.status === "キャンセル").length,
+      };
+
+      return {
+        storeId: store.id,
+        storeName: store.name,
+        date,
+        todayYmd,
+        timezone: tz,
+        prevDate,
+        nextDate,
+        reservations,
+        counts,
+      };
+    },
+  );
+
+  /**
    * ネット予約: 設定取得（公開）
    */
   app.get<{ Params: { storeId: string } }>("/reception/:storeId/net/config", async (req, reply) => {

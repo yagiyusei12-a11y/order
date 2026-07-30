@@ -5,6 +5,7 @@ import multipart from "@fastify/multipart";
 import Fastify from "fastify";
 import { STAFF_JWT_COOKIE_NAME, jwtSecret } from "./config.js";
 import { registerAuth } from "./routes/auth.js";
+import { registerPlatformStores } from "./routes/platform-stores.js";
 import { registerGuest } from "./routes/guest.js";
 import { registerProtectedStaffRoutes } from "./routes/protected-staff.js";
 import { isDbDiagEnabled, registerDbDiag } from "./routes/db-diag.js";
@@ -52,6 +53,7 @@ async function main(): Promise<void> {
     const isJsonApi =
       req.url.startsWith("/stores/") ||
       req.url.startsWith("/auth/") ||
+      req.url.startsWith("/platform/") ||
       req.url.startsWith("/public/") ||
       req.url.startsWith("/guest/") ||
       req.url.startsWith("/guest-display/") ||
@@ -65,6 +67,7 @@ async function main(): Promise<void> {
   });
 
   await app.register(registerAuth);
+  await app.register(registerPlatformStores);
   await app.register(registerPublicApi);
   await app.register(registerReception);
   await app.register(registerGuest);

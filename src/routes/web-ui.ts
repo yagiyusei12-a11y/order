@@ -451,6 +451,14 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
     );
   });
 
+  /** スマホ向け：日毎の予約一覧（前日・次の日ナビ） */
+  app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/reception/day", async (req, reply) => {
+    if (!(await assertStaffStore(req, reply))) return;
+    const storeId = req.params.storeId;
+    const body = html("reception-day.html").replace(/__STORE_ID_JS__/g, JSON.stringify(storeId));
+    return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(body);
+  });
+
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/reception/net-settings", async (req, reply) => {
     if (!(await assertStaffStore(req, reply))) return;
     return reply.redirect(

@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1a2332" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>日次予約</title>
+  <style>
+    :root {
+      --bg: #eef2f6;
+      --bg-accent: #e2e8f0;
+      --card: #ffffff;
+      --text: #152232;
+      --muted: #5a6b7d;
+      --line: #d5dde8;
+      --accent: #1565c0;
+      --accent-soft: #e3f0fb;
+      --lunch: #0d9488;
+      --lunch-bg: #ecfdf8;
+      --dinner: #7c3aed;
+      --dinner-bg: #f5f3ff;
+      --ok: #15803d;
+      --ok-bg: #ecfdf3;
+      --warn: #b45309;
+      --warn-bg: #fffbeb;
+      --done: #64748b;
+      --done-bg: #f1f5f9;
+      --cancel: #94a3b8;
+      --danger: #b91c1c;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-top: env(safe-area-inset-top, 0px);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Segoe UI", system-ui, sans-serif;
+      background: linear-gradient(180deg, #f7f9fc 0%, var(--bg) 40%, var(--bg-accent) 100%);
+      background-attachment: fixed;
+      color: var(--text);
+      min-height: 100dvh;
+      padding-bottom: calc(1.25rem + var(--safe-bottom));
+      -webkit-tap-highlight-color: transparent;
+    }
+    .top {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--line);
+      padding: calc(0.65rem + var(--safe-top)) 0.85rem 0.75rem;
+      box-shadow: 0 4px 18px rgba(21, 34, 50, 0.06);
+    }
+    .top-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-bottom: 0.65rem;
+    }
+    .store-name {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0.02em;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+      min-width: 0;
+    }
+    .top-links {
+      display: flex;
+      gap: 0.35rem;
+      flex-shrink: 0;
+    }
+    .link-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.4rem 0.65rem;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .date-nav {
+      display: grid;
+      grid-template-columns: 3.2rem 1fr 3.2rem;
+      gap: 0.45rem;
+      align-items: center;
+    }
+    .nav-btn {
+      appearance: none;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      border-radius: 14px;
+      height: 3rem;
+      font-size: 1.35rem;
+      font-weight: 800;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 1px 2px rgba(21, 34, 50, 0.04);
+    }
+    .nav-btn:active { background: var(--accent-soft); border-color: var(--accent); }
+    .nav-btn:disabled { opacity: 0.35; cursor: default; }
+    .date-center {
+      text-align: center;
+      min-width: 0;
+    }
+    .date-main {
+      font-size: 1.2rem;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      line-height: 1.25;
+    }
+    .date-sub {
+      font-size: 0.72rem;
+      color: var(--muted);
+      font-weight: 600;
+      margin-top: 0.1rem;
+    }
+    .date-sub.is-today { color: var(--accent); }
+    .date-actions {
+      display: flex;
+      gap: 0.4rem;
+      margin-top: 0.65rem;
+    }
+    .chip {
+      flex: 1;
+      appearance: none;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      border-radius: 12px;
+      padding: 0.55rem 0.4rem;
+      font-size: 0.8rem;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .chip:active { transform: scale(0.98); }
+    .chip.is-on {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .chip.today-chip {
+      background: var(--accent-soft);
+      border-color: #90caf9;
+      color: var(--accent);
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.45rem;
+      padding: 0.85rem 0.85rem 0;
+    }
+    .stat {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 0.65rem 0.4rem;
+      text-align: center;
+      box-shadow: 0 1px 3px rgba(21, 34, 50, 0.04);
+    }
+    .stat-n {
+      font-size: 1.35rem;
+      font-weight: 900;
+      line-height: 1.1;
+    }
+    .stat-l {
+      font-size: 0.68rem;
+      color: var(--muted);
+      font-weight: 700;
+      margin-top: 0.15rem;
+    }
+    .filters {
+      display: flex;
+      gap: 0.4rem;
+      padding: 0.75rem 0.85rem 0;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .filter {
+      appearance: none;
+      flex-shrink: 0;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 0.45rem 0.85rem;
+      font-size: 0.78rem;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .filter.is-on {
+      background: var(--text);
+      border-color: var(--text);
+      color: #fff;
+    }
+    .content {
+      padding: 0.75rem 0.85rem 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .section-head {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin: 0 0 0.45rem;
+    }
+    .section-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.28rem 0.7rem;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 900;
+    }
+    .section-badge.lunch { background: var(--lunch-bg); color: var(--lunch); }
+    .section-badge.dinner { background: var(--dinner-bg); color: var(--dinner); }
+    .section-count {
+      font-size: 0.75rem;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .list { display: flex; flex-direction: column; gap: 0.55rem; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 0.85rem 0.9rem;
+      box-shadow: 0 2px 8px rgba(21, 34, 50, 0.05);
+      position: relative;
+      overflow: hidden;
+    }
+    .card::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 4px;
+      background: var(--accent);
+    }
+    .card.shift-lunch::before { background: var(--lunch); }
+    .card.shift-dinner::before { background: var(--dinner); }
+    .card.is-arrived { opacity: 0.72; }
+    .card.is-cancelled { opacity: 0.55; }
+    .card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+    .time {
+      font-size: 1.45rem;
+      font-weight: 900;
+      letter-spacing: 0.02em;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .status {
+      flex-shrink: 0;
+      font-size: 0.7rem;
+      font-weight: 900;
+      padding: 0.28rem 0.55rem;
+      border-radius: 999px;
+    }
+    .status.confirmed { background: var(--warn-bg); color: var(--warn); }
+    .status.arrived { background: var(--done-bg); color: var(--done); }
+    .status.cancelled { background: #f1f5f9; color: var(--cancel); }
+    .status.other { background: var(--accent-soft); color: var(--accent); }
+    .name {
+      margin-top: 0.45rem;
+      font-size: 1.05rem;
+      font-weight: 800;
+      line-height: 1.3;
+    }
+    .meta {
+      margin-top: 0.35rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem 0.65rem;
+      font-size: 0.82rem;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .meta strong { color: var(--text); font-weight: 800; }
+    .seats {
+      margin-top: 0.45rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+    }
+    .seat {
+      background: #fff8e7;
+      border: 1px solid #f0d9a8;
+      color: #92400e;
+      font-size: 0.75rem;
+      font-weight: 900;
+      padding: 0.2rem 0.5rem;
+      border-radius: 8px;
+    }
+    .note {
+      margin-top: 0.5rem;
+      font-size: 0.82rem;
+      color: #9a3412;
+      background: #fff7ed;
+      border-radius: 10px;
+      padding: 0.45rem 0.6rem;
+      line-height: 1.4;
+      font-weight: 600;
+    }
+    .card-actions {
+      margin-top: 0.7rem;
+      display: flex;
+      gap: 0.4rem;
+    }
+    .act {
+      flex: 1;
+      appearance: none;
+      border: none;
+      border-radius: 12px;
+      padding: 0.7rem 0.5rem;
+      font-size: 0.88rem;
+      font-weight: 900;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+      color: #fff;
+    }
+    .act-phone { background: var(--accent); }
+    .act-arrive { background: var(--ok); }
+    .act-arrive:disabled { background: #94a3b8; }
+    .empty {
+      text-align: center;
+      padding: 2.5rem 1rem;
+      color: var(--muted);
+      font-weight: 700;
+      font-size: 0.95rem;
+    }
+    .err {
+      margin: 0.85rem;
+      padding: 0.85rem 1rem;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: var(--danger);
+      border-radius: 14px;
+      font-weight: 700;
+      font-size: 0.88rem;
+    }
+    .loading {
+      text-align: center;
+      padding: 2rem 1rem;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .date-input-wrap { display: none; }
+    input[type="date"] {
+      width: 100%;
+      margin-top: 0.55rem;
+      padding: 0.55rem;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      font-size: 1rem;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="top-row">
+      <div class="store-name" id="storeName">予約</div>
+      <div class="top-links">
+        <button type="button" class="link-btn" id="btnRefresh" title="再読込">更新</button>
+        <a class="link-btn" id="linkReception" href="#">受付</a>
+      </div>
+    </div>
+    <div class="date-nav">
+      <button type="button" class="nav-btn" id="btnPrev" aria-label="前日">‹</button>
+      <div class="date-center">
+        <div class="date-main" id="dateMain">—</div>
+        <div class="date-sub" id="dateSub"></div>
+      </div>
+      <button type="button" class="nav-btn" id="btnNext" aria-label="次の日">›</button>
+    </div>
+    <div class="date-actions">
+      <button type="button" class="chip today-chip" id="btnToday">今日</button>
+      <button type="button" class="chip" id="btnPickDate">日付を選ぶ</button>
+      <button type="button" class="chip" id="btnNextDay">次の日 →</button>
+    </div>
+    <div class="date-input-wrap" id="datePickWrap">
+      <input type="date" id="datePicker" />
+    </div>
+  </header>
+
+  <div class="summary" id="summary" hidden>
+    <div class="stat"><div class="stat-n" id="nTotal">0</div><div class="stat-l">予約</div></div>
+    <div class="stat"><div class="stat-n" id="nConfirmed">0</div><div class="stat-l">未来店</div></div>
+    <div class="stat"><div class="stat-n" id="nArrived">0</div><div class="stat-l">来店済</div></div>
+  </div>
+
+  <div class="filters" id="filters" hidden>
+    <button type="button" class="filter is-on" data-filter="active">有効のみ</button>
+    <button type="button" class="filter" data-filter="confirmed">未来店</button>
+    <button type="button" class="filter" data-filter="arrived">来店済</button>
+    <button type="button" class="filter" data-filter="all">すべて</button>
+  </div>
+
+  <div id="err" class="err" hidden></div>
+  <div id="loading" class="loading">読み込み中…</div>
+  <main class="content" id="content" hidden></main>
+
+  <script>
+    const STORE_ID = __STORE_ID_JS__;
+    const API_BASE = "/reception/" + encodeURIComponent(STORE_ID);
+    let currentDate = "";
+    let todayYmd = "";
+    let prevDate = "";
+    let nextDate = "";
+    let filterMode = "active";
+    let lastPayload = null;
+
+    const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+
+    function qsDate() {
+      try {
+        const u = new URL(location.href);
+        const d = u.searchParams.get("date");
+        if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+      } catch (_) {}
+      return "";
+    }
+
+    function setUrlDate(ymd) {
+      try {
+        const u = new URL(location.href);
+        u.searchParams.set("date", ymd);
+        history.replaceState(null, "", u.pathname + u.search);
+      } catch (_) {}
+    }
+
+    function formatJaDate(ymd) {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd || "");
+      if (!m) return ymd || "—";
+      const y = Number(m[1]);
+      const mo = Number(m[2]);
+      const d = Number(m[3]);
+      const dt = new Date(y, mo - 1, d);
+      const w = WEEKDAYS[dt.getDay()] || "";
+      return mo + "月" + d + "日（" + w + "）";
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function statusClass(st) {
+      if (st === "予約確定") return "confirmed";
+      if (st === "来店済み") return "arrived";
+      if (st === "キャンセル") return "cancelled";
+      return "other";
+    }
+
+    function statusLabel(st) {
+      if (st === "予約確定") return "未来店";
+      if (st === "来店済み") return "来店済";
+      if (st === "キャンセル") return "キャンセル";
+      return st || "—";
+    }
+
+    function matchesFilter(r) {
+      if (filterMode === "all") return true;
+      if (filterMode === "active") return r.status !== "キャンセル";
+      if (filterMode === "confirmed") return r.status === "予約確定";
+      if (filterMode === "arrived") return r.status === "来店済み";
+      return true;
+    }
+
+    function render(payload) {
+      lastPayload = payload;
+      const err = document.getElementById("err");
+      const loading = document.getElementById("loading");
+      const content = document.getElementById("content");
+      err.hidden = true;
+      loading.hidden = true;
+      content.hidden = false;
+      document.getElementById("summary").hidden = false;
+      document.getElementById("filters").hidden = false;
+
+      currentDate = payload.date;
+      todayYmd = payload.todayYmd;
+      prevDate = payload.prevDate;
+      nextDate = payload.nextDate;
+      setUrlDate(currentDate);
+
+      document.getElementById("storeName").textContent = payload.storeName || STORE_ID;
+      document.getElementById("dateMain").textContent = formatJaDate(currentDate);
+      const sub = document.getElementById("dateSub");
+      if (currentDate === todayYmd) {
+        sub.textContent = "今日 · " + currentDate;
+        sub.classList.add("is-today");
+      } else {
+        const diffHint =
+          currentDate > todayYmd ? "これから" : currentDate < todayYmd ? "過去" : "";
+        sub.textContent = (diffHint ? diffHint + " · " : "") + currentDate;
+        sub.classList.remove("is-today");
+      }
+      document.getElementById("datePicker").value = currentDate;
+      document.getElementById("nTotal").textContent = String(payload.counts?.total ?? 0);
+      document.getElementById("nConfirmed").textContent = String(payload.counts?.confirmed ?? 0);
+      document.getElementById("nArrived").textContent = String(payload.counts?.arrived ?? 0);
+
+      const list = (payload.reservations || []).filter(matchesFilter);
+      const lunch = list.filter((r) => r.shift === "lunch");
+      const dinner = list.filter((r) => r.shift === "dinner");
+      const other = list.filter((r) => r.shift !== "lunch" && r.shift !== "dinner");
+
+      if (!list.length) {
+        content.innerHTML =
+          '<div class="empty">' +
+          (payload.reservations && payload.reservations.length
+            ? "この条件に合う予約はありません"
+            : "この日の予約はありません") +
+          "</div>";
+        return;
+      }
+
+      function cardHtml(r) {
+        const sc = statusClass(r.status);
+        const phone = String(r.phone || "").trim();
+        const seats = Array.isArray(r.seatLabels) && r.seatLabels.length
+          ? r.seatLabels
+          : Array.isArray(r.seats)
+            ? r.seats
+            : [];
+        const note = String(r.note || "").trim();
+        const seatType = String(r.seatType || "").trim();
+        const cls =
+          "card shift-" +
+          (r.shift === "dinner" ? "dinner" : r.shift === "lunch" ? "lunch" : "other") +
+          (r.status === "来店済み" ? " is-arrived" : "") +
+          (r.status === "キャンセル" ? " is-cancelled" : "");
+        let actions = '<div class="card-actions">';
+        if (phone) {
+          actions +=
+            '<a class="act act-phone" href="tel:' +
+            encodeURIComponent(phone.replace(/[^\d+]/g, "")) +
+            '">電話</a>';
+        }
+        if (r.status === "予約確定") {
+          actions +=
+            '<button type="button" class="act act-arrive" data-arrive="' +
+            escapeHtml(r.resId) +
+            '">来店</button>';
+        }
+        actions += "</div>";
+        if (!phone && r.status !== "予約確定") actions = "";
+
+        return (
+          '<article class="' +
+          cls +
+          '">' +
+          '<div class="card-top">' +
+          '<div class="time">' +
+          escapeHtml(r.time || "—") +
+          "</div>" +
+          '<span class="status ' +
+          sc +
+          '">' +
+          escapeHtml(statusLabel(r.status)) +
+          "</span></div>" +
+          '<div class="name">' +
+          escapeHtml(r.name || "（名前なし）") +
+          " · <strong>" +
+          escapeHtml(String(r.num || 0)) +
+          "名</strong></div>" +
+          '<div class="meta">' +
+          (seatType ? "<span>種別 <strong>" + escapeHtml(seatType) + "</strong></span>" : "") +
+          (phone ? "<span>☎ " + escapeHtml(phone) + "</span>" : "") +
+          "</div>" +
+          (seats.length
+            ? '<div class="seats">' +
+              seats.map((s) => '<span class="seat">' + escapeHtml(s) + "</span>").join("") +
+              "</div>"
+            : "") +
+          (note ? '<div class="note">※' + escapeHtml(note) + "</div>" : "") +
+          actions +
+          "</article>"
+        );
+      }
+
+      function sectionHtml(title, cls, rows) {
+        if (!rows.length) return "";
+        return (
+          "<section>" +
+          '<div class="section-head">' +
+          '<span class="section-badge ' +
+          cls +
+          '">' +
+          escapeHtml(title) +
+          "</span>" +
+          '<span class="section-count">' +
+          rows.length +
+          "件</span></div>" +
+          '<div class="list">' +
+          rows.map(cardHtml).join("") +
+          "</div></section>"
+        );
+      }
+
+      content.innerHTML =
+        sectionHtml("ランチ", "lunch", lunch) +
+        sectionHtml("ディナー", "dinner", dinner) +
+        (other.length
+          ? sectionHtml("その他", "lunch", other)
+          : "");
+
+      content.querySelectorAll("[data-arrive]").forEach((btn) => {
+        btn.addEventListener("click", () => markArrived(btn.getAttribute("data-arrive")));
+      });
+    }
+
+    async function load(date) {
+      const err = document.getElementById("err");
+      const loading = document.getElementById("loading");
+      err.hidden = true;
+      if (!lastPayload) {
+        loading.hidden = false;
+        document.getElementById("content").hidden = true;
+      }
+      try {
+        const q = date ? "?date=" + encodeURIComponent(date) : "";
+        const r = await fetch(API_BASE + "/reservations" + q, { credentials: "include", cache: "no-store" });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || r.statusText || String(r.status));
+        render(j);
+      } catch (e) {
+        loading.hidden = true;
+        err.hidden = false;
+        err.textContent = "読み込みに失敗しました: " + String(e.message || e);
+      }
+    }
+
+    async function markArrived(resId) {
+      if (!resId || !lastPayload) return;
+      const target = (lastPayload.reservations || []).find((r) => r.resId === resId);
+      if (!target) return;
+      if (!window.confirm(target.name + "様を来店済みにしますか？")) return;
+      try {
+        const body = {
+          type: "addReservation",
+          reservation: {
+            resId: target.resId,
+            date: target.date,
+            shift: target.shift,
+            time: target.time,
+            name: target.name,
+            phone: target.phone,
+            num: target.num,
+            status: "来店済み",
+            seats: Array.isArray(target.seats) ? target.seats : [],
+            note: target.note || "",
+            ...(target.seatType ? { seatType: target.seatType } : {}),
+            ...(target.email ? { email: target.email } : {}),
+          },
+        };
+        const r = await fetch(API_BASE + "/event", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || r.statusText);
+        await load(currentDate);
+      } catch (e) {
+        alert(String(e.message || e));
+      }
+    }
+
+    document.getElementById("btnPrev").onclick = () => {
+      if (prevDate) load(prevDate);
+    };
+    document.getElementById("btnNext").onclick = () => {
+      if (nextDate) load(nextDate);
+    };
+    document.getElementById("btnNextDay").onclick = () => {
+      if (nextDate) load(nextDate);
+    };
+    document.getElementById("btnToday").onclick = () => {
+      if (todayYmd) load(todayYmd);
+      else load("");
+    };
+    document.getElementById("btnRefresh").onclick = () => load(currentDate || qsDate());
+    document.getElementById("btnPickDate").onclick = () => {
+      const wrap = document.getElementById("datePickWrap");
+      wrap.style.display = wrap.style.display === "block" ? "none" : "block";
+      if (wrap.style.display === "block") {
+        const el = document.getElementById("datePicker");
+        el.focus();
+        if (typeof el.showPicker === "function") {
+          try { el.showPicker(); } catch (_) {}
+        }
+      }
+    };
+    document.getElementById("datePicker").onchange = (e) => {
+      const v = e.target.value;
+      if (v) {
+        document.getElementById("datePickWrap").style.display = "none";
+        load(v);
+      }
+    };
+    document.getElementById("linkReception").href =
+      "/staff-app/" + encodeURIComponent(STORE_ID) + "/reception";
+
+    document.querySelectorAll(".filter").forEach((b) => {
+      b.onclick = () => {
+        document.querySelectorAll(".filter").forEach((x) => x.classList.remove("is-on"));
+        b.classList.add("is-on");
+        filterMode = b.getAttribute("data-filter") || "active";
+        if (lastPayload) render(lastPayload);
+      };
+    });
+
+    // swipe left/right for day change
+    let touchX0 = 0;
+    let touchY0 = 0;
+    document.addEventListener(
+      "touchstart",
+      (e) => {
+        const t = e.changedTouches[0];
+        touchX0 = t.clientX;
+        touchY0 = t.clientY;
+      },
+      { passive: true },
+    );
+    document.addEventListener(
+      "touchend",
+      (e) => {
+        const t = e.changedTouches[0];
+        const dx = t.clientX - touchX0;
+        const dy = t.clientY - touchY0;
+        if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+        if (dx < 0 && nextDate) load(nextDate);
+        else if (dx > 0 && prevDate) load(prevDate);
+      },
+      { passive: true },
+    );
+
+    load(qsDate());
+  </script>
+</body>
+</html>

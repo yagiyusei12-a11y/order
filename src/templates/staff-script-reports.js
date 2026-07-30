@@ -268,10 +268,142 @@ function updateRepMobileNavUi() {
       (repMobileIsToday() ? "（当日）" : "");
   }
   if (nextBtn) {
+    // 予約確認のため当日以降も進める（約90日先まで）
     const selected = new Date(repMobileDay.getFullYear(), repMobileDay.getMonth(), repMobileDay.getDate(), 0, 0, 0, 0);
-    nextBtn.disabled = selected.getTime() >= startOfTodayLocal().getTime();
+    const max = addDays(startOfTodayLocal(), 90);
+    nextBtn.disabled = selected.getTime() >= max.getTime();
   }
   if (todayBtn) todayBtn.disabled = repMobileIsToday();
+}
+
+function repMobileYmd() {
+  return (
+    repMobileDay.getFullYear() +
+    "-" +
+    pad2(repMobileDay.getMonth() + 1) +
+    "-" +
+    pad2(repMobileDay.getDate())
+  );
+}
+
+function repMobResStatusClass(st) {
+  if (st === "予約確定") return "confirmed";
+  if (st === "来店済み") return "arrived";
+  if (st === "キャンセル") return "cancelled";
+  return "confirmed";
+}
+
+function repMobResStatusLabel(st) {
+  if (st === "予約確定") return "未来店";
+  if (st === "来店済み") return "来店済";
+  if (st === "キャンセル") return "取消";
+  return st || "—";
+}
+
+function renderRepMobileReservations(payload) {
+  const el = document.getElementById("repMobReservations");
+  const countEl = document.getElementById("repMobResCount");
+  if (!el) return;
+  const all = (payload && payload.reservations) || [];
+  const list = all.filter((r) => r && r.status !== "キャンセル");
+  const cancelled = all.length - list.length;
+  if (countEl) {
+    countEl.textContent =
+      list.length + "件" + (cancelled > 0 ? "（取消 " + cancelled + "）" : "");
+  }
+  if (!list.length) {
+    el.innerHTML = "<span class=\"muted\">この日の予約はありません。</span>";
+    return;
+  }
+  const lunch = list.filter((r) => r.shift === "lunch");
+  const dinner = list.filter((r) => r.shift === "dinner");
+  const other = list.filter((r) => r.shift !== "lunch" && r.shift !== "dinner");
+
+  function rowsHtml(rows) {
+    return rows
+      .map((r) => {
+        const st = String(r.status || "");
+        const phone = String(r.phone || "").trim();
+        const seats = Array.isArray(r.seatLabels) && r.seatLabels.length ? r.seatLabels : r.seats || [];
+        const note = String(r.note || "").trim();
+        const seatType = String(r.seatType || "").trim();
+        let meta = escapeHtml(String(r.num || 0)) + "名";
+        if (seats.length) meta += " · " + seats.map((s) => escapeHtml(String(s))).join(",");
+        if (seatType) meta += " · " + escapeHtml(seatType);
+        if (note) meta += " · ※" + escapeHtml(note.replace(/\n/g, " "));
+        const rowCls =
+          "rep-m-res-row" +
+          (st === "来店済み" ? " is-arrived" : "") +
+          (st === "キャンセル" ? " is-cancelled" : "");
+        return (
+          "<div class=\"" +
+          rowCls +
+          "\">" +
+          "<div class=\"rep-m-res-time\">" +
+          escapeHtml(r.time || "—") +
+          "</div>" +
+          "<div>" +
+          "<div class=\"rep-m-res-name\">" +
+          escapeHtml(r.name || "（名前なし）") +
+          "</div>" +
+          "<div class=\"rep-m-res-meta\">" +
+          meta +
+          "</div>" +
+          (phone
+            ? "<a class=\"rep-m-res-phone\" href=\"tel:" +
+              encodeURIComponent(phone.replace(/[^\d+]/g, "")) +
+              "\">☎ " +
+              escapeHtml(phone) +
+              "</a>"
+            : "") +
+          "</div>" +
+          "<span class=\"rep-m-res-status " +
+          repMobResStatusClass(st) +
+          "\">" +
+          escapeHtml(repMobResStatusLabel(st)) +
+          "</span></div>"
+        );
+      })
+      .join("");
+  }
+
+  function section(title, cls, rows) {
+    if (!rows.length) return "";
+    return (
+      "<div class=\"rep-m-res-shift " +
+      cls +
+      "\">" +
+      escapeHtml(title) +
+      " " +
+      rows.length +
+      "</div>" +
+      rowsHtml(rows)
+    );
+  }
+
+  el.innerHTML =
+    section("ランチ", "lunch", lunch) +
+    section("ディナー", "dinner", dinner) +
+    section("その他", "lunch", other);
+}
+
+async function loadRepMobileReservations() {
+  const el = document.getElementById("repMobReservations");
+  if (!el) return;
+  el.innerHTML = "<span class=\"muted\">読み込み中…</span>";
+  try {
+    const ymd = repMobileYmd();
+    const r = await fetch(
+      "/reception/" + encodeURIComponent(STORE) + "/reservations?date=" + encodeURIComponent(ymd),
+      { credentials: "include", cache: "no-store" }
+    );
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || r.statusText || String(r.status));
+    renderRepMobileReservations(j);
+  } catch (e) {
+    el.innerHTML =
+      "<span class=\"muted\">予約を読み込めませんでした。</span>";
+  }
 }
 
 function renderRepMobileTotals(res) {
@@ -371,11 +503,12 @@ async function loadRepMobile() {
       "/stores/" + encodeURIComponent(STORE) + "/reports/summary?" + repMobileDayQuery()
     );
     renderRepMobileTotals(res);
-    await loadRepMobileTables();
+    await Promise.all([loadRepMobileTables(), loadRepMobileReservations()]);
   } catch (e) {
     const msg = String(e.message || e);
     log(msg);
     if (totalsEl) totalsEl.innerHTML = "<span class=\"muted\">読み込みに失敗しました。</span>";
+    await loadRepMobileReservations().catch(() => {});
   }
   scheduleRepMobileRefresh();
 }

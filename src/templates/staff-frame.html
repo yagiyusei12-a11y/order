@@ -807,10 +807,12 @@
       });
 
     window.STAFF_ROLE = "staff";
+    window.PLATFORM_ADMIN = false;
     window.__staffMeLoaded = api("/auth/me")
       .then((m) => {
         const r = m && m.user && m.user.role;
         window.STAFF_ROLE = r === "manager" ? "manager" : "staff";
+        window.PLATFORM_ADMIN = Boolean(m && m.user && m.user.platformAdmin);
         return m;
       })
       .catch(() => ({}));

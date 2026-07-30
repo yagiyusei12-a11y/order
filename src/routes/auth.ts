@@ -9,6 +9,7 @@ import {
 } from "../config.js";
 import { prisma } from "../db.js";
 import { appendStaffAuditFromRequest, maskEmailForAudit } from "../lib/staff-audit.js";
+import { isPlatformAdminEmail } from "../lib/platform-admin.js";
 import { normalizeStaffEmail, parseStoreId, validatePasswordPlain } from "../lib/staff-credentials.js";
 
 export async function registerAuth(app: FastifyInstance): Promise<void> {
@@ -176,6 +177,7 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
         storeId: row.storeId,
         email: row.email,
         role: row.role === "manager" ? "manager" : "staff",
+        platformAdmin: isPlatformAdminEmail(row.email),
       },
     };
   });

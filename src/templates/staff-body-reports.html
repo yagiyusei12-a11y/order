@@ -15,6 +15,13 @@
       <strong style="font-size:0.9rem">使用中の卓</strong>
       <div id="repMobTables" style="margin-top:0.55rem"></div>
     </div>
+    <div class="card rep-m-reservations" id="repMobReservationsWrap">
+      <div class="rep-m-res-head">
+        <strong style="font-size:0.9rem">予約</strong>
+        <span class="muted" style="font-size:0.72rem" id="repMobResCount"></span>
+      </div>
+      <div id="repMobReservations" style="margin-top:0.55rem"><span class="muted">読み込み中…</span></div>
+    </div>
   </div>
 
   <div id="repDesktopRoot">
@@ -209,6 +216,61 @@
       .rep-m-total-item .lab { font-size: 0.78rem; color: var(--muted); font-weight: 700; }
       .rep-m-total-item .val { font-size: 1.05rem; font-weight: 900; white-space: nowrap; }
       .rep-m-tables { padding: 0.75rem; }
+      .rep-m-reservations { padding: 0.75rem; margin-top: 0.75rem; }
+      .rep-m-res-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.5rem;
+      }
+      .rep-m-res-shift {
+        display: inline-block;
+        font-size: 0.72rem;
+        font-weight: 900;
+        padding: 0.2rem 0.55rem;
+        border-radius: 999px;
+        margin: 0.65rem 0 0.35rem;
+      }
+      .rep-m-res-shift.lunch { background: #ecfdf8; color: #0d9488; }
+      .rep-m-res-shift.dinner { background: #f5f3ff; color: #7c3aed; }
+      .rep-m-res-row {
+        display: grid;
+        grid-template-columns: 3.4rem 1fr auto;
+        gap: 0.15rem 0.55rem;
+        padding: 0.6rem 0;
+        border-bottom: 1px solid var(--border);
+        align-items: start;
+      }
+      .rep-m-res-row:last-child { border-bottom: none; }
+      .rep-m-res-row.is-arrived { opacity: 0.62; }
+      .rep-m-res-row.is-cancelled { opacity: 0.45; text-decoration: line-through; }
+      .rep-m-res-time {
+        font-size: 1.05rem;
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
+        line-height: 1.2;
+      }
+      .rep-m-res-name { font-weight: 800; font-size: 0.9rem; line-height: 1.3; }
+      .rep-m-res-meta { font-size: 0.75rem; color: var(--muted); font-weight: 600; margin-top: 0.15rem; }
+      .rep-m-res-status {
+        font-size: 0.68rem;
+        font-weight: 900;
+        padding: 0.22rem 0.45rem;
+        border-radius: 999px;
+        white-space: nowrap;
+        justify-self: end;
+      }
+      .rep-m-res-status.confirmed { background: #fffbeb; color: #b45309; }
+      .rep-m-res-status.arrived { background: #f1f5f9; color: #64748b; }
+      .rep-m-res-status.cancelled { background: #f8fafc; color: #94a3b8; }
+      .rep-m-res-phone {
+        display: inline-block;
+        margin-top: 0.25rem;
+        font-size: 0.78rem;
+        font-weight: 800;
+        color: var(--accent);
+        text-decoration: none;
+      }
       .rep-m-table-row {
         display: grid;
         grid-template-columns: 1fr auto;

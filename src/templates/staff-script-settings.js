@@ -10,6 +10,111 @@ function requireManagerForSettings() {
   return false;
 }
 
+function isPlatformAdminUser() {
+  return typeof window !== "undefined" && window.PLATFORM_ADMIN === true;
+}
+
+function formatPlatformStoreDate(iso) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString("ja-JP", { dateStyle: "medium", timeStyle: "short" });
+  } catch (_) {
+    return iso;
+  }
+}
+
+async function loadPlatformStoresPanel() {
+  const listEl = document.getElementById("platformStoresList");
+  if (!listEl || !isPlatformAdminUser()) return;
+  listEl.innerHTML = "<span class=\"muted\">読み込み中…</span>";
+  try {
+    const data = await api("/platform/stores");
+    const stores = (data && data.stores) || [];
+    if (!stores.length) {
+      listEl.innerHTML = "<span class=\"muted\">まだ店舗がありません。</span>";
+      return;
+    }
+    const rows = stores
+      .map((s) => {
+        const isCurrent = s.id === STORE;
+        const loginHref = "/staff-app/login?storeId=" + encodeURIComponent(s.id);
+        const staffHref = "/staff-app/" + encodeURIComponent(s.id);
+        return (
+          "<div class=\"pm-row\" style=\"padding:0.55rem 0.75rem;align-items:center;flex-wrap:wrap;gap:0.35rem\">" +
+          "<div style=\"flex:1;min-width:180px\">" +
+          "<strong>" +
+          escapeHtml(s.name || s.id) +
+          "</strong>" +
+          (isCurrent ? " <span class=\"muted\" style=\"font-size:0.72rem\">（現在の店舗）</span>" : "") +
+          "<div class=\"muted\" style=\"font-size:0.72rem;margin-top:0.15rem\">ID: <code>" +
+          escapeHtml(s.id) +
+          "</code> · スタッフ " +
+          escapeHtml(String(s.staffCount ?? 0)) +
+          " 名 · 登録 " +
+          escapeHtml(formatPlatformStoreDate(s.createdAt)) +
+          "</div></div>" +
+          "<a class=\"btn-ghost\" href=\"" +
+          escapeHtml(loginHref) +
+          "\" style=\"text-decoration:none;display:inline-block\">ログイン画面</a>" +
+          (isCurrent
+            ? ""
+            : "<a class=\"btn-ghost\" href=\"" +
+              escapeHtml(staffHref) +
+              "\" style=\"text-decoration:none;display:inline-block\">店舗を開く</a>") +
+          "</div>"
+        );
+      })
+      .join("");
+    listEl.innerHTML = rows;
+  } catch (e) {
+    listEl.innerHTML =
+      "<span class=\"muted\" style=\"color:#b91c1c\">一覧を読み込めませんでした: " + escapeHtml(String(e.message || e)) + "</span>";
+  }
+}
+
+function initPlatformStoresUi() {
+  const tabBtn = document.getElementById("settingsTabBtn-platformStores");
+  if (!tabBtn) return;
+  if (!isPlatformAdminUser()) {
+    tabBtn.style.display = "none";
+    return;
+  }
+  tabBtn.style.display = "";
+
+  const btnCreate = document.getElementById("btnPlatformStoreCreate");
+  if (btnCreate) {
+    btnCreate.onclick = async () => {
+      log("");
+      const storeId = document.getElementById("psNewStoreId").value.trim();
+      const storeName = document.getElementById("psNewStoreName").value.trim();
+      const email = document.getElementById("psNewEmail").value.trim();
+      const password = document.getElementById("psNewPassword").value;
+      if (!storeId) return log("店舗IDを入力してください");
+      if (!storeName) return log("店舗名を入力してください");
+      if (!email) return log("店長メールを入力してください");
+      if (!password) return log("店長パスワードを入力してください");
+      if (!window.confirm("店舗「" + storeName + "」（ID: " + storeId + "）を追加しますか？")) return;
+      try {
+        const res = await api("/platform/stores", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ storeId, storeName, email, password }),
+        });
+        document.getElementById("psNewStoreId").value = "";
+        document.getElementById("psNewStoreName").value = "";
+        document.getElementById("psNewEmail").value = "";
+        document.getElementById("psNewPassword").value = "";
+        log("店舗「" + (res.name || storeName) + "」を追加しました。店舗ID " + (res.storeId || storeId) + " でログインできます。");
+        await loadPlatformStoresPanel();
+      } catch (e) {
+        log(String(e.message || e));
+      }
+    };
+  }
+}
+
 function escapeHtml(s) {
   return String(s)
     .replace(/&/g, "&amp;")
@@ -897,6 +1002,7 @@ async function loadAll() {
   try {
     if (typeof window !== "undefined" && window.__staffMeLoaded) await window.__staffMeLoaded;
   } catch (_) {}
+  initPlatformStoresUi();
   const [st, staff, pay, twRes] = await Promise.all([
     api("/stores/" + encodeURIComponent(STORE) + "/settings"),
     api("/stores/" + encodeURIComponent(STORE) + "/staff-users"),
@@ -2154,6 +2260,7 @@ function initSettingsTabs() {
     }
     if (k === "netReserve") ensureNetReservePanel();
     if (k === "tables") ensureTablesPanel();
+    if (k === "platformStores") loadPlatformStoresPanel().catch((e) => log(String(e.message || e)));
   };
 
   btns.forEach((b) => {

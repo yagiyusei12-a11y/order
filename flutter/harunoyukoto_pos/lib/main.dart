@@ -1,11 +1,15 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:charset_converter/charset_converter.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+
+import 'payment_camera.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -56,11 +60,18 @@ class _OpsShellPageState extends State<OpsShellPage> {
   bool _loadingPrefs = true;
   String? _opsUrl;
   String _printerIp = '';
+  final PaymentCameraService _paymentCamera = PaymentCameraService();
 
   @override
   void initState() {
     super.initState();
     _loadPrefs();
+  }
+
+  @override
+  void dispose() {
+    _paymentCamera.disposeController();
+    super.dispose();
   }
 
   Future<void> _loadPrefs() async {
@@ -112,6 +123,30 @@ class _OpsShellPageState extends State<OpsShellPage> {
       }
       final map = Map<String, dynamic>.from(decoded);
       final cmd = map['cmd'];
+      if (cmd == 'preparePaymentCamera') {
+        // 暖機のみ。失敗しても通知しない
+        unawaited(_paymentCamera.ensureReady());
+        return;
+      }
+      if (cmd == 'capturePaymentPhoto') {
+        final storeId = map['storeId']?.toString() ?? '';
+        final billId = map['billId']?.toString() ?? '';
+        final idsRaw = map['paymentIds'];
+        final paymentIds = <String>[];
+        if (idsRaw is List) {
+          for (final e in idsRaw) {
+            final s = e?.toString().trim() ?? '';
+            if (s.isNotEmpty) paymentIds.add(s);
+          }
+        }
+        if (storeId.isEmpty || billId.isEmpty || paymentIds.isEmpty) return;
+        unawaited(_captureAndDeliverPaymentPhoto(
+          storeId: storeId,
+          billId: billId,
+          paymentIds: paymentIds,
+        ));
+        return;
+      }
       if (cmd == 'printQr') {
         final dataRaw = map['data'];
         final titleRaw = map['title'];
@@ -155,6 +190,34 @@ class _OpsShellPageState extends State<OpsShellPage> {
     } catch (e, st) {
       debugPrint('HarunoyukotoPos message parse failed: $e\n$st');
       _showPosSnack('データの解析に失敗しました: $e', isError: true);
+    }
+  }
+
+  Future<void> _captureAndDeliverPaymentPhoto({
+    required String storeId,
+    required String billId,
+    required List<String> paymentIds,
+  }) async {
+    try {
+      final bytes = await _paymentCamera.captureJpeg();
+      if (bytes == null || bytes.isEmpty) {
+        debugPrint('Payment photo capture skipped/failed');
+        return;
+      }
+      final c = _controller;
+      if (c == null) return;
+      final payload = jsonEncode({
+        'storeId': storeId,
+        'billId': billId,
+        'paymentIds': paymentIds,
+        'mimeType': 'image/jpeg',
+        'imageBase64': PaymentCameraService.toBase64(bytes),
+      });
+      await c.runJavaScript(
+        'window.__harunoPosOnPaymentPhoto&&window.__harunoPosOnPaymentPhoto($payload);',
+      );
+    } catch (e, st) {
+      debugPrint('Payment photo deliver failed: $e\n$st');
     }
   }
 

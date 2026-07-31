@@ -32,6 +32,15 @@ import { appendStaffAuditFromRequest } from "../lib/staff-audit.js";
 import { assertManagerRole } from "../lib/staff-role.js";
 import { isTakeoutTablePublicCode } from "../lib/takeout-table-code.js";
 import { firstSalesOrderByTime } from "../lib/first-sales-order.js";
+import {
+  decodePaymentPhotoBase64,
+  isAllowedPaymentPhotoMime,
+  paymentPhotoAbsPath,
+  removePaymentPhotoFile,
+  savePaymentPhotoBuffer,
+} from "../lib/payment-photo-files.js";
+import { createReadStream, existsSync } from "node:fs";
+import { basename } from "node:path";
 
 function isCourseOptionPackLineExtra(extra: unknown): extra is {
   kind: "courseOptionPack";
@@ -2678,6 +2687,104 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       payments: created.payments,
       bill: { ...updated, paidTotal, remainder: updated!.totalAmount - paidTotal },
     };
+  });
+
+  /**
+   * レジアプリ：入金時の内カメラ写真を紐づけ（失敗しても会計は続行済み想定）
+   * JSON { imageBase64, mimeType? } または multipart file
+   */
+  app.post<{
+    Params: { storeId: string; billId: string; paymentId: string };
+    Body: { imageBase64?: unknown; mimeType?: unknown };
+  }>("/stores/:storeId/bills/:billId/payments/:paymentId/photo", async (req, reply) => {
+    const payment = await prisma.payment.findFirst({
+      where: {
+        id: req.params.paymentId,
+        billId: req.params.billId,
+        bill: { storeId: req.params.storeId },
+      },
+    });
+    if (!payment) return reply.code(404).send({ error: "payment not found" });
+
+    let buf: Buffer | null = null;
+    let mime = "image/jpeg";
+
+    const ct = String(req.headers["content-type"] || "");
+    if (ct.includes("multipart/form-data")) {
+      const file = await req.file();
+      if (!file) return reply.code(400).send({ error: "image file required" });
+      mime = file.mimetype || "image/jpeg";
+      buf = await file.toBuffer();
+    } else {
+      const raw = req.body?.imageBase64;
+      if (typeof raw !== "string" || !raw.trim()) {
+        return reply.code(400).send({ error: "imageBase64 required" });
+      }
+      if (typeof req.body?.mimeType === "string" && req.body.mimeType.trim()) {
+        mime = req.body.mimeType.trim();
+      }
+      try {
+        buf = decodePaymentPhotoBase64(raw);
+      } catch {
+        return reply.code(400).send({ error: "invalid imageBase64" });
+      }
+    }
+
+    if (!buf) return reply.code(400).send({ error: "image required" });
+    if (!isAllowedPaymentPhotoMime(mime)) {
+      return reply.code(400).send({ error: "unsupported image type" });
+    }
+
+    let saved: { imageUrl: string };
+    try {
+      saved = await savePaymentPhotoBuffer({ paymentId: payment.id, mime, buf });
+    } catch (e) {
+      return reply.code(400).send({ error: String((e as Error).message || e) });
+    }
+
+    const old = payment.photoUrl;
+    const updated = await prisma.payment.update({
+      where: { id: payment.id },
+      data: { photoUrl: saved.imageUrl },
+      select: { id: true, photoUrl: true },
+    });
+    await removePaymentPhotoFile(old);
+
+    await appendStaffAuditFromRequest(req, req.params.storeId, staffUserIdFromReq(req), "payment_photo_upload", {
+      billId: req.params.billId,
+      paymentId: payment.id,
+    }).catch(() => {});
+
+    return { ok: true, paymentId: updated.id, photoUrl: updated.photoUrl };
+  });
+
+  /** 入金写真の取得（スタッフJWT） */
+  app.get<{
+    Params: { storeId: string; billId: string; paymentId: string };
+  }>("/stores/:storeId/bills/:billId/payments/:paymentId/photo", async (req, reply) => {
+    const payment = await prisma.payment.findFirst({
+      where: {
+        id: req.params.paymentId,
+        billId: req.params.billId,
+        bill: { storeId: req.params.storeId },
+      },
+      select: { photoUrl: true },
+    });
+    if (!payment?.photoUrl) return reply.code(404).send({ error: "photo not found" });
+    const name = basename(payment.photoUrl);
+    if (!/^[a-zA-Z0-9._-]+$/.test(name)) return reply.code(400).send({ error: "bad file name" });
+    const abs = paymentPhotoAbsPath(name);
+    if (!existsSync(abs)) return reply.code(404).send({ error: "file missing" });
+    const lc = name.toLowerCase();
+    const type = lc.endsWith(".png")
+      ? "image/png"
+      : lc.endsWith(".webp")
+        ? "image/webp"
+        : "image/jpeg";
+    return reply
+      .type(type)
+      .header("Cache-Control", "private, max-age=3600")
+      .send(createReadStream(abs));
   });
 
   /**

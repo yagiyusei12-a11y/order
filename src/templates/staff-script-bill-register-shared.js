@@ -2007,11 +2007,22 @@ async function mountRegisterFlow(panel, ctx) {
     }
     btnConfirmPayment.disabled = true;
     try {
-      await ctx.api(ctx.billPath(detail.id) + "/payments", {
+      const payRes = await ctx.api(ctx.billPath(detail.id) + "/payments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lines: [{ methodCode: methodEl.value, amount: payAmount, note }] }),
       });
+      try {
+        const createdPays = payRes && Array.isArray(payRes.payments) ? payRes.payments : [];
+        const payIds = createdPays.map(function (p) {
+          return p && p.id ? p.id : null;
+        }).filter(Boolean);
+        if (typeof ctx.hooks.requestPosPaymentPhoto === "function") {
+          ctx.hooks.requestPosPaymentPhoto(ctx.storeId, detail.id, payIds);
+        } else if (typeof requestPosPaymentPhoto === "function") {
+          requestPosPaymentPhoto(ctx.storeId, detail.id, payIds);
+        }
+      } catch (_) {}
       if (isCash) ctx.hooks.tryOpenDrawer();
       const refreshed = await ctx.api(ctx.billPath(detail.id));
       const remAfter = Number(refreshed.remainder || 0);

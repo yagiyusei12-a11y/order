@@ -208,6 +208,8 @@ model Payment {
   methodCode String
   amount     Int
   note       String?
+  /// レジアプリ入金時の内カメラ写真（/uploads/payment-photos/...）
+  photoUrl   String?
   voidedAt   DateTime?
   voidReason String?
   voidedByStaffUserId String?

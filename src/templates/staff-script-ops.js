@@ -562,6 +562,7 @@ function buildOpsRegisterMountContext(session, table, detailPreloaded) {
       renderCashKeypad,
       bindCashKeypad,
       tryOpenDrawer,
+      requestPosPaymentPhoto,
       printReceiptOrBrowser,
       buildReceiptDoc,
       buildReceiptPlainLines,
@@ -1204,6 +1205,59 @@ function tryOpenDrawer() {
   } catch (_) {}
   try {
     window.dispatchEvent(new CustomEvent("pos:drawer-open"));
+  } catch (_) {}
+}
+
+/** レジアプリ内カメラ：入金写真（失敗しても会計は止めない） */
+function requestPosPaymentPhoto(storeId, billId, paymentIds) {
+  try {
+    var ids = Array.isArray(paymentIds) ? paymentIds.filter(Boolean) : [];
+    if (!storeId || !billId || !ids.length) return;
+    var ch = typeof HarunoyukotoPos !== "undefined" ? HarunoyukotoPos : null;
+    if (!ch || typeof ch.postMessage !== "function") return;
+    ch.postMessage(
+      JSON.stringify({
+        cmd: "capturePaymentPhoto",
+        storeId: String(storeId),
+        billId: String(billId),
+        paymentIds: ids.map(String),
+      })
+    );
+  } catch (_) {}
+}
+
+function preparePosPaymentCamera() {
+  try {
+    var ch = typeof HarunoyukotoPos !== "undefined" ? HarunoyukotoPos : null;
+    if (!ch || typeof ch.postMessage !== "function") return;
+    ch.postMessage(JSON.stringify({ cmd: "preparePaymentCamera" }));
+  } catch (_) {}
+}
+
+if (typeof window !== "undefined") {
+  window.__harunoPosOnPaymentPhoto = function (payload) {
+    try {
+      if (!payload || typeof payload !== "object") return;
+      var storeId = payload.storeId;
+      var billId = payload.billId;
+      var paymentIds = Array.isArray(payload.paymentIds) ? payload.paymentIds : [];
+      var b64 = payload.imageBase64;
+      var mime = payload.mimeType || "image/jpeg";
+      if (!storeId || !billId || !b64 || !paymentIds.length) return;
+      paymentIds.forEach(function (pid) {
+        if (!pid) return;
+        api("/stores/" + encodeURIComponent(storeId) + "/bills/" + encodeURIComponent(billId) + "/payments/" + encodeURIComponent(pid) + "/photo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageBase64: b64, mimeType: mime }),
+        }).catch(function () {});
+      });
+    } catch (_) {}
+  };
+  try {
+    if (new URLSearchParams(location.search).get("nativeDrawer") === "1") {
+      setTimeout(preparePosPaymentCamera, 800);
+    }
   } catch (_) {}
 }
 function printHtml(html) {

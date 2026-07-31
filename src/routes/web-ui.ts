@@ -9,6 +9,7 @@ import { verifyGamesHubKey } from "../lib/games-hub-auth.js";
 import { gamesHubPublicUrl } from "../lib/games-hub-url.js";
 import { verifyMenuDiscontinueKey } from "../lib/menu-discontinue-auth.js";
 import { verifyRecipeInputKey } from "../lib/recipe-input-auth.js";
+import { verifyPaymentAuditKey } from "../lib/payment-audit-auth.js";
 import { buildMenuPrintHtml } from "../lib/menu-print-html.js";
 import { buildTableQrPrintHtml } from "../lib/table-qr-print-html.js";
 import { prisma } from "../db.js";
@@ -315,6 +316,27 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
       });
       if (!store) return reply.code(404).type("text/plain; charset=utf-8").send("store not found");
       const body = html("recipe-input.html")
+        .replace("__STORE_ID_JS__", JSON.stringify(storeId))
+        .replace("__KEY_JS__", JSON.stringify(key));
+      return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(body);
+    },
+  );
+
+  /** 入金写真＋作業ログ（鍵付き・ナビ非掲載） */
+  app.get<{ Params: { storeId: string }; Querystring: { key?: string } }>(
+    "/payment-audit/:storeId",
+    async (req, reply) => {
+      const storeId = req.params.storeId;
+      const key = typeof req.query.key === "string" ? req.query.key.trim() : "";
+      if (!verifyPaymentAuditKey(storeId, key)) {
+        return reply.code(403).type("text/plain; charset=utf-8").send("invalid key");
+      }
+      const store = await prisma.store.findUnique({
+        where: { id: storeId },
+        select: { name: true },
+      });
+      if (!store) return reply.code(404).type("text/plain; charset=utf-8").send("store not found");
+      const body = html("payment-audit.html")
         .replace("__STORE_ID_JS__", JSON.stringify(storeId))
         .replace("__KEY_JS__", JSON.stringify(key));
       return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(body);

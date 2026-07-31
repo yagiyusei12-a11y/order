@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>入金写真・作業ログ</title>
+    <style>
+      :root {
+        --bg: #111827;
+        --surface: rgba(255, 255, 255, 0.05);
+        --line: rgba(255, 255, 255, 0.12);
+        --text: rgba(255, 255, 255, 0.94);
+        --muted: rgba(255, 255, 255, 0.62);
+        --accent: #38bdf8;
+        --ok: #4ade80;
+        --warn: #fbbf24;
+        --danger: #f87171;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(900px 520px at 8% -10%, rgba(56, 189, 248, 0.14), transparent 55%),
+          radial-gradient(700px 420px at 100% 0%, rgba(74, 222, 128, 0.08), transparent 50%),
+          var(--bg);
+        min-height: 100vh;
+      }
+      .wrap {
+        max-width: 920px;
+        margin: 0 auto;
+        padding: 1rem 1rem 3rem;
+      }
+      h1 { margin: 0 0 0.2rem; font-size: 1.3rem; }
+      .sub {
+        color: var(--muted);
+        font-size: 0.86rem;
+        margin: 0 0 1rem;
+        line-height: 1.5;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: 220px 1fr;
+        gap: 1rem;
+        align-items: start;
+      }
+      @media (max-width: 760px) {
+        .layout { grid-template-columns: 1fr; }
+      }
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 0.75rem;
+      }
+      .panel h2 {
+        margin: 0 0 0.55rem;
+        font-size: 0.92rem;
+        color: var(--accent);
+      }
+      .day-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        max-height: min(70vh, 640px);
+        overflow: auto;
+      }
+      .day-btn {
+        text-align: left;
+        border: 1px solid var(--line);
+        background: rgba(0, 0, 0, 0.22);
+        color: var(--text);
+        border-radius: 10px;
+        padding: 0.55rem 0.65rem;
+        cursor: pointer;
+        font: inherit;
+      }
+      .day-btn:hover { border-color: rgba(56, 189, 248, 0.45); }
+      .day-btn.is-active {
+        border-color: rgba(56, 189, 248, 0.7);
+        background: rgba(56, 189, 248, 0.12);
+      }
+      .day-btn .ymd { font-weight: 700; display: block; }
+      .day-btn .meta {
+        font-size: 0.75rem;
+        color: var(--muted);
+        margin-top: 0.15rem;
+      }
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        align-items: center;
+        margin-bottom: 0.75rem;
+      }
+      .toolbar input[type="date"] {
+        padding: 0.45rem 0.55rem;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: rgba(0, 0, 0, 0.25);
+        color: var(--text);
+        font: inherit;
+      }
+      button.ghost {
+        border: 1px solid var(--line);
+        background: rgba(0, 0, 0, 0.2);
+        color: var(--text);
+        border-radius: 8px;
+        padding: 0.4rem 0.7rem;
+        cursor: pointer;
+        font: inherit;
+      }
+      .status {
+        font-size: 0.82rem;
+        color: var(--muted);
+        margin-bottom: 0.75rem;
+      }
+      .entry {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: rgba(0, 0, 0, 0.18);
+        padding: 0.85rem;
+        margin-bottom: 0.9rem;
+      }
+      .entry.is-voided { border-color: rgba(248, 113, 113, 0.45); }
+      .entry-head {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem 0.8rem;
+        align-items: baseline;
+        margin-bottom: 0.65rem;
+      }
+      .entry-time { font-weight: 800; font-size: 1.05rem; }
+      .badge {
+        font-size: 0.72rem;
+        font-weight: 700;
+        padding: 0.12rem 0.45rem;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+      }
+      .badge.ok { color: var(--ok); border-color: rgba(74, 222, 128, 0.45); }
+      .badge.warn { color: var(--warn); border-color: rgba(251, 191, 36, 0.45); }
+      .badge.danger { color: var(--danger); border-color: rgba(248, 113, 113, 0.5); }
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(180px, 280px) 1fr;
+        gap: 0.85rem;
+      }
+      @media (max-width: 640px) {
+        .grid { grid-template-columns: 1fr; }
+      }
+      .photo-wrap {
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        background: #000;
+        aspect-ratio: 3 / 4;
+        max-height: 360px;
+      }
+      .photo-wrap img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .photo-wrap .no-photo {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        color: var(--muted);
+        font-size: 0.85rem;
+        padding: 1rem;
+        text-align: center;
+      }
+      .section-title {
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: var(--accent);
+        margin: 0.55rem 0 0.3rem;
+        letter-spacing: 0.02em;
+      }
+      .steps {
+        margin: 0;
+        padding-left: 1.15rem;
+        line-height: 1.55;
+        font-size: 0.9rem;
+      }
+      .steps li { margin-bottom: 0.25rem; }
+      .kv {
+        display: grid;
+        grid-template-columns: 6.5rem 1fr;
+        gap: 0.2rem 0.5rem;
+        font-size: 0.86rem;
+        margin: 0.2rem 0 0.5rem;
+      }
+      .kv dt { color: var(--muted); }
+      .kv dd { margin: 0; }
+      .lines, .events {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        font-size: 0.82rem;
+      }
+      .lines li, .events li {
+        padding: 0.28rem 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      .events li.is-related { color: var(--ok); }
+      .empty {
+        color: var(--muted);
+        padding: 1.5rem 0.5rem;
+        text-align: center;
+        font-size: 0.92rem;
+      }
+      .err {
+        color: var(--danger);
+        background: rgba(248, 113, 113, 0.1);
+        border: 1px solid rgba(248, 113, 113, 0.35);
+        border-radius: 10px;
+        padding: 0.7rem 0.85rem;
+        margin-bottom: 0.75rem;
+        font-size: 0.88rem;
+      }
+      .amount { font-weight: 800; font-size: 1.15rem; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>入金写真・作業ログ</h1>
+      <p class="sub" id="subMeta">読み込み中…</p>
+      <div id="err" class="err" hidden></div>
+      <div class="layout">
+        <aside class="panel">
+          <h2>日付</h2>
+          <div class="toolbar">
+            <input type="date" id="datePick" />
+            <button type="button" class="ghost" id="btnToday">今日</button>
+          </div>
+          <div class="day-list" id="dayList"></div>
+        </aside>
+        <main class="panel">
+          <h2 id="dayTitle">詳細</h2>
+          <div class="status" id="dayStatus"></div>
+          <div id="entries"></div>
+        </main>
+      </div>
+    </div>
+    <script>
+      const STORE_ID = __STORE_ID_JS__;
+      const KEY = __KEY_JS__;
+
+      function yen(n) {
+        return Number(n || 0).toLocaleString("ja-JP") + "円";
+      }
+      function esc(s) {
+        return String(s == null ? "" : s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+      function api(path) {
+        const sep = path.includes("?") ? "&" : "?";
+        return fetch("/payment-audit/api/" + encodeURIComponent(STORE_ID) + path + sep + "key=" + encodeURIComponent(KEY), {
+          credentials: "omit",
+          cache: "no-store",
+        }).then(async (r) => {
+          const text = await r.text();
+          let data = null;
+          try { data = text ? JSON.parse(text) : null; } catch (_) {}
+          if (!r.ok) throw new Error((data && data.error) || text || ("HTTP " + r.status));
+          return data;
+        });
+      }
+      function showErr(msg) {
+        const el = document.getElementById("err");
+        if (!msg) {
+          el.hidden = true;
+          el.textContent = "";
+          return;
+        }
+        el.hidden = false;
+        el.textContent = msg;
+      }
+
+      let selectedYmd = null;
+      let todayYmd = null;
+
+      function renderDays(days) {
+        const host = document.getElementById("dayList");
+        if (!days.length) {
+          host.innerHTML = '<div class="empty">写真付き入金はまだありません</div>';
+          return;
+        }
+        host.innerHTML = days
+          .map((d) => {
+            const active = d.dateYmd === selectedYmd ? " is-active" : "";
+            return (
+              '<button type="button" class="day-btn' +
+              active +
+              '" data-ymd="' +
+              esc(d.dateYmd) +
+              '"><span class="ymd">' +
+              esc(d.dateYmd) +
+              '</span><span class="meta">' +
+              d.count +
+              "件" +
+              (d.voidedCount ? "（取消 " + d.voidedCount + "）" : "") +
+              " · 合計 " +
+              yen(d.amountSum) +
+              "</span></button>"
+            );
+          })
+          .join("");
+        host.querySelectorAll(".day-btn").forEach((btn) => {
+          btn.addEventListener("click", () => selectDay(btn.getAttribute("data-ymd")));
+        });
+      }
+
+      function renderEntries(data) {
+        document.getElementById("dayTitle").textContent = data.dateYmd + " の記録";
+        document.getElementById("dayStatus").textContent =
+          data.count + "件の写真付き入金（タイムゾーン: " + data.timeZone + "）";
+        const host = document.getElementById("entries");
+        if (!data.entries.length) {
+          host.innerHTML = '<div class="empty">この日の写真付き入金はありません</div>';
+          return;
+        }
+        host.innerHTML = data.entries
+          .map((e) => {
+            const voidBadge = e.voidedAt
+              ? '<span class="badge danger">取消済み</span>'
+              : '<span class="badge ok">有効</span>';
+            const steps = (e.workSteps || [])
+              .map((s) => "<li>" + esc(s) + "</li>")
+              .join("");
+            const lines = (e.orderLines || [])
+              .map(
+                (ln) =>
+                  "<li>" +
+                  esc(ln.name) +
+                  " ×" +
+                  ln.qty +
+                  " <span style=\"color:var(--muted)\">" +
+                  yen(ln.lineTotal) +
+                  (ln.status ? " · " + esc(ln.status) : "") +
+                  "</span></li>",
+              )
+              .join("");
+            const events = (e.billEvents || [])
+              .map((ev) => {
+                const rel = ev.relatedToThisPayment ? " is-related" : "";
+                return (
+                  '<li class="' +
+                  rel +
+                  '">' +
+                  esc(ev.createdAtWall) +
+                  " · <strong>" +
+                  esc(ev.kindLabel) +
+                  "</strong>" +
+                  (ev.summary ? " — " + esc(ev.summary) : "") +
+                  (ev.staffName ? "（" + esc(ev.staffName) + "）" : "") +
+                  (ev.relatedToThisPayment ? " ← この入金" : "") +
+                  "</li>"
+                );
+              })
+              .join("");
+            const cashBits = [];
+            if (e.note && e.note.receivedYen != null) cashBits.push("預り " + yen(e.note.receivedYen));
+            if (e.note && e.note.changeYen != null) cashBits.push("お釣り " + yen(e.note.changeYen));
+            return (
+              '<article class="entry' +
+              (e.voidedAt ? " is-voided" : "") +
+              '"><div class="entry-head">' +
+              '<span class="entry-time">' +
+              esc(e.createdAtWall) +
+              "</span>" +
+              '<span class="badge">' +
+              esc(e.methodLabel) +
+              "</span>" +
+              voidBadge +
+              (e.table ? '<span class="badge warn">卓 ' + esc(e.table.name) + "</span>" : "") +
+              '<span class="amount">' +
+              yen(e.amount) +
+              "</span></div>" +
+              '<div class="grid"><div class="photo-wrap">' +
+              (e.photoUrl
+                ? '<img src="' +
+                  esc(e.photoUrl) +
+                  '" alt="入金時写真" loading="lazy" />'
+                : '<div class="no-photo">写真なし</div>') +
+              '</div><div><div class="section-title">このとき行った作業</div><ol class="steps">' +
+              steps +
+              "</ol>" +
+              '<div class="section-title">会計・卓</div><dl class="kv">' +
+              "<dt>伝票</dt><dd>" +
+              esc(e.bill.statusLabel) +
+              " / 合計 " +
+              yen(e.bill.totalAmount) +
+              (e.bill.settledAtWall ? " / 精算 " + esc(e.bill.settledAtWall) : "") +
+              "</dd>" +
+              "<dt>卓・人数</dt><dd>" +
+              (e.table ? esc(e.table.name) : "—") +
+              (e.guests ? " / " + e.guests.guestCount + "名" : "") +
+              (e.courseName ? " / " + esc(e.courseName) : "") +
+              "</dd>" +
+              "<dt>現金メモ</dt><dd>" +
+              (cashBits.length ? esc(cashBits.join(" · ")) : "—") +
+              "</dd>" +
+              (e.voidedAt
+                ? "<dt>取消</dt><dd>" +
+                  esc(e.voidedAtWall) +
+                  (e.voidReason ? " / " + esc(e.voidReason) : "") +
+                  (e.voidedBy && (e.voidedBy.name || e.voidedBy.email)
+                    ? " / " + esc(e.voidedBy.name || e.voidedBy.email)
+                    : "") +
+                  "</dd>"
+                : "") +
+              "</dl>" +
+              '<div class="section-title">注文内容</div>' +
+              (lines
+                ? '<ul class="lines">' + lines + "</ul>"
+                : '<div class="empty" style="padding:0.4rem 0;text-align:left">注文明細なし（手動会計など）</div>') +
+              '<div class="section-title">この伝票の操作履歴</div>' +
+              (events
+                ? '<ul class="events">' + events + "</ul>"
+                : '<div class="empty" style="padding:0.4rem 0;text-align:left">履歴なし</div>') +
+              "</div></div></article>"
+            );
+          })
+          .join("");
+      }
+
+      async function selectDay(ymd) {
+        if (!ymd) return;
+        selectedYmd = ymd;
+        document.getElementById("datePick").value = ymd;
+        document.querySelectorAll(".day-btn").forEach((b) => {
+          b.classList.toggle("is-active", b.getAttribute("data-ymd") === ymd);
+        });
+        document.getElementById("dayStatus").textContent = "読み込み中…";
+        document.getElementById("entries").innerHTML = "";
+        showErr("");
+        try {
+          const data = await api("/day/" + encodeURIComponent(ymd));
+          renderEntries(data);
+          const u = new URL(location.href);
+          u.searchParams.set("date", ymd);
+          history.replaceState(null, "", u.pathname + "?" + u.searchParams.toString());
+        } catch (err) {
+          showErr(String(err && err.message ? err.message : err));
+        }
+      }
+
+      async function boot() {
+        try {
+          const meta = await api("/meta");
+          todayYmd = meta.todayYmd;
+          document.getElementById("subMeta").textContent =
+            meta.storeName +
+            "（" +
+            meta.storeId +
+            "）· タイムゾーン " +
+            meta.timeZone +
+            " · 写真付き入金を日ごとに確認できます（メニューには出ていません）";
+          const days = await api("/days");
+          renderDays(days.days || []);
+          const q = new URLSearchParams(location.search).get("date");
+          const initial =
+            (q && /^\d{4}-\d{2}-\d{2}$/.test(q) && q) ||
+            (days.days && days.days[0] && days.days[0].dateYmd) ||
+            todayYmd;
+          document.getElementById("datePick").value = initial;
+          await selectDay(initial);
+        } catch (err) {
+          showErr(String(err && err.message ? err.message : err));
+          document.getElementById("subMeta").textContent = "読み込みに失敗しました";
+        }
+      }
+
+      document.getElementById("btnToday").addEventListener("click", () => {
+        if (todayYmd) selectDay(todayYmd);
+      });
+      document.getElementById("datePick").addEventListener("change", (ev) => {
+        const v = ev.target.value;
+        if (v) selectDay(v);
+      });
+
+      boot();
+    </script>
+  </body>
+</html>

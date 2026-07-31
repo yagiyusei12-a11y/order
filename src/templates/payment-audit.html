@@ -190,6 +190,12 @@
         font-size: 0.9rem;
       }
       .steps li { margin-bottom: 0.25rem; }
+      .steps.journey {
+        border-left: 2px solid rgba(56, 189, 248, 0.35);
+        margin-left: 0.2rem;
+        padding-left: 1rem;
+      }
+      .steps.journey li { margin-bottom: 0.55rem; }
       .kv {
         display: grid;
         grid-template-columns: 6.5rem 1fr;
@@ -393,7 +399,31 @@
                   esc(e.photoUrl) +
                   '" alt="入金時写真" loading="lazy" />'
                 : '<div class="no-photo">写真なし</div>') +
-              '</div><div><div class="section-title">このとき行った作業</div><ol class="steps">' +
+              '</div><div><div class="section-title">入金に至る経緯</div>' +
+              (Array.isArray(e.journeySteps) && e.journeySteps.length
+                ? '<ol class="steps journey">' +
+                  e.journeySteps
+                    .map(
+                      (s) =>
+                        "<li><strong>" +
+                        esc(s.title) +
+                        "</strong>" +
+                        (s.atWall
+                          ? ' <span style="color:var(--muted);font-size:0.8rem">' +
+                            esc(s.atWall) +
+                            "</span>"
+                          : "") +
+                        (s.detail
+                          ? '<div style="color:var(--muted);font-size:0.84rem;margin-top:0.15rem">' +
+                            esc(s.detail) +
+                            "</div>"
+                          : "") +
+                        "</li>",
+                    )
+                    .join("") +
+                  "</ol>"
+                : '<div class="empty" style="padding:0.4rem 0;text-align:left">経緯なし</div>') +
+              '<div class="section-title">このとき行った作業（入金時点）</div><ol class="steps">' +
               steps +
               "</ol>" +
               '<div class="section-title">会計・卓</div><dl class="kv">' +

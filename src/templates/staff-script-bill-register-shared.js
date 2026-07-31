@@ -2010,7 +2010,32 @@ async function mountRegisterFlow(panel, ctx) {
       const payRes = await ctx.api(ctx.billPath(detail.id) + "/payments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lines: [{ methodCode: methodEl.value, amount: payAmount, note }] }),
+        body: JSON.stringify({
+          lines: [{ methodCode: methodEl.value, amount: payAmount, note }],
+          clientContext: {
+            surface: ctx.auditSurface || "ops",
+            surfaceLabel:
+              ctx.auditSurfaceLabel ||
+              (ctx.auditSurface === "reports"
+                ? "レポート（伝票詳細）"
+                : ctx.auditSurface === "handy"
+                  ? "ハンディ"
+                  : "オペレーション（卓会計）"),
+            path: Array.isArray(ctx.auditPath) && ctx.auditPath.length
+              ? ctx.auditPath
+              : ctx.auditSurface === "reports"
+                ? ["レポート", "伝票を開く", "会計タブ", "入金を記録"]
+                : ["オペレーション", "卓を選択", "会計画面", "入金を記録"],
+            remainderBefore: remainder,
+            billTotal: Number(detail.totalAmount || 0),
+            priorPaid: Math.max(0, Number(detail.totalAmount || 0) - Number(remainder || 0)),
+            tableName: table && table.name ? String(table.name) : undefined,
+            sessionId: session && session.id ? session.id : undefined,
+            billId: detail.id,
+            methodCode: methodEl.value,
+            amount: payAmount,
+          },
+        }),
       });
       try {
         const createdPays = payRes && Array.isArray(payRes.payments) ? payRes.payments : [];

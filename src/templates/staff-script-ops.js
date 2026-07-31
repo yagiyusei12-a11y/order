@@ -524,6 +524,9 @@ function buildOpsRegisterMountContext(session, table, detailPreloaded) {
     sessionSwitchPrefixHtml: lastRegisterSwitchPrefix,
     readOnly: false,
     opsTwoColumn: true,
+    auditSurface: "ops",
+    auditSurfaceLabel: "オペレーション（卓会計）",
+    auditPath: ["オペレーション", "卓を選択", "会計画面", "入金を記録"],
     storeId: STORE,
     storeSettings: storeSettingsCache,
     /** 常に最新のキャッシュを参照（ensurePaymentMethods が配列を差し替えても古い参照を掴まない） */

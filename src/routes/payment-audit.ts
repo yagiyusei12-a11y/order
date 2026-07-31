@@ -11,6 +11,10 @@ import {
   startOfWallCalendarDayUtc,
   wallDateYmdInZone,
 } from "../lib/store-wall-time.js";
+import {
+  buildPaymentJourneySteps,
+  type PaymentJourneyStep,
+} from "../lib/payment-journey.js";
 
 function keyFromRequest(req: FastifyRequest): string {
   const q = req.query as { key?: unknown };
@@ -242,6 +246,7 @@ export async function registerPaymentAudit(app: FastifyInstance): Promise<void> 
         ? []
         : await prisma.salesOrder.findMany({
             where: { sessionId: { in: sessionIds } },
+            orderBy: { createdAt: "asc" },
             select: {
               id: true,
               sessionId: true,
@@ -262,6 +267,28 @@ export async function registerPaymentAudit(app: FastifyInstance): Promise<void> 
             },
           });
 
+    const allBillPayments =
+      billIds.length === 0
+        ? []
+        : await prisma.payment.findMany({
+            where: { billId: { in: billIds } },
+            select: {
+              id: true,
+              billId: true,
+              amount: true,
+              methodCode: true,
+              createdAt: true,
+              voidedAt: true,
+            },
+            orderBy: { createdAt: "asc" },
+          });
+    const paymentsByBill = new Map<string, typeof allBillPayments>();
+    for (const bp of allBillPayments) {
+      const list = paymentsByBill.get(bp.billId) || [];
+      list.push(bp);
+      paymentsByBill.set(bp.billId, list);
+    }
+
     const linesBySession = new Map<
       string,
       Array<{
@@ -272,6 +299,10 @@ export async function registerPaymentAudit(app: FastifyInstance): Promise<void> 
         note: string | null;
         lineTotal: number;
       }>
+    >();
+    const orderTimelineBySession = new Map<
+      string,
+      Array<{ createdAt: Date; lines: Array<{ name: string; qty: number; unitPrice: number }> }>
     >();
     for (const o of orders) {
       const list = linesBySession.get(o.sessionId) || [];
@@ -286,13 +317,43 @@ export async function registerPaymentAudit(app: FastifyInstance): Promise<void> 
         });
       }
       linesBySession.set(o.sessionId, list);
+      const tl = orderTimelineBySession.get(o.sessionId) || [];
+      tl.push({
+        createdAt: o.createdAt,
+        lines: o.lines.map((ln) => ({
+          name: ln.nameSnapshot,
+          qty: ln.qty,
+          unitPrice: ln.unitPrice,
+        })),
+      });
+      orderTimelineBySession.set(o.sessionId, tl);
+    }
+
+    function storedJourneySteps(payload: unknown): PaymentJourneyStep[] | null {
+      if (!payload || typeof payload !== "object") return null;
+      const raw = (payload as { journeySteps?: unknown }).journeySteps;
+      if (!Array.isArray(raw) || !raw.length) return null;
+      const out: PaymentJourneyStep[] = [];
+      for (const row of raw) {
+        if (!row || typeof row !== "object") continue;
+        const r = row as Record<string, unknown>;
+        if (typeof r.title !== "string" || !r.title.trim()) continue;
+        out.push({
+          at: typeof r.at === "string" ? r.at : null,
+          atWall: typeof r.atWall === "string" ? r.atWall : null,
+          title: r.title.trim(),
+          detail: typeof r.detail === "string" ? r.detail : null,
+        });
+      }
+      return out.length ? out : null;
     }
 
     const key = keyFromRequest(req);
     const entries = payments.map((p) => {
       const cash = parseCashNote(p.note);
       const session = p.bill.session;
-      const billEvents = (eventsByBill.get(p.bill.id) || []).map((e) => ({
+      const rawEvents = eventsByBill.get(p.bill.id) || [];
+      const billEvents = rawEvents.map((e) => ({
         id: e.id,
         kind: e.kind,
         kindLabel: eventKindLabel(e.kind),
@@ -306,11 +367,77 @@ export async function registerPaymentAudit(app: FastifyInstance): Promise<void> 
           (e.payload as { paymentId?: unknown }).paymentId === p.id,
       }));
 
+      const addEvent = rawEvents.find(
+        (e) =>
+          e.kind === "payment_add" &&
+          e.payload &&
+          typeof e.payload === "object" &&
+          (e.payload as { paymentId?: unknown }).paymentId === p.id,
+      );
+      const methodLabel = labelByCode[p.methodCode] || p.methodCode;
+      let journeySteps = storedJourneySteps(addEvent?.payload) || null;
+      if (!journeySteps) {
+        const billPays = paymentsByBill.get(p.bill.id) || [];
+        const priorPayments = billPays.filter(
+          (bp) => bp.id !== p.id && bp.createdAt.getTime() <= p.createdAt.getTime(),
+        );
+        const priorEvents = rawEvents.filter(
+          (e) => e.createdAt.getTime() < p.createdAt.getTime() || (e.kind !== "payment_add" && e.id !== addEvent?.id),
+        );
+        journeySteps = buildPaymentJourneySteps({
+          timeZone: access.timeZone,
+          paymentCreatedAt: p.createdAt,
+          paymentAmount: p.amount,
+          methodCode: p.methodCode,
+          methodLabel,
+          staffName: addEvent?.staffUser?.name || addEvent?.staffUser?.email || null,
+          client: null,
+          bill: {
+            id: p.bill.id,
+            createdAt: p.bill.createdAt,
+            totalAmount: p.bill.totalAmount,
+            status: p.bill.status,
+            label: p.bill.label,
+          },
+          session: session
+            ? {
+                id: session.id,
+                openedAt: session.openedAt,
+                guestCount: session.guestCount,
+                childCount: session.childCount,
+                tableName: session.table?.name || null,
+                courseName: session.course?.name || null,
+              }
+            : null,
+          priorPayments: priorPayments.map((pp) => ({
+            amount: pp.amount,
+            methodCode: pp.methodCode,
+            createdAt: pp.createdAt,
+            voidedAt: pp.voidedAt,
+          })),
+          priorEvents: priorEvents
+            .filter((e) => {
+              if (e.kind !== "payment_add") return true;
+              const pid =
+                e.payload && typeof e.payload === "object"
+                  ? (e.payload as { paymentId?: unknown }).paymentId
+                  : null;
+              return pid !== p.id && e.createdAt.getTime() < p.createdAt.getTime();
+            })
+            .map((e) => ({
+              kind: e.kind,
+              createdAt: e.createdAt,
+              payload: e.payload,
+              staffName: e.staffUser?.name || e.staffUser?.email || null,
+            })),
+          orderTimeline: session ? orderTimelineBySession.get(session.id) || [] : [],
+        });
+      }
+
       const workSteps: string[] = [];
       workSteps.push(
         `${formatWallDateTimeInZone(p.createdAt, access.timeZone)} にレジで「入金を記録」`,
       );
-      const methodLabel = labelByCode[p.methodCode] || p.methodCode;
       workSteps.push(
         `支払手段: ${methodLabel}（コード ${p.methodCode}） / 入金額: ${p.amount.toLocaleString("ja-JP")}円`,
       );
@@ -358,6 +485,7 @@ export async function registerPaymentAudit(app: FastifyInstance): Promise<void> 
           : null,
         hasPhoto: !!p.photoUrl,
         photoUrl: `/payment-audit/api/${encodeURIComponent(access.storeId)}/photo/${encodeURIComponent(p.id)}?key=${encodeURIComponent(key)}`,
+        journeySteps,
         workSteps,
         table: session?.table
           ? { id: session.table.id, name: session.table.name, publicCode: session.table.publicCode }

@@ -39,6 +39,11 @@ import {
   removePaymentPhotoFile,
   savePaymentPhotoBuffer,
 } from "../lib/payment-photo-files.js";
+import {
+  buildPaymentJourneySteps,
+  journeyStepsToJson,
+  normalizeClientContext,
+} from "../lib/payment-journey.js";
 import { createReadStream, existsSync } from "node:fs";
 import { basename } from "node:path";
 
@@ -2578,14 +2583,30 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
 
   app.post<{
     Params: { storeId: string; billId: string };
-    Body: { lines: { methodCode: string; amount: number; note?: string }[] };
+    Body: {
+      lines: { methodCode: string; amount: number; note?: string }[];
+      /** 入金に至る画面経路など（任意・監査用） */
+      clientContext?: unknown;
+    };
   }>("/stores/:storeId/bills/:billId/payments", async (req, reply) => {
     const st6 = await mergedSettingsForStore(req.params.storeId);
     if (!st6) return reply.code(404).send({ error: "store not found" });
     if (forbidBillCorrection(reply, st6, "payments", "店舗設定により入金の追加は無効です")) return;
     const bill = await prisma.bill.findFirst({
       where: { id: req.params.billId, storeId: req.params.storeId },
-      include: { payments: true },
+      include: {
+        payments: true,
+        session: {
+          select: {
+            id: true,
+            openedAt: true,
+            guestCount: true,
+            childCount: true,
+            table: { select: { name: true } },
+            course: { select: { name: true } },
+          },
+        },
+      },
     });
     if (!bill) return reply.code(404).send({ error: "bill not found" });
     if (bill.status === "void") return reply.code(400).send({ error: "bill is void" });
@@ -2601,6 +2622,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       include: { definition: true },
     });
     const enabledCodes = new Set(enabledRows.map((r) => r.definition.code));
+    const labelByCode = Object.fromEntries(enabledRows.map((r) => [r.definition.code, r.definition.labelJa]));
 
     for (const l of lines) {
       if (!enabledCodes.has(l.methodCode)) {
@@ -2612,6 +2634,49 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
     }
 
     const staffUserId = staffUserIdFromReq(req);
+    const staffUser = staffUserId
+      ? await prisma.staffUser.findUnique({
+          where: { id: staffUserId },
+          select: { name: true, email: true },
+        })
+      : null;
+    const staffName = staffUser?.name || staffUser?.email || null;
+    const clientContext = normalizeClientContext(req.body?.clientContext);
+    const tz = st6.timezone?.trim() || "Asia/Tokyo";
+
+    const priorEvents = await prisma.billCorrectionEvent.findMany({
+      where: { billId: bill.id, storeId: bill.storeId },
+      orderBy: { createdAt: "asc" },
+      take: 200,
+      include: { staffUser: { select: { name: true, email: true } } },
+    });
+
+    const orderTimeline =
+      bill.sessionId == null
+        ? []
+        : (
+            await prisma.salesOrder.findMany({
+              where: { sessionId: bill.sessionId },
+              orderBy: { createdAt: "asc" },
+              select: {
+                createdAt: true,
+                lines: {
+                  where: { status: { not: "cancelled" } },
+                  select: { nameSnapshot: true, qty: true, unitPrice: true },
+                  orderBy: { id: "asc" },
+                },
+              },
+              take: 80,
+            })
+          ).map((o) => ({
+            createdAt: o.createdAt,
+            lines: o.lines.map((ln) => ({
+              name: ln.nameSnapshot,
+              qty: ln.qty,
+              unitPrice: ln.unitPrice,
+            })),
+          }));
+
     const created = await prisma.$transaction(async (tx) => {
       const existing = await tx.payment.findMany({ where: { billId: bill.id, voidedAt: null } });
       const existingPaid = existing.reduce((s, p) => s + p.amount, 0);
@@ -2621,6 +2686,7 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
       }
 
       const payments = [];
+      let runningPrior = [...bill.payments];
       for (const l of lines) {
         const p = await tx.payment.create({
           data: {
@@ -2632,19 +2698,77 @@ export async function registerBilling(app: FastifyInstance): Promise<void> {
         });
         payments.push(p);
         await appendSaleCashEntryIfEnabled(tx, st6, bill.storeId, staffUserId, p);
+        const journeySteps = buildPaymentJourneySteps({
+          timeZone: tz,
+          paymentCreatedAt: p.createdAt,
+          paymentAmount: p.amount,
+          methodCode: p.methodCode,
+          methodLabel: labelByCode[p.methodCode] || p.methodCode,
+          staffName,
+          client: {
+            ...(clientContext || {}),
+            billId: bill.id,
+            sessionId: bill.sessionId || clientContext?.sessionId,
+            methodCode: p.methodCode,
+            amount: p.amount,
+            billTotal: clientContext?.billTotal ?? bill.totalAmount,
+            priorPaid: clientContext?.priorPaid ?? existingPaid,
+            remainderBefore:
+              clientContext?.remainderBefore ?? Math.max(0, bill.totalAmount - existingPaid),
+            tableName: clientContext?.tableName || bill.session?.table?.name || undefined,
+          },
+          bill: {
+            id: bill.id,
+            createdAt: bill.createdAt,
+            totalAmount: bill.totalAmount,
+            status: bill.status,
+            label: bill.label,
+          },
+          session: bill.session
+            ? {
+                id: bill.session.id,
+                openedAt: bill.session.openedAt,
+                guestCount: bill.session.guestCount,
+                childCount: bill.session.childCount,
+                tableName: bill.session.table?.name || null,
+                courseName: bill.session.course?.name || null,
+              }
+            : null,
+          priorPayments: runningPrior.map((pp) => ({
+            amount: pp.amount,
+            methodCode: pp.methodCode,
+            createdAt: pp.createdAt,
+            voidedAt: pp.voidedAt,
+          })),
+          priorEvents: priorEvents.map((e) => ({
+            kind: e.kind,
+            createdAt: e.createdAt,
+            payload: e.payload,
+            staffName: e.staffUser?.name || e.staffUser?.email || null,
+          })),
+          orderTimeline,
+        });
         try {
           await tx.billCorrectionEvent.create({
             data: {
               storeId: bill.storeId,
               billId: bill.id,
               kind: "payment_add",
-              payload: { paymentId: p.id, methodCode: p.methodCode, amount: p.amount, note: p.note } as Prisma.InputJsonValue,
+              payload: {
+                paymentId: p.id,
+                methodCode: p.methodCode,
+                amount: p.amount,
+                note: p.note,
+                clientContext: clientContext || null,
+                journeySteps: journeyStepsToJson(journeySteps),
+              } as Prisma.InputJsonValue,
               ...(staffUserId ? { staffUserId } : {}),
             },
           });
         } catch {
           // ignore
         }
+        runningPrior = [...runningPrior, p];
       }
 
       const paidAfter = existingPaid + newSum;

@@ -14,7 +14,6 @@ try {
   [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 } catch {}
 
-$CookieName = "access"
 $DefaultBase = "https://morder.harunoyukoto.jp"
 $DefaultStore = "pitsusaro"
 $ConfigDir = Join-Path $env:APPDATA "morder-print-agent"
@@ -79,13 +78,30 @@ function Get-StoreId {
   return ([string]$script:Config.storeId).Trim().ToLowerInvariant()
 }
 
-function Get-CookieHeader {
+function Get-AuthToken {
   if ($env:PRINT_AGENT_COOKIE) {
     $c = $env:PRINT_AGENT_COOKIE.Trim()
-    if ($c -match '=') { return $c }
-    return "$CookieName=$c"
+    if ($c -match '(?i)^access=(.+)$') { return $Matches[1].Trim() }
+    if ($c -match '=') {
+      # access=... or other cookie pair → use value after first =
+      $idx = $c.IndexOf('=')
+      return $c.Substring($idx + 1).Trim()
+    }
+    return $c
   }
-  return "$CookieName=$($script:Config.token)"
+  return ([string]$script:Config.token).Trim()
+}
+
+function Get-AuthHeaders {
+  $token = Get-AuthToken
+  $h = @{
+    Accept = "application/json"
+  }
+  if ($token) {
+    # Cookie ヘッダは PowerShell/HttpWebRequest で送れないことがあるため Bearer を使う
+    $h["Authorization"] = "Bearer $token"
+  }
+  return $h
 }
 
 function Read-Prompt([string]$Label, [string]$Fallback = "") {
@@ -95,6 +111,16 @@ function Read-Prompt([string]$Label, [string]$Fallback = "") {
   return $v.Trim()
 }
 
+function Read-PasswordPrompt {
+  $sec = Read-Host "パスワード" -AsSecureString
+  $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
+  try {
+    return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+  } finally {
+    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+  }
+}
+
 function Invoke-AgentApi {
   param(
     [string]$PathSuffix,
@@ -102,10 +128,7 @@ function Invoke-AgentApi {
     [object]$Body = $null
   )
   $uri = (Get-BaseUrl) + $PathSuffix
-  $headers = @{
-    Accept = "application/json"
-    Cookie = (Get-CookieHeader)
-  }
+  $headers = Get-AuthHeaders
   $params = @{
     Uri             = $uri
     Method          = $Method
@@ -127,13 +150,19 @@ function Invoke-AgentApi {
     $ex = $_.Exception
     $status = 0
     $json = $null
-    if ($ex.Response) {
-      $status = [int]$ex.Response.StatusCode
+    $respObj = $null
+    if ($_.Exception.Response) { $respObj = $_.Exception.Response }
+    elseif ($ex.InnerException -and $ex.InnerException.Response) { $respObj = $ex.InnerException.Response }
+    if ($respObj) {
+      try { $status = [int]$respObj.StatusCode } catch {}
       try {
-        $reader = New-Object System.IO.StreamReader($ex.Response.GetResponseStream())
-        $text = $reader.ReadToEnd()
-        $reader.Close()
-        if ($text) { $json = $text | ConvertFrom-Json }
+        $stream = $respObj.GetResponseStream()
+        if ($stream) {
+          $reader = New-Object System.IO.StreamReader($stream)
+          $text = $reader.ReadToEnd()
+          $reader.Close()
+          if ($text) { $json = $text | ConvertFrom-Json }
+        }
       } catch {}
     }
     if ($status -eq 401) {
@@ -152,7 +181,7 @@ function Login-Interactive([string]$Reason) {
   $sid = Read-Prompt "店舗ID" (Get-StoreId)
   if (-not $sid) { $sid = $DefaultStore }
   $email = Read-Prompt "メール" $script:Config.email
-  $password = Read-Prompt "パスワード" ""
+  $password = Read-PasswordPrompt
   if (-not $sid -or -not $email -or -not $password) {
     throw "店舗ID・メール・パスワードは必須です"
   }
@@ -160,7 +189,7 @@ function Login-Interactive([string]$Reason) {
   if (-not $base) { $base = $DefaultBase }
   $uri = "$base/auth/login"
   $body = @{ storeId = $sid; email = $email; password = $password } | ConvertTo-Json -Compress
-  $resp = Invoke-WebRequest -Uri $uri -Method POST -Body $body -ContentType "application/json; charset=utf-8" -UseBasicParsing
+  $resp = Invoke-WebRequest -Uri $uri -Method POST -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) -ContentType "application/json; charset=utf-8" -UseBasicParsing
   $j = $resp.Content | ConvertFrom-Json
   if (-not $j.token) { throw "ログイン応答に token がありません（サーバー更新が必要です）" }
   $script:Config.baseUrl = $base

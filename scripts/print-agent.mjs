@@ -16,7 +16,6 @@ import { stdin as input, stdout as output } from "node:process";
 import net from "node:net";
 import iconv from "iconv-lite";
 
-const COOKIE_NAME = "access";
 const CONFIG_DIR = path.join(
   process.env.APPDATA || path.join(os.homedir(), ".config"),
   "morder-print-agent",
@@ -70,12 +69,19 @@ function saveConfig() {
   console.log(`設定を保存しました: ${CONFIG_PATH}`);
 }
 
-function cookieHeader() {
+function authHeaders() {
   const fromEnv = (process.env.PRINT_AGENT_COOKIE || "").trim();
+  let token = config.token;
   if (fromEnv) {
-    return fromEnv.includes("=") ? fromEnv : `${COOKIE_NAME}=${fromEnv}`;
+    if (fromEnv.toLowerCase().startsWith("access=")) token = fromEnv.slice(7).trim();
+    else if (fromEnv.includes("=")) token = fromEnv.slice(fromEnv.indexOf("=") + 1).trim();
+    else token = fromEnv;
   }
-  return `${COOKIE_NAME}=${config.token}`;
+  return {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  };
 }
 
 function baseUrl() {
@@ -207,9 +213,7 @@ async function api(pathSuffix, opts = {}) {
   const res = await fetch(baseUrl() + pathSuffix, {
     ...opts,
     headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      Cookie: cookieHeader(),
+      ...authHeaders(),
       ...(opts.headers || {}),
     },
   });

@@ -1,30 +1,23 @@
 @echo off
 chcp 65001 >nul
 title 印刷エージェント（この窓を閉じないでください）
-cd /d "%~dp0.."
+cd /d "%~dp0"
 
-where node >nul 2>&1
-if errorlevel 1 (
-  echo Node.js が見つかりません。
-  echo https://nodejs.org から LTS をインストールしてから、もう一度このファイルを開いてください。
-  echo.
-  pause
-  exit /b 1
+set "EXE1=%~dp0..\exports\morder-print-agent\morder-print-agent.exe"
+set "EXE2=%~dp0morder-print-agent.exe"
+if exist "%EXE1%" (
+  start "" "%EXE1%"
+  exit /b 0
+)
+if exist "%EXE2%" (
+  start "" "%EXE2%"
+  exit /b 0
 )
 
-if not exist "node_modules\iconv-lite" (
-  echo 初回準備: npm install を実行します...
-  call npm install --omit=dev
-  if errorlevel 1 (
-    echo npm install に失敗しました。
-    pause
-    exit /b 1
-  )
-)
-
-echo 印刷エージェントを起動します。この黒い窓を閉じると印刷が止まります。
+echo Node不要の PowerShell エージェントを起動します。
+echo この黒い窓を閉じると印刷が止まります。
 echo.
-node "./scripts/print-agent.mjs"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0print-agent.ps1"
 echo.
 echo エージェントが終了しました。
 pause

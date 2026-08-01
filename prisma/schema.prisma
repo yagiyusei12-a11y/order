@@ -34,7 +34,26 @@ model Store {
   cashDrawerEntries CashDrawerEntry[]
   storeGames       StoreGame[]
   menuDiscontinueBallots MenuDiscontinueBallot[]
+  printJobs        PrintJob[]
   createdAt        DateTime             @default(now())
+}
+
+/// 店舗LANサーマル向け印刷ジョブ（PCエージェントが取得して印字）
+model PrintJob {
+  id         String    @id @default(cuid())
+  storeId    String
+  /// receipt | kitchen | table_qr
+  kind       String
+  /// pending | done | failed | cancelled
+  status     String    @default("pending")
+  /// { lines: string[], target: "receipt"|"kitchen", meta?: object }
+  payload    Json
+  error      String?
+  createdAt  DateTime  @default(now())
+  printedAt  DateTime?
+  store      Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, status, createdAt])
 }
 
 /// QR経由の匿名端末会員（店舗スコープ）。端末IDで識別し、名前・電話は任意。

@@ -32,6 +32,7 @@ import {
 import { mergeStoreSettings } from "../lib/store-settings.js";
 import { prisma } from "../db.js";
 import { broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
+import { enqueueKitchenPrintForSalesOrder } from "../lib/thermal-print.js";
 
 function parsePurchasedCourseOptionPackIds(raw: unknown): string[] {
   if (raw == null) return [];
@@ -632,6 +633,9 @@ export async function registerStaffVerbalOrders(app: FastifyInstance): Promise<v
       });
 
       broadcastOpsSessionUpdated(store.id, session.id);
+      if (order?.id) {
+        void enqueueKitchenPrintForSalesOrder(order.id);
+      }
       return order;
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";

@@ -304,6 +304,25 @@
       </label>
       <button type="button" class="btn-primary" id="btnSaveOpsReceiptPrint" style="margin-top:0.75rem">レシート項目を保存</button>
     </div>
+    <div class="card" style="margin-top:1rem;border-color:#fb923c">
+      <strong style="font-size:0.9rem">店舗LANサーマルプリンタ（PCエージェント）</strong>
+      <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
+        レジ用（Q806K など）とキッチン用（SUNMI など）の IP を登録します。VPS からは届かないため、店内PCで
+        <code>npm run print-agent</code>
+        を常時起動し、スタッフとしてログインしたトークンでジョブを取得・印字します。
+      </p>
+      <label for="stThermalReceiptIp" style="font-size:0.78rem">レジプリンタ IP</label>
+      <input id="stThermalReceiptIp" type="text" placeholder="例: 192.168.1.50" maxlength="64" style="width:100%;margin:0.2rem 0 0.5rem" />
+      <label for="stThermalKitchenIp" style="font-size:0.78rem">キッチンプリンタ IP</label>
+      <input id="stThermalKitchenIp" type="text" placeholder="例: 192.168.1.51" maxlength="64" style="width:100%;margin:0.2rem 0 0.5rem" />
+      <label for="stThermalPort" style="font-size:0.78rem">ポート（既定 9100）</label>
+      <input id="stThermalPort" type="number" min="1" max="65535" step="1" style="width:8rem;margin:0.2rem 0 0.5rem" />
+      <label class="row" style="align-items:center;gap:0.45rem;font-size:0.84rem;margin:0.35rem 0">
+        <input type="checkbox" id="stThermalKitchenAuto" />
+        <span>注文が入ったらキッチン伝票を自動印刷（卓名・品名・数量・オプション）</span>
+      </label>
+      <button type="button" class="btn-primary" id="btnSaveThermalPrinters" style="margin-top:0.5rem">プリンタ設定を保存</button>
+    </div>
     <div class="card" style="margin-top:1rem;border-color:#38bdf8">
       <strong style="font-size:0.9rem">領収書（OPS）に載せる項目</strong>
       <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">

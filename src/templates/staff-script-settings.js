@@ -979,6 +979,20 @@ function syncOpsPrintFieldsFromSettings(s) {
   setChk("stPrIfDisc", false, inv, "billDiscount");
   setChk("stPrIfSess", false, inv, "sessionTableInfo");
   setChk("stPrIfTaxFullWhenPart", false, inv, "taxBreakdownFullBillWhenPartial");
+  const rip = document.getElementById("stThermalReceiptIp");
+  if (rip) rip.value = typeof s.thermalReceiptPrinterIp === "string" ? s.thermalReceiptPrinterIp : "";
+  const kip = document.getElementById("stThermalKitchenIp");
+  if (kip) kip.value = typeof s.thermalKitchenPrinterIp === "string" ? s.thermalKitchenPrinterIp : "";
+  const portEl = document.getElementById("stThermalPort");
+  if (portEl) {
+    portEl.value = String(
+      typeof s.thermalPrinterPort === "number" && Number.isFinite(s.thermalPrinterPort)
+        ? s.thermalPrinterPort
+        : 9100
+    );
+  }
+  const autoEl = document.getElementById("stThermalKitchenAuto");
+  if (autoEl) autoEl.checked = s.thermalKitchenAutoPrint === true;
 }
 
 function syncOpsPrintLegalProfileFromSettings(s) {
@@ -2863,6 +2877,33 @@ if (btnSaveOpsReceiptPrint) {
         body: JSON.stringify({ settings: { opsReceiptPrintFields: collectOpsReceiptPrintFieldsFromUi() } }),
       });
       log("レシート印字項目を保存しました");
+      await loadAll();
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+}
+
+const btnSaveThermalPrinters = document.getElementById("btnSaveThermalPrinters");
+if (btnSaveThermalPrinters) {
+  btnSaveThermalPrinters.onclick = async () => {
+    log("");
+    if (!requireManagerForSettings()) return;
+    const portRaw = parseInt(String(document.getElementById("stThermalPort")?.value || "9100"), 10);
+    try {
+      await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          settings: {
+            thermalReceiptPrinterIp: String(document.getElementById("stThermalReceiptIp")?.value || "").trim(),
+            thermalKitchenPrinterIp: String(document.getElementById("stThermalKitchenIp")?.value || "").trim(),
+            thermalPrinterPort: Number.isFinite(portRaw) ? portRaw : 9100,
+            thermalKitchenAutoPrint: document.getElementById("stThermalKitchenAuto")?.checked === true,
+          },
+        }),
+      });
+      log("プリンタ設定を保存しました");
       await loadAll();
     } catch (e) {
       log(String(e.message || e));

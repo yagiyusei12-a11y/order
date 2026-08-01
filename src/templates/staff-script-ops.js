@@ -2199,6 +2199,22 @@ async function printReceiptOrBrowser(html, plainLines) {
       log(String(e.message || e));
     }
   }
+  // 店舗LANサーマル（PC印刷エージェント）向けジョブ
+  try {
+    var st = storeSettingsCache || {};
+    var receiptIp = st.thermalReceiptPrinterIp && String(st.thermalReceiptPrinterIp).trim();
+    if (receiptIp) {
+      await api("/stores/" + encodeURIComponent(STORE) + "/print-jobs/receipt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lines: linesToPrint }),
+      });
+      log("レシート印刷ジョブを投入しました（印刷エージェントが印字します）");
+      return;
+    }
+  } catch (e) {
+    log(String(e.message || e));
+  }
   printHtml(html);
 }
 

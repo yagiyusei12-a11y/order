@@ -28,6 +28,7 @@ import {
   SET_SERVE_LATER_LINE_KIND,
 } from "../lib/set-order-bundle.js";
 import { broadcastOpsSessionUpdated } from "../lib/ops-seat-socket.js";
+import { enqueueKitchenPrintForSalesOrder } from "../lib/thermal-print.js";
 import { resolveGuestBillingContext } from "../lib/guest-billing-context.js";
 import { setGuestAlcoholForOpenSessionsOnTable } from "../lib/guest-alcohol-table.js";
 import {
@@ -1800,6 +1801,9 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         });
       });
       broadcastOpsSessionUpdated(orderStoreId, billingId);
+      if (order?.id) {
+        void enqueueKitchenPrintForSalesOrder(order.id);
+      }
       return order;
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";

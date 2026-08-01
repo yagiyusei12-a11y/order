@@ -228,6 +228,15 @@ export type StoreSettingsShape = {
   opsInvoicePrintFields: OpsInvoicePrintFields;
   /** OPS レシート・領収書の事業者表記・登録番号など */
   opsPrintLegalProfile: OpsPrintLegalProfile;
+  /**
+   * 店舗LANサーマル（PC印刷エージェント用）。
+   * VPSからは届かないため、店内PCのエージェントがジョブを取得して印字する。
+   */
+  thermalReceiptPrinterIp: string;
+  thermalKitchenPrinterIp: string;
+  thermalPrinterPort: number;
+  /** true のとき新規注文でキッチン印刷ジョブを自動投入 */
+  thermalKitchenAutoPrint: boolean;
   billCorrectionPolicy: BillCorrectionPolicy;
   /** 日次在庫リセットを有効にする（店舗 TZ の stockDailyResetTimeMin に実行） */
   stockDailyResetEnabled: boolean;
@@ -463,6 +472,10 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     opsReceiptPrintFields: { ...DEFAULT_OPS_RECEIPT_PRINT_FIELDS },
     opsInvoicePrintFields: { ...DEFAULT_OPS_INVOICE_PRINT_FIELDS },
     opsPrintLegalProfile: { ...DEFAULT_OPS_PRINT_LEGAL_PROFILE },
+    thermalReceiptPrinterIp: "",
+    thermalKitchenPrinterIp: "",
+    thermalPrinterPort: 9100,
+    thermalKitchenAutoPrint: false,
     billCorrectionPolicy: {
       enabled: true,
       payments: true,
@@ -668,6 +681,19 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
   d.opsReceiptPrintFields = mergeOpsReceiptPrintFields(o.opsReceiptPrintFields);
   d.opsInvoicePrintFields = mergeOpsInvoicePrintFields(o.opsInvoicePrintFields);
   d.opsPrintLegalProfile = mergeOpsPrintLegalProfile(o.opsPrintLegalProfile);
+  if (typeof o.thermalReceiptPrinterIp === "string") {
+    d.thermalReceiptPrinterIp = o.thermalReceiptPrinterIp.trim().slice(0, 64);
+  }
+  if (typeof o.thermalKitchenPrinterIp === "string") {
+    d.thermalKitchenPrinterIp = o.thermalKitchenPrinterIp.trim().slice(0, 64);
+  }
+  if (typeof o.thermalPrinterPort === "number" && Number.isFinite(o.thermalPrinterPort)) {
+    const p = Math.round(o.thermalPrinterPort);
+    if (p >= 1 && p <= 65535) d.thermalPrinterPort = p;
+  }
+  if (typeof o.thermalKitchenAutoPrint === "boolean") {
+    d.thermalKitchenAutoPrint = o.thermalKitchenAutoPrint;
+  }
   if (o.billCorrectionPolicy && typeof o.billCorrectionPolicy === "object" && !Array.isArray(o.billCorrectionPolicy)) {
     const p = o.billCorrectionPolicy as Record<string, unknown>;
     if (typeof p.enabled === "boolean") d.billCorrectionPolicy.enabled = p.enabled;

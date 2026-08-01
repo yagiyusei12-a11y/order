@@ -308,8 +308,15 @@
       <strong style="font-size:0.9rem">店舗LANサーマルプリンタ（PCエージェント）</strong>
       <p class="muted" style="font-size:0.75rem;margin:0.25rem 0 0.65rem">
         レジ用（Q806K など）とキッチン用（SUNMI など）の IP を登録します。VPS からは店内LANに届かないため、店のPCで印刷エージェントを常時起動してください。
-        <strong>おすすめ:</strong> <code>exports\morder-print-agent\morder-print-agent.exe</code> だけをUSB等で渡し、ダブルクリック（orderフォルダ・Node不要）。初回のみスタッフログイン。黒い窓を閉じると印刷が止まります。
-        再ビルドは <code>scripts\build-print-agent-exe.ps1</code>。
+        下のボタンから exe をダウンロードし、ダブルクリックで起動（orderフォルダ・Node不要）。初回のみスタッフログイン。黒い窓を閉じると印刷が止まります。
+      </p>
+      <p style="margin:0 0 0.75rem">
+        <a
+          class="btn-primary"
+          href="/stores/__STORE_PATH__/print-agent/download"
+          style="text-decoration:none;display:inline-block;width:auto"
+          download="morder-print-agent.exe"
+        >印刷エージェントをダウンロード（exe）</a>
       </p>
       <label for="stThermalReceiptIp" style="font-size:0.78rem">レジプリンタ IP</label>
       <input id="stThermalReceiptIp" type="text" placeholder="例: 192.168.1.50" maxlength="64" style="width:100%;margin:0.2rem 0 0.5rem" />

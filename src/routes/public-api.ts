@@ -66,6 +66,8 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
         id: c.id,
         name: c.name,
         kind: c.kind,
+        guestStartConfirmImageUrl: c.guestStartConfirmImageUrl || null,
+        guestStartConfirmText: c.guestStartConfirmText || null,
         priceTiers: c.priceTiers.map((t) => ({
           id: t.id,
           durationMinutes: t.durationMinutes,

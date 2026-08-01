@@ -136,6 +136,22 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
     return reply.type(ct).header("Cache-Control", "public, max-age=86400").send(createReadStream(p));
   });
 
+  app.get<{ Params: { name: string } }>("/uploads/courses/:name", async (req, reply) => {
+    const raw = req.params.name;
+    if (!/^[a-zA-Z0-9._-]+$/.test(raw)) return reply.code(400).send({ error: "bad file name" });
+    const p = join(process.cwd(), "uploads", "courses", raw);
+    if (!existsSync(p)) return reply.code(404).send({ error: "file not found" });
+    const lc = raw.toLowerCase();
+    const ct = lc.endsWith(".png")
+      ? "image/png"
+      : lc.endsWith(".webp")
+        ? "image/webp"
+        : lc.endsWith(".gif")
+          ? "image/gif"
+          : "image/jpeg";
+    return reply.type(ct).header("Cache-Control", "public, max-age=86400").send(createReadStream(p));
+  });
+
   app.get<{ Params: { storeId: string; name: string } }>(
     "/uploads/notification-sounds/:storeId/:name",
     async (req, reply) => {

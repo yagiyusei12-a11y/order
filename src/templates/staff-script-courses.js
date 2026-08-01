@@ -966,6 +966,50 @@ function render() {
     slotsBtns.appendChild(addSlotBtn);
     slotsBtns.appendChild(saveSlotsBtn);
 
+    const confirmLab = document.createElement("div");
+    confirmLab.className = "muted";
+    confirmLab.style.cssText = "font-size:0.72rem;margin-top:0.65rem;line-height:1.4";
+    confirmLab.textContent =
+      "ゲスト開始前の確認（画像URL・説明文のどちらかがあれば、卓QRでOK確認後に開始）";
+    const confirmImg = document.createElement("input");
+    confirmImg.type = "text";
+    confirmImg.value = c.guestStartConfirmImageUrl || "";
+    confirmImg.placeholder = "例: /uploads/courses/senbero-confirm.png";
+    confirmImg.style.marginTop = "0.25rem";
+    confirmImg.title = "確認画像URL";
+    const confirmTxt = document.createElement("textarea");
+    confirmTxt.rows = 4;
+    confirmTxt.value = c.guestStartConfirmText || "";
+    confirmTxt.placeholder = "確認画面に出す説明文（改行可）";
+    confirmTxt.style.cssText =
+      "width:100%;margin-top:0.35rem;box-sizing:border-box;font-family:inherit;font-size:0.82rem";
+    const saveConfirmBtn = document.createElement("button");
+    saveConfirmBtn.type = "button";
+    saveConfirmBtn.className = "btn-ghost";
+    saveConfirmBtn.style.marginTop = "0.35rem";
+    saveConfirmBtn.textContent = "開始確認の内容を保存";
+    saveConfirmBtn.onclick = async () => {
+      log("");
+      try {
+        const imageUrl = confirmImg.value.trim();
+        const text = confirmTxt.value.trim();
+        await api("/stores/" + encodeURIComponent(STORE) + "/courses/" + encodeURIComponent(c.id), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            guestStartConfirmImageUrl: imageUrl || null,
+            guestStartConfirmText: text || null,
+          }),
+        });
+        c.guestStartConfirmImageUrl = imageUrl || null;
+        c.guestStartConfirmText = text || null;
+        log("開始確認の内容を保存しました");
+        await loadAll();
+      } catch (e) {
+        log(String(e.message || e));
+      }
+    };
+
     const guestCapLab = document.createElement("label");
     guestCapLab.style.cssText =
       "display:flex;align-items:flex-start;gap:0.4rem;margin-top:0.45rem;font-size:0.82rem;cursor:pointer;line-height:1.4";
@@ -1110,6 +1154,10 @@ function render() {
     actions.appendChild(slotsLab);
     actions.appendChild(slotsBox);
     actions.appendChild(slotsBtns);
+    actions.appendChild(confirmLab);
+    actions.appendChild(confirmImg);
+    actions.appendChild(confirmTxt);
+    actions.appendChild(saveConfirmBtn);
     actions.appendChild(guestCapLab);
     actions.appendChild(labTiers);
     actions.appendChild(tierBox);

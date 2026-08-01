@@ -2053,6 +2053,8 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       active?: boolean;
       visibleToGuest?: boolean;
       guestVisibleSlots?: unknown;
+      guestStartConfirmImageUrl?: string | null;
+      guestStartConfirmText?: string | null;
       includedItemsUnlimited?: boolean;
       menuItemIds?: unknown;
       includedMenuLinks?: unknown;
@@ -2071,6 +2073,8 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       visibleToGuest?: boolean;
       includedItemsUnlimited?: boolean;
       guestVisibleSlots?: CourseGuestVisibleSlot[];
+      guestStartConfirmImageUrl?: string | null;
+      guestStartConfirmText?: string | null;
     } = {};
     if (typeof req.body?.name === "string") {
       const n = req.body.name.trim();
@@ -2090,6 +2094,30 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     }
     if (typeof req.body?.includedItemsUnlimited === "boolean") {
       data.includedItemsUnlimited = req.body.includedItemsUnlimited;
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "guestStartConfirmImageUrl")) {
+      const raw = req.body?.guestStartConfirmImageUrl;
+      if (raw === null || raw === "") {
+        data.guestStartConfirmImageUrl = null;
+      } else if (typeof raw === "string") {
+        const u = raw.trim();
+        if (u.length > 2048) return reply.code(400).send({ error: "guestStartConfirmImageUrl too long" });
+        data.guestStartConfirmImageUrl = u || null;
+      } else {
+        return reply.code(400).send({ error: "guestStartConfirmImageUrl must be string or null" });
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "guestStartConfirmText")) {
+      const raw = req.body?.guestStartConfirmText;
+      if (raw === null || raw === "") {
+        data.guestStartConfirmText = null;
+      } else if (typeof raw === "string") {
+        const t = raw.trim();
+        if (t.length > 4000) return reply.code(400).send({ error: "guestStartConfirmText too long" });
+        data.guestStartConfirmText = t || null;
+      } else {
+        return reply.code(400).send({ error: "guestStartConfirmText must be string or null" });
+      }
     }
 
     const bodyObj = req.body && typeof req.body === "object" ? req.body : null;

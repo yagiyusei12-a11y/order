@@ -272,6 +272,10 @@ model Course {
   visibleToGuest Boolean        @default(true)
   /// ゲスト卓QRでの表示時間帯（店舗TZ・分単位）。空/[] なら visibleToGuest 時は終日。例: [{startMin:660,endMin:780},{startMin:1020,endMin:1110}]
   guestVisibleSlots Json        @default("[]")
+  /// ゲストがこのコースを選んで開始する前に表示する確認画像URL（任意）
+  guestStartConfirmImageUrl String?
+  /// 同上・確認テキスト（任意・改行可）。画像かテキストのどちらかがあれば確認画面を出す
+  guestStartConfirmText     String?
   /// true=食べ放題等（コース内単品に来店人数上限なし）。false=来店人数まで
   includedItemsUnlimited Boolean @default(true)
   store       Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)

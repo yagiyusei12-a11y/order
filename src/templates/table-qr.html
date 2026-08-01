@@ -40,6 +40,30 @@
     #loading { color: var(--muted); text-align: center; padding: 2rem 0; }
     .hint { font-size: 0.72rem; color: var(--muted); margin-top: 0.75rem; line-height: 1.5; }
     #choiceIntro { margin: 0 0 0.75rem; line-height: 1.5; }
+    .confirm-overlay {
+      position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,.72);
+      display: flex; align-items: flex-end; justify-content: center;
+      padding: 0.75rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom));
+      overflow: auto;
+    }
+    @media (min-height: 720px) {
+      .confirm-overlay { align-items: center; }
+    }
+    .confirm-sheet {
+      width: 100%; max-width: 26rem; max-height: min(92vh, 40rem);
+      background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+      padding: 0.85rem 0.85rem 1rem; display: flex; flex-direction: column; gap: 0.65rem;
+      overflow: auto;
+    }
+    .confirm-sheet h2 { margin: 0; font-size: 1.05rem; font-weight: 800; }
+    .confirm-sheet img {
+      width: 100%; height: auto; border-radius: 10px; display: block;
+      background: #0f141c;
+    }
+    .confirm-text {
+      margin: 0; white-space: pre-wrap; font-size: 0.86rem; line-height: 1.55; color: var(--text);
+    }
+    .confirm-actions { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.15rem; }
   </style>
 </head>
 <body>
@@ -140,6 +164,7 @@
     function renderCourseRadios(courses, store) {
       const box = document.getElementById("courseRadios");
       box.innerHTML = "";
+      window.__tableCoursesById = {};
       const courseMode = store && store.coursePriceTaxMode === "exclusive" ? "exclusive" : "inclusive";
       const taxRatePercent = store && store.taxRatePercent != null ? Number(store.taxRatePercent) : 10;
       const suffix = courseMode === "exclusive" ? "（税抜）" : "（税込）";
@@ -152,6 +177,7 @@
         "\" value=\"\" checked /><div><strong>単品メニュー</strong><div class=\"course-meta\">コースなし・全メニューから注文</div></div>";
       box.appendChild(none);
       for (const c of courses || []) {
+        window.__tableCoursesById[c.id] = c;
         const tiers = c.priceTiers || [];
         for (let i = 0; i < tiers.length; i++) {
           const t = tiers[i];
@@ -189,6 +215,75 @@
           box.appendChild(lab);
         }
       }
+    }
+
+    function courseNeedsStartConfirm(course) {
+      if (!course) return false;
+      const img = course.guestStartConfirmImageUrl && String(course.guestStartConfirmImageUrl).trim();
+      const txt = course.guestStartConfirmText && String(course.guestStartConfirmText).trim();
+      return !!(img || txt);
+    }
+
+    /** @returns {Promise<boolean>} true=OKで続行 */
+    function showCourseStartConfirm(course) {
+      return new Promise(function (resolve) {
+        const existing = document.getElementById("courseConfirmOverlay");
+        if (existing) existing.remove();
+        const overlay = document.createElement("div");
+        overlay.id = "courseConfirmOverlay";
+        overlay.className = "confirm-overlay";
+        overlay.setAttribute("role", "dialog");
+        overlay.setAttribute("aria-modal", "true");
+        const sheet = document.createElement("div");
+        sheet.className = "confirm-sheet";
+        const title = document.createElement("h2");
+        title.textContent = String(course.name || "コース内容の確認");
+        sheet.appendChild(title);
+        const imgUrl = course.guestStartConfirmImageUrl && String(course.guestStartConfirmImageUrl).trim();
+        if (imgUrl) {
+          const img = document.createElement("img");
+          img.src = imgUrl;
+          img.alt = String(course.name || "コース案内");
+          img.loading = "eager";
+          sheet.appendChild(img);
+        }
+        const txt = course.guestStartConfirmText && String(course.guestStartConfirmText).trim();
+        if (txt) {
+          const p = document.createElement("p");
+          p.className = "confirm-text";
+          p.textContent = txt;
+          sheet.appendChild(p);
+        }
+        const actions = document.createElement("div");
+        actions.className = "confirm-actions";
+        const ok = document.createElement("button");
+        ok.type = "button";
+        ok.className = "primary";
+        ok.textContent = "OK・注文を始める";
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.className = "secondary";
+        cancel.textContent = "もどる";
+        function finish(okVal) {
+          overlay.remove();
+          resolve(okVal);
+        }
+        ok.onclick = function () {
+          finish(true);
+        };
+        cancel.onclick = function () {
+          finish(false);
+        };
+        overlay.addEventListener("click", function (ev) {
+          if (ev.target === overlay) finish(false);
+        });
+        actions.appendChild(ok);
+        actions.appendChild(cancel);
+        sheet.appendChild(actions);
+        overlay.appendChild(sheet);
+        document.body.appendChild(overlay);
+        ok.focus();
+      });
     }
 
     function fmtSessionWhen(iso) {
@@ -470,6 +565,12 @@
             const parts = String(courseVal).split("|");
             courseId = parts[0] || null;
             if (parts[1]) coursePriceTierId = parts[1];
+          }
+          const courseMeta =
+            courseId && window.__tableCoursesById ? window.__tableCoursesById[courseId] : null;
+          if (courseNeedsStartConfirm(courseMeta)) {
+            const okConfirm = await showCourseStartConfirm(courseMeta);
+            if (!okConfirm) return;
           }
           const btn = document.getElementById("btnStart");
           btn.disabled = true;

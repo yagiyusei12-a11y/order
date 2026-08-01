@@ -144,7 +144,7 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
         maxAge: staffJwtCookieMaxAgeSeconds(),
       });
 
-      return { ok: true, storeId: user.storeId, email: user.email };
+      return { ok: true, storeId: user.storeId, email: user.email, token };
     });
   });
 

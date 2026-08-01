@@ -1,33 +1,171 @@
 /**
  * 店舗LANサーマル印刷エージェント（Windows PC 向け）
  *
- * 使い方:
- *   1. 店舗設定でレジ／キッチン IP を保存し、キッチン自動印刷をオン
- *   2. スタッフでログインして Cookie を使うか、PRINT_AGENT_COOKIE を渡す
- *   3. 店内PCで常時起動:
- *        set PRINT_AGENT_STORE=pitsusaro
- *        set PRINT_AGENT_BASE=https://morder.harunoyukoto.jp
- *        set PRINT_AGENT_COOKIE=staff_token=...
- *        npm run print-agent
+ * 使い方（推奨）:
+ *   scripts\印刷エージェント起動.bat をダブルクリック
+ *   初回のみ 店舗ID / メール / パスワード を入力（トークンは AppData に保存）
  *
- * Cookie の取り方（Chrome）:
- *   ログイン後 DevTools → Application → Cookies → staff_token の値
+ * 環境変数（任意・優先）:
+ *   PRINT_AGENT_STORE / PRINT_AGENT_BASE / PRINT_AGENT_COOKIE / PRINT_AGENT_POLL_MS
  */
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import readline from "node:readline/promises";
+import { stdin as input, stdout as output } from "node:process";
 import net from "node:net";
 import iconv from "iconv-lite";
 
-const BASE = (process.env.PRINT_AGENT_BASE || "https://morder.harunoyukoto.jp").replace(/\/$/, "");
-const STORE = process.env.PRINT_AGENT_STORE || "";
-const COOKIE = process.env.PRINT_AGENT_COOKIE || "";
+const COOKIE_NAME = "access";
+const CONFIG_DIR = path.join(
+  process.env.APPDATA || path.join(os.homedir(), ".config"),
+  "morder-print-agent",
+);
+const CONFIG_PATH = path.join(CONFIG_DIR, "config.json");
+const DEFAULT_BASE = "https://morder.harunoyukoto.jp";
+const DEFAULT_STORE = "pitsusaro";
+
 const POLL_MS = Math.max(800, parseInt(process.env.PRINT_AGENT_POLL_MS || "1500", 10) || 1500);
 
-if (!STORE) {
-  console.error("PRINT_AGENT_STORE is required (e.g. pitsusaro)");
-  process.exit(1);
+/** @type {{ baseUrl: string, storeId: string, email: string, token: string }} */
+let config = {
+  baseUrl: DEFAULT_BASE,
+  storeId: "",
+  email: "",
+  token: "",
+};
+
+function loadConfigFile() {
+  try {
+    const raw = fs.readFileSync(CONFIG_PATH, "utf8");
+    const j = JSON.parse(raw);
+    if (j && typeof j === "object") {
+      return {
+        baseUrl: String(j.baseUrl || DEFAULT_BASE).replace(/\/$/, ""),
+        storeId: String(j.storeId || "").trim().toLowerCase(),
+        email: String(j.email || "").trim(),
+        token: String(j.token || "").trim(),
+      };
+    }
+  } catch (_) {}
+  return null;
 }
-if (!COOKIE) {
-  console.error("PRINT_AGENT_COOKIE is required (e.g. staff_token=....)");
-  process.exit(1);
+
+function saveConfig() {
+  fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  fs.writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify(
+      {
+        baseUrl: config.baseUrl,
+        storeId: config.storeId,
+        email: config.email,
+        token: config.token,
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+  console.log(`設定を保存しました: ${CONFIG_PATH}`);
+}
+
+function cookieHeader() {
+  const fromEnv = (process.env.PRINT_AGENT_COOKIE || "").trim();
+  if (fromEnv) {
+    return fromEnv.includes("=") ? fromEnv : `${COOKIE_NAME}=${fromEnv}`;
+  }
+  return `${COOKIE_NAME}=${config.token}`;
+}
+
+function baseUrl() {
+  return (process.env.PRINT_AGENT_BASE || config.baseUrl || DEFAULT_BASE).replace(/\/$/, "");
+}
+
+function storeId() {
+  return (process.env.PRINT_AGENT_STORE || config.storeId || "").trim().toLowerCase();
+}
+
+async function promptLine(rl, label, fallback = "") {
+  const hint = fallback ? ` [${fallback}]` : "";
+  const v = (await rl.question(`${label}${hint}: `)).trim();
+  return v || fallback;
+}
+
+async function loginInteractive(reason) {
+  const rl = readline.createInterface({ input, output });
+  try {
+    if (reason) console.log(reason);
+    console.log("スタッフログイン（パスワードは保存しません）");
+    const sid = await promptLine(rl, "店舗ID", storeId() || DEFAULT_STORE);
+    const email = await promptLine(rl, "メール", config.email || "");
+    const password = await promptLine(rl, "パスワード", "");
+    if (!sid || !email || !password) {
+      throw new Error("店舗ID・メール・パスワードは必須です");
+    }
+    const base = baseUrl();
+    const res = await fetch(`${base}/auth/login`, {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ storeId: sid, email, password }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j.error || res.statusText || String(res.status));
+    const token = String(j.token || "").trim();
+    if (!token) throw new Error("ログイン応答に token がありません（サーバー更新が必要です）");
+    config = {
+      baseUrl: base,
+      storeId: String(j.storeId || sid).trim().toLowerCase(),
+      email: String(j.email || email).trim(),
+      token,
+    };
+    saveConfig();
+  } finally {
+    rl.close();
+  }
+}
+
+async function maybeRegisterStartup() {
+  if (process.platform !== "win32") return;
+  if (process.env.PRINT_AGENT_SKIP_STARTUP_PROMPT === "1") return;
+  const startupDir = path.join(
+    process.env.APPDATA || "",
+    "Microsoft",
+    "Windows",
+    "Start Menu",
+    "Programs",
+    "Startup",
+  );
+  const startupBat = path.join(startupDir, "morder-print-agent.bat");
+  if (fs.existsSync(startupBat)) {
+    console.log("スタートアップ登録済みです。");
+    return;
+  }
+  if (!process.stdin.isTTY) return;
+
+  const rl = readline.createInterface({ input, output });
+  try {
+    const ans = (await rl.question("PC起動時に自動で始めますか？ (Y/N) [N]: ")).trim().toLowerCase();
+    if (ans !== "y" && ans !== "yes") return;
+    const scriptsDir = path.dirname(fileURLToPathSafe(import.meta.url));
+    const launcher = path.join(scriptsDir, "印刷エージェント起動.bat");
+    const root = path.resolve(scriptsDir, "..");
+    fs.mkdirSync(startupDir, { recursive: true });
+    const body = fs.existsSync(launcher)
+      ? `@echo off\r\nstart "" "${launcher}"\r\n`
+      : `@echo off\r\ncd /d "${root}"\r\nnode "./scripts/print-agent.mjs"\r\n`;
+    fs.writeFileSync(startupBat, body, "utf8");
+    console.log(`スタートアップに登録しました: ${startupBat}`);
+  } finally {
+    rl.close();
+  }
+}
+
+function fileURLToPathSafe(url) {
+  const u = new URL(url);
+  let p = decodeURIComponent(u.pathname);
+  if (process.platform === "win32" && /^\/[A-Za-z]:\//.test(p)) p = p.slice(1);
+  return path.normalize(p);
 }
 
 function escPosFromTextLines(lines) {
@@ -65,17 +203,22 @@ function sendTcp(host, port, bytes) {
   });
 }
 
-async function api(path, opts = {}) {
-  const res = await fetch(BASE + path, {
+async function api(pathSuffix, opts = {}) {
+  const res = await fetch(baseUrl() + pathSuffix, {
     ...opts,
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
-      Cookie: COOKIE.includes("=") ? COOKIE : `staff_token=${COOKIE}`,
+      Cookie: cookieHeader(),
       ...(opts.headers || {}),
     },
   });
   const j = await res.json().catch(() => ({}));
+  if (res.status === 401) {
+    const err = new Error(j.error || "unauthorized");
+    err.code = 401;
+    throw err;
+  }
   if (!res.ok) throw new Error(j.error || res.statusText || String(res.status));
   return j;
 }
@@ -85,7 +228,8 @@ function looksLikeIpv4(host) {
 }
 
 async function processOnce() {
-  const data = await api(`/stores/${encodeURIComponent(STORE)}/print-jobs?status=pending&take=10`);
+  const sid = storeId();
+  const data = await api(`/stores/${encodeURIComponent(sid)}/print-jobs?status=pending&take=10`);
   const printers = data.printers || {};
   const port = Number(printers.port) || 9100;
   const jobs = Array.isArray(data.jobs) ? data.jobs : [];
@@ -99,7 +243,7 @@ async function processOnce() {
       if (!lines.length) throw new Error("empty lines");
       const bytes = escPosFromTextLines(lines);
       await sendTcp(host, port, bytes);
-      await api(`/stores/${encodeURIComponent(STORE)}/print-jobs/${encodeURIComponent(job.id)}/complete`, {
+      await api(`/stores/${encodeURIComponent(sid)}/print-jobs/${encodeURIComponent(job.id)}/complete`, {
         method: "POST",
         body: JSON.stringify({ status: "done" }),
       });
@@ -108,7 +252,7 @@ async function processOnce() {
       const msg = String(e && e.message ? e.message : e);
       console.error(`[fail] ${job.id}: ${msg}`);
       try {
-        await api(`/stores/${encodeURIComponent(STORE)}/print-jobs/${encodeURIComponent(job.id)}/complete`, {
+        await api(`/stores/${encodeURIComponent(sid)}/print-jobs/${encodeURIComponent(job.id)}/complete`, {
           method: "POST",
           body: JSON.stringify({ status: "failed", error: msg }),
         });
@@ -117,12 +261,62 @@ async function processOnce() {
   }
 }
 
-console.log(`print-agent store=${STORE} base=${BASE} poll=${POLL_MS}ms`);
-for (;;) {
-  try {
-    await processOnce();
-  } catch (e) {
-    console.error("[poll]", e && e.message ? e.message : e);
+async function ensureAuth() {
+  const fromEnvCookie = (process.env.PRINT_AGENT_COOKIE || "").trim();
+  const fromEnvStore = (process.env.PRINT_AGENT_STORE || "").trim();
+  const file = loadConfigFile();
+  if (file) config = { ...config, ...file };
+
+  if (process.env.PRINT_AGENT_BASE) {
+    config.baseUrl = process.env.PRINT_AGENT_BASE.replace(/\/$/, "");
   }
-  await new Promise((r) => setTimeout(r, POLL_MS));
+  if (fromEnvStore) config.storeId = fromEnvStore.toLowerCase();
+
+  if (fromEnvCookie && storeId()) return;
+
+  if (!config.token || !config.storeId) {
+    await loginInteractive("初回設定: ログインが必要です。");
+    return;
+  }
 }
+
+async function main() {
+  await ensureAuth();
+  if (!storeId()) {
+    console.error("店舗IDがありません");
+    process.exit(1);
+  }
+  if (!process.env.PRINT_AGENT_COOKIE && !config.token) {
+    console.error("トークンがありません");
+    process.exit(1);
+  }
+
+  await maybeRegisterStartup();
+
+  console.log(`print-agent store=${storeId()} base=${baseUrl()} poll=${POLL_MS}ms`);
+  console.log("この窓を閉じると印刷が止まります。");
+
+  for (;;) {
+    try {
+      await processOnce();
+    } catch (e) {
+      if (e && e.code === 401) {
+        console.error("[auth] ログインの期限切れまたは無効です。");
+        try {
+          await loginInteractive("再ログインしてください。");
+        } catch (loginErr) {
+          console.error("[auth]", loginErr && loginErr.message ? loginErr.message : loginErr);
+          await new Promise((r) => setTimeout(r, 5000));
+        }
+      } else {
+        console.error("[poll]", e && e.message ? e.message : e);
+      }
+    }
+    await new Promise((r) => setTimeout(r, POLL_MS));
+  }
+}
+
+main().catch((e) => {
+  console.error(e && e.message ? e.message : e);
+  process.exit(1);
+});

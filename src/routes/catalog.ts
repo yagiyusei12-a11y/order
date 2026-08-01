@@ -2,6 +2,10 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { parseGuestHourFieldsFromBody } from "../lib/guest-category-hours.js";
+import {
+  parseCourseGuestVisibleSlotsFromBody,
+  type CourseGuestVisibleSlot,
+} from "../lib/guest-course-hours.js";
 import { pruneOrphanSetStructure } from "../lib/menu-set-cleanup.js";
 import { recipeInputPublicUrl, staffRequestOrigin } from "../lib/recipe-input-url.js";
 import { prisma } from "../db.js";
@@ -2048,6 +2052,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       kind?: string;
       active?: boolean;
       visibleToGuest?: boolean;
+      guestVisibleSlots?: unknown;
       includedItemsUnlimited?: boolean;
       menuItemIds?: unknown;
       includedMenuLinks?: unknown;
@@ -2065,6 +2070,7 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
       active?: boolean;
       visibleToGuest?: boolean;
       includedItemsUnlimited?: boolean;
+      guestVisibleSlots?: CourseGuestVisibleSlot[];
     } = {};
     if (typeof req.body?.name === "string") {
       const n = req.body.name.trim();
@@ -2087,6 +2093,11 @@ export async function registerCatalog(app: FastifyInstance): Promise<void> {
     }
 
     const bodyObj = req.body && typeof req.body === "object" ? req.body : null;
+    if (bodyObj) {
+      const slotsParsed = parseCourseGuestVisibleSlotsFromBody(bodyObj as Record<string, unknown>);
+      if (!slotsParsed.ok) return reply.code(400).send({ error: slotsParsed.error });
+      if (slotsParsed.action === "set") data.guestVisibleSlots = slotsParsed.slots;
+    }
     const syncMenu =
       bodyObj !== null && ("menuItemIds" in bodyObj || "includedMenuLinks" in bodyObj);
     const syncTiers = bodyObj !== null && "priceTiers" in bodyObj;

@@ -49,6 +49,43 @@ function formatTiersSummary(tiers) {
     .join(" / ");
 }
 
+function minutesToHm(min) {
+  const m = Math.max(0, Math.min(1439, Math.floor(Number(min) || 0)));
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return String(h).padStart(2, "0") + ":" + String(mm).padStart(2, "0");
+}
+
+function hmToMinutes(hm) {
+  const s = String(hm || "").trim();
+  const m = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (!Number.isFinite(h) || !Number.isFinite(min) || h < 0 || h > 23 || min < 0 || min > 59) return null;
+  return h * 60 + min;
+}
+
+function normalizeGuestSlots(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const row of raw) {
+    if (!row || typeof row !== "object") continue;
+    const s = row.startMin;
+    const e = row.endMin;
+    if (typeof s !== "number" || !Number.isInteger(s) || s < 0 || s > 1439) continue;
+    if (typeof e !== "number" || !Number.isInteger(e) || e < 0 || e > 1439) continue;
+    out.push({ startMin: s, endMin: e });
+  }
+  return out;
+}
+
+function formatGuestSlotsSummary(raw) {
+  const slots = normalizeGuestSlots(raw);
+  if (!slots.length) return "";
+  return slots.map((x) => minutesToHm(x.startMin) + "〜" + minutesToHm(x.endMin)).join("・");
+}
+
 function buildTierRowEl(t) {
   const mode = getCoursesPriceMode();
   const wrap = document.createElement("div");
@@ -778,6 +815,9 @@ function render() {
       "件" +
       (c.active ? "" : " · <strong>無効</strong>") +
       (c.visibleToGuest === false ? " · <strong>ゲスト非表示</strong>" : "") +
+      (formatGuestSlotsSummary(c.guestVisibleSlots)
+        ? " · ゲスト表示 " + escapeHtml(formatGuestSlotsSummary(c.guestVisibleSlots))
+        : "") +
       "</div>";
 
     const actions = document.createElement("div");
@@ -820,6 +860,111 @@ function render() {
         log(String(e.message || e));
       }
     });
+
+    const slotsLab = document.createElement("div");
+    slotsLab.className = "muted";
+    slotsLab.style.cssText = "font-size:0.72rem;margin-top:0.55rem;line-height:1.4";
+    slotsLab.textContent =
+      "ゲスト表示の時間帯（店舗タイムゾーン・空なら終日）。スタッフ／ハンディは常に選べます。";
+    const slotsBox = document.createElement("div");
+    slotsBox.style.cssText = "display:flex;flex-direction:column;gap:0.35rem;margin-top:0.25rem";
+    let slotDraft = normalizeGuestSlots(c.guestVisibleSlots).map((x) => ({
+      start: minutesToHm(x.startMin),
+      end: minutesToHm(x.endMin),
+    }));
+    if (slotDraft.length === 0) {
+      slotDraft = [];
+    }
+    function renderSlotRows() {
+      slotsBox.innerHTML = "";
+      if (slotDraft.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "muted";
+        empty.style.fontSize = "0.75rem";
+        empty.textContent = "時間帯なし（終日表示）";
+        slotsBox.appendChild(empty);
+      }
+      slotDraft.forEach((row, idx) => {
+        const line = document.createElement("div");
+        line.className = "row";
+        line.style.cssText = "gap:0.35rem;align-items:center;flex-wrap:wrap";
+        const startIn = document.createElement("input");
+        startIn.type = "time";
+        startIn.value = row.start;
+        startIn.style.width = "7.5rem";
+        startIn.title = "開始";
+        startIn.onchange = () => {
+          slotDraft[idx].start = startIn.value;
+        };
+        const tilde = document.createElement("span");
+        tilde.className = "muted";
+        tilde.textContent = "〜";
+        const endIn = document.createElement("input");
+        endIn.type = "time";
+        endIn.value = row.end;
+        endIn.style.width = "7.5rem";
+        endIn.title = "終了（この時刻まで表示）";
+        endIn.onchange = () => {
+          slotDraft[idx].end = endIn.value;
+        };
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "btn-ghost";
+        del.textContent = "削除";
+        del.onclick = () => {
+          slotDraft.splice(idx, 1);
+          renderSlotRows();
+        };
+        line.appendChild(startIn);
+        line.appendChild(tilde);
+        line.appendChild(endIn);
+        line.appendChild(del);
+        slotsBox.appendChild(line);
+      });
+    }
+    renderSlotRows();
+    const slotsBtns = document.createElement("div");
+    slotsBtns.className = "row";
+    slotsBtns.style.cssText = "gap:0.35rem;margin-top:0.25rem;flex-wrap:wrap";
+    const addSlotBtn = document.createElement("button");
+    addSlotBtn.type = "button";
+    addSlotBtn.className = "btn-ghost";
+    addSlotBtn.textContent = "+ 時間帯を追加";
+    addSlotBtn.onclick = () => {
+      slotDraft.push({ start: "11:00", end: "13:00" });
+      renderSlotRows();
+    };
+    const saveSlotsBtn = document.createElement("button");
+    saveSlotsBtn.type = "button";
+    saveSlotsBtn.className = "btn-primary";
+    saveSlotsBtn.textContent = "表示時間を保存";
+    saveSlotsBtn.onclick = async () => {
+      log("");
+      const slots = [];
+      for (let i = 0; i < slotDraft.length; i++) {
+        const s = hmToMinutes(slotDraft[i].start);
+        const e = hmToMinutes(slotDraft[i].end);
+        if (s == null || e == null) {
+          log("時間帯 " + (i + 1) + " の時刻が不正です");
+          return;
+        }
+        slots.push({ startMin: s, endMin: e });
+      }
+      try {
+        await api("/stores/" + encodeURIComponent(STORE) + "/courses/" + encodeURIComponent(c.id), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ guestVisibleSlots: slots }),
+        });
+        c.guestVisibleSlots = slots;
+        log(slots.length ? "ゲスト表示時間帯を保存しました" : "ゲスト表示を終日にしました");
+        await loadAll();
+      } catch (e) {
+        log(String(e.message || e));
+      }
+    };
+    slotsBtns.appendChild(addSlotBtn);
+    slotsBtns.appendChild(saveSlotsBtn);
 
     const guestCapLab = document.createElement("label");
     guestCapLab.style.cssText =
@@ -962,6 +1107,9 @@ function render() {
     actions.appendChild(labName);
     actions.appendChild(nm);
     actions.appendChild(guestVisLab);
+    actions.appendChild(slotsLab);
+    actions.appendChild(slotsBox);
+    actions.appendChild(slotsBtns);
     actions.appendChild(guestCapLab);
     actions.appendChild(labTiers);
     actions.appendChild(tierBox);

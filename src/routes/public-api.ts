@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
+import { isCourseGuestVisibleNow } from "../lib/guest-course-hours.js";
 import { openOrReuseSessionForTable } from "../lib/open-table-session.js";
 import { displayTableCode, tableDisplayLabel } from "../lib/table-display-code.js";
 import { evaluatePublicOrderGate } from "../lib/store-order-gate.js";
@@ -51,6 +52,7 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
     });
     const openSessions = openSessionsRows.map(sessionPayload);
     const session = openSessionsRows.length > 0 ? sessionPayload(openSessionsRows[0]) : null;
+    const now = new Date();
     const courses = await prisma.course.findMany({
       where: { storeId: table.storeId, active: true, visibleToGuest: true },
       orderBy: { name: "asc" },
@@ -58,18 +60,20 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
         priceTiers: { orderBy: [{ sortOrder: "asc" }, { durationMinutes: "asc" }] },
       },
     });
-    const coursesOut = courses.map((c) => ({
-      id: c.id,
-      name: c.name,
-      kind: c.kind,
-      priceTiers: c.priceTiers.map((t) => ({
-        id: t.id,
-        durationMinutes: t.durationMinutes,
-        pricePerPerson: t.pricePerPerson,
-        childPricePerPerson: t.childPricePerPerson,
-        sortOrder: t.sortOrder,
-      })),
-    }));
+    const coursesOut = courses
+      .filter((c) => isCourseGuestVisibleNow(c.guestVisibleSlots, st.timezone, now))
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        kind: c.kind,
+        priceTiers: c.priceTiers.map((t) => ({
+          id: t.id,
+          durationMinutes: t.durationMinutes,
+          pricePerPerson: t.pricePerPerson,
+          childPricePerPerson: t.childPricePerPerson,
+          sortOrder: t.sortOrder,
+        })),
+      }));
     return {
       storeId: table.storeId,
       orderGate: {

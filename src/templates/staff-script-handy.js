@@ -1134,6 +1134,38 @@ function renderSepCourseRadios(courses, store) {
   box.appendChild(none);
   for (const c of courses || []) {
     const tiers = c.priceTiers || [];
+    if (store && store.coursePricingByStayDuration === true) {
+      const id = "handySep-course-" + c.id;
+      const ladder = tiers
+        .slice()
+        .sort(function (a, b) {
+          return Number(a.durationMinutes || 0) - Number(b.durationMinutes || 0);
+        })
+        .map(function (t) {
+          const adultUnit =
+            courseMode === "exclusive"
+              ? netYenFromGross(t.pricePerPerson, taxRatePercent)
+              : Number(t.pricePerPerson);
+          return t.durationMinutes + "分/" + Number(adultUnit).toLocaleString("ja-JP") + "円";
+        })
+        .join("→");
+      const lab = document.createElement("label");
+      lab.className = "row";
+      lab.innerHTML =
+        "<input type=\"radio\" name=\"handySepCoursePick\" id=\"" +
+        escapeHtml(id) +
+        "\" value=\"" +
+        escapeHtml(c.id) +
+        "\" /><div><strong>" +
+        escapeHtml(c.name) +
+        "</strong><div class=\"handy-sep-course-meta\">滞在課金 · " +
+        escapeHtml(ladder) +
+        " · " +
+        escapeHtml(c.kind || "") +
+        "</div></div>";
+      box.appendChild(lab);
+      continue;
+    }
     for (let i = 0; i < tiers.length; i++) {
       const t = tiers[i];
       const id = "handySep-course-" + c.id + "-" + t.id;
@@ -1203,6 +1235,9 @@ function handySessionCourseLabel(session) {
 function handyCourseSelectValue(session) {
   if (!session || !session.courseId) return "";
   const cid = String(session.courseId);
+  const stayMode =
+    handySeparateSettingsCache && handySeparateSettingsCache.coursePricingByStayDuration === true;
+  if (stayMode) return cid;
   const tierId =
     session.coursePriceTierId != null && String(session.coursePriceTierId).trim()
       ? String(session.coursePriceTierId)
@@ -1250,6 +1285,24 @@ function populateHandyCourseSelect(session) {
   sel.appendChild(none);
   for (const c of courses) {
     const tiers = c.priceTiers || [];
+    if (store.coursePricingByStayDuration === true) {
+      const opt = document.createElement("option");
+      opt.value = c.id;
+      const ladder = tiers
+        .slice()
+        .sort((a, b) => Number(a.durationMinutes || 0) - Number(b.durationMinutes || 0))
+        .map((t) => {
+          const adultUnit =
+            courseMode === "exclusive"
+              ? netYenFromGross(t.pricePerPerson, taxRatePercent)
+              : Number(t.pricePerPerson);
+          return String(t.durationMinutes) + "分/" + Number(adultUnit).toLocaleString("ja-JP") + "円";
+        })
+        .join("→");
+      opt.textContent = String(c.name || "コース") + " · 滞在課金 · " + ladder;
+      sel.appendChild(opt);
+      continue;
+    }
     for (const t of tiers) {
       const opt = document.createElement("option");
       opt.value = c.id + "|" + t.id;

@@ -51,7 +51,7 @@ import {
   guestLastOrderPolicyIsSinglesOnlyMode,
 } from "../lib/guest-last-order.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
-import { liveSessionSuggestedTotal } from "../lib/session-live-total.js";
+import { liveSessionSuggestedTotalWithStay } from "../lib/session-live-total.js";
 import { displayTableCode } from "../lib/table-display-code.js";
 import { mergeTwoOpenSessionsTx } from "../lib/session-merge.js";
 import {
@@ -1968,8 +1968,14 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         courseId: true,
         guestCount: true,
         childCount: true,
+        openedAt: true,
         coursePriceTier: {
-          select: { durationMinutes: true, pricePerPerson: true, childPricePerPerson: true },
+          select: {
+            id: true,
+            durationMinutes: true,
+            pricePerPerson: true,
+            childPricePerPerson: true,
+          },
         },
         bill: { select: { status: true, discountJson: true } },
         course: { select: { id: true, name: true } },
@@ -1977,13 +1983,14 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     });
     const currentOrderTotal =
       stSet.guestShowMenuPrices && billingSessionRow
-        ? liveSessionSuggestedTotal({
+        ? await liveSessionSuggestedTotalWithStay(prisma, session.storeId, {
             courseId: billingSessionRow.courseId,
             guestCount: billingSessionRow.guestCount,
             childCount: billingSessionRow.childCount,
             coursePriceTier: billingSessionRow.coursePriceTier,
             orders,
             bill: billingSessionRow.bill,
+            openedAt: billingSessionRow.openedAt,
           })
         : null;
     return {

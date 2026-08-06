@@ -1,5 +1,6 @@
 import { prisma } from "../db.js";
 import { isCourseGuestVisibleNow } from "./guest-course-hours.js";
+import { pickStayModeStartTierId } from "./effective-course-tier.js";
 import { mergeStoreSettings } from "./store-settings.js";
 
 export type ResolveTierResult =
@@ -27,6 +28,7 @@ async function assertGuestCourseVisibleNow(
  * - コースなし: 両方 null
  * - tier id のみ: courseId をティアから補完（公開API向け）
  * - courseId のみ: ティアが1件なら自動採用、複数なら tierId 必須
+ * - 滞在課金モードで courseId のみ（複数帯）: 最長帯をラストオーダー用に採用（会計額は都度再計算）
  */
 export async function resolveCourseAndTierForSession(options: {
   storeId: string;
@@ -46,6 +48,12 @@ export async function resolveCourseAndTierForSession(options: {
     ...(options.requireVisibleToGuest ? { visibleToGuest: true as const } : {}),
   };
 
+  const storeRow = await prisma.store.findUnique({
+    where: { id: options.storeId },
+    select: { settings: true },
+  });
+  const stayMode = mergeStoreSettings(storeRow?.settings).coursePricingByStayDuration;
+
   if (tierIdRaw) {
     const tier = await prisma.coursePriceTier.findFirst({
       where: { id: tierIdRaw, course: courseWhere },
@@ -64,6 +72,10 @@ export async function resolveCourseAndTierForSession(options: {
       if (blocked) return blocked;
     }
     courseId = tier.courseId;
+    if (stayMode) {
+      const longestId = await pickStayModeStartTierId(prisma, courseId);
+      return { ok: true, courseId, coursePriceTierId: longestId ?? tier.id };
+    }
     return { ok: true, courseId, coursePriceTierId: tier.id };
   }
 
@@ -96,6 +108,11 @@ export async function resolveCourseAndTierForSession(options: {
   }
   if (tiers.length === 1) {
     return { ok: true, courseId, coursePriceTierId: tiers[0].id };
+  }
+  if (stayMode) {
+    const longestId = await pickStayModeStartTierId(prisma, course.id);
+    if (!longestId) return { ok: false, error: "course has no price tiers", code: "BAD_COURSE" };
+    return { ok: true, courseId, coursePriceTierId: longestId };
   }
   return { ok: false, error: "coursePriceTierId required when course has multiple price tiers", code: "BAD_TIER" };
 }

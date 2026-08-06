@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import { Readable } from "node:stream";
 import { Prisma } from "@prisma/client";
 import { computeCourseSessionTotal, formatCourseLineLabel } from "../lib/course-pricing.js";
+import { withEffectiveCoursePriceTier } from "../lib/effective-course-tier.js";
 import {
   computeLineDiscountAmountYen,
   computeSessionSuggestedTotal,
@@ -196,7 +197,12 @@ async function buildBillDetailPayload(
 
   const billDiscsParsed = parseBillDiscounts(bill.discountJson);
   if (bill.session && bill.status === "open") {
-    const previewSum = sessionPreviewFromSession(bill.session as SessionForPreview, billDiscsParsed).suggestedTotal;
+    const pricedSession = await withEffectiveCoursePriceTier(
+      prisma,
+      storeId,
+      bill.session as typeof bill.session & { openedAt: Date; orders: { createdAt: Date }[] },
+    );
+    const previewSum = sessionPreviewFromSession(pricedSession as SessionForPreview, billDiscsParsed).suggestedTotal;
     if (bill.totalAmount !== previewSum) {
       await prisma.bill.update({
         where: { id: bill.id },
@@ -204,6 +210,8 @@ async function buildBillDetailPayload(
       });
       bill.totalAmount = previewSum;
     }
+    // 以降の表示も滞在課金後の帯で揃える
+    (bill as { session: typeof pricedSession }).session = pricedSession;
   }
 
   const defs = await prisma.paymentMethodDefinition.findMany();

@@ -1107,6 +1107,10 @@ async function loadAll() {
   if (slH2) slH2.value = typeof s.guestServeLaterHelpMulti === "string" ? s.guestServeLaterHelpMulti : "";
   const crs = document.getElementById("stRequireCourseStart");
   if (crs) crs.checked = s.requireCourseWhenStartingSession === true;
+  const stay = document.getElementById("stCoursePricingByStay");
+  if (stay) stay.checked = s.coursePricingByStayDuration === true;
+  const grace = document.getElementById("stCourseStayGrace");
+  if (grace) grace.value = String(s.courseStayGraceMinutes != null ? s.courseStayGraceMinutes : 15);
   const incOpt = document.getElementById("stIncOptCharge");
   if (incOpt) incOpt.checked = s.guestCourseIncludedChargeOptionExtras !== false;
   const ksb = document.getElementById("stKitShowCourseBadge");
@@ -2589,11 +2593,25 @@ if (btnSaveCourseStartPolicy) {
     log("");
     if (!requireManagerForSettings()) return;
     const requireCourseWhenStartingSession = document.getElementById("stRequireCourseStart").checked;
+    const coursePricingByStayDuration = document.getElementById("stCoursePricingByStay")
+      ? document.getElementById("stCoursePricingByStay").checked
+      : false;
+    const graceRaw = document.getElementById("stCourseStayGrace")
+      ? Number(document.getElementById("stCourseStayGrace").value)
+      : 15;
+    const courseStayGraceMinutes =
+      Number.isFinite(graceRaw) && graceRaw >= 0 ? Math.min(120, Math.round(graceRaw)) : 15;
     try {
       await api("/stores/" + encodeURIComponent(STORE) + "/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ settings: { requireCourseWhenStartingSession } }),
+        body: JSON.stringify({
+          settings: {
+            requireCourseWhenStartingSession,
+            coursePricingByStayDuration,
+            courseStayGraceMinutes,
+          },
+        }),
       });
       log("卓開始・コース方針を保存しました");
       await loadAll();

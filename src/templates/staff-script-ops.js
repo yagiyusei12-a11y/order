@@ -2727,8 +2727,31 @@ async function renderDetail() {
   const session = pickSessionForTable(table);
   if (!session) {
     let opts = "<option value=\"\">なし</option>";
+    const stayMode = storeSettingsCache && storeSettingsCache.coursePricingByStayDuration === true;
+    const graceMin =
+      storeSettingsCache && storeSettingsCache.courseStayGraceMinutes != null
+        ? Number(storeSettingsCache.courseStayGraceMinutes)
+        : 15;
     for (const c of coursesCache) {
       const tiers = c.priceTiers || [];
+      if (stayMode) {
+        const ladder = tiers
+          .slice()
+          .sort((a, b) => Number(a.durationMinutes || 0) - Number(b.durationMinutes || 0))
+          .map((t) => t.durationMinutes + "分/" + t.pricePerPerson + "円")
+          .join("→");
+        opts +=
+          "<option value=\"" +
+          escapeHtml(c.id) +
+          "\">" +
+          escapeHtml(c.name) +
+          " · 滞在課金(+" +
+          graceMin +
+          "分猶予) · " +
+          escapeHtml(ladder) +
+          "</option>";
+        continue;
+      }
       for (const t of tiers) {
         const val = escapeHtml(c.id + "|" + t.id);
         const childBit = t.childPricePerPerson != null ? " · 子" + t.childPricePerPerson + "円" : "";

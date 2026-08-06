@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { computeCourseSessionTotal } from "./course-pricing.js";
+import { withEffectiveCoursePriceTier } from "./effective-course-tier.js";
 import { computeSessionSuggestedTotal, parseBillDiscounts } from "./ops-discount.js";
 
 /** open 伝票の totalAmount をセッションの注文・コースから再計算して同期する */
@@ -18,13 +19,14 @@ export async function recomputeOpenBillTotalForSession(
     },
   });
   if (!session?.bill || session.bill.status !== "open") return;
+  const priced = await withEffectiveCoursePriceTier(tx, storeId, session);
   const courseTotal =
-    session.courseId && session.coursePriceTier
+    priced.courseId && priced.coursePriceTier
       ? computeCourseSessionTotal(
-          session.coursePriceTier,
-          session.courseId,
-          session.guestCount,
-          session.childCount,
+          priced.coursePriceTier,
+          priced.courseId,
+          priced.guestCount,
+          priced.childCount,
         )
       : 0;
   const billDiscs = parseBillDiscounts(session.bill.discountJson);

@@ -88,6 +88,8 @@ export async function registerPublicApi(app: FastifyInstance): Promise<void> {
         coursePriceTaxMode: st.coursePriceTaxMode,
         taxRatePercent: st.taxRatePercent,
         requireCourseWhenStartingSession: st.requireCourseWhenStartingSession,
+        coursePricingByStayDuration: st.coursePricingByStayDuration,
+        courseStayGraceMinutes: st.courseStayGraceMinutes,
       },
       table: {
         id: table.id,

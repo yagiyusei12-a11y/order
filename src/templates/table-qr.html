@@ -167,6 +167,9 @@
       window.__tableCoursesById = {};
       const courseMode = store && store.coursePriceTaxMode === "exclusive" ? "exclusive" : "inclusive";
       const taxRatePercent = store && store.taxRatePercent != null ? Number(store.taxRatePercent) : 10;
+      const stayMode = store && store.coursePricingByStayDuration === true;
+      const graceMin =
+        store && store.courseStayGraceMinutes != null ? Number(store.courseStayGraceMinutes) : 15;
       const suffix = courseMode === "exclusive" ? "（税抜）" : "（税込）";
       const noneId = "course-none";
       const none = document.createElement("label");
@@ -179,6 +182,47 @@
       for (const c of courses || []) {
         window.__tableCoursesById[c.id] = c;
         const tiers = c.priceTiers || [];
+        if (stayMode) {
+          const id = "course-" + c.id;
+          const val = c.id;
+          const ladder = tiers
+            .slice()
+            .sort(function (a, b) {
+              return Number(a.durationMinutes || 0) - Number(b.durationMinutes || 0);
+            })
+            .map(function (t) {
+              const adultUnit =
+                courseMode === "exclusive"
+                  ? netYenFromGross(t.pricePerPerson, taxRatePercent)
+                  : Number(t.pricePerPerson);
+              return (
+                t.durationMinutes +
+                "分まで 大人 " +
+                Number(adultUnit).toLocaleString("ja-JP") +
+                "円/人" +
+                suffix
+              );
+            })
+            .join(" → ");
+          const lab = document.createElement("label");
+          lab.className = "row";
+          lab.innerHTML =
+            "<input type=\"radio\" name=\"coursePick\" id=\"" +
+            esc(id) +
+            "\" value=\"" +
+            esc(val) +
+            "\" /><div><strong>" +
+            esc(c.name) +
+            "</strong><div class=\"course-meta\">滞在時間で料金確定（各帯+" +
+            graceMin +
+            "分猶予） · " +
+            esc(ladder || "") +
+            " · " +
+            esc(c.kind || "") +
+            "</div></div>";
+          box.appendChild(lab);
+          continue;
+        }
         for (let i = 0; i < tiers.length; i++) {
           const t = tiers[i];
           const id = "course-" + c.id + "-" + t.id;

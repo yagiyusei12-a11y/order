@@ -2,7 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { courseIncludedSingleMenuItemIds } from "../lib/course-included-singles.js";
 import { prisma } from "../db.js";
 import { computeCourseSessionTotal } from "../lib/course-pricing.js";
-import { liveSessionSuggestedTotal } from "../lib/session-live-total.js";
+import { liveSessionSuggestedTotalWithStay } from "../lib/session-live-total.js";
+import { withEffectiveCoursePriceTier } from "../lib/effective-course-tier.js";
 import { computeSessionSuggestedTotal, parseBillDiscounts } from "../lib/ops-discount.js";
 import { openSessionForTable } from "../lib/open-table-session.js";
 import { syncReceptionShiftSeatsForTable } from "../lib/reception-seat-state.js";
@@ -220,20 +221,22 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
     }
     return {
       storeId: store.id,
-      sessions: sessions.map((s) => {
-        const fo = firstSalesOrderByTime(s.orders);
-        const tno = fo ? takeoutBySalesOrderId.get(fo.id) : undefined;
-        const uiCustomerLabel = normalizeUiCustomerLabel(tno?.customerName, s.customer?.name ?? null);
-        const uiOrderedAt = (fo?.createdAt ?? s.openedAt).toISOString();
-        return {
-          ...s,
-          currentTotal: liveSessionSuggestedTotal(s),
-          uiCustomerLabel,
-          uiOrderedAt,
-          includedMenuItemIds: includedBySessionId.get(s.id) ?? [],
-          orders: undefined,
-        };
-      }),
+      sessions: await Promise.all(
+        sessions.map(async (s) => {
+          const fo = firstSalesOrderByTime(s.orders);
+          const tno = fo ? takeoutBySalesOrderId.get(fo.id) : undefined;
+          const uiCustomerLabel = normalizeUiCustomerLabel(tno?.customerName, s.customer?.name ?? null);
+          const uiOrderedAt = (fo?.createdAt ?? s.openedAt).toISOString();
+          return {
+            ...s,
+            currentTotal: await liveSessionSuggestedTotalWithStay(prisma, store.id, s),
+            uiCustomerLabel,
+            uiOrderedAt,
+            includedMenuItemIds: includedBySessionId.get(s.id) ?? [],
+            orders: undefined,
+          };
+        }),
+      ),
     };
   });
 
@@ -632,13 +635,14 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
       });
       if (!session) return reply.code(404).send({ error: "session not found" });
 
+      const priced = await withEffectiveCoursePriceTier(prisma, req.params.storeId, session);
       const courseTotal =
-        session.courseId && session.coursePriceTier
+        priced.courseId && priced.coursePriceTier
           ? computeCourseSessionTotal(
-              session.coursePriceTier,
-              session.courseId,
-              session.guestCount,
-              session.childCount,
+              priced.coursePriceTier,
+              priced.courseId,
+              priced.guestCount,
+              priced.childCount,
             )
           : 0;
 
@@ -650,6 +654,7 @@ export async function registerSessions(app: FastifyInstance): Promise<void> {
         guestCount: session.guestCount,
         childCount: session.childCount,
         course: session.course,
+        coursePriceTier: priced.coursePriceTier,
         courseTotal,
         ordersTotal: tot.ordersNet,
         suggestedTotal: tot.suggestedTotal,

@@ -1136,8 +1136,28 @@ async function mountRegisterFlow(panel, ctx) {
     "<tr><td class=\"muted\" colspan=\"2\">コース・注文なし</td></tr>";
 
   let opsCourseOptionsHtml = "<option value=\"\">コースなし</option>";
+  const stayMode = ctx.storeSettings && ctx.storeSettings.coursePricingByStayDuration === true;
   for (const c of ctx.courses) {
     const tiers = c.priceTiers || [];
+    if (stayMode) {
+      const ladder = tiers
+        .slice()
+        .sort((a, b) => Number(a.durationMinutes || 0) - Number(b.durationMinutes || 0))
+        .map((t) => t.durationMinutes + "分/" + t.pricePerPerson + "円")
+        .join("→");
+      const selected = session.courseId === c.id ? " selected" : "";
+      opsCourseOptionsHtml +=
+        "<option value=\"" +
+        ctx.escapeHtml(c.id) +
+        "\"" +
+        selected +
+        ">" +
+        ctx.escapeHtml(c.name) +
+        " · 滞在課金 · " +
+        ctx.escapeHtml(ladder) +
+        "</option>";
+      continue;
+    }
     for (const t of tiers) {
       const v = c.id + "|" + t.id;
       const selected =

@@ -410,6 +410,12 @@
         <input type="checkbox" id="stRequireCourseStart" style="margin-top:0.15rem;flex-shrink:0" />
         <span>セッション開始時にコースを必須にする</span>
       </label>
+      <label class="row" style="align-items:flex-start;gap:0.45rem;font-size:0.82rem;margin:0.35rem 0">
+        <input type="checkbox" id="stCoursePricingByStay" style="margin-top:0.15rem;flex-shrink:0" />
+        <span>滞在時間でコース料金を確定する（時間を最初に選ばない）<br /><span class="muted" style="font-size:0.72rem;line-height:1.45">各時間帯の上限ちょうどまではその帯。上限超過後の猶予内に注文がなければその帯を維持。最高帯超過は最高帯。ラストオーダーは最長帯基準。</span></span>
+      </label>
+      <label for="stCourseStayGrace" style="margin-top:0.35rem">各帯上限後の猶予（分）</label>
+      <input id="stCourseStayGrace" type="number" min="0" max="120" step="1" style="max-width:8rem" />
       <button type="button" class="btn-primary" id="btnSaveCourseStartPolicy" style="margin-top:0.65rem">卓開始・コース方針を保存</button>
     </div>
 

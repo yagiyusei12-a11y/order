@@ -201,6 +201,14 @@ export type StoreSettingsShape = {
    * false のときコースなし開始が可能で、レジから後からコースを付与できる。
    */
   requireCourseWhenStartingSession: boolean;
+  /**
+   * true のとき、食べ飲み放題などのコース料金を開始時の時間選択ではなく滞在時間で確定する。
+   * 各時間帯の上限ちょうどまではその帯。上限超過後 courseStayGraceMinutes 以内かつその間に注文がなければその帯を維持。
+   * 開始時は最長帯をラストオーダー用に紐づけ、会計額は都度再計算する。最高帯超過は最高帯にクランプ。
+   */
+  coursePricingByStayDuration: boolean;
+  /** 滞在課金の各帯上限後の猶予（分）。既定 15 */
+  courseStayGraceMinutes: number;
   /** テイクアウト受取の候補に使う時間帯マスタ（複数） */
   takeoutPickupTimeWindowIds: string[];
   /** ネットテイクアウトで選べる受取時刻が「現在」（店舗TZ）から何分以上先か */
@@ -461,6 +469,8 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     guestServeLaterHelpSingle: GUEST_SERVE_LATER_DEFAULTS.guestServeLaterHelpSingle,
     guestServeLaterHelpMulti: GUEST_SERVE_LATER_DEFAULTS.guestServeLaterHelpMulti,
     requireCourseWhenStartingSession: false,
+    coursePricingByStayDuration: false,
+    courseStayGraceMinutes: 15,
     takeoutPickupTimeWindowIds: [],
     takeoutPickupMinLeadMinutes: 2,
     takeoutNetPriceDisplayMode: "inclusive",
@@ -610,6 +620,12 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
   );
   if (typeof o.requireCourseWhenStartingSession === "boolean") {
     d.requireCourseWhenStartingSession = o.requireCourseWhenStartingSession;
+  }
+  if (typeof o.coursePricingByStayDuration === "boolean") {
+    d.coursePricingByStayDuration = o.coursePricingByStayDuration;
+  }
+  if (typeof o.courseStayGraceMinutes === "number" && Number.isFinite(o.courseStayGraceMinutes)) {
+    d.courseStayGraceMinutes = Math.min(120, Math.max(0, Math.round(o.courseStayGraceMinutes)));
   }
   if (Array.isArray(o.takeoutPickupTimeWindowIds)) {
     const ids = o.takeoutPickupTimeWindowIds

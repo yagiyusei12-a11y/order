@@ -1,6 +1,6 @@
 import { prisma } from "../db.js";
 import { resolveGuestBillingContext } from "./guest-billing-context.js";
-import { liveSessionSuggestedTotal } from "./session-live-total.js";
+import { liveSessionSuggestedTotalWithStay } from "./session-live-total.js";
 import { mergeStoreSettings } from "./store-settings.js";
 
 export async function loadGamesHubBillSummary(
@@ -45,8 +45,14 @@ export async function loadGamesHubBillSummary(
       guestCount: true,
       courseId: true,
       childCount: true,
+      openedAt: true,
       coursePriceTier: {
-        select: { durationMinutes: true, pricePerPerson: true, childPricePerPerson: true },
+        select: {
+          id: true,
+          durationMinutes: true,
+          pricePerPerson: true,
+          childPricePerPerson: true,
+        },
       },
       bill: { select: { status: true, discountJson: true } },
     },
@@ -67,13 +73,14 @@ export async function loadGamesHubBillSummary(
       where: { sessionId: billing.ctx.billingSessionId },
       include: { lines: true },
     });
-    totalYen = liveSessionSuggestedTotal({
+    totalYen = await liveSessionSuggestedTotalWithStay(prisma, storeId, {
       courseId: billingSessionRow.courseId,
       guestCount: billingSessionRow.guestCount,
       childCount: billingSessionRow.childCount,
       coursePriceTier: billingSessionRow.coursePriceTier,
       orders,
       bill: billingSessionRow.bill,
+      openedAt: billingSessionRow.openedAt,
     });
   }
 

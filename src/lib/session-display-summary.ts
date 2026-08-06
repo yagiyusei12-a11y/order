@@ -1,5 +1,6 @@
 import { prisma } from "../db.js";
 import { computeCourseSessionTotal } from "./course-pricing.js";
+import { withEffectiveCoursePriceTier } from "./effective-course-tier.js";
 import { computeSessionSuggestedTotal, parseBillDiscounts } from "./ops-discount.js";
 
 export type SessionDisplaySummary = {
@@ -38,13 +39,14 @@ export async function loadSessionDisplaySummary(
   });
   if (!session) return null;
 
+  const priced = await withEffectiveCoursePriceTier(prisma, storeId, session);
   const courseTotal =
-    session.courseId && session.coursePriceTier
+    priced.courseId && priced.coursePriceTier
       ? computeCourseSessionTotal(
-          session.coursePriceTier,
-          session.courseId,
-          session.guestCount,
-          session.childCount,
+          priced.coursePriceTier,
+          priced.courseId,
+          priced.guestCount,
+          priced.childCount,
         )
       : 0;
 

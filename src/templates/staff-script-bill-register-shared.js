@@ -1153,7 +1153,7 @@ async function mountRegisterFlow(panel, ctx) {
         selected +
         ">" +
         ctx.escapeHtml(c.name) +
-        " · 滞在課金 · " +
+        " · " +
         ctx.escapeHtml(ladder) +
         "</option>";
       continue;

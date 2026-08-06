@@ -2728,10 +2728,6 @@ async function renderDetail() {
   if (!session) {
     let opts = "<option value=\"\">なし</option>";
     const stayMode = storeSettingsCache && storeSettingsCache.coursePricingByStayDuration === true;
-    const graceMin =
-      storeSettingsCache && storeSettingsCache.courseStayGraceMinutes != null
-        ? Number(storeSettingsCache.courseStayGraceMinutes)
-        : 15;
     for (const c of coursesCache) {
       const tiers = c.priceTiers || [];
       if (stayMode) {
@@ -2745,9 +2741,7 @@ async function renderDetail() {
           escapeHtml(c.id) +
           "\">" +
           escapeHtml(c.name) +
-          " · 滞在課金(+" +
-          graceMin +
-          "分猶予) · " +
+          " · " +
           escapeHtml(ladder) +
           "</option>";
         continue;

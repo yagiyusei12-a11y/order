@@ -1158,7 +1158,7 @@ function renderSepCourseRadios(courses, store) {
         escapeHtml(c.id) +
         "\" /><div><strong>" +
         escapeHtml(c.name) +
-        "</strong><div class=\"handy-sep-course-meta\">滞在課金 · " +
+        "</strong><div class=\"handy-sep-course-meta\">" +
         escapeHtml(ladder) +
         " · " +
         escapeHtml(c.kind || "") +
@@ -1299,7 +1299,7 @@ function populateHandyCourseSelect(session) {
           return String(t.durationMinutes) + "分/" + Number(adultUnit).toLocaleString("ja-JP") + "円";
         })
         .join("→");
-      opt.textContent = String(c.name || "コース") + " · 滞在課金 · " + ladder;
+      opt.textContent = String(c.name || "コース") + " · " + ladder;
       sel.appendChild(opt);
       continue;
     }

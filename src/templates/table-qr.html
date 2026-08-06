@@ -168,8 +168,6 @@
       const courseMode = store && store.coursePriceTaxMode === "exclusive" ? "exclusive" : "inclusive";
       const taxRatePercent = store && store.taxRatePercent != null ? Number(store.taxRatePercent) : 10;
       const stayMode = store && store.coursePricingByStayDuration === true;
-      const graceMin =
-        store && store.courseStayGraceMinutes != null ? Number(store.courseStayGraceMinutes) : 15;
       const suffix = courseMode === "exclusive" ? "（税抜）" : "（税込）";
       const noneId = "course-none";
       const none = document.createElement("label");
@@ -213,9 +211,7 @@
             esc(val) +
             "\" /><div><strong>" +
             esc(c.name) +
-            "</strong><div class=\"course-meta\">滞在時間で料金確定（各帯+" +
-            graceMin +
-            "分猶予） · " +
+            "</strong><div class=\"course-meta\">滞在時間で料金確定 · " +
             esc(ladder || "") +
             " · " +
             esc(c.kind || "") +

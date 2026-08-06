@@ -113,3 +113,48 @@ export function longestStayDurationTier(tiers: StayDurationTier[]): StayDuration
   const sorted = sortTiersAsc(tiers);
   return sorted.length ? sorted[sorted.length - 1] : null;
 }
+
+/**
+ * ゲスト表示用: 現在プランと「次の料金帯」境界時刻。
+ * 次境界 = 現在帯の上限（T）。すでに T を超えて猶予中なら T+猶予（表示上は「次の帯まで」）。
+ */
+export function stayPricingDisplayState(options: {
+  tiers: StayDurationTier[];
+  openedAt: Date;
+  asOf: Date;
+  orderCreatedAts: Date[];
+  graceMinutes?: number;
+}): {
+  currentDurationMinutes: number;
+  currentPricePerPerson: number;
+  nextDurationMinutes: number | null;
+  nextBoundaryAt: Date | null;
+  elapsedMinutes: number;
+  atMaxTier: boolean;
+} | null {
+  const grace = Math.max(0, Math.floor(options.graceMinutes ?? 15));
+  const tiers = sortTiersAsc(
+    options.tiers.filter((t) => Number.isFinite(t.durationMinutes) && t.durationMinutes > 0),
+  );
+  if (!tiers.length) return null;
+  const resolved = resolveStayDurationTier(options);
+  if (!resolved.tier) return null;
+  const cur = resolved.tier;
+  const idx = tiers.findIndex((t) => t.id === cur.id);
+  const next = idx >= 0 && idx < tiers.length - 1 ? tiers[idx + 1] : null;
+  const T = cur.durationMinutes;
+  const withinEnd = new Date(options.openedAt.getTime() + T * 60_000);
+  const graceEnd = new Date(options.openedAt.getTime() + (T + grace) * 60_000);
+  let nextBoundaryAt: Date | null = null;
+  if (next) {
+    nextBoundaryAt = options.asOf.getTime() <= withinEnd.getTime() ? withinEnd : graceEnd;
+  }
+  return {
+    currentDurationMinutes: cur.durationMinutes,
+    currentPricePerPerson: cur.pricePerPerson,
+    nextDurationMinutes: next ? next.durationMinutes : null,
+    nextBoundaryAt,
+    elapsedMinutes: resolved.elapsedMinutes,
+    atMaxTier: !next,
+  };
+}

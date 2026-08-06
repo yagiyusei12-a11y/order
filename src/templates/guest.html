@@ -4604,6 +4604,103 @@
       lastOrderTimer = null;
     }
 
+    /** 滞在課金: サーバーと同じ帯判定（表示用） */
+    function resolveStayTierClient(sp, asOfMs) {
+      const grace = Math.max(0, Math.floor(Number(sp.graceMinutes) || 0));
+      const openedMs = Date.parse(sp.openedAtIso);
+      const elapsed = Math.max(0, (asOfMs - openedMs) / 60000);
+      const tiers = (sp.tiers || [])
+        .slice()
+        .filter(function (t) {
+          return Number(t.durationMinutes) > 0;
+        })
+        .sort(function (a, b) {
+          return Number(a.durationMinutes) - Number(b.durationMinutes);
+        });
+      if (!tiers.length) return null;
+      const orderAts = (sp.orderCreatedAts || []).map(function (s) {
+        return Date.parse(s);
+      });
+      function hasOrderAfter(T) {
+        const threshold = openedMs + T * 60000;
+        for (let i = 0; i < orderAts.length; i++) {
+          const t = orderAts[i];
+          if (Number.isFinite(t) && t > threshold && t <= asOfMs) return true;
+        }
+        return false;
+      }
+      for (let i = 0; i < tiers.length; i++) {
+        const tier = tiers[i];
+        const T = Number(tier.durationMinutes);
+        if (elapsed <= T) return { tier: tier, next: tiers[i + 1] || null, elapsed: elapsed };
+        if (elapsed <= T + grace && !hasOrderAfter(T)) {
+          return { tier: tier, next: tiers[i + 1] || null, elapsed: elapsed };
+        }
+      }
+      const last = tiers[tiers.length - 1];
+      return { tier: last, next: null, elapsed: elapsed };
+    }
+
+    function startStayPricingTicker(sp) {
+      stopLastOrderTicker();
+      const el = document.getElementById("lastOrderBanner");
+      if (!sp || !sp.enabled || !sp.openedAtIso) {
+        el.style.display = "none";
+        return;
+      }
+      window.__guestStayPricing = sp;
+      el.style.display = "block";
+      el.classList.remove("lo-ended");
+      function tick() {
+        if (lastOrderDeadlineTs > 0) {
+          const past = Date.now() >= lastOrderDeadlineTs;
+          guestLastOrderPastLocal = past;
+          const blocksFull = guestLoPolicy === "block_all";
+          lastOrderClosedFlag = blocksFull && past;
+          renderCart();
+          syncGuestMenuCardsDimForLastOrder();
+        }
+        const cur = window.__guestStayPricing || sp;
+        const now = Date.now();
+        const r = resolveStayTierClient(cur, now);
+        if (!r || !r.tier) {
+          el.style.display = "none";
+          stopLastOrderTicker();
+          return;
+        }
+        const curMin = Number(r.tier.durationMinutes);
+        const grace = Math.max(0, Math.floor(Number(cur.graceMinutes) || 0));
+        const openedMs = Date.parse(cur.openedAtIso);
+        let html =
+          "<span class=\"lo-inner\">現在 <strong>" +
+          curMin +
+          "分プラン</strong>";
+        if (r.next) {
+          const T = curMin;
+          const withinEnd = openedMs + T * 60000;
+          const graceEnd = openedMs + (T + grace) * 60000;
+          const boundary = now <= withinEnd ? withinEnd : graceEnd;
+          const left = Math.max(0, Math.floor((boundary - now) / 1000));
+          const m = Math.floor(left / 60);
+          const s = left % 60;
+          html +=
+            " · 次の料金帯（" +
+            Number(r.next.durationMinutes) +
+            "分）まで あと <strong>" +
+            String(m) +
+            ":" +
+            String(s).padStart(2, "0") +
+            "</strong>";
+        }
+        html += "</span>";
+        el.innerHTML = html;
+        el.classList.toggle("lo-ended", Boolean(r.next) && Math.floor((Date.parse(cur.openedAtIso) + curMin * 60000 - now) / 1000) <= 0 && !r.next === false);
+        el.classList.remove("lo-ended");
+      }
+      tick();
+      lastOrderTimer = setInterval(tick, 1000);
+    }
+
     function startLastOrderTicker(lo) {
       stopLastOrderTicker();
       const el = document.getElementById("lastOrderBanner");
@@ -4822,7 +4919,28 @@
           hintEl.style.display = "none";
         }
       } catch (_) {}
-      startLastOrderTicker(data.lastOrder);
+      if (data.stayPricing && data.stayPricing.enabled) {
+        // 滞在課金表示でもラストオーダー締切の注文制御は継続
+        if (data.lastOrder) {
+          guestLoPolicy =
+            data.lastOrder.policy === "allow_all" ||
+            data.lastOrder.policy === "singles_only" ||
+            data.lastOrder.policy === "singles_paid_only" ||
+            data.lastOrder.policy === "block_all"
+              ? data.lastOrder.policy
+              : "block_all";
+          lastOrderDeadlineTs = data.lastOrder.deadlineIso
+            ? Date.parse(data.lastOrder.deadlineIso)
+            : 0;
+          const blocksFull = data.lastOrder.blocksOrderingAfterDeadline !== false;
+          const past = lastOrderDeadlineTs > 0 && Date.now() >= lastOrderDeadlineTs;
+          guestLastOrderPastLocal = past;
+          lastOrderClosedFlag = blocksFull && (Boolean(data.lastOrder.orderingClosed) || past);
+        }
+        startStayPricingTicker(data.stayPricing);
+      } else {
+        startLastOrderTicker(data.lastOrder);
+      }
 
       try {
         const noticeEl = document.getElementById("courseMenuNotice");

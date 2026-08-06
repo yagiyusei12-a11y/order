@@ -50,6 +50,7 @@ import {
   computeGuestLastOrderPayload,
   guestLastOrderPolicyIsSinglesOnlyMode,
 } from "../lib/guest-last-order.js";
+import { resolveStayDurationTier, stayPricingDisplayState } from "../lib/course-stay-tier.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
 import { liveSessionSuggestedTotalWithStay } from "../lib/session-live-total.js";
 import { displayTableCode } from "../lib/table-display-code.js";
@@ -566,6 +567,67 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
           })()
         : null;
 
+    let stayPricing: {
+      enabled: true;
+      openedAtIso: string;
+      graceMinutes: number;
+      orderCreatedAts: string[];
+      tiers: {
+        id: string;
+        durationMinutes: number;
+        pricePerPerson: number;
+        childPricePerPerson: number | null;
+        sortOrder: number;
+      }[];
+      currentDurationMinutes: number;
+      currentPricePerPerson: number;
+      nextDurationMinutes: number | null;
+      nextBoundaryIso: string | null;
+      atMaxTier: boolean;
+    } | null = null;
+
+    if (st.coursePricingByStayDuration && session.courseId && session.course) {
+      const tierRows = await prisma.coursePriceTier.findMany({
+        where: { courseId: session.courseId },
+        orderBy: [{ sortOrder: "asc" }, { durationMinutes: "asc" }],
+        select: {
+          id: true,
+          durationMinutes: true,
+          pricePerPerson: true,
+          childPricePerPerson: true,
+          sortOrder: true,
+        },
+      });
+      const orderRows = await prisma.salesOrder.findMany({
+        where: { sessionId: billing.ctx.billingSessionId },
+        select: { createdAt: true },
+        orderBy: { createdAt: "asc" },
+      });
+      const orderCreatedAts = orderRows.map((o) => o.createdAt);
+      const now = new Date();
+      const display = stayPricingDisplayState({
+        tiers: tierRows,
+        openedAt: session.openedAt,
+        asOf: now,
+        orderCreatedAts,
+        graceMinutes: st.courseStayGraceMinutes,
+      });
+      if (display) {
+        stayPricing = {
+          enabled: true,
+          openedAtIso: session.openedAt.toISOString(),
+          graceMinutes: st.courseStayGraceMinutes,
+          orderCreatedAts: orderCreatedAts.map((d) => d.toISOString()),
+          tiers: tierRows,
+          currentDurationMinutes: display.currentDurationMinutes,
+          currentPricePerPerson: display.currentPricePerPerson,
+          nextDurationMinutes: display.nextDurationMinutes,
+          nextBoundaryIso: display.nextBoundaryAt ? display.nextBoundaryAt.toISOString() : null,
+          atMaxTier: display.atMaxTier,
+        };
+      }
+    }
+
     const categories = await prisma.menuCategory.findMany({
       where: { storeId: session.storeId, visibleToGuest: true },
       orderBy: { sortOrder: "asc" },
@@ -640,6 +702,16 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
     const { stoppedStationIds, allItemsStoppedStationIds } = await loadBusyStopState(session.storeId);
 
     const tier = session.coursePriceTier;
+    const stayResolved =
+      stayPricing && session.courseId
+        ? resolveStayDurationTier({
+            tiers: stayPricing.tiers,
+            openedAt: session.openedAt,
+            asOf: new Date(),
+            orderCreatedAts: stayPricing.orderCreatedAts.map((s) => new Date(s)),
+            graceMinutes: stayPricing.graceMinutes,
+          }).tier
+        : null;
     const courseOut =
       session.course && tier
       ? {
@@ -647,10 +719,14 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
           name: session.course.name,
           kind: session.course.kind,
           includedItemsUnlimited: session.course.includedItemsUnlimited !== false,
-          durationMinutes: tier.durationMinutes,
-          pricePerPerson: tier.pricePerPerson,
-          childPricePerPerson: tier.childPricePerPerson,
-          priceTierId: tier.id,
+          durationMinutes: stayResolved?.durationMinutes ?? tier.durationMinutes,
+          pricePerPerson: stayResolved?.pricePerPerson ?? tier.pricePerPerson,
+          childPricePerPerson:
+            stayResolved !== null && stayResolved !== undefined
+              ? stayResolved.childPricePerPerson
+              : tier.childPricePerPerson,
+          priceTierId: stayResolved?.id ?? tier.id,
+          pricingByStayDuration: Boolean(stayPricing),
           restrictedToMenuItems: false,
           pricingHint:
             includedSingleIds.size > 0
@@ -687,6 +763,7 @@ export async function registerGuest(app: FastifyInstance): Promise<void> {
         tableDisplayCode: tableDisplayCode || null,
       },
       lastOrder,
+      stayPricing,
       customerProfile: session.customer
         ? { name: session.customer.name, phone: session.customer.phone }
         : null,

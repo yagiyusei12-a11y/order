@@ -136,7 +136,7 @@ export async function purchaseCourseOptionPackInTx(
     qty = 1;
     unitPrice = unitPriceTaxInc;
   } else if (scope === "per_person_pick") {
-    qty = input.peopleCount ?? 1;
+    qty = input.peopleCount ?? gc;
     if (!Number.isInteger(qty) || qty < 1 || qty > gc) return { ok: false, code: "BAD_PEOPLE" };
     unitPrice = unitPriceTaxInc;
   } else {

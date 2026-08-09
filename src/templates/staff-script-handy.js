@@ -1372,7 +1372,7 @@ function renderHandyCoursePacks(session) {
       inp.type = "number";
       inp.min = "1";
       inp.max = String(gCount);
-      inp.value = "1";
+      inp.value = String(gCount);
       inp.dataset.handyPackPeople = String(p.id);
       inp.inputMode = "numeric";
       const span = document.createElement("span");

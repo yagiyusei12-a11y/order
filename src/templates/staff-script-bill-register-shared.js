@@ -749,7 +749,9 @@ function buildOpsCourseOptionPacksSection(ctx, session, readOnly) {
         "<label style=\"font-size:0.72rem\">人数</label>" +
         "<input type=\"number\" min=\"1\" max=\"" +
         maxP +
-        "\" value=\"1\" data-ops-pack-people=\"" +
+        "\" value=\"" +
+        maxP +
+        "\" data-ops-pack-people=\"" +
         ctx.escapeHtml(p.id) +
         "\" style=\"width:3.25rem;padding:0.35rem;border-radius:8px;border:1px solid var(--border)\" />" +
         "<span class=\"muted\" style=\"font-size:0.72rem\">1〜" +

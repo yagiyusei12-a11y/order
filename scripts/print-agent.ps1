@@ -244,6 +244,11 @@ function New-EscPosBytes([string[]]$Lines) {
   return $ms.ToArray()
 }
 
+function New-EscPosDrawerKick {
+  # Epson 互換 ESC p — キャッシュドロア開放（プリンタ経由配線）
+  return [byte[]]@(0x1b, 0x70, 0x00, 0x19, 0xfa)
+}
+
 function Send-TcpBytes([string]$HostName, [int]$Port, [byte[]]$Bytes) {
   $client = New-Object System.Net.Sockets.TcpClient
   try {
@@ -277,8 +282,9 @@ function Process-Once {
   if ($data.jobs) { $jobs = @($data.jobs) }
   foreach ($job in $jobs) {
     $payload = $job.payload
+    $isDrawer = ($job.kind -eq "drawer_open") -or ($payload -and $payload.action -eq "drawer_kick")
     $target = "receipt"
-    if ($payload -and $payload.target -eq "kitchen") { $target = "kitchen" }
+    if (-not $isDrawer -and $payload -and $payload.target -eq "kitchen") { $target = "kitchen" }
     $hostName = $null
     if ($printers) {
       if ($target -eq "kitchen") { $hostName = [string]$printers.kitchenIp }
@@ -288,12 +294,17 @@ function Process-Once {
     if ($payload -and $payload.lines) { $lines = @($payload.lines | ForEach-Object { [string]$_ }) }
     try {
       if (-not (Test-Ipv4 $hostName)) { throw "$target printer IP missing" }
-      if ($lines.Count -eq 0) { throw "empty lines" }
-      $bytes = New-EscPosBytes -Lines $lines
+      if ($isDrawer) {
+        $bytes = New-EscPosDrawerKick
+      } else {
+        if ($lines.Count -eq 0) { throw "empty lines" }
+        $bytes = New-EscPosBytes -Lines $lines
+      }
       Send-TcpBytes -HostName $hostName -Port $port -Bytes $bytes
       Invoke-AgentApi -PathSuffix "/stores/$([uri]::EscapeDataString($sid))/print-jobs/$([uri]::EscapeDataString($job.id))/complete" `
         -Method POST -Body @{ status = "done" } | Out-Null
-      Write-Host "[ok] $($job.kind)/$target → $hostName ($($job.id))"
+      $label = if ($isDrawer) { "drawer" } else { $target }
+      Write-Host "[ok] $($job.kind)/$label → $hostName ($($job.id))"
     } catch {
       $msg = $_.Exception.Message
       Write-Host "[fail] $($job.id): $msg"

@@ -124,6 +124,35 @@ export async function enqueuePrintJob(opts: {
   return job;
 }
 
+/** レジプリンタ経由のドロア開放（店PCの印刷エージェントが ESC/POS パルスを送る） */
+export async function enqueueDrawerOpenJob(
+  storeId: string,
+  meta?: Record<string, unknown>,
+): Promise<{ id: string } | null> {
+  const store = await prisma.store.findUnique({
+    where: { id: storeId },
+    select: { id: true, settings: true },
+  });
+  if (!store) return null;
+  const tp = getThermalPrinterSettings(mergeStoreSettings(store.settings));
+  if (!tp.receiptIp || !looksLikeIpv4(tp.receiptIp)) return null;
+  const job = await prisma.printJob.create({
+    data: {
+      storeId: store.id,
+      kind: "drawer_open",
+      status: "pending",
+      payload: {
+        target: "receipt",
+        action: "drawer_kick",
+        lines: [],
+        meta: meta ?? {},
+      } as Prisma.InputJsonValue,
+    },
+    select: { id: true },
+  });
+  return job;
+}
+
 /** 注文確定後: 厨房自動印刷が有効ならジョブ投入（失敗しても注文は成功扱い） */
 export async function enqueueKitchenPrintForSalesOrder(salesOrderId: string): Promise<void> {
   try {

@@ -806,6 +806,38 @@
         return {};
       });
 
+    /** ドロア開放: レジアプリ → Web Serial接続時 → 店PC印刷エージェント → イベントのみ
+     * @returns {Promise<void>|undefined}
+     */
+    function staffTryOpenDrawer() {
+      try {
+        var ch = typeof HarunoyukotoPos !== "undefined" ? HarunoyukotoPos : null;
+        if (ch && typeof ch.postMessage === "function") {
+          ch.postMessage("openDrawer");
+          return Promise.resolve();
+        }
+      } catch (_) {}
+      try {
+        if (
+          typeof window.posPrinterConnected === "function" &&
+          window.posPrinterConnected() &&
+          typeof window.openCashDrawer === "function"
+        ) {
+          return Promise.resolve(window.openCashDrawer()).catch(function () {});
+        }
+      } catch (_) {}
+      var agentP = api("/stores/" + encodeURIComponent(STORE) + "/print-jobs/drawer-open", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      try {
+        window.dispatchEvent(new CustomEvent("pos:drawer-open"));
+      } catch (_) {}
+      return agentP;
+    }
+    window.tryOpenDrawer = staffTryOpenDrawer;
+
     window.STAFF_ROLE = "staff";
     window.PLATFORM_ADMIN = false;
     window.__staffMeLoaded = api("/auth/me")

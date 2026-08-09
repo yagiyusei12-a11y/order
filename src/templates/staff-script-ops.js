@@ -1188,7 +1188,10 @@ function statusText(session) {
       : "";
   return label || "0分";
 }
-function tryOpenDrawer() {
+const tryOpenDrawer = function tryOpenDrawer() {
+  if (typeof window.tryOpenDrawer === "function") {
+    return window.tryOpenDrawer();
+  }
   try {
     var ch = typeof HarunoyukotoPos !== "undefined" ? HarunoyukotoPos : null;
     if (ch && typeof ch.postMessage === "function") {
@@ -1197,19 +1200,16 @@ function tryOpenDrawer() {
     }
   } catch (_) {}
   try {
-    if (typeof window.openCashDrawer === "function") {
-      void Promise.resolve(window.openCashDrawer()).catch(() => {
-        try {
-          window.dispatchEvent(new CustomEvent("pos:drawer-open"));
-        } catch (_) {}
-      });
-      return;
-    }
+    void api("/stores/" + encodeURIComponent(STORE) + "/print-jobs/drawer-open", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    }).catch(function () {});
   } catch (_) {}
   try {
     window.dispatchEvent(new CustomEvent("pos:drawer-open"));
   } catch (_) {}
-}
+};
 
 /** レジアプリ内カメラ：入金写真（失敗しても会計は止めない） */
 function requestPosPaymentPhoto(storeId, billId, paymentIds) {

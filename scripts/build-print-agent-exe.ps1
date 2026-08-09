@@ -48,6 +48,7 @@ if (-not (Test-Path -LiteralPath $OutExe)) {
   "5. Optional: answer Y to register Windows Startup",
   "",
   "Printer IPs are configured in store settings on the server.",
+  "Also opens the cash drawer (ESC/POS kick) when staff requests it.",
   "Rebuild: powershell -File scripts\build-print-agent-exe.ps1"
 ) | Set-Content -LiteralPath (Join-Path $OutDir "README.txt") -Encoding UTF8
 

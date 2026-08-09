@@ -1,26 +1,3 @@
-function tryOpenDrawer() {
-  try {
-    var ch = typeof HarunoyukotoPos !== "undefined" ? HarunoyukotoPos : null;
-    if (ch && typeof ch.postMessage === "function") {
-      ch.postMessage("openDrawer");
-      return;
-    }
-  } catch (_) {}
-  try {
-    if (typeof window.openCashDrawer === "function") {
-      void Promise.resolve(window.openCashDrawer()).catch(() => {
-        try {
-          window.dispatchEvent(new CustomEvent("pos:drawer-open"));
-        } catch (_) {}
-      });
-      return;
-    }
-  } catch (_) {}
-  try {
-    window.dispatchEvent(new CustomEvent("pos:drawer-open"));
-  } catch (_) {}
-}
-
 function yen(n) {
   const v = Number(n);
   if (!Number.isFinite(v)) return "—";
@@ -121,8 +98,16 @@ document.getElementById("btnRefCash").onclick = () => {
 
 document.getElementById("btnOpenDrawer").onclick = async () => {
   log("");
-  tryOpenDrawer();
   try {
+    const openP =
+      typeof window.tryOpenDrawer === "function" ? window.tryOpenDrawer() : Promise.resolve();
+    await Promise.resolve(openP).catch((e) => {
+      log(
+        "ドロワー開放ジョブ: " +
+          String((e && e.message) || e) +
+          "（レジプリンタIPと印刷エージェント起動を確認）",
+      );
+    });
     const noteEl = document.getElementById("openNote");
     const note = noteEl && noteEl.value ? String(noteEl.value).trim() : "";
     await api("/stores/" + encodeURIComponent(STORE) + "/cash-drawer/open", {

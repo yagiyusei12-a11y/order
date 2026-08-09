@@ -2,7 +2,11 @@ import type { FastifyInstance } from "fastify";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { prisma } from "../db.js";
-import { enqueuePrintJob, getThermalPrinterSettings } from "../lib/thermal-print.js";
+import {
+  enqueueDrawerOpenJob,
+  enqueuePrintJob,
+  getThermalPrinterSettings,
+} from "../lib/thermal-print.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
 
 function looksLikeIpv4(host: string): boolean {
@@ -110,6 +114,26 @@ export async function registerPrintJobs(app: FastifyInstance): Promise<void> {
     if (!job) return reply.code(400).send({ error: "empty print" });
     return { ok: true, id: job.id };
   });
+
+  /** レジプリンタ経由のドロア開放（印刷エージェントが ESC/POS パルスを送る） */
+  app.post<{ Params: { storeId: string } }>(
+    "/stores/:storeId/print-jobs/drawer-open",
+    async (req, reply) => {
+      const store = await prisma.store.findUnique({
+        where: { id: req.params.storeId },
+        select: { id: true, settings: true },
+      });
+      if (!store) return reply.code(404).send({ error: "store not found" });
+      const st = mergeStoreSettings(store.settings);
+      const tp = getThermalPrinterSettings(st);
+      if (!tp.receiptIp || !looksLikeIpv4(tp.receiptIp)) {
+        return reply.code(400).send({ error: "receipt printer IP is not configured" });
+      }
+      const job = await enqueueDrawerOpenJob(store.id, { source: "staff" });
+      if (!job) return reply.code(400).send({ error: "could not enqueue drawer open" });
+      return { ok: true, id: job.id };
+    },
+  );
 
   /** 店PC用印刷エージェント（単体 exe）ダウンロード */
   app.get<{ Params: { storeId: string } }>(

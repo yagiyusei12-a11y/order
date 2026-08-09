@@ -42,11 +42,11 @@ model Store {
 model PrintJob {
   id         String    @id @default(cuid())
   storeId    String
-  /// receipt | kitchen | table_qr
+  /// receipt | kitchen | table_qr | drawer_open
   kind       String
   /// pending | done | failed | cancelled
   status     String    @default("pending")
-  /// { lines: string[], target: "receipt"|"kitchen", meta?: object }
+  /// { lines?: string[], target: "receipt"|"kitchen", action?: "drawer_kick", meta?: object }
   payload    Json
   error      String?
   createdAt  DateTime  @default(now())

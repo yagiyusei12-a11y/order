@@ -188,6 +188,11 @@ function escPosFromTextLines(lines) {
   return Buffer.concat(chunks);
 }
 
+/** Epson 互換 ESC p — キャッシュドロア開放（プリンタ経由配線） */
+function escPosDrawerKick() {
+  return Buffer.from([0x1b, 0x70, 0x00, 0x19, 0xfa]);
+}
+
 function sendTcp(host, port, bytes) {
   return new Promise((resolve, reject) => {
     const socket = net.connect({ host, port, timeout: 4000 }, () => {
@@ -239,19 +244,26 @@ async function processOnce() {
   const jobs = Array.isArray(data.jobs) ? data.jobs : [];
   for (const job of jobs) {
     const payload = job.payload && typeof job.payload === "object" ? job.payload : {};
-    const target = payload.target === "kitchen" ? "kitchen" : "receipt";
+    const isDrawer =
+      job.kind === "drawer_open" || payload.action === "drawer_kick";
+    const target = payload.target === "kitchen" && !isDrawer ? "kitchen" : "receipt";
     const host = target === "kitchen" ? printers.kitchenIp : printers.receiptIp;
     const lines = Array.isArray(payload.lines) ? payload.lines : [];
     try {
       if (!looksLikeIpv4(host)) throw new Error(`${target} printer IP missing`);
-      if (!lines.length) throw new Error("empty lines");
-      const bytes = escPosFromTextLines(lines);
+      let bytes;
+      if (isDrawer) {
+        bytes = escPosDrawerKick();
+      } else {
+        if (!lines.length) throw new Error("empty lines");
+        bytes = escPosFromTextLines(lines);
+      }
       await sendTcp(host, port, bytes);
       await api(`/stores/${encodeURIComponent(sid)}/print-jobs/${encodeURIComponent(job.id)}/complete`, {
         method: "POST",
         body: JSON.stringify({ status: "done" }),
       });
-      console.log(`[ok] ${job.kind}/${target} → ${host} (${job.id})`);
+      console.log(`[ok] ${job.kind}/${isDrawer ? "drawer" : target} → ${host} (${job.id})`);
     } catch (e) {
       const msg = String(e && e.message ? e.message : e);
       console.error(`[fail] ${job.id}: ${msg}`);

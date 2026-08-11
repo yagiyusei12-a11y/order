@@ -103,6 +103,7 @@
 
     <button class="btn" id="btnSubmit">予約する</button>
     <p class="muted" id="ruleText"></p>
+    <p class="err" id="busyLeadNote" style="display:none"></p>
 
     <div id="msg"></div>
   </div>
@@ -453,9 +454,25 @@
         if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
         const slots = data.slots || [];
+        const busyNote = document.getElementById("busyLeadNote");
+        if (busyNote) {
+          if (data.prepareSeatsBusy) {
+            const lead = Number(data.minLeadMinutes) > 0 ? Number(data.minLeadMinutes) : 30;
+            busyNote.style.display = "";
+            busyNote.textContent =
+              "ただいま混雑のため、最短" + lead + "分後からのご予約となります。すでに入っているご予約はそのままです。";
+          } else {
+            busyNote.style.display = "none";
+            busyNote.textContent = "";
+          }
+        }
         sel.innerHTML = "";
         if (!slots.length) {
-          setTimePlaceholder("この日は予約枠がありません");
+          setTimePlaceholder(
+            data.prepareSeatsBusy
+              ? "混雑のため、直近の枠は選べません。少し先の時間をお試しください。"
+              : "この日は予約枠がありません",
+          );
           return;
         }
         const ph = document.createElement("option");
@@ -518,6 +535,18 @@
         wins.length > 0 ? ` 営業枠: ${wins.map((w) => fmtHm(w.startMin) + "〜" + fmtHm(w.endMin)).join("、")}。` : "";
       document.getElementById("ruleText").textContent =
         `本日から ${days} 日先まで予約可能です（${step} 分刻み）。` + hoursLine;
+      const busyNote = document.getElementById("busyLeadNote");
+      if (busyNote) {
+        if (cfg.prepareSeatsBusy) {
+          const lead = Number(cfg.minLeadMinutes) > 0 ? Number(cfg.minLeadMinutes) : 30;
+          busyNote.style.display = "";
+          busyNote.textContent =
+            "ただいま混雑のため、最短" + lead + "分後からのご予約となります。すでに入っているご予約はそのままです。";
+        } else {
+          busyNote.style.display = "none";
+          busyNote.textContent = "";
+        }
+      }
 
       document.getElementById("rDate").addEventListener("change", () => refreshSlots());
       document.getElementById("rNum").addEventListener("change", () => refreshSlots());

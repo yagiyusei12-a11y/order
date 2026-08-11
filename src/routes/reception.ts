@@ -9,6 +9,11 @@ import {
 } from "../lib/store-order-gate.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
 import {
+  loadFloorWaitStatus,
+  NET_RESERVE_DEFAULT_LEAD_MINUTES,
+  PREPARE_SEATS_NET_RESERVE_LEAD_MINUTES,
+} from "../lib/floor-wait-status.js";
+import {
   netReserveSlotKey,
   shiftFromTimeHHMM,
   legacyDaypartShiftKey,
@@ -594,17 +599,36 @@ function netReserveBookableTableRows<T extends { publicCode: string; seatType?: 
   return tables.filter((t) => isNetReserveTableRow(t) && !isCounterTableRow(t));
 }
 
-function filterNetSlotsNotPast(dateYmd: string, slotTimes: string[], timezone: string): string[] {
+function filterNetSlotsNotPast(
+  dateYmd: string,
+  slotTimes: string[],
+  timezone: string,
+  minLeadMinutes = NET_RESERVE_DEFAULT_LEAD_MINUTES,
+): string[] {
   const todayYmd = storeNowWallClock(timezone).dateYmd;
   if (dateYmd !== todayYmd) return dateYmd < todayYmd ? [] : slotTimes;
   const nowMin = minutesSinceMidnightInTimeZone(new Date(), timezone);
-  const buffer = 5;
+  const buffer = Math.max(0, Math.floor(Number(minLeadMinutes) || NET_RESERVE_DEFAULT_LEAD_MINUTES));
   return slotTimes.filter((t) => {
     const m = /^(\d{1,2}):(\d{2})$/.exec(t.trim());
     if (!m) return false;
     const tm = Number(m[1]) * 60 + Number(m[2]);
     return tm >= nowMin + buffer;
   });
+}
+
+async function netReserveLeadMinutesForStore(storeId: string): Promise<{
+  minLeadMinutes: number;
+  prepareSeatsBusy: boolean;
+}> {
+  const status = await loadFloorWaitStatus(storeId);
+  const prepareSeatsBusy = status?.level === "prepare_seats";
+  return {
+    minLeadMinutes: prepareSeatsBusy
+      ? PREPARE_SEATS_NET_RESERVE_LEAD_MINUTES
+      : NET_RESERVE_DEFAULT_LEAD_MINUTES,
+    prepareSeatsBusy,
+  };
 }
 
 type ReservationSeatDb = Pick<typeof prisma, "receptionReservationSeat">;
@@ -1607,6 +1631,7 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
     const netReserveFallbackToTemplateWindows = c.netReserveFallbackToTemplateWindows !== false;
     const seatTypeMode = netReserveSeatTypeMode(c as Record<string, unknown>);
     const seatTypes = await distinctSeatTypesForNetReserve(store.id);
+    const lead = await netReserveLeadMinutesForStore(store.id);
     return {
       storeId: store.id,
       daysAhead,
@@ -1620,6 +1645,8 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
       netReserveFallbackToTemplateWindows,
       seatTypeMode,
       seatTypes,
+      minLeadMinutes: lead.minLeadMinutes,
+      prepareSeatsBusy: lead.prepareSeatsBusy,
     };
   });
 
@@ -1662,7 +1689,8 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
     const windows = effectiveNetReserveWindowsFromConfig(c as Record<string, unknown>);
     const step = netReserveSlotStepMinutes(c as Record<string, unknown>);
     let slotTimes = listNetReserveSlotTimes(windows, step);
-    slotTimes = filterNetSlotsNotPast(date, slotTimes, stSet.timezone);
+    const lead = await netReserveLeadMinutesForStore(store.id);
+    slotTimes = filterNetSlotsNotPast(date, slotTimes, stSet.timezone, lead.minLeadMinutes);
 
     const maxMergeSize = Number.isFinite(Number(c.maxMergeSize)) ? Number(c.maxMergeSize) : 10;
     const allOrNothingGroups = Array.isArray(c.mergeAllOrNothingGroups) ? c.mergeAllOrNothingGroups : [];
@@ -1713,7 +1741,15 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
       return out;
     });
 
-    return { date, partySize: n, timezone: stSet.timezone, slots, seatType: seatTypeNorm || null };
+    return {
+      date,
+      partySize: n,
+      timezone: stSet.timezone,
+      slots,
+      seatType: seatTypeNorm || null,
+      minLeadMinutes: lead.minLeadMinutes,
+      prepareSeatsBusy: lead.prepareSeatsBusy,
+    };
   });
 
   /**
@@ -1795,9 +1831,14 @@ export async function registerReception(app: FastifyInstance): Promise<void> {
     if (!isTimeInNetReserveSlots(time, slotTimesAll)) {
       return reply.code(400).send({ error: "time not in business hours" });
     }
-    const slotTimesToday = filterNetSlotsNotPast(date, slotTimesAll, stSet.timezone);
+    const leadR = await netReserveLeadMinutesForStore(store.id);
+    const slotTimesToday = filterNetSlotsNotPast(date, slotTimesAll, stSet.timezone, leadR.minLeadMinutes);
     if (!isTimeInNetReserveSlots(time, slotTimesToday)) {
-      return reply.code(400).send({ error: "past time not allowed" });
+      return reply.code(400).send({
+        error: leadR.prepareSeatsBusy
+          ? `混雑のため、ただいまは${leadR.minLeadMinutes}分以内のご予約を受け付けていません。`
+          : "past time not allowed",
+      });
     }
 
     const slotKeySnap = netReserveSlotKey(date, time);

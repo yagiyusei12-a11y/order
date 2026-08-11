@@ -1,5 +1,7 @@
 import { prisma } from "../db.js";
 import { mergeStoreSettings } from "./store-settings.js";
+import { minutesSinceMidnightInTimeZone } from "./guest-category-hours.js";
+import { storeNowWallClock } from "./store-wall-time.js";
 
 export type FloorWaitLevel = "normal" | "delay" | "prepare_seats";
 
@@ -20,6 +22,20 @@ export type FloorWaitThresholds = {
   stationPrepareMin: number;
 };
 
+export const FLOOR_WAIT_STAFF_MANY_MIN = 10;
+
+/** 席用意警告中のネット予約最短リード（分）。通常の枠フィルタは 5 分。 */
+export const PREPARE_SEATS_NET_RESERVE_LEAD_MINUTES = 30;
+export const NET_RESERVE_DEFAULT_LEAD_MINUTES = 5;
+
+export type UpcomingNetReservation = {
+  resId: string;
+  time: string;
+  name: string;
+  num: number;
+  status: string;
+};
+
 export type FloorWaitStatus = {
   level: FloorWaitLevel;
   labelJa: string;
@@ -34,9 +50,11 @@ export type FloorWaitStatus = {
   thresholds: FloorWaitThresholds;
   /** どの条件で発火したか（デバッグ・tooltip用） */
   trigger: "none" | "total" | "fry" | "grill";
+  /** 席用意中はネット予約をこの分数以降に制限 */
+  netReserveMinLeadMinutes: number;
+  /** 席用意中かつ30分以内に既存予約があるとき */
+  upcomingReservationsWithinLead: UpcomingNetReservation[];
 };
-
-export const FLOOR_WAIT_STAFF_MANY_MIN = 10;
 
 /** 調理場名の正規化照合（全角半角差を吸収） */
 export function normalizeKitchenStationName(s: unknown): string {
@@ -108,6 +126,61 @@ export function floorWaitLabelJa(level: FloorWaitLevel): string {
   return "通常";
 }
 
+export function netReserveLeadMinutesForFloorWaitLevel(level: FloorWaitLevel): number {
+  return level === "prepare_seats"
+    ? PREPARE_SEATS_NET_RESERVE_LEAD_MINUTES
+    : NET_RESERVE_DEFAULT_LEAD_MINUTES;
+}
+
+function hhmmToMinutes(timeHHMM: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(timeHHMM || "").trim());
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+  return hh * 60 + mm;
+}
+
+async function loadUpcomingReservationsWithinLead(
+  storeId: string,
+  timezone: string,
+  leadMinutes: number,
+): Promise<UpcomingNetReservation[]> {
+  const clock = storeNowWallClock(timezone);
+  const nowMin = minutesSinceMidnightInTimeZone(new Date(), timezone);
+  const untilMin = nowMin + Math.max(0, Math.floor(leadMinutes));
+  const rows = await prisma.receptionReservation.findMany({
+    where: { storeId, date: clock.dateYmd },
+    select: { resKey: true, status: true, data: true },
+  });
+  const out: UpcomingNetReservation[] = [];
+  for (const row of rows) {
+    const d =
+      row.data && typeof row.data === "object" && !Array.isArray(row.data)
+        ? (row.data as Record<string, unknown>)
+        : {};
+    const status =
+      (typeof d.status === "string" && d.status.trim()) ||
+      (typeof row.status === "string" && row.status.trim()) ||
+      "予約確定";
+    if (status === "キャンセル" || status === "来店済み") continue;
+    const time = typeof d.time === "string" ? d.time.trim() : "";
+    const tm = hhmmToMinutes(time);
+    if (tm == null) continue;
+    if (tm < nowMin || tm > untilMin) continue;
+    out.push({
+      resId: String(d.resId || row.resKey || ""),
+      time,
+      name: typeof d.name === "string" ? d.name : "",
+      num: Number.isFinite(Number(d.num)) ? Math.floor(Number(d.num)) : 0,
+      status,
+    });
+  }
+  out.sort((a, b) => a.time.localeCompare(b.time));
+  return out;
+}
+
 export async function loadFloorWaitStatus(storeId: string): Promise<FloorWaitStatus | null> {
   const store = await prisma.store.findUnique({
     where: { id: storeId },
@@ -121,6 +194,11 @@ export async function loadFloorWaitStatus(storeId: string): Promise<FloorWaitSta
   const staffingMode: "many" | "few" = onDutyStaffCount >= FLOOR_WAIT_STAFF_MANY_MIN ? "many" : "few";
 
   if (st.floorWaitForceLevel === "normal" || st.floorWaitForceLevel === "delay" || st.floorWaitForceLevel === "prepare_seats") {
+    const lead = netReserveLeadMinutesForFloorWaitLevel(st.floorWaitForceLevel);
+    const upcoming =
+      st.floorWaitForceLevel === "prepare_seats"
+        ? await loadUpcomingReservationsWithinLead(store.id, st.timezone, lead)
+        : [];
     return {
       level: st.floorWaitForceLevel,
       labelJa: floorWaitLabelJa(st.floorWaitForceLevel),
@@ -137,6 +215,8 @@ export async function loadFloorWaitStatus(storeId: string): Promise<FloorWaitSta
       staffingMode,
       thresholds,
       trigger: "none",
+      netReserveMinLeadMinutes: lead,
+      upcomingReservationsWithinLead: upcoming,
     };
   }
 
@@ -168,6 +248,11 @@ export async function loadFloorWaitStatus(storeId: string): Promise<FloorWaitSta
     grillStationInFlight,
     onDutyStaffCount,
   });
+  const lead = netReserveLeadMinutesForFloorWaitLevel(resolved.level);
+  const upcoming =
+    resolved.level === "prepare_seats"
+      ? await loadUpcomingReservationsWithinLead(store.id, st.timezone, lead)
+      : [];
 
   return {
     level: resolved.level,
@@ -180,5 +265,7 @@ export async function loadFloorWaitStatus(storeId: string): Promise<FloorWaitSta
     staffingMode,
     thresholds,
     trigger: resolved.trigger,
+    netReserveMinLeadMinutes: lead,
+    upcomingReservationsWithinLead: upcoming,
   };
 }

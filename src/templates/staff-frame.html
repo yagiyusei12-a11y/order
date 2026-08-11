@@ -230,6 +230,13 @@
       animation: staffFloorWaitPulse 1.4s ease-in-out infinite;
       box-shadow: 0 0 0 1px rgba(127, 29, 29, 0.25);
     }
+    .staff-floor-wait.is-upcoming {
+      display: inline-block;
+      background: #ffedd5;
+      color: #9a3412;
+      box-shadow: 0 0 0 1px rgba(154, 52, 18, 0.25);
+      animation: staffFloorWaitPulse 1.4s ease-in-out infinite;
+    }
     .staff-floor-staff-count {
       flex: 0 0 auto;
       border: 1px solid rgba(255, 255, 255, 0.75);
@@ -846,6 +853,7 @@
     <div class="staff-footer-right">
       <button type="button" id="staffFloorStaffCountBtn" class="staff-floor-staff-count" title="本日のスタッフ人数（タップで変更）">スタッフ —</button>
       <span id="staffFloorWaitWarn" class="staff-floor-wait" role="status" aria-live="polite"></span>
+      <span id="staffFloorUpcomingResWarn" class="staff-floor-wait" role="status" aria-live="polite"></span>
       <small id="staffOrderFooterHint">補助は随時ここからお知らせします</small>
     </div>
   </div>
@@ -1149,6 +1157,7 @@
       const hint = document.getElementById("staffOrderFooterHint");
       const labelEl = btn && btn.querySelector(".staff-footer-label");
       const floorWarn = document.getElementById("staffFloorWaitWarn");
+      const upcomingWarn = document.getElementById("staffFloorUpcomingResWarn");
       const staffCountBtn = document.getElementById("staffFloorStaffCountBtn");
       if (!bar || !btn || !hint || !labelEl) return;
 
@@ -1214,10 +1223,38 @@
         } else if (level === "prepare_seats") {
           floorWarn.classList.add("is-prepare");
           floorWarn.textContent = r.labelJa || "15分～25分以内に席をご用意";
-          floorWarn.title = detail;
+          floorWarn.title =
+            detail +
+            " / ネット予約は最短" +
+            String(r.netReserveMinLeadMinutes != null ? r.netReserveMinLeadMinutes : 30) +
+            "分後から";
         } else {
           floorWarn.textContent = "";
           floorWarn.removeAttribute("title");
+        }
+        if (upcomingWarn) {
+          upcomingWarn.classList.remove("is-upcoming");
+          const upcoming = Array.isArray(r.upcomingReservationsWithinLead)
+            ? r.upcomingReservationsWithinLead
+            : [];
+          if (level === "prepare_seats" && upcoming.length) {
+            upcomingWarn.classList.add("is-upcoming");
+            upcomingWarn.textContent =
+              "30分以内に予約" + upcoming.length + "件";
+            upcomingWarn.title = upcoming
+              .map(function (x) {
+                return (
+                  String(x.time || "") +
+                  " " +
+                  String(x.name || "") +
+                  (x.num ? " " + x.num + "名" : "")
+                ).trim();
+              })
+              .join("\n");
+          } else {
+            upcomingWarn.textContent = "";
+            upcomingWarn.removeAttribute("title");
+          }
         }
       }
 

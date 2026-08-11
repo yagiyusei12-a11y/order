@@ -75,6 +75,15 @@ export async function loadFloorWaitStatus(storeId: string): Promise<FloorWaitSta
   if (!store) return null;
 
   const st = mergeStoreSettings(store.settings);
+  if (st.floorWaitForceLevel === "normal" || st.floorWaitForceLevel === "delay" || st.floorWaitForceLevel === "prepare_seats") {
+    return {
+      level: st.floorWaitForceLevel,
+      labelJa: floorWaitLabelJa(st.floorWaitForceLevel),
+      orderQty: st.floorWaitForceLevel === "prepare_seats" ? 25 : st.floorWaitForceLevel === "delay" ? 20 : 0,
+      unorderedNonCounterWaitSeats: st.floorWaitForceLevel === "prepare_seats" ? 5 : 0,
+    };
+  }
+
   const conf = await prisma.receptionConfig.findUnique({
     where: { storeId: store.id },
     select: { data: true },

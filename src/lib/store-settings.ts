@@ -11,6 +11,9 @@ import { parseGamesHubDeletedSlugs } from "./store-game-deleted-slugs.js";
 export type { StaffNotificationCustomSound } from "./staff-notification-sound-files.js";
 export type { StaffNotificationSoundsSettings, StaffSoundBuiltinPresetId } from "./staff-notification-sounds.js";
 
+/** フッター待ち警告の強制表示（テスト用） */
+export type FloorWaitForceLevel = "normal" | "delay" | "prepare_seats";
+
 /** IANA タイムゾーン名として使えるか（メニュー時間帯の基準時計に利用） */
 export function isValidIanaTimeZone(z: string): boolean {
   try {
@@ -245,6 +248,11 @@ export type StoreSettingsShape = {
   thermalPrinterPort: number;
   /** true のとき新規注文でキッチン印刷ジョブを自動投入 */
   thermalKitchenAutoPrint: boolean;
+  /**
+   * テスト用: フッター待ち警告を強制表示。
+   * "" | "normal" | "delay" | "prepare_seats"
+   */
+  floorWaitForceLevel: "" | FloorWaitForceLevel;
   billCorrectionPolicy: BillCorrectionPolicy;
   /** 日次在庫リセットを有効にする（店舗 TZ の stockDailyResetTimeMin に実行） */
   stockDailyResetEnabled: boolean;
@@ -486,6 +494,7 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     thermalKitchenPrinterIp: "",
     thermalPrinterPort: 9100,
     thermalKitchenAutoPrint: false,
+    floorWaitForceLevel: "",
     billCorrectionPolicy: {
       enabled: true,
       payments: true,
@@ -709,6 +718,12 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
   }
   if (typeof o.thermalKitchenAutoPrint === "boolean") {
     d.thermalKitchenAutoPrint = o.thermalKitchenAutoPrint;
+  }
+  if (typeof o.floorWaitForceLevel === "string") {
+    const v = o.floorWaitForceLevel.trim();
+    if (v === "" || v === "normal" || v === "delay" || v === "prepare_seats") {
+      d.floorWaitForceLevel = v;
+    }
   }
   if (o.billCorrectionPolicy && typeof o.billCorrectionPolicy === "object" && !Array.isArray(o.billCorrectionPolicy)) {
     const p = o.billCorrectionPolicy as Record<string, unknown>;

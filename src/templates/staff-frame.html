@@ -164,27 +164,43 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 1rem;
+      gap: 0.5rem;
+      padding: 0 0.75rem 0 0;
       font-size: 0.8rem;
       font-weight: 600;
       z-index: 20;
-    }
-    .app-footer.staff-order-footer {
-      cursor: pointer;
-      border: none;
-      width: 100%;
-      font-family: inherit;
-      text-align: left;
       box-sizing: border-box;
-    }
-    .app-footer.staff-order-footer:focus-visible {
-      outline: 2px solid #fff;
-      outline-offset: -2px;
     }
     .app-footer.is-open { background: var(--green); }
     .app-footer.is-closed { background: #b91c1c; }
     .app-footer.is-paused { background: #7f1d1d; }
     .app-footer small { opacity: 0.9; font-weight: 500; }
+    .staff-order-footer-toggle {
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      font-weight: 700;
+      padding: 0 1rem;
+      height: 100%;
+      display: inline-flex;
+      align-items: center;
+      flex: 0 0 auto;
+      text-align: left;
+    }
+    .staff-order-footer-toggle:focus-visible {
+      outline: 2px solid #fff;
+      outline-offset: -2px;
+    }
+    .staff-footer-right {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin-left: auto;
+      min-width: 0;
+      padding-right: 0.35rem;
+    }
     .staff-floor-wait {
       display: none;
       max-width: min(58vw, 22rem);
@@ -216,22 +232,23 @@
     }
     .staff-floor-staff-count {
       flex: 0 0 auto;
-      border: 1px solid rgba(255, 255, 255, 0.45);
-      background: rgba(0, 0, 0, 0.18);
+      border: 1px solid rgba(255, 255, 255, 0.75);
+      background: rgba(255, 255, 255, 0.18);
       color: #fff;
       border-radius: 8px;
-      padding: 0.22rem 0.55rem;
-      font-size: 0.72rem;
+      padding: 0.28rem 0.7rem;
+      font-size: 0.78rem;
       font-weight: 800;
       cursor: pointer;
       font-family: inherit;
       line-height: 1.2;
       white-space: nowrap;
     }
-    .staff-floor-staff-count:hover { background: rgba(0, 0, 0, 0.28); }
+    .staff-floor-staff-count:hover { background: rgba(255, 255, 255, 0.28); }
     .staff-floor-staff-count.is-few {
       border-color: #fde68a;
-      background: rgba(120, 53, 15, 0.45);
+      background: rgba(120, 53, 15, 0.55);
+      color: #fffbeb;
     }
     @keyframes staffFloorWaitPulse {
       0%, 100% { opacity: 1; }
@@ -699,7 +716,7 @@
     }
     body.native-pos .sidebar,
     body.native-pos .topbar,
-    body.native-pos .staff-order-footer {
+    body.native-pos .app-footer {
       display: none !important;
     }
     body.native-pos .scroll-main {
@@ -822,14 +839,16 @@
       </div>
     </div>
   </div>
-  <button type="button" class="app-footer staff-order-footer is-open" id="staffOrderFooterBtn" aria-live="polite">
-    <span class="staff-footer-label">営業中</span>
-    <span style="display:flex;align-items:center;gap:0.5rem;margin-left:auto;min-width:0">
+  <div class="app-footer is-open" id="staffOrderFooter" aria-live="polite">
+    <button type="button" class="staff-order-footer-toggle" id="staffOrderFooterBtn">
+      <span class="staff-footer-label">営業中</span>
+    </button>
+    <div class="staff-footer-right">
       <button type="button" id="staffFloorStaffCountBtn" class="staff-floor-staff-count" title="本日のスタッフ人数（タップで変更）">スタッフ —</button>
       <span id="staffFloorWaitWarn" class="staff-floor-wait" role="status" aria-live="polite"></span>
       <small id="staffOrderFooterHint">補助は随時ここからお知らせします</small>
-    </span>
-  </button>
+    </div>
+  </div>
 
   <div id="globalCallBanner" class="global-call-banner" style="display:none" role="status" aria-live="assertive"></div>
 
@@ -1125,28 +1144,29 @@
     applyStaffSidebarPrefs();
 
     (function staffOrderFooter() {
+      const bar = document.getElementById("staffOrderFooter");
       const btn = document.getElementById("staffOrderFooterBtn");
       const hint = document.getElementById("staffOrderFooterHint");
       const labelEl = btn && btn.querySelector(".staff-footer-label");
       const floorWarn = document.getElementById("staffFloorWaitWarn");
       const staffCountBtn = document.getElementById("staffFloorStaffCountBtn");
-      if (!btn || !hint || !labelEl) return;
+      if (!bar || !btn || !hint || !labelEl) return;
 
       async function refreshOrderFooter() {
         try {
           await window.__staffMeLoaded;
           const r = await api("/stores/" + encodeURIComponent(STORE) + "/order-footer");
           labelEl.textContent = r.labelJa || "—";
-          btn.classList.remove("is-open", "is-closed", "is-paused");
+          bar.classList.remove("is-open", "is-closed", "is-paused");
           const v = r.variant;
-          if (v === "open") btn.classList.add("is-open");
-          else if (v === "paused") btn.classList.add("is-paused");
-          else btn.classList.add("is-closed");
+          if (v === "open") bar.classList.add("is-open");
+          else if (v === "paused") bar.classList.add("is-paused");
+          else bar.classList.add("is-closed");
           const effOpen =
             typeof r.guestOperatingEffectiveOpen === "boolean"
               ? r.guestOperatingEffectiveOpen
               : Boolean(r.guestOperatingOpenByStaff);
-          btn.dataset.guestOpen = effOpen ? "1" : "0";
+          bar.dataset.guestOpen = effOpen ? "1" : "0";
           hint.textContent = effOpen
             ? "タップで営業時間外にします（卓QR停止・テイクアウトは次の枠以降の受取のみ）"
             : "タップで営業中にし、卓QRとテイクアウトを再開します";
@@ -1236,7 +1256,7 @@
       btn.addEventListener("click", async () => {
         try {
           await window.__staffMeLoaded;
-          const cur = btn.dataset.guestOpen === "1";
+          const cur = bar.dataset.guestOpen === "1";
           await api("/stores/" + encodeURIComponent(STORE) + "/order-pause", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },

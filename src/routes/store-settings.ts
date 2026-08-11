@@ -27,6 +27,7 @@ import {
   staffFooterOrderGateState,
 } from "../lib/store-order-gate.js";
 import { mergeStoreSettings, toStoreSettingsApi } from "../lib/store-settings.js";
+import { loadFloorWaitStatus } from "../lib/floor-wait-status.js";
 
 function staffSubFromReq(req: { user?: unknown }): string | null {
   const u = req.user as { sub?: string } | undefined;
@@ -70,6 +71,13 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
       guestManualClosedUntilUtc: st.guestManualClosedUntilUtc,
       guestOperatingEffectiveOpen: isGuestOperatingEffectiveOpen(st, now),
     };
+  });
+
+  /** 待ち・混雑のフロア警告（フッター右下） */
+  app.get<{ Params: { storeId: string } }>("/stores/:storeId/floor-wait-status", async (req, reply) => {
+    const status = await loadFloorWaitStatus(req.params.storeId);
+    if (!status) return reply.code(404).send({ error: "store not found" });
+    return status;
   });
 
   app.patch<{

@@ -185,6 +185,48 @@
     .app-footer.is-closed { background: #b91c1c; }
     .app-footer.is-paused { background: #7f1d1d; }
     .app-footer small { opacity: 0.9; font-weight: 500; }
+    .staff-floor-wait {
+      display: none;
+      max-width: min(58vw, 22rem);
+      margin-left: 0.75rem;
+      padding: 0.28rem 0.65rem;
+      border-radius: 8px;
+      font-size: 0.78rem;
+      font-weight: 800;
+      line-height: 1.25;
+      letter-spacing: 0.01em;
+      text-align: right;
+      flex: 0 1 auto;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .staff-floor-wait.is-delay {
+      display: inline-block;
+      background: #fbbf24;
+      color: #78350f;
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+    }
+    .staff-floor-wait.is-prepare {
+      display: inline-block;
+      background: #fecaca;
+      color: #7f1d1d;
+      animation: staffFloorWaitPulse 1.4s ease-in-out infinite;
+      box-shadow: 0 0 0 1px rgba(127, 29, 29, 0.25);
+    }
+    @keyframes staffFloorWaitPulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.72; }
+    }
+    @media (max-width: 720px) {
+      .staff-floor-wait {
+        max-width: 46vw;
+        font-size: 0.7rem;
+        padding: 0.22rem 0.45rem;
+        white-space: normal;
+      }
+      .app-footer small#staffOrderFooterHint { display: none; }
+    }
 
     .global-call-banner {
       position: fixed;
@@ -763,7 +805,10 @@
   </div>
   <button type="button" class="app-footer staff-order-footer is-open" id="staffOrderFooterBtn" aria-live="polite">
     <span class="staff-footer-label">営業中</span>
-    <small id="staffOrderFooterHint">補助は随時ここからお知らせします</small>
+    <span style="display:flex;align-items:center;gap:0.5rem;margin-left:auto;min-width:0">
+      <span id="staffFloorWaitWarn" class="staff-floor-wait" role="status" aria-live="polite"></span>
+      <small id="staffOrderFooterHint">補助は随時ここからお知らせします</small>
+    </span>
   </button>
 
   <div id="globalCallBanner" class="global-call-banner" style="display:none" role="status" aria-live="assertive"></div>
@@ -1063,6 +1108,7 @@
       const btn = document.getElementById("staffOrderFooterBtn");
       const hint = document.getElementById("staffOrderFooterHint");
       const labelEl = btn && btn.querySelector(".staff-footer-label");
+      const floorWarn = document.getElementById("staffFloorWaitWarn");
       if (!btn || !hint || !labelEl) return;
 
       async function refreshOrderFooter() {
@@ -1085,8 +1131,44 @@
             : "タップで営業中にし、卓QRとテイクアウトを再開します";
         } catch (_) {}
       }
+
+      async function refreshFloorWait() {
+        if (!floorWarn) return;
+        try {
+          await window.__staffMeLoaded;
+          const r = await api("/stores/" + encodeURIComponent(STORE) + "/floor-wait-status");
+          const level = r && r.level ? String(r.level) : "normal";
+          floorWarn.classList.remove("is-delay", "is-prepare");
+          if (level === "delay") {
+            floorWarn.classList.add("is-delay");
+            floorWarn.textContent = r.labelJa || "遅れる事を告知";
+            floorWarn.title =
+              "進行中注文 " +
+              String(r.orderQty != null ? r.orderQty : "—") +
+              "個 / 未注文案内席 " +
+              String(r.unorderedNonCounterWaitSeats != null ? r.unorderedNonCounterWaitSeats : "—");
+          } else if (level === "prepare_seats") {
+            floorWarn.classList.add("is-prepare");
+            floorWarn.textContent = r.labelJa || "15分～25分以内に席をご用意";
+            floorWarn.title =
+              "進行中注文 " +
+              String(r.orderQty != null ? r.orderQty : "—") +
+              "個 / 未注文案内席 " +
+              String(r.unorderedNonCounterWaitSeats != null ? r.unorderedNonCounterWaitSeats : "—");
+          } else {
+            floorWarn.textContent = "";
+            floorWarn.removeAttribute("title");
+          }
+        } catch (_) {}
+      }
+
       refreshOrderFooter();
+      refreshFloorWait();
       setInterval(refreshOrderFooter, 120000);
+      setInterval(refreshFloorWait, 12000);
+      document.addEventListener("visibilitychange", function () {
+        if (!document.hidden) refreshFloorWait();
+      });
 
       btn.addEventListener("click", async () => {
         try {

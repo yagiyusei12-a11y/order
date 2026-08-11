@@ -1176,35 +1176,45 @@
       function applyFloorWaitUi(r) {
         if (!r) return;
         const n = Number(r.onDutyStaffCount);
+        const t = r.thresholds || {};
         if (staffCountBtn && Number.isFinite(n)) {
           staffCountBtn.textContent = "スタッフ " + n + "人";
           staffCountBtn.classList.toggle("is-few", r.staffingMode === "few");
-          const t = r.thresholds || {};
           staffCountBtn.title =
             "本日のスタッフ人数（タップで変更）\n" +
-            (r.staffingMode === "few"
-              ? "少人数モード: 遅延" + t.delayMin + "〜" + t.delayMax + " / 席用意" + t.prepareQtyMin + "〜"
-              : "多人数モード: 遅延" + t.delayMin + "〜" + t.delayMax + " / 席用意" + t.prepareQtyMin + "〜");
+            (r.staffingMode === "few" ? "少人数モード（一段早め）\n" : "多人数モード\n") +
+            "全体: 遅延" +
+            String(t.delayMin ?? "—") +
+            "〜 / 席用意" +
+            String(t.prepareMin ?? "—") +
+            "〜本\n" +
+            "揚げ・焼き: 遅延" +
+            String(t.stationDelayMin ?? "—") +
+            "〜 / 席用意" +
+            String(t.stationPrepareMin ?? "—") +
+            "〜本";
         }
         if (!floorWarn) return;
         const level = r.level ? String(r.level) : "normal";
+        const detail =
+          "進行中 " +
+          String(r.inFlightLineCount != null ? r.inFlightLineCount : "—") +
+          "本（個数合計 " +
+          String(r.orderQty != null ? r.orderQty : "—") +
+          "） / 揚げ場 " +
+          String(r.fryStationInFlight != null ? r.fryStationInFlight : "—") +
+          " / 焼き場 " +
+          String(r.grillStationInFlight != null ? r.grillStationInFlight : "—") +
+          (r.trigger && r.trigger !== "none" ? " / 発火:" + r.trigger : "");
         floorWarn.classList.remove("is-delay", "is-prepare");
         if (level === "delay") {
           floorWarn.classList.add("is-delay");
           floorWarn.textContent = r.labelJa || "遅れる事を告知";
-          floorWarn.title =
-            "進行中注文 " +
-            String(r.orderQty != null ? r.orderQty : "—") +
-            "個 / 未注文案内席 " +
-            String(r.unorderedNonCounterWaitSeats != null ? r.unorderedNonCounterWaitSeats : "—");
+          floorWarn.title = detail;
         } else if (level === "prepare_seats") {
           floorWarn.classList.add("is-prepare");
           floorWarn.textContent = r.labelJa || "15分～25分以内に席をご用意";
-          floorWarn.title =
-            "進行中注文 " +
-            String(r.orderQty != null ? r.orderQty : "—") +
-            "個 / 未注文案内席 " +
-            String(r.unorderedNonCounterWaitSeats != null ? r.unorderedNonCounterWaitSeats : "—");
+          floorWarn.title = detail;
         } else {
           floorWarn.textContent = "";
           floorWarn.removeAttribute("title");
@@ -1232,7 +1242,10 @@
           ev.preventDefault();
           ev.stopPropagation();
           const cur = Number(String(staffCountBtn.textContent || "").replace(/[^\d]/g, "")) || 10;
-          const raw = window.prompt("本日のスタッフ人数（1〜99）\n10人以上＝通常の警告タイミング / 未満＝早め", String(cur));
+          const raw = window.prompt(
+            "本日のスタッフ人数（1〜99）\n10人以上＝標準閾値 / 9人以下＝一段早め\n※警告はキッチン進行中本数（全体＋揚げ／焼き）で判定します",
+            String(cur),
+          );
           if (raw == null) return;
           const n = Math.round(Number(String(raw).trim()));
           if (!Number.isFinite(n) || n < 1 || n > 99) {

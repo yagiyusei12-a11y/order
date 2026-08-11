@@ -1,104 +1,105 @@
 import { prisma } from "../db.js";
 import { mergeStoreSettings } from "./store-settings.js";
-import {
-  buildTodayReceptionShiftKey,
-  computeDefaultSeatsForShift,
-  mergeShiftSeatsWithLiveDerived,
-} from "./reception-seat-state.js";
-import { normalizeReceptionSeatStatus } from "./reception-seat-status.js";
 
 export type FloorWaitLevel = "normal" | "delay" | "prepare_seats";
 
+/**
+ * キッチン遅延調査（注文→調理済）に基づく閾値。
+ * 進行中＝queued/cooking の明細「本数」（個数合計ではない）。
+ * 未注文席は使わない（誤警報の主因だったため）。
+ */
 export type FloorWaitThresholds = {
-  /** スタッフ人数がこの値以上なら「多人数」閾値 */
   staffManyMin: number;
+  /** 全体: この本数以上で遅延告知（〜prepareMin-1） */
   delayMin: number;
-  delayMax: number;
-  prepareQtyMin: number;
-  lowQtyMax: number;
-  unorderedMin: number;
+  /** 全体: この本数以上で席用意 */
+  prepareMin: number;
+  /** 揚げ場/焼き場: この本数以上で遅延告知 */
+  stationDelayMin: number;
+  /** 揚げ場/焼き場: この本数以上で席用意 */
+  stationPrepareMin: number;
 };
 
 export type FloorWaitStatus = {
   level: FloorWaitLevel;
   labelJa: string;
-  /** キッチン進行中（queued/cooking）の数量合計 */
+  /** 進行中明細の本数（queued+cooking） */
+  inFlightLineCount: number;
+  /** 互換・表示用: 進行中の数量合計 */
   orderQty: number;
-  /** カウンター以外・オレンジ(guiding)または青(occupied)で未注文の席数 */
-  unorderedNonCounterWaitSeats: number;
+  fryStationInFlight: number;
+  grillStationInFlight: number;
   onDutyStaffCount: number;
   staffingMode: "many" | "few";
   thresholds: FloorWaitThresholds;
+  /** どの条件で発火したか（デバッグ・tooltip用） */
+  trigger: "none" | "total" | "fry" | "grill";
 };
 
-/** 10人以上＝今までの閾値 / 未満＝早め */
 export const FLOOR_WAIT_STAFF_MANY_MIN = 10;
 
+/** 調理場名の正規化照合（全角半角差を吸収） */
+export function normalizeKitchenStationName(s: unknown): string {
+  return String(s ?? "")
+    .trim()
+    .replace(/\s+/g, "")
+    .normalize("NFKC");
+}
+
+export function isFryStationName(name: unknown): boolean {
+  const n = normalizeKitchenStationName(name);
+  return n === "揚げ場" || n.includes("揚げ");
+}
+
+export function isGrillStationName(name: unknown): boolean {
+  const n = normalizeKitchenStationName(name);
+  return n === "焼き場" || n.includes("焼き");
+}
+
+/**
+ * 多人数（10人〜）: 全体 20–24 / 25〜、揚げ・焼き 12〜 / 16〜
+ * 少人数（〜9人）: 一段下げ 全体 18–22 / 23〜、揚げ・焼き 10〜 / 14〜
+ */
 export function floorWaitThresholdsForStaffCount(onDutyStaffCount: number): FloorWaitThresholds {
   const n = Math.max(1, Math.floor(Number(onDutyStaffCount) || 1));
   if (n >= FLOOR_WAIT_STAFF_MANY_MIN) {
     return {
       staffManyMin: FLOOR_WAIT_STAFF_MANY_MIN,
-      delayMin: 16,
-      delayMax: 24,
-      prepareQtyMin: 25,
-      lowQtyMax: 15,
-      unorderedMin: 5,
+      delayMin: 20,
+      prepareMin: 25,
+      stationDelayMin: 12,
+      stationPrepareMin: 16,
     };
   }
   return {
     staffManyMin: FLOOR_WAIT_STAFF_MANY_MIN,
-    delayMin: 8,
-    delayMax: 12,
-    prepareQtyMin: 13,
-    lowQtyMax: 7,
-    unorderedMin: 3,
+    delayMin: 18,
+    prepareMin: 23,
+    stationDelayMin: 10,
+    stationPrepareMin: 14,
   };
 }
 
-function normalizeSeatTypeLabel(s: unknown): string {
-  return String(s ?? "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .normalize("NFKC");
-}
+export function resolveFloorWaitLevel(input: {
+  inFlightLineCount: number;
+  fryStationInFlight: number;
+  grillStationInFlight: number;
+  onDutyStaffCount: number;
+}): { level: FloorWaitLevel; trigger: FloorWaitStatus["trigger"] } {
+  const total = Math.max(0, Math.floor(Number(input.inFlightLineCount) || 0));
+  const fry = Math.max(0, Math.floor(Number(input.fryStationInFlight) || 0));
+  const grill = Math.max(0, Math.floor(Number(input.grillStationInFlight) || 0));
+  const t = floorWaitThresholdsForStaffCount(input.onDutyStaffCount);
 
-/** reception.ts と同趣旨: カウンター卓は待ち人数カウントから除外 */
-export function isCounterTableRow(t: { publicCode: string; seatType?: string | null }): boolean {
-  if (normalizeSeatTypeLabel(t.seatType) === "カウンター") return true;
-  const pc = String(t.publicCode ?? "").trim();
-  if (!pc) return false;
-  if (/^(?:[A-Za-z0-9_-]+[-_])?C\d+$/i.test(pc)) return true;
-  if (/^\d+$/.test(pc)) {
-    const n = parseInt(pc, 10);
-    if (Number.isFinite(n) && n >= 1 && n <= 10) return true;
-  }
-  return false;
-}
+  if (total >= t.prepareMin) return { level: "prepare_seats", trigger: "total" };
+  if (fry >= t.stationPrepareMin) return { level: "prepare_seats", trigger: "fry" };
+  if (grill >= t.stationPrepareMin) return { level: "prepare_seats", trigger: "grill" };
 
-function receptionLunchEndHour(configData: Record<string, unknown>): number {
-  const n = Number(configData.receptionShiftLunchEndHour);
-  if (!Number.isFinite(n)) return 15;
-  return Math.min(23, Math.max(0, Math.floor(n)));
-}
+  if (total >= t.delayMin) return { level: "delay", trigger: "total" };
+  if (fry >= t.stationDelayMin) return { level: "delay", trigger: "fry" };
+  if (grill >= t.stationDelayMin) return { level: "delay", trigger: "grill" };
 
-/**
- * 優先度:
- * 1. 席をご用意 … 注文個数≥prepare または（個数≤lowQtyMax かつ 未注文≥unorderedMin）
- * 2. 遅れる告知 … delayMin〜delayMax
- * 3. 通常
- */
-export function resolveFloorWaitLevel(
-  orderQty: number,
-  unorderedNonCounterWaitSeats: number,
-  onDutyStaffCount: number,
-): FloorWaitLevel {
-  const qty = Math.max(0, Math.floor(Number(orderQty) || 0));
-  const wait = Math.max(0, Math.floor(Number(unorderedNonCounterWaitSeats) || 0));
-  const t = floorWaitThresholdsForStaffCount(onDutyStaffCount);
-  if (qty >= t.prepareQtyMin || (qty <= t.lowQtyMax && wait >= t.unorderedMin)) return "prepare_seats";
-  if (qty >= t.delayMin && qty <= t.delayMax) return "delay";
-  return "normal";
+  return { level: "normal", trigger: "none" };
 }
 
 export function floorWaitLabelJa(level: FloorWaitLevel): string {
@@ -123,95 +124,61 @@ export async function loadFloorWaitStatus(storeId: string): Promise<FloorWaitSta
     return {
       level: st.floorWaitForceLevel,
       labelJa: floorWaitLabelJa(st.floorWaitForceLevel),
-      orderQty: st.floorWaitForceLevel === "prepare_seats" ? thresholds.prepareQtyMin : st.floorWaitForceLevel === "delay" ? thresholds.delayMin : 0,
-      unorderedNonCounterWaitSeats:
-        st.floorWaitForceLevel === "prepare_seats" ? thresholds.unorderedMin : 0,
+      inFlightLineCount:
+        st.floorWaitForceLevel === "prepare_seats"
+          ? thresholds.prepareMin
+          : st.floorWaitForceLevel === "delay"
+            ? thresholds.delayMin
+            : 0,
+      orderQty: 0,
+      fryStationInFlight: 0,
+      grillStationInFlight: 0,
       onDutyStaffCount,
       staffingMode,
       thresholds,
+      trigger: "none",
     };
   }
 
-  const conf = await prisma.receptionConfig.findUnique({
-    where: { storeId: store.id },
-    select: { data: true },
+  const lines = await prisma.orderLine.findMany({
+    where: {
+      status: { in: ["queued", "cooking"] },
+      order: { session: { storeId: store.id, status: "open" } },
+    },
+    select: {
+      qty: true,
+      menuItem: { select: { kitchenStation: { select: { name: true } } } },
+    },
   });
-  const cData =
-    conf?.data && typeof conf.data === "object" && !Array.isArray(conf.data)
-      ? (conf.data as Record<string, unknown>)
-      : {};
-  const lunchEnd = receptionLunchEndHour(cData);
-  const shiftKey = buildTodayReceptionShiftKey(st.timezone, lunchEnd);
 
-  const [qtyAgg, derived, shift, tables, orderedSessions] = await Promise.all([
-    prisma.orderLine.aggregate({
-      where: {
-        status: { in: ["queued", "cooking"] },
-        order: { session: { storeId: store.id, status: "open" } },
-      },
-      _sum: { qty: true },
-    }),
-    computeDefaultSeatsForShift(store.id),
-    prisma.receptionShift.findUnique({
-      where: { storeId_shiftKey: { storeId: store.id, shiftKey } },
-      select: { seats: true },
-    }),
-    prisma.table.findMany({
-      where: { storeId: store.id, active: true },
-      select: { id: true, publicCode: true, seatType: true },
-    }),
-    prisma.diningSession.findMany({
-      where: {
-        storeId: store.id,
-        status: { in: ["open", "merged"] },
-        orders: { some: {} },
-      },
-      select: { tableId: true },
-    }),
-  ]);
-
-  const orderQty = Math.max(0, Math.floor(Number(qtyAgg._sum.qty) || 0));
-  const orderedTableIds = new Set(orderedSessions.map((s) => s.tableId));
-
-  let seats: unknown[] = Array.isArray(shift?.seats) ? (shift!.seats as unknown[]) : [];
-  if (!seats.length) {
-    seats = derived as unknown[];
-  } else {
-    seats = mergeShiftSeatsWithLiveDerived(seats, derived);
+  let orderQty = 0;
+  let fryStationInFlight = 0;
+  let grillStationInFlight = 0;
+  for (const l of lines) {
+    orderQty += Math.max(1, Number(l.qty) || 1);
+    const stationName = l.menuItem?.kitchenStation?.name;
+    if (isFryStationName(stationName)) fryStationInFlight += 1;
+    if (isGrillStationName(stationName)) grillStationInFlight += 1;
   }
+  const inFlightLineCount = lines.length;
 
-  const tableByCode = new Map<string, (typeof tables)[number]>();
-  for (const t of tables) {
-    const pc = String(t.publicCode ?? "").trim();
-    if (pc) tableByCode.set(pc, t);
-  }
+  const resolved = resolveFloorWaitLevel({
+    inFlightLineCount,
+    fryStationInFlight,
+    grillStationInFlight,
+    onDutyStaffCount,
+  });
 
-  let unorderedNonCounterWaitSeats = 0;
-  for (const row of seats) {
-    if (!row || typeof row !== "object" || Array.isArray(row)) continue;
-    const o = row as Record<string, unknown>;
-    const code = typeof o.id === "string" ? o.id.trim() : "";
-    if (!code) continue;
-    const table = tableByCode.get(code);
-    if (!table || isCounterTableRow(table)) continue;
-    const status = normalizeReceptionSeatStatus(o.status);
-    if (status === "guiding") {
-      unorderedNonCounterWaitSeats += 1;
-      continue;
-    }
-    if (status === "occupied" && !orderedTableIds.has(table.id)) {
-      unorderedNonCounterWaitSeats += 1;
-    }
-  }
-
-  const level = resolveFloorWaitLevel(orderQty, unorderedNonCounterWaitSeats, onDutyStaffCount);
   return {
-    level,
-    labelJa: floorWaitLabelJa(level),
+    level: resolved.level,
+    labelJa: floorWaitLabelJa(resolved.level),
+    inFlightLineCount,
     orderQty,
-    unorderedNonCounterWaitSeats,
+    fryStationInFlight,
+    grillStationInFlight,
     onDutyStaffCount,
     staffingMode,
     thresholds,
+    trigger: resolved.trigger,
   };
 }

@@ -253,6 +253,11 @@ export type StoreSettingsShape = {
    * "" | "normal" | "delay" | "prepare_seats"
    */
   floorWaitForceLevel: "" | FloorWaitForceLevel;
+  /**
+   * 本日フロアのスタッフ人数（待ち警告の閾値切替用）。
+   * 10人以上＝通常閾値、未満＝早め警告。
+   */
+  floorWaitOnDutyStaffCount: number;
   billCorrectionPolicy: BillCorrectionPolicy;
   /** 日次在庫リセットを有効にする（店舗 TZ の stockDailyResetTimeMin に実行） */
   stockDailyResetEnabled: boolean;
@@ -495,6 +500,7 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     thermalPrinterPort: 9100,
     thermalKitchenAutoPrint: false,
     floorWaitForceLevel: "",
+    floorWaitOnDutyStaffCount: 10,
     billCorrectionPolicy: {
       enabled: true,
       payments: true,
@@ -724,6 +730,9 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     if (v === "" || v === "normal" || v === "delay" || v === "prepare_seats") {
       d.floorWaitForceLevel = v;
     }
+  }
+  if (typeof o.floorWaitOnDutyStaffCount === "number" && Number.isFinite(o.floorWaitOnDutyStaffCount)) {
+    d.floorWaitOnDutyStaffCount = Math.min(99, Math.max(1, Math.round(o.floorWaitOnDutyStaffCount)));
   }
   if (o.billCorrectionPolicy && typeof o.billCorrectionPolicy === "object" && !Array.isArray(o.billCorrectionPolicy)) {
     const p = o.billCorrectionPolicy as Record<string, unknown>;

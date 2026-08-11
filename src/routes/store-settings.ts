@@ -80,6 +80,29 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
     return status;
   });
 
+  /** 本日のスタッフ人数（待ち警告閾値用・ログイン済みスタッフなら更新可） */
+  app.patch<{
+    Params: { storeId: string };
+    Body: { floorWaitOnDutyStaffCount?: unknown };
+  }>("/stores/:storeId/floor-wait-staff-count", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    const raw = req.body?.floorWaitOnDutyStaffCount;
+    const n = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
+    if (!Number.isFinite(n)) {
+      return reply.code(400).send({ error: "floorWaitOnDutyStaffCount required" });
+    }
+    const count = Math.min(99, Math.max(1, Math.round(n)));
+    const cur = mergeStoreSettings(store.settings);
+    const next = mergeStoreSettings({ ...cur, floorWaitOnDutyStaffCount: count });
+    await prisma.store.update({
+      where: { id: store.id },
+      data: { settings: next as object },
+    });
+    const status = await loadFloorWaitStatus(store.id);
+    return status ?? { ok: true, onDutyStaffCount: count };
+  });
+
   app.patch<{
     Params: { storeId: string };
     Body: { name?: string; settings?: Record<string, unknown> };

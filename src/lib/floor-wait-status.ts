@@ -9,6 +9,16 @@ import { normalizeReceptionSeatStatus } from "./reception-seat-status.js";
 
 export type FloorWaitLevel = "normal" | "delay" | "prepare_seats";
 
+export type FloorWaitThresholds = {
+  /** スタッフ人数がこの値以上なら「多人数」閾値 */
+  staffManyMin: number;
+  delayMin: number;
+  delayMax: number;
+  prepareQtyMin: number;
+  lowQtyMax: number;
+  unorderedMin: number;
+};
+
 export type FloorWaitStatus = {
   level: FloorWaitLevel;
   labelJa: string;
@@ -16,7 +26,35 @@ export type FloorWaitStatus = {
   orderQty: number;
   /** カウンター以外・オレンジ(guiding)または青(occupied)で未注文の席数 */
   unorderedNonCounterWaitSeats: number;
+  onDutyStaffCount: number;
+  staffingMode: "many" | "few";
+  thresholds: FloorWaitThresholds;
 };
+
+/** 10人以上＝今までの閾値 / 未満＝早め */
+export const FLOOR_WAIT_STAFF_MANY_MIN = 10;
+
+export function floorWaitThresholdsForStaffCount(onDutyStaffCount: number): FloorWaitThresholds {
+  const n = Math.max(1, Math.floor(Number(onDutyStaffCount) || 1));
+  if (n >= FLOOR_WAIT_STAFF_MANY_MIN) {
+    return {
+      staffManyMin: FLOOR_WAIT_STAFF_MANY_MIN,
+      delayMin: 16,
+      delayMax: 24,
+      prepareQtyMin: 25,
+      lowQtyMax: 15,
+      unorderedMin: 5,
+    };
+  }
+  return {
+    staffManyMin: FLOOR_WAIT_STAFF_MANY_MIN,
+    delayMin: 8,
+    delayMax: 12,
+    prepareQtyMin: 13,
+    lowQtyMax: 7,
+    unorderedMin: 3,
+  };
+}
 
 function normalizeSeatTypeLabel(s: unknown): string {
   return String(s ?? "")
@@ -46,18 +84,20 @@ function receptionLunchEndHour(configData: Record<string, unknown>): number {
 
 /**
  * 優先度:
- * 1. 席をご用意 … 注文個数≥25 または（個数≤15 かつ 未注文オレンジ/青≥5）
- * 2. 遅れる告知 … 注文個数 16〜24
- * 3. 通常 … それ以外
+ * 1. 席をご用意 … 注文個数≥prepare または（個数≤lowQtyMax かつ 未注文≥unorderedMin）
+ * 2. 遅れる告知 … delayMin〜delayMax
+ * 3. 通常
  */
 export function resolveFloorWaitLevel(
   orderQty: number,
   unorderedNonCounterWaitSeats: number,
+  onDutyStaffCount: number,
 ): FloorWaitLevel {
   const qty = Math.max(0, Math.floor(Number(orderQty) || 0));
   const wait = Math.max(0, Math.floor(Number(unorderedNonCounterWaitSeats) || 0));
-  if (qty >= 25 || (qty <= 15 && wait >= 5)) return "prepare_seats";
-  if (qty >= 16 && qty <= 24) return "delay";
+  const t = floorWaitThresholdsForStaffCount(onDutyStaffCount);
+  if (qty >= t.prepareQtyMin || (qty <= t.lowQtyMax && wait >= t.unorderedMin)) return "prepare_seats";
+  if (qty >= t.delayMin && qty <= t.delayMax) return "delay";
   return "normal";
 }
 
@@ -75,12 +115,20 @@ export async function loadFloorWaitStatus(storeId: string): Promise<FloorWaitSta
   if (!store) return null;
 
   const st = mergeStoreSettings(store.settings);
+  const onDutyStaffCount = Math.min(99, Math.max(1, Math.round(Number(st.floorWaitOnDutyStaffCount) || 10)));
+  const thresholds = floorWaitThresholdsForStaffCount(onDutyStaffCount);
+  const staffingMode: "many" | "few" = onDutyStaffCount >= FLOOR_WAIT_STAFF_MANY_MIN ? "many" : "few";
+
   if (st.floorWaitForceLevel === "normal" || st.floorWaitForceLevel === "delay" || st.floorWaitForceLevel === "prepare_seats") {
     return {
       level: st.floorWaitForceLevel,
       labelJa: floorWaitLabelJa(st.floorWaitForceLevel),
-      orderQty: st.floorWaitForceLevel === "prepare_seats" ? 25 : st.floorWaitForceLevel === "delay" ? 20 : 0,
-      unorderedNonCounterWaitSeats: st.floorWaitForceLevel === "prepare_seats" ? 5 : 0,
+      orderQty: st.floorWaitForceLevel === "prepare_seats" ? thresholds.prepareQtyMin : st.floorWaitForceLevel === "delay" ? thresholds.delayMin : 0,
+      unorderedNonCounterWaitSeats:
+        st.floorWaitForceLevel === "prepare_seats" ? thresholds.unorderedMin : 0,
+      onDutyStaffCount,
+      staffingMode,
+      thresholds,
     };
   }
 
@@ -156,11 +204,14 @@ export async function loadFloorWaitStatus(storeId: string): Promise<FloorWaitSta
     }
   }
 
-  const level = resolveFloorWaitLevel(orderQty, unorderedNonCounterWaitSeats);
+  const level = resolveFloorWaitLevel(orderQty, unorderedNonCounterWaitSeats, onDutyStaffCount);
   return {
     level,
     labelJa: floorWaitLabelJa(level),
     orderQty,
     unorderedNonCounterWaitSeats,
+    onDutyStaffCount,
+    staffingMode,
+    thresholds,
   };
 }

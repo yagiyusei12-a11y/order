@@ -214,6 +214,25 @@
       animation: staffFloorWaitPulse 1.4s ease-in-out infinite;
       box-shadow: 0 0 0 1px rgba(127, 29, 29, 0.25);
     }
+    .staff-floor-staff-count {
+      flex: 0 0 auto;
+      border: 1px solid rgba(255, 255, 255, 0.45);
+      background: rgba(0, 0, 0, 0.18);
+      color: #fff;
+      border-radius: 8px;
+      padding: 0.22rem 0.55rem;
+      font-size: 0.72rem;
+      font-weight: 800;
+      cursor: pointer;
+      font-family: inherit;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+    .staff-floor-staff-count:hover { background: rgba(0, 0, 0, 0.28); }
+    .staff-floor-staff-count.is-few {
+      border-color: #fde68a;
+      background: rgba(120, 53, 15, 0.45);
+    }
     @keyframes staffFloorWaitPulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.72; }
@@ -806,6 +825,7 @@
   <button type="button" class="app-footer staff-order-footer is-open" id="staffOrderFooterBtn" aria-live="polite">
     <span class="staff-footer-label">営業中</span>
     <span style="display:flex;align-items:center;gap:0.5rem;margin-left:auto;min-width:0">
+      <button type="button" id="staffFloorStaffCountBtn" class="staff-floor-staff-count" title="本日のスタッフ人数（タップで変更）">スタッフ —</button>
       <span id="staffFloorWaitWarn" class="staff-floor-wait" role="status" aria-live="polite"></span>
       <small id="staffOrderFooterHint">補助は随時ここからお知らせします</small>
     </span>
@@ -1109,6 +1129,7 @@
       const hint = document.getElementById("staffOrderFooterHint");
       const labelEl = btn && btn.querySelector(".staff-footer-label");
       const floorWarn = document.getElementById("staffFloorWaitWarn");
+      const staffCountBtn = document.getElementById("staffFloorStaffCountBtn");
       if (!btn || !hint || !labelEl) return;
 
       async function refreshOrderFooter() {
@@ -1132,33 +1153,49 @@
         } catch (_) {}
       }
 
-      async function refreshFloorWait() {
+      function applyFloorWaitUi(r) {
+        if (!r) return;
+        const n = Number(r.onDutyStaffCount);
+        if (staffCountBtn && Number.isFinite(n)) {
+          staffCountBtn.textContent = "スタッフ " + n + "人";
+          staffCountBtn.classList.toggle("is-few", r.staffingMode === "few");
+          const t = r.thresholds || {};
+          staffCountBtn.title =
+            "本日のスタッフ人数（タップで変更）\n" +
+            (r.staffingMode === "few"
+              ? "少人数モード: 遅延" + t.delayMin + "〜" + t.delayMax + " / 席用意" + t.prepareQtyMin + "〜"
+              : "多人数モード: 遅延" + t.delayMin + "〜" + t.delayMax + " / 席用意" + t.prepareQtyMin + "〜");
+        }
         if (!floorWarn) return;
+        const level = r.level ? String(r.level) : "normal";
+        floorWarn.classList.remove("is-delay", "is-prepare");
+        if (level === "delay") {
+          floorWarn.classList.add("is-delay");
+          floorWarn.textContent = r.labelJa || "遅れる事を告知";
+          floorWarn.title =
+            "進行中注文 " +
+            String(r.orderQty != null ? r.orderQty : "—") +
+            "個 / 未注文案内席 " +
+            String(r.unorderedNonCounterWaitSeats != null ? r.unorderedNonCounterWaitSeats : "—");
+        } else if (level === "prepare_seats") {
+          floorWarn.classList.add("is-prepare");
+          floorWarn.textContent = r.labelJa || "15分～25分以内に席をご用意";
+          floorWarn.title =
+            "進行中注文 " +
+            String(r.orderQty != null ? r.orderQty : "—") +
+            "個 / 未注文案内席 " +
+            String(r.unorderedNonCounterWaitSeats != null ? r.unorderedNonCounterWaitSeats : "—");
+        } else {
+          floorWarn.textContent = "";
+          floorWarn.removeAttribute("title");
+        }
+      }
+
+      async function refreshFloorWait() {
         try {
           await window.__staffMeLoaded;
           const r = await api("/stores/" + encodeURIComponent(STORE) + "/floor-wait-status");
-          const level = r && r.level ? String(r.level) : "normal";
-          floorWarn.classList.remove("is-delay", "is-prepare");
-          if (level === "delay") {
-            floorWarn.classList.add("is-delay");
-            floorWarn.textContent = r.labelJa || "遅れる事を告知";
-            floorWarn.title =
-              "進行中注文 " +
-              String(r.orderQty != null ? r.orderQty : "—") +
-              "個 / 未注文案内席 " +
-              String(r.unorderedNonCounterWaitSeats != null ? r.unorderedNonCounterWaitSeats : "—");
-          } else if (level === "prepare_seats") {
-            floorWarn.classList.add("is-prepare");
-            floorWarn.textContent = r.labelJa || "15分～25分以内に席をご用意";
-            floorWarn.title =
-              "進行中注文 " +
-              String(r.orderQty != null ? r.orderQty : "—") +
-              "個 / 未注文案内席 " +
-              String(r.unorderedNonCounterWaitSeats != null ? r.unorderedNonCounterWaitSeats : "—");
-          } else {
-            floorWarn.textContent = "";
-            floorWarn.removeAttribute("title");
-          }
+          applyFloorWaitUi(r);
         } catch (_) {}
       }
 
@@ -1169,6 +1206,32 @@
       document.addEventListener("visibilitychange", function () {
         if (!document.hidden) refreshFloorWait();
       });
+
+      if (staffCountBtn) {
+        staffCountBtn.addEventListener("click", async (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const cur = Number(String(staffCountBtn.textContent || "").replace(/[^\d]/g, "")) || 10;
+          const raw = window.prompt("本日のスタッフ人数（1〜99）\n10人以上＝通常の警告タイミング / 未満＝早め", String(cur));
+          if (raw == null) return;
+          const n = Math.round(Number(String(raw).trim()));
+          if (!Number.isFinite(n) || n < 1 || n > 99) {
+            alert("1〜99の数字を入力してください");
+            return;
+          }
+          try {
+            await window.__staffMeLoaded;
+            const r = await api("/stores/" + encodeURIComponent(STORE) + "/floor-wait-staff-count", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ floorWaitOnDutyStaffCount: n }),
+            });
+            applyFloorWaitUi(r);
+          } catch (e) {
+            alert(String(e && e.message ? e.message : e));
+          }
+        });
+      }
 
       btn.addEventListener("click", async () => {
         try {

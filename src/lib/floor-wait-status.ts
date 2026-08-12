@@ -7,7 +7,8 @@ export type FloorWaitLevel = "normal" | "delay" | "prepare_seats";
 
 /**
  * キッチン遅延調査（注文→調理済）に基づく閾値。
- * 進行中＝queued/cooking の明細「本数」（個数合計ではない）。
+ * 進行中＝店内（eatMode≠takeout）の queued/cooking 明細「本数」（個数合計ではない）。
+ * テイクアウトは受取まで厨房に残るので席待ち判定から除外する。
  * 未注文席は使わない（誤警報の主因だったため）。
  */
 export type FloorWaitThresholds = {
@@ -75,7 +76,8 @@ export function isGrillStationName(name: unknown): boolean {
 }
 
 /**
- * 多人数（10人〜）: 全体 20–24 / 25〜、揚げ・焼き 12〜 / 16〜
+ * 多人数（10人〜）: 8/11 はスタッフ11名・店内同時進行56 / 揚げ20 / 焼き13でも余裕。
+ *   全体 60–74 / 75〜、揚げ・焼き 22〜 / 28〜
  * 少人数（〜9人）: 一段下げ 全体 18–22 / 23〜、揚げ・焼き 10〜 / 14〜
  */
 export function floorWaitThresholdsForStaffCount(onDutyStaffCount: number): FloorWaitThresholds {
@@ -83,10 +85,10 @@ export function floorWaitThresholdsForStaffCount(onDutyStaffCount: number): Floo
   if (n >= FLOOR_WAIT_STAFF_MANY_MIN) {
     return {
       staffManyMin: FLOOR_WAIT_STAFF_MANY_MIN,
-      delayMin: 20,
-      prepareMin: 25,
-      stationDelayMin: 12,
-      stationPrepareMin: 16,
+      delayMin: 60,
+      prepareMin: 75,
+      stationDelayMin: 22,
+      stationPrepareMin: 28,
     };
   }
   return {
@@ -223,6 +225,7 @@ export async function loadFloorWaitStatus(storeId: string): Promise<FloorWaitSta
   const lines = await prisma.orderLine.findMany({
     where: {
       status: { in: ["queued", "cooking"] },
+      eatMode: { not: "takeout" },
       order: { session: { storeId: store.id, status: "open" } },
     },
     select: {

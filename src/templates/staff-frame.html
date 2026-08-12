@@ -1206,7 +1206,7 @@
         if (!floorWarn) return;
         const level = r.level ? String(r.level) : "normal";
         const detail =
-          "進行中 " +
+          "店内進行中 " +
           String(r.inFlightLineCount != null ? r.inFlightLineCount : "—") +
           "本（個数合計 " +
           String(r.orderQty != null ? r.orderQty : "—") +
@@ -1280,7 +1280,7 @@
           ev.stopPropagation();
           const cur = Number(String(staffCountBtn.textContent || "").replace(/[^\d]/g, "")) || 10;
           const raw = window.prompt(
-            "本日のスタッフ人数（1〜99）\n10人以上＝標準閾値 / 9人以下＝一段早め\n※警告はキッチン進行中本数（全体＋揚げ／焼き）で判定します",
+            "本日のスタッフ人数（1〜99）\n10人以上＝標準閾値 / 9人以下＝一段早め\n※警告は店内の進行中本数（全体＋揚げ／焼き）。テイクアウトは含めません",
             String(cur),
           );
           if (raw == null) return;

@@ -59,7 +59,7 @@ $daikoRemotePath = if ($env:ORDER_VPS_DAIKO_PATH) { $env:ORDER_VPS_DAIKO_PATH } 
 
 # Single-line remote script avoids CRLF breaking bash on Windows.
 # install-harunoyukoto-php.sh: /sougei|/zaiko を Nginx:9083 に固定（Caddy :9000 回帰防止）
-$remote = "set -e; cd $remotePath; git pull; bash deploy/vps/install-harunoyukoto-php.sh; npm ci; npx prisma migrate deploy; npx prisma generate; npm run build; sudo systemctl restart $service; sudo bash deploy/vps/install-order-watchdog.sh; sudo bash deploy/vps/harden-vps.sh; sleep 2; curl -sS http://127.0.0.1:3000/health"
+$remote = "set -e; cd $remotePath; git pull; bash deploy/vps/install-harunoyukoto-php.sh; npm ci; npx prisma migrate deploy; npx prisma generate; npm run build; sudo systemctl restart $service; sudo bash deploy/vps/install-order-watchdog.sh; sleep 2; curl -sS http://127.0.0.1:3000/health"
 if ($daikoDeploy) {
   $remote += "; cd $daikoRemotePath; git pull; npm ci; npx prisma migrate deploy; npx prisma generate; npm run db:seed; npm run build; sudo systemctl restart $daikoService; sleep 2; curl -sS http://127.0.0.1:3001/health"
 }

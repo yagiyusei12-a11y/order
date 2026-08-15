@@ -19,7 +19,9 @@ if [[ ! -f "$SRC" ]]; then
   exit 1
 fi
 
-install -m 0755 "$SRC" "$BIN"
+# Strip CRLF so Windows checkouts do not break bash on the VPS
+sed 's/\r$//' "$SRC" >"$BIN"
+chmod 0755 "$BIN"
 install -d -m 0755 /var/lib/order-watchdog
 if [[ ! -f /etc/order-watchdog.env ]]; then
   cat >/etc/order-watchdog.env <<'EOF'

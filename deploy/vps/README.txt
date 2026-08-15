@@ -26,6 +26,13 @@ VPS デプロイ（概要）
 3) 常時起動（systemd）※ bootstrap で dist ができたあと
    sudo bash deploy/vps/install-systemd.sh
 
+3b) 監視（order-app 死活 + /usr/bin/node 改ざん検知・自動復旧、毎分）
+   sudo bash deploy/vps/install-order-watchdog.sh
+   任意: Discord/Slack Webhook を /etc/order-watchdog.env の
+     ORDER_WATCHDOG_WEBHOOK_URL=...
+   に書く（未設定でも journalctl -t order-watchdog に残る）
+   ログ: journalctl -t order-watchdog -f
+
 4) HTTPS（DNS がサーバ IP を向いたあと）
    bash deploy/vps/up-proxy.sh
    （内部で install-harunoyukoto-php.sh も実行し、/sougei・/zaiko を Nginx:9083 に固定）

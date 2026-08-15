@@ -245,8 +245,22 @@ function New-EscPosBytes([string[]]$Lines) {
 }
 
 function New-EscPosDrawerKick {
-  # Epson 互換 ESC p — キャッシュドロア開放（プリンタ経由配線）
-  return [byte[]]@(0x1b, 0x70, 0x00, 0x19, 0xfa)
+  # Epson 互換 ESC p — pin0 + pin1（機種差吸収）。Android レジアプリと同じパルス幅
+  $pin0 = [byte[]]@(0x1b, 0x70, 0x00, 0x19, 0xfa)
+  $pin1 = [byte[]]@(0x1b, 0x70, 0x01, 0x19, 0xfa)
+  return ($pin0 + $pin1)
+}
+
+function Test-IsDrawerJob($job) {
+  if (-not $job) { return $false }
+  $kind = [string]$job.kind
+  if ($kind -and ($kind.Trim().ToLowerInvariant() -eq "drawer_open")) { return $true }
+  $payload = $job.payload
+  if ($payload) {
+    $action = [string]$payload.action
+    if ($action -and ($action.Trim().ToLowerInvariant() -eq "drawer_kick")) { return $true }
+  }
+  return $false
 }
 
 function Send-TcpBytes([string]$HostName, [int]$Port, [byte[]]$Bytes) {
@@ -278,11 +292,17 @@ function Process-Once {
     $p = [int]$printers.port
     if ($p -gt 0) { $port = $p }
   }
+  if (-not $script:LoggedPrinters) {
+    $rIp = if ($printers) { [string]$printers.receiptIp } else { "" }
+    $kIp = if ($printers) { [string]$printers.kitchenIp } else { "" }
+    Write-Host "printers receiptIp=$rIp kitchenIp=$kIp port=$port (store=$sid)"
+    $script:LoggedPrinters = $true
+  }
   $jobs = @()
   if ($data.jobs) { $jobs = @($data.jobs) }
   foreach ($job in $jobs) {
     $payload = $job.payload
-    $isDrawer = ($job.kind -eq "drawer_open") -or ($payload -and $payload.action -eq "drawer_kick")
+    $isDrawer = Test-IsDrawerJob $job
     $target = "receipt"
     if (-not $isDrawer -and $payload -and $payload.target -eq "kitchen") { $target = "kitchen" }
     $hostName = $null
@@ -293,7 +313,7 @@ function Process-Once {
     $lines = @()
     if ($payload -and $payload.lines) { $lines = @($payload.lines | ForEach-Object { [string]$_ }) }
     try {
-      if (-not (Test-Ipv4 $hostName)) { throw "$target printer IP missing" }
+      if (-not (Test-Ipv4 $hostName)) { throw "$target printer IP missing (got '$hostName')" }
       if ($isDrawer) {
         $bytes = New-EscPosDrawerKick
       } else {
@@ -307,7 +327,7 @@ function Process-Once {
       Write-Host "[ok] $($job.kind)/$label → $hostName ($($job.id))"
     } catch {
       $msg = $_.Exception.Message
-      Write-Host "[fail] $($job.id): $msg"
+      Write-Host "[fail] $($job.id) kind=$($job.kind): $msg"
       try {
         Invoke-AgentApi -PathSuffix "/stores/$([uri]::EscapeDataString($sid))/print-jobs/$([uri]::EscapeDataString($job.id))/complete" `
           -Method POST -Body @{ status = "failed"; error = $msg } | Out-Null
@@ -347,7 +367,9 @@ if (-not $env:PRINT_AGENT_COOKIE -and -not $script:Config.token) { throw "トー
 
 Register-StartupIfAsked
 
+$script:LoggedPrinters = $false
 Write-Host "print-agent store=$(Get-StoreId) base=$(Get-BaseUrl) poll=${PollMs}ms"
+Write-Host "店舗IDがスタッフ画面の店と一致しているか確認してください（例: harunoyukoto）。"
 Write-Host "この窓を閉じると印刷が止まります。"
 
 while ($true) {

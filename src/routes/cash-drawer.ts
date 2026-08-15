@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
+import { enqueueDrawerOpenJob } from "../lib/thermal-print.js";
 import { appendStaffAuditFromRequest } from "../lib/staff-audit.js";
 import { assertManagerRole } from "../lib/staff-role.js";
 
@@ -89,8 +90,21 @@ export async function registerCashDrawerRoutes(app: FastifyInstance): Promise<vo
       note: row.note,
     });
 
+    // 台帳記録と同時に実機キック用ジョブも載せる（クライアントがエージェント経路を飛ばしても開ける）
+    let printJobId: string | null = null;
+    try {
+      const pj = await enqueueDrawerOpenJob(storeId, {
+        source: "cash_drawer_open",
+        entryId: row.id,
+      });
+      printJobId = pj?.id ?? null;
+    } catch {
+      printJobId = null;
+    }
+
     return {
       ok: true,
+      printJobId,
       entry: {
         id: row.id,
         kind: row.kind,

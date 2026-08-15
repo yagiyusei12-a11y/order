@@ -898,7 +898,7 @@
         return {};
       });
 
-    /** ドロア開放: レジアプリ → Web Serial接続時 → 店PC印刷エージェント → イベントのみ
+    /** ドロア開放: Androidレジアプリ →（PC）印刷エージェント必須 + Web Serialは補助
      * @returns {Promise<void>|undefined}
      */
     function staffTryOpenDrawer() {
@@ -909,20 +909,21 @@
           return Promise.resolve();
         }
       } catch (_) {}
+      // ノートPC: 必ず印刷エージェント経由のジョブを投げる（Web Serial だけでは失敗しやすい）
+      var agentP = api("/stores/" + encodeURIComponent(STORE) + "/print-jobs/drawer-open", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
       try {
         if (
           typeof window.posPrinterConnected === "function" &&
           window.posPrinterConnected() &&
           typeof window.openCashDrawer === "function"
         ) {
-          return Promise.resolve(window.openCashDrawer()).catch(function () {});
+          void Promise.resolve(window.openCashDrawer()).catch(function () {});
         }
       } catch (_) {}
-      var agentP = api("/stores/" + encodeURIComponent(STORE) + "/print-jobs/drawer-open", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      });
       try {
         window.dispatchEvent(new CustomEvent("pos:drawer-open"));
       } catch (_) {}

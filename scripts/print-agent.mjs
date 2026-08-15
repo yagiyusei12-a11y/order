@@ -190,7 +190,8 @@ function escPosFromTextLines(lines) {
 
 /** Epson 互換 ESC p — キャッシュドロア開放（プリンタ経由配線） */
 function escPosDrawerKick() {
-  return Buffer.from([0x1b, 0x70, 0x00, 0x19, 0xfa]);
+  // pin0 + pin1（機種差吸収）
+  return Buffer.from([0x1b, 0x70, 0x00, 0x19, 0xfa, 0x1b, 0x70, 0x01, 0x19, 0xfa]);
 }
 
 function sendTcp(host, port, bytes) {

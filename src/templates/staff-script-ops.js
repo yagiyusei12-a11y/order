@@ -1196,19 +1196,14 @@ const tryOpenDrawer = function tryOpenDrawer() {
     var ch = typeof HarunoyukotoPos !== "undefined" ? HarunoyukotoPos : null;
     if (ch && typeof ch.postMessage === "function") {
       ch.postMessage("openDrawer");
-      return;
+      return Promise.resolve();
     }
   } catch (_) {}
-  try {
-    void api("/stores/" + encodeURIComponent(STORE) + "/print-jobs/drawer-open", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    }).catch(function () {});
-  } catch (_) {}
-  try {
-    window.dispatchEvent(new CustomEvent("pos:drawer-open"));
-  } catch (_) {}
+  return api("/stores/" + encodeURIComponent(STORE) + "/print-jobs/drawer-open", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  }).catch(function () {});
 };
 
 /** レジアプリ内カメラ：入金写真（失敗しても会計は止めない） */

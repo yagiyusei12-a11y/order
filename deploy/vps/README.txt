@@ -33,6 +33,10 @@ VPS デプロイ（概要）
    に書く（未設定でも journalctl -t order-watchdog に残る）
    ログ: journalctl -t order-watchdog -f
 
+3c) SSH 硬化（パスワードログイン無効・fail2ban 強化）※鍵ログイン確認済みのときだけ
+   sudo bash deploy/vps/harden-vps.sh
+   適用後は必ず別ターミナルで ssh -i <鍵> ubuntu@... が通ることを確認
+
 4) HTTPS（DNS がサーバ IP を向いたあと）
    bash deploy/vps/up-proxy.sh
    （内部で install-harunoyukoto-php.sh も実行し、/sougei・/zaiko を Nginx:9083 に固定）

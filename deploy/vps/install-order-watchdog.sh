@@ -23,6 +23,10 @@ fi
 sed 's/\r$//' "$SRC" >"$BIN"
 chmod 0755 "$BIN"
 install -d -m 0755 /var/lib/order-watchdog
+if [[ -f /home/ubuntu/.ssh/authorized_keys ]]; then
+  sha256sum /home/ubuntu/.ssh/authorized_keys | awk '{print $1}' >/var/lib/order-watchdog/authorized_keys.sha256
+  chmod 644 /var/lib/order-watchdog/authorized_keys.sha256
+fi
 if [[ ! -f /etc/order-watchdog.env ]]; then
   cat >/etc/order-watchdog.env <<'EOF'
 # Discord or Slack incoming webhook (optional). Leave empty to log-only.

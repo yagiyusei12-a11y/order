@@ -48,8 +48,12 @@ if command -v lsattr >/dev/null 2>&1 && [[ -e "$NODE_BIN" ]]; then
 fi
 
 # --- known malware fingerprints ---
-if crontab -u ubuntu -l 2>/dev/null | grep -qE '193\.32\.162\.73|/d/[a-f0-9]+/init\.sh'; then
-  problems+=("malware cron present in ubuntu crontab")
+CRON_PIPE_RE='(wget|curl).*\|\s*(/bin/)?(ba)?sh|193\.32\.162\.73|/d/[a-f0-9]+/init\.sh'
+if crontab -u ubuntu -l 2>/dev/null | grep -qE "$CRON_PIPE_RE"; then
+  problems+=("suspicious ubuntu crontab (remote pipe-to-shell)")
+fi
+if crontab -u root -l 2>/dev/null | grep -qE "$CRON_PIPE_RE"; then
+  problems+=("suspicious root crontab (remote pipe-to-shell)")
 fi
 if ss -ltn 2>/dev/null | grep -q '127.0.0.1:42780'; then
   problems+=("suspicious listener 127.0.0.1:42780 (past malware redis-masquerade)")
@@ -59,6 +63,22 @@ for f in /tmp/.kworkerd /var/tmp/cpu-logind /tmp/XfUkTb2c; do
     problems+=("malware artifact present: $f")
   fi
 done
+
+# --- SSH hardening drift / authorized_keys tamper ---
+if command -v sshd >/dev/null 2>&1; then
+  if sshd -T 2>/dev/null | grep -qi '^passwordauthentication yes$'; then
+    problems+=("sshd PasswordAuthentication is yes (should be key-only)")
+  fi
+fi
+AK_FILE="/home/ubuntu/.ssh/authorized_keys"
+AK_BASE="${STATE_DIR}/authorized_keys.sha256"
+if [[ -f "$AK_FILE" && -f "$AK_BASE" ]]; then
+  cur="$(sha256sum "$AK_FILE" | awk '{print $1}')"
+  base="$(tr -d '[:space:]' <"$AK_BASE")"
+  if [[ -n "$base" && "$cur" != "$base" ]]; then
+    problems+=("authorized_keys changed (possible backdoor key)")
+  fi
+fi
 
 # --- service + health ---
 if ! systemctl is-active --quiet "$SERVICE"; then
@@ -82,10 +102,24 @@ if [[ ${#problems[@]} -gt 0 ]]; then
       healed+=("cleared chattr +i on node")
     fi
   fi
-  # remove malware cron lines
-  if crontab -u ubuntu -l 2>/dev/null | grep -qE '193\.32\.162\.73|/d/[a-f0-9]+/init\.sh'; then
-    crontab -u ubuntu -l 2>/dev/null | grep -vE '193\.32\.162\.73|/d/[a-f0-9]+/init\.sh' | crontab -u ubuntu - || crontab -u ubuntu -r || true
-    healed+=("removed malware cron")
+  # strip suspicious remote-pipe cron lines (keep unrelated jobs)
+  for cron_user in ubuntu root; do
+    if crontab -u "$cron_user" -l 2>/dev/null | grep -qE "$CRON_PIPE_RE"; then
+      cleaned="$(crontab -u "$cron_user" -l 2>/dev/null | grep -vE "$CRON_PIPE_RE" || true)"
+      if [[ -n "$(echo "$cleaned" | sed '/^[[:space:]]*$/d' | sed '/^#/d')" ]]; then
+        echo "$cleaned" | crontab -u "$cron_user" -
+      else
+        crontab -u "$cron_user" -r 2>/dev/null || true
+      fi
+      healed+=("cleaned $cron_user malware cron")
+    fi
+  done
+  # re-apply key-only SSH if drifted
+  if sshd -T 2>/dev/null | grep -qi '^passwordauthentication yes$'; then
+    if [[ -x /home/ubuntu/order/deploy/vps/harden-vps.sh ]]; then
+      bash /home/ubuntu/order/deploy/vps/harden-vps.sh >/dev/null 2>&1 || true
+      healed+=("re-ran harden-vps.sh")
+    fi
   fi
   # kill :42780 fake listener
   if ss -ltnp 2>/dev/null | grep -q '127.0.0.1:42780'; then
@@ -97,13 +131,16 @@ if [[ ${#problems[@]} -gt 0 ]]; then
   fi
   rm -f /tmp/.kworkerd /var/tmp/cpu-logind /tmp/XfUkTb2c /tmp/.redis-server.pid 2>/dev/null || true
 
-  systemctl reset-failed "$SERVICE" 2>/dev/null || true
-  systemctl restart "$SERVICE" 2>/dev/null || true
-  sleep 2
-  if curl -sf --connect-timeout 3 --max-time 8 "$HEALTH_URL" >/dev/null; then
-    healed+=("restarted $SERVICE — health OK")
-  else
-    healed+=("restarted $SERVICE — health still FAIL")
+  # Only restart app when health/service is the issue (or we healed node)
+  if printf '%s\n' "${problems[@]}" | grep -qE "health check|$SERVICE|node "; then
+    systemctl reset-failed "$SERVICE" 2>/dev/null || true
+    systemctl restart "$SERVICE" 2>/dev/null || true
+    sleep 2
+    if curl -sf --connect-timeout 3 --max-time 8 "$HEALTH_URL" >/dev/null; then
+      healed+=("restarted $SERVICE — health OK")
+    else
+      healed+=("restarted $SERVICE — health still FAIL")
+    fi
   fi
 fi
 

@@ -117,7 +117,7 @@ export async function registerPaymentAudit(app: FastifyInstance): Promise<void> 
     },
   );
 
-  /** 写真付き入金がある日一覧（新しい順） */
+  /** 入金がある日一覧（新しい順・写真なし含む） */
   app.get<{ Params: { storeId: string }; Querystring: { key?: string } }>(
     "/payment-audit/api/:storeId/days",
     async (req, reply) => {
@@ -126,28 +126,34 @@ export async function registerPaymentAudit(app: FastifyInstance): Promise<void> 
 
       const payments = await prisma.payment.findMany({
         where: {
-          photoUrl: { not: null },
           bill: { storeId: access.storeId },
         },
-        select: { createdAt: true, amount: true, voidedAt: true },
+        select: { createdAt: true, amount: true, voidedAt: true, photoUrl: true },
         orderBy: { createdAt: "desc" },
-        take: 5000,
+        take: 8000,
       });
 
       const byDay = new Map<
         string,
-        { dateYmd: string; count: number; voidedCount: number; amountSum: number }
+        {
+          dateYmd: string;
+          count: number;
+          voidedCount: number;
+          amountSum: number;
+          withPhotoCount: number;
+        }
       >();
       for (const p of payments) {
         const ymd = wallDateYmdInZone(p.createdAt, access.timeZone);
         let row = byDay.get(ymd);
         if (!row) {
-          row = { dateYmd: ymd, count: 0, voidedCount: 0, amountSum: 0 };
+          row = { dateYmd: ymd, count: 0, voidedCount: 0, amountSum: 0, withPhotoCount: 0 };
           byDay.set(ymd, row);
         }
         row.count += 1;
         if (p.voidedAt) row.voidedCount += 1;
         else row.amountSum += p.amount;
+        if (p.photoUrl) row.withPhotoCount += 1;
       }
 
       const days = [...byDay.values()].sort((a, b) => (a.dateYmd < b.dateYmd ? 1 : -1));
@@ -155,7 +161,7 @@ export async function registerPaymentAudit(app: FastifyInstance): Promise<void> 
     },
   );
 
-  /** 指定日の写真付き入金＋作業詳細 */
+  /** 指定日の入金＋作業詳細（写真なしも含む） */
   app.get<{
     Params: { storeId: string; ymd: string };
     Querystring: { key?: string };
@@ -186,7 +192,6 @@ export async function registerPaymentAudit(app: FastifyInstance): Promise<void> 
 
     const payments = await prisma.payment.findMany({
       where: {
-        photoUrl: { not: null },
         createdAt: { gte: rangeStart, lt: rangeEnd },
         bill: { storeId: access.storeId },
       },
@@ -467,7 +472,11 @@ export async function registerPaymentAudit(app: FastifyInstance): Promise<void> 
             (p.voidReason ? ` / 理由 ${p.voidReason}` : ""),
         );
       }
-      workSteps.push("入金と同時に内カメラ写真をサーバーへ保存");
+      if (p.photoUrl) {
+        workSteps.push("入金と同時にカメラ写真をサーバーへ保存");
+      } else {
+        workSteps.push("入金写真なし（レジアプリ外・カメラ未許可など）");
+      }
 
       return {
         paymentId: p.id,
@@ -484,7 +493,9 @@ export async function registerPaymentAudit(app: FastifyInstance): Promise<void> 
           ? { name: p.voidedByStaffUser.name, email: p.voidedByStaffUser.email }
           : null,
         hasPhoto: !!p.photoUrl,
-        photoUrl: `/payment-audit/api/${encodeURIComponent(access.storeId)}/photo/${encodeURIComponent(p.id)}?key=${encodeURIComponent(key)}`,
+        photoUrl: p.photoUrl
+          ? `/payment-audit/api/${encodeURIComponent(access.storeId)}/photo/${encodeURIComponent(p.id)}?key=${encodeURIComponent(key)}`
+          : null,
         journeySteps,
         workSteps,
         table: session?.table

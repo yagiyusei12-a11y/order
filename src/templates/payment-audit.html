@@ -299,12 +299,16 @@
       function renderDays(days) {
         const host = document.getElementById("dayList");
         if (!days.length) {
-          host.innerHTML = '<div class="empty">写真付き入金はまだありません</div>';
+          host.innerHTML = '<div class="empty">入金記録はまだありません</div>';
           return;
         }
         host.innerHTML = days
           .map((d) => {
             const active = d.dateYmd === selectedYmd ? " is-active" : "";
+            const photoMeta =
+              d.withPhotoCount != null
+                ? " · 写真 " + d.withPhotoCount + "/" + d.count
+                : "";
             return (
               '<button type="button" class="day-btn' +
               active +
@@ -316,6 +320,7 @@
               d.count +
               "件" +
               (d.voidedCount ? "（取消 " + d.voidedCount + "）" : "") +
+              photoMeta +
               " · 合計 " +
               yen(d.amountSum) +
               "</span></button>"
@@ -329,11 +334,17 @@
 
       function renderEntries(data) {
         document.getElementById("dayTitle").textContent = data.dateYmd + " の記録";
+        const withPhoto = (data.entries || []).filter((e) => e.hasPhoto).length;
         document.getElementById("dayStatus").textContent =
-          data.count + "件の写真付き入金（タイムゾーン: " + data.timeZone + "）";
+          data.count +
+          "件の入金（写真あり " +
+          withPhoto +
+          "件 · タイムゾーン: " +
+          data.timeZone +
+          "）";
         const host = document.getElementById("entries");
         if (!data.entries.length) {
-          host.innerHTML = '<div class="empty">この日の写真付き入金はありません</div>';
+          host.innerHTML = '<div class="empty">この日の入金はありません</div>';
           return;
         }
         host.innerHTML = data.entries
@@ -496,7 +507,7 @@
             meta.storeId +
             "）· タイムゾーン " +
             meta.timeZone +
-            " · 写真付き入金を日ごとに確認できます（メニューには出ていません）";
+            " · 入金と作業ログを日ごとに確認できます（メニューには出ていません）";
           const days = await api("/days");
           renderDays(days.days || []);
           const q = new URLSearchParams(location.search).get("date");

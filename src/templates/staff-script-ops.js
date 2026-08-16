@@ -1206,21 +1206,129 @@ const tryOpenDrawer = function tryOpenDrawer() {
   }).catch(function () {});
 };
 
-/** レジアプリ内カメラ：入金写真（失敗しても会計は止めない） */
+/** 入金写真を API に送る（失敗しても会計は止めない） */
+function uploadPaymentPhotoBase64(storeId, billId, paymentIds, b64, mime) {
+  var ids = Array.isArray(paymentIds) ? paymentIds.filter(Boolean) : [];
+  if (!storeId || !billId || !b64 || !ids.length) return;
+  ids.forEach(function (pid) {
+    if (!pid) return;
+    api(
+      "/stores/" +
+        encodeURIComponent(storeId) +
+        "/bills/" +
+        encodeURIComponent(billId) +
+        "/payments/" +
+        encodeURIComponent(pid) +
+        "/photo",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64: b64, mimeType: mime || "image/jpeg" }),
+      }
+    ).catch(function () {});
+  });
+}
+
+/**
+ * ノートPCブラウザ向け：Webカメラ1枚撮影（失敗時は何もしない）
+ * Flutter レジアプリがある場合は使わない。
+ */
+function captureBrowserPaymentPhoto(storeId, billId, paymentIds) {
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") return;
+  var stopped = false;
+  var streamRef = null;
+  function cleanup() {
+    if (stopped) return;
+    stopped = true;
+    try {
+      if (streamRef) streamRef.getTracks().forEach(function (t) { t.stop(); });
+    } catch (_) {}
+  }
+  navigator.mediaDevices
+    .getUserMedia({
+      audio: false,
+      video: {
+        facingMode: "user",
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+    })
+    .then(function (stream) {
+      streamRef = stream;
+      var video = document.createElement("video");
+      video.muted = true;
+      video.playsInline = true;
+      video.srcObject = stream;
+      var captureOnce = function () {
+        try {
+          var w = video.videoWidth || 0;
+          var h = video.videoHeight || 0;
+          if (w < 16 || h < 16) return false;
+          var canvas = document.createElement("canvas");
+          var maxW = 1280;
+          var scale = w > maxW ? maxW / w : 1;
+          canvas.width = Math.max(1, Math.round(w * scale));
+          canvas.height = Math.max(1, Math.round(h * scale));
+          var ctx = canvas.getContext("2d");
+          if (!ctx) return false;
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          var dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+          var m = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
+          if (!m) return false;
+          uploadPaymentPhotoBase64(storeId, billId, paymentIds, m[2], m[1] || "image/jpeg");
+          return true;
+        } catch (_) {
+          return false;
+        }
+      };
+      var tryCapture = function (attempt) {
+        if (captureOnce()) {
+          cleanup();
+          return;
+        }
+        if (attempt >= 12) {
+          cleanup();
+          return;
+        }
+        setTimeout(function () {
+          tryCapture(attempt + 1);
+        }, 120);
+      };
+      var onReady = function () {
+        tryCapture(0);
+      };
+      video.addEventListener("loadeddata", onReady, { once: true });
+      var playP = video.play();
+      if (playP && typeof playP.then === "function") {
+        playP.then(onReady).catch(function () {
+          cleanup();
+        });
+      }
+      setTimeout(cleanup, 8000);
+    })
+    .catch(function () {
+      cleanup();
+    });
+}
+
+/** レジアプリ内カメラ、なければノートPCのWebカメラ：入金写真（失敗しても会計は止めない） */
 function requestPosPaymentPhoto(storeId, billId, paymentIds) {
   try {
     var ids = Array.isArray(paymentIds) ? paymentIds.filter(Boolean) : [];
     if (!storeId || !billId || !ids.length) return;
     var ch = typeof HarunoyukotoPos !== "undefined" ? HarunoyukotoPos : null;
-    if (!ch || typeof ch.postMessage !== "function") return;
-    ch.postMessage(
-      JSON.stringify({
-        cmd: "capturePaymentPhoto",
-        storeId: String(storeId),
-        billId: String(billId),
-        paymentIds: ids.map(String),
-      })
-    );
+    if (ch && typeof ch.postMessage === "function") {
+      ch.postMessage(
+        JSON.stringify({
+          cmd: "capturePaymentPhoto",
+          storeId: String(storeId),
+          billId: String(billId),
+          paymentIds: ids.map(String),
+        })
+      );
+      return;
+    }
+    captureBrowserPaymentPhoto(storeId, billId, ids.map(String));
   } catch (_) {}
 }
 
@@ -1236,20 +1344,13 @@ if (typeof window !== "undefined") {
   window.__harunoPosOnPaymentPhoto = function (payload) {
     try {
       if (!payload || typeof payload !== "object") return;
-      var storeId = payload.storeId;
-      var billId = payload.billId;
-      var paymentIds = Array.isArray(payload.paymentIds) ? payload.paymentIds : [];
-      var b64 = payload.imageBase64;
-      var mime = payload.mimeType || "image/jpeg";
-      if (!storeId || !billId || !b64 || !paymentIds.length) return;
-      paymentIds.forEach(function (pid) {
-        if (!pid) return;
-        api("/stores/" + encodeURIComponent(storeId) + "/bills/" + encodeURIComponent(billId) + "/payments/" + encodeURIComponent(pid) + "/photo", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ imageBase64: b64, mimeType: mime }),
-        }).catch(function () {});
-      });
+      uploadPaymentPhotoBase64(
+        payload.storeId,
+        payload.billId,
+        Array.isArray(payload.paymentIds) ? payload.paymentIds : [],
+        payload.imageBase64,
+        payload.mimeType || "image/jpeg"
+      );
     } catch (_) {}
   };
   try {

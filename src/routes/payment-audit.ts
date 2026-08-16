@@ -1,6 +1,7 @@
 import { createReadStream, existsSync } from "node:fs";
 import { basename } from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { verifyPaymentAuditKey } from "../lib/payment-audit-auth.js";
 import { paymentPhotoAbsPath } from "../lib/payment-photo-files.js";
@@ -15,6 +16,12 @@ import {
   buildPaymentJourneySteps,
   type PaymentJourneyStep,
 } from "../lib/payment-journey.js";
+
+/** SQL timezone() に渡す IANA 名（不正なら Asia/Tokyo） */
+function sqlTimeZone(tz: string): string {
+  const t = tz.trim();
+  return /^[A-Za-z0-9_+\-\/]+$/.test(t) ? t : "Asia/Tokyo";
+}
 
 function keyFromRequest(req: FastifyRequest): string {
   const q = req.query as { key?: unknown };
@@ -117,46 +124,45 @@ export async function registerPaymentAudit(app: FastifyInstance): Promise<void> 
     },
   );
 
-  /** 入金がある日一覧（新しい順・写真なし含む） */
+  /** 入金がある日一覧（新しい順・写真なし含む）— DB 集計でメモリ圧迫を避ける */
   app.get<{ Params: { storeId: string }; Querystring: { key?: string } }>(
     "/payment-audit/api/:storeId/days",
     async (req, reply) => {
       const access = await assertPaymentAuditAccess(req, reply);
       if (!access) return;
 
-      const payments = await prisma.payment.findMany({
-        where: {
-          bill: { storeId: access.storeId },
-        },
-        select: { createdAt: true, amount: true, voidedAt: true, photoUrl: true },
-        orderBy: { createdAt: "desc" },
-        take: 8000,
-      });
-
-      const byDay = new Map<
-        string,
-        {
+      const tz = sqlTimeZone(access.timeZone);
+      const rows = await prisma.$queryRaw<
+        Array<{
           dateYmd: string;
-          count: number;
-          voidedCount: number;
-          amountSum: number;
-          withPhotoCount: number;
-        }
-      >();
-      for (const p of payments) {
-        const ymd = wallDateYmdInZone(p.createdAt, access.timeZone);
-        let row = byDay.get(ymd);
-        if (!row) {
-          row = { dateYmd: ymd, count: 0, voidedCount: 0, amountSum: 0, withPhotoCount: 0 };
-          byDay.set(ymd, row);
-        }
-        row.count += 1;
-        if (p.voidedAt) row.voidedCount += 1;
-        else row.amountSum += p.amount;
-        if (p.photoUrl) row.withPhotoCount += 1;
-      }
+          count: number | bigint;
+          voidedCount: number | bigint;
+          amountSum: number | bigint;
+          withPhotoCount: number | bigint;
+        }>
+      >(Prisma.sql`
+        SELECT
+          to_char(timezone(${tz}, p."createdAt"), 'YYYY-MM-DD') AS "dateYmd",
+          COUNT(*)::int AS count,
+          COUNT(*) FILTER (WHERE p."voidedAt" IS NOT NULL)::int AS "voidedCount",
+          COALESCE(SUM(p.amount) FILTER (WHERE p."voidedAt" IS NULL), 0)::int AS "amountSum",
+          COUNT(*) FILTER (
+            WHERE p."photoUrl" IS NOT NULL AND BTRIM(p."photoUrl") <> ''
+          )::int AS "withPhotoCount"
+        FROM "Payment" p
+        INNER JOIN "Bill" b ON b.id = p."billId"
+        WHERE b."storeId" = ${access.storeId}
+        GROUP BY 1
+        ORDER BY 1 DESC
+      `);
 
-      const days = [...byDay.values()].sort((a, b) => (a.dateYmd < b.dateYmd ? 1 : -1));
+      const days = rows.map((r) => ({
+        dateYmd: r.dateYmd,
+        count: Number(r.count),
+        voidedCount: Number(r.voidedCount),
+        amountSum: Number(r.amountSum),
+        withPhotoCount: Number(r.withPhotoCount),
+      }));
       return { timeZone: access.timeZone, days };
     },
   );

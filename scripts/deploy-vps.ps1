@@ -65,7 +65,7 @@ if ($daikoDeploy) {
 }
 
 Write-Host "SSH $user@${hostName}: pull, build, restart $service ..." -ForegroundColor Cyan
-& ssh -i $key -o BatchMode=yes -o StrictHostKeyChecking=accept-new "$user@$hostName" $remote
+& ssh -i $key -o BatchMode=yes -o StrictHostKeyChecking=accept-new "$user@$hostName" "$remote"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "Deploy finished." -ForegroundColor Green

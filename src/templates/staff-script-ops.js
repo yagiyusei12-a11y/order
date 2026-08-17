@@ -1229,7 +1229,7 @@ function uploadPaymentPhotoBase64(storeId, billId, paymentIds, b64, mime) {
   });
 }
 
-/** ほぼ真っ黒（露光前フレーム）なら true。暗い店内の人物写真は通す。 */
+/** ほぼ真っ黒（露光前フレーム／IR／シャッター閉じ）なら true。暗い店内の人物写真は通す。 */
 function paymentPhotoFrameIsMostlyBlack(imageData) {
   if (!imageData || !imageData.data || !imageData.data.length) return true;
   var data = imageData.data;
@@ -1259,137 +1259,301 @@ function probeVideoFrameIsMostlyBlack(video) {
   return paymentPhotoFrameIsMostlyBlack(pctx.getImageData(0, 0, 32, 32));
 }
 
+var PAYMENT_CAM_LS = "harunoPaymentCameraDeviceId";
+var paymentCamWarm = { stream: null, video: null, deviceId: null, starting: null, skipId: "" };
+
+function paymentCamRememberedId() {
+  try {
+    return String(localStorage.getItem(PAYMENT_CAM_LS) || "");
+  } catch (_) {
+    return "";
+  }
+}
+
+function paymentCamRemember(id) {
+  if (!id) return;
+  try {
+    localStorage.setItem(PAYMENT_CAM_LS, String(id));
+  } catch (_) {}
+}
+
+/** USB 外付けを優先。Windows Hello の IR と内蔵（シャッター黒）は後回し／除外。 */
+function scorePaymentCamera(dev) {
+  var l = String((dev && dev.label) || "").toLowerCase();
+  var id = String((dev && dev.deviceId) || "");
+  if (!id || id === "default") return -1;
+  if (/\bir\b|infrared|windows hello|realsense|\btof\b|depth camera/.test(l)) return -100;
+  if (
+    /usb|logitech|elecom|buffalo|i-o data|iodata|avermedia|elgato|c920|c270|c922|hd pro webcam/.test(l)
+  ) {
+    return 100;
+  }
+  if (/integrated|built-?in|internal camera|facetime|surface front|laptop camera/.test(l)) return 5;
+  return 55;
+}
+
+function listPaymentCamerasRanked() {
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== "function") {
+    return Promise.resolve([]);
+  }
+  return navigator.mediaDevices.enumerateDevices().then(function (devs) {
+    var pref = paymentCamRememberedId();
+    var cams = (devs || []).filter(function (d) {
+      return d && d.kind === "videoinput" && d.deviceId && scorePaymentCamera(d) >= 0;
+    });
+    cams.sort(function (a, b) {
+      if (pref) {
+        if (a.deviceId === pref && b.deviceId !== pref) return -1;
+        if (b.deviceId === pref && a.deviceId !== pref) return 1;
+      }
+      return scorePaymentCamera(b) - scorePaymentCamera(a);
+    });
+    return cams;
+  });
+}
+
+function openPaymentCamStream(deviceId) {
+  var video = deviceId
+    ? { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+    : { width: { ideal: 1280 }, height: { ideal: 720 } };
+  return navigator.mediaDevices.getUserMedia({ audio: false, video: video });
+}
+
+function stopPaymentCamWarm() {
+  var stream = paymentCamWarm.stream;
+  var video = paymentCamWarm.video;
+  paymentCamWarm.stream = null;
+  paymentCamWarm.video = null;
+  paymentCamWarm.deviceId = null;
+  try {
+    if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+  } catch (_) {}
+  try {
+    if (video && video.parentNode) video.parentNode.removeChild(video);
+  } catch (_) {}
+}
+
+function attachPaymentCamVideo(stream) {
+  var video = document.createElement("video");
+  video.muted = true;
+  video.playsInline = true;
+  video.setAttribute("playsinline", "true");
+  video.setAttribute(
+    "style",
+    "position:fixed;left:-9999px;width:16px;height:16px;opacity:0;pointer-events:none"
+  );
+  video.srcObject = stream;
+  try {
+    document.body.appendChild(video);
+  } catch (_) {}
+  var playP = video.play();
+  if (playP && typeof playP.then === "function") {
+    return playP.then(function () {
+      return video;
+    });
+  }
+  return Promise.resolve(video);
+}
+
+function waitPaymentCamLive(video, maxMs) {
+  var started = Date.now();
+  return new Promise(function (resolve) {
+    function tick() {
+      var w = video.videoWidth || 0;
+      var h = video.videoHeight || 0;
+      if (w >= 16 && h >= 16 && !probeVideoFrameIsMostlyBlack(video)) {
+        resolve(true);
+        return;
+      }
+      if (Date.now() - started >= maxMs) {
+        resolve(w >= 16 && h >= 16 && !probeVideoFrameIsMostlyBlack(video));
+        return;
+      }
+      setTimeout(tick, 180);
+    }
+    setTimeout(tick, 400);
+  });
+}
+
+function snapshotPaymentCamJpeg(video) {
+  var w = video.videoWidth || 0;
+  var h = video.videoHeight || 0;
+  if (w < 16 || h < 16) return null;
+  if (probeVideoFrameIsMostlyBlack(video)) return null;
+  var canvas = document.createElement("canvas");
+  var maxW = 1280;
+  var scale = w > maxW ? maxW / w : 1;
+  canvas.width = Math.max(1, Math.round(w * scale));
+  canvas.height = Math.max(1, Math.round(h * scale));
+  var ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  var dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+  var m = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
+  if (!m) return null;
+  return { mime: m[1] || "image/jpeg", b64: m[2] };
+}
+
+function paymentCamTrackDeviceId(stream) {
+  try {
+    var track = stream && stream.getVideoTracks && stream.getVideoTracks()[0];
+    var settings = track && track.getSettings ? track.getSettings() : {};
+    return String((settings && settings.deviceId) || "");
+  } catch (_) {
+    return "";
+  }
+}
+
+function bindPaymentCamEnded(stream) {
+  try {
+    stream.getVideoTracks().forEach(function (t) {
+      t.addEventListener("ended", function () {
+        if (paymentCamWarm.stream === stream) stopPaymentCamWarm();
+      });
+    });
+  } catch (_) {}
+}
+
+function ensurePaymentCamWarm() {
+  if (
+    paymentCamWarm.stream &&
+    paymentCamWarm.video &&
+    paymentCamWarm.video.videoWidth >= 16 &&
+    !probeVideoFrameIsMostlyBlack(paymentCamWarm.video)
+  ) {
+    return Promise.resolve(paymentCamWarm);
+  }
+  if (paymentCamWarm.starting) return paymentCamWarm.starting;
+
+  paymentCamWarm.starting = Promise.resolve()
+    .then(function () {
+      if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
+        throw new Error("no mediaDevices");
+      }
+      stopPaymentCamWarm();
+      var pref = paymentCamRememberedId();
+      return listPaymentCamerasRanked().then(function (cams) {
+        if (cams.length) return cams;
+        return openPaymentCamStream(pref || null)
+          .then(function (tmp) {
+            try {
+              tmp.getTracks().forEach(function (t) { t.stop(); });
+            } catch (_) {}
+            return new Promise(function (resolve) {
+              setTimeout(resolve, 300);
+            }).then(listPaymentCamerasRanked);
+          })
+          .catch(function () {
+            return [];
+          });
+      });
+    })
+    .then(function (cams) {
+      var ids = [];
+      var pref = paymentCamRememberedId();
+      var skip = paymentCamWarm.skipId || "";
+      if (pref && pref !== skip) ids.push(pref);
+      (cams || []).forEach(function (c) {
+        if (!c || !c.deviceId) return;
+        if (skip && c.deviceId === skip) return;
+        if (ids.indexOf(c.deviceId) < 0) ids.push(c.deviceId);
+      });
+      if (!ids.length) ids.push("");
+
+      function tryNext(i) {
+        if (i >= ids.length) return Promise.reject(new Error("no usable camera"));
+        return openPaymentCamStream(ids[i] || null)
+          .then(function (stream) {
+            return attachPaymentCamVideo(stream).then(function (video) {
+              return waitPaymentCamLive(video, 4000).then(function (ok) {
+                if (!ok) {
+                  try {
+                    stream.getTracks().forEach(function (t) { t.stop(); });
+                  } catch (_) {}
+                  try {
+                    if (video.parentNode) video.parentNode.removeChild(video);
+                  } catch (_) {}
+                  return tryNext(i + 1);
+                }
+                var deviceId = ids[i] || paymentCamTrackDeviceId(stream);
+                paymentCamWarm.stream = stream;
+                paymentCamWarm.video = video;
+                paymentCamWarm.deviceId = deviceId;
+                paymentCamWarm.skipId = "";
+                paymentCamRemember(deviceId);
+                bindPaymentCamEnded(stream);
+                return paymentCamWarm;
+              });
+            });
+          })
+          .catch(function () {
+            return tryNext(i + 1);
+          });
+      }
+      return tryNext(0);
+    })
+    .finally(function () {
+      paymentCamWarm.starting = null;
+    });
+
+  return paymentCamWarm.starting;
+}
+
 /**
- * ノートPCブラウザ向け：Webカメラ1枚撮影（失敗時は何もしない）
- * Flutter レジアプリがある場合は使わない。
- * 露光前の黒フレームは捨てて撮り直す。最後まで黒ならアップロードしない。
+ * ノートPCブラウザ向け：USB カメラ優先で1枚撮影（失敗時は何もしない）
+ * facingMode:user は使わない（内蔵・IR を掴んで真っ黒になるため）。
  */
 function captureBrowserPaymentPhoto(storeId, billId, paymentIds) {
   if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") return;
-  var stopped = false;
-  var streamRef = null;
-  var videoRef = null;
   var startedAt = Date.now();
-  function cleanup() {
-    if (stopped) return;
-    stopped = true;
-    try {
-      if (streamRef) streamRef.getTracks().forEach(function (t) { t.stop(); });
-    } catch (_) {}
-    try {
-      if (videoRef && videoRef.parentNode) videoRef.parentNode.removeChild(videoRef);
-    } catch (_) {}
+  var switched = false;
+  function snapFromWarm() {
+    if (!paymentCamWarm.video) return false;
+    var shot = snapshotPaymentCamJpeg(paymentCamWarm.video);
+    if (!shot) return false;
+    uploadPaymentPhotoBase64(storeId, billId, paymentIds, shot.b64, shot.mime);
+    return true;
   }
-  navigator.mediaDevices
-    .getUserMedia({
-      audio: false,
-      video: {
-        facingMode: "user",
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-      },
-    })
-    .then(function (stream) {
-      streamRef = stream;
-      var video = document.createElement("video");
-      videoRef = video;
-      video.muted = true;
-      video.playsInline = true;
-      video.setAttribute("playsinline", "true");
-      video.setAttribute("style", "position:fixed;left:-9999px;width:16px;height:16px;opacity:0;pointer-events:none");
-      video.srcObject = stream;
+  function loop(attempt) {
+    if (snapFromWarm()) return;
+    if (Date.now() - startedAt > 9000) return;
+    if (attempt === 10 && !switched) {
+      switched = true;
+      var bad = paymentCamWarm.deviceId;
+      paymentCamWarm.skipId = bad || "";
+      stopPaymentCamWarm();
       try {
-        document.body.appendChild(video);
+        if (bad && paymentCamRememberedId() === bad) localStorage.removeItem(PAYMENT_CAM_LS);
       } catch (_) {}
-      var captureOnce = function () {
-        try {
-          if (stopped) return false;
-          var w = video.videoWidth || 0;
-          var h = video.videoHeight || 0;
-          if (w < 16 || h < 16) return false;
-          if (probeVideoFrameIsMostlyBlack(video)) return false;
-          var canvas = document.createElement("canvas");
-          var maxW = 1280;
-          var scale = w > maxW ? maxW / w : 1;
-          canvas.width = Math.max(1, Math.round(w * scale));
-          canvas.height = Math.max(1, Math.round(h * scale));
-          var ctx = canvas.getContext("2d");
-          if (!ctx) return false;
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          var dataUrl = canvas.toDataURL("image/jpeg", 0.82);
-          var m = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
-          if (!m) return false;
-          uploadPaymentPhotoBase64(storeId, billId, paymentIds, m[2], m[1] || "image/jpeg");
-          return true;
-        } catch (_) {
-          return false;
-        }
-      };
-      var tryCapture = function (attempt) {
-        if (stopped) return;
-        if (captureOnce()) {
-          cleanup();
-          return;
-        }
-        if (attempt >= 24 || Date.now() - startedAt > 7000) {
-          cleanup();
-          return;
-        }
-        setTimeout(function () {
-          tryCapture(attempt + 1);
-        }, 180);
-      };
-      var started = false;
-      var startTries = function () {
-        if (started || stopped) return;
-        started = true;
-        setTimeout(function () {
-          tryCapture(0);
-        }, 400);
-      };
-      video.addEventListener("loadeddata", startTries, { once: true });
-      var playP = video.play();
-      if (playP && typeof playP.then === "function") {
-        playP.then(startTries).catch(function () {
-          cleanup();
-        });
-      } else {
-        startTries();
-      }
-      setTimeout(cleanup, 8000);
+      ensurePaymentCamWarm()
+        .then(function () {
+          loop(attempt + 1);
+        })
+        .catch(function () {});
+      return;
+    }
+    setTimeout(function () {
+      loop(attempt + 1);
+    }, 160);
+  }
+  ensurePaymentCamWarm()
+    .then(function () {
+      loop(0);
     })
-    .catch(function () {
-      cleanup();
-    });
+    .catch(function () {});
 }
 
-/** レジアプリ内カメラ、なければノートPCのWebカメラ：入金写真（失敗しても会計は止めない） */
+/** ノートPCのUSBカメラ：入金写真（失敗しても会計は止めない） */
 function requestPosPaymentPhoto(storeId, billId, paymentIds) {
   try {
     var ids = Array.isArray(paymentIds) ? paymentIds.filter(Boolean) : [];
     if (!storeId || !billId || !ids.length) return;
-    var ch = typeof HarunoyukotoPos !== "undefined" ? HarunoyukotoPos : null;
-    if (ch && typeof ch.postMessage === "function") {
-      ch.postMessage(
-        JSON.stringify({
-          cmd: "capturePaymentPhoto",
-          storeId: String(storeId),
-          billId: String(billId),
-          paymentIds: ids.map(String),
-        })
-      );
-      return;
-    }
     captureBrowserPaymentPhoto(storeId, billId, ids.map(String));
   } catch (_) {}
 }
 
 function preparePosPaymentCamera() {
-  try {
-    var ch = typeof HarunoyukotoPos !== "undefined" ? HarunoyukotoPos : null;
-    if (!ch || typeof ch.postMessage !== "function") return;
-    ch.postMessage(JSON.stringify({ cmd: "preparePaymentCamera" }));
-  } catch (_) {}
+  ensurePaymentCamWarm().catch(function () {});
 }
 
 if (typeof window !== "undefined") {
@@ -1406,9 +1570,10 @@ if (typeof window !== "undefined") {
     } catch (_) {}
   };
   try {
-    if (new URLSearchParams(location.search).get("nativeDrawer") === "1") {
-      setTimeout(preparePosPaymentCamera, 800);
-    }
+    setTimeout(preparePosPaymentCamera, 700);
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "visible") preparePosPaymentCamera();
+    });
   } catch (_) {}
 }
 function printHtml(html) {

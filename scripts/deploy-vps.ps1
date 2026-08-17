@@ -65,7 +65,10 @@ if ($daikoDeploy) {
 }
 
 Write-Host "SSH $user@${hostName}: pull, build, restart $service ..." -ForegroundColor Cyan
-& ssh -i $key -o BatchMode=yes -o StrictHostKeyChecking=accept-new "$user@$hostName" "$remote"
+# Windows OpenSSH drops a trailing command arg and opens a shell; pipe into bash -s.
+# Strip CR so systemd/curl do not see `order-app\r` / malformed URLs.
+$remoteUnix = ($remote -replace "`r", "").Trim() + "`n"
+$remoteUnix | & ssh -i $key -o BatchMode=yes -o StrictHostKeyChecking=accept-new "$user@$hostName" "bash -s"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "Deploy finished." -ForegroundColor Green

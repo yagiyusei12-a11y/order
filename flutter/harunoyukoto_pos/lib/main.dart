@@ -7,6 +7,7 @@ import 'package:charset_converter/charset_converter.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:camera/camera.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import 'payment_camera.dart';
@@ -40,7 +41,7 @@ class OpsShellPage extends StatefulWidget {
   State<OpsShellPage> createState() => _OpsShellPageState();
 }
 
-class _OpsShellPageState extends State<OpsShellPage> {
+class _OpsShellPageState extends State<OpsShellPage> with WidgetsBindingObserver {
   /// ESC/POS キャッシュドロア開放（Epson 互換 ESC p）
   static final Uint8List _drawerKick = Uint8List.fromList([
     0x1B,
@@ -65,13 +66,24 @@ class _OpsShellPageState extends State<OpsShellPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadPrefs();
   }
 
   @override
   void dispose() {
-    _paymentCamera.disposeController();
+    WidgetsBinding.instance.removeObserver(this);
+    unawaited(_paymentCamera.disposeController());
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      unawaited(_paymentCamera.disposeController());
+    } else if (state == AppLifecycleState.resumed && _opsUrl != null && _opsUrl!.isNotEmpty) {
+      unawaited(_paymentCamera.ensureReady());
+    }
   }
 
   Future<void> _loadPrefs() async {
@@ -233,6 +245,7 @@ class _OpsShellPageState extends State<OpsShellPage> {
       )
       ..loadRequest(uri);
     setState(() => _controller = c);
+    unawaited(_paymentCamera.ensureReady());
   }
 
   Future<void> _savePrefs({required String opsUrl, required String printerIp}) async {
@@ -577,6 +590,25 @@ class _OpsShellPageState extends State<OpsShellPage> {
             _controller == null
                 ? const Center(child: CircularProgressIndicator())
                 : WebViewWidget(controller: _controller!),
+            ValueListenableBuilder<int>(
+              valueListenable: _paymentCamera.previewEpoch,
+              builder: (context, _, __) {
+                final cam = _paymentCamera.previewController;
+                if (cam == null) return const SizedBox.shrink();
+                return Positioned(
+                  left: 0,
+                  bottom: 0,
+                  width: 48,
+                  height: 48,
+                  child: IgnorePointer(
+                    child: Opacity(
+                      opacity: 0.02,
+                      child: ClipRect(child: CameraPreview(cam)),
+                    ),
+                  ),
+                );
+              },
+            ),
             Positioned(
               top: 6,
               right: 6,

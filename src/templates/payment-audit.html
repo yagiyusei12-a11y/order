@@ -153,10 +153,11 @@
         .grid { grid-template-columns: 1fr; }
       }
       .photo-wrap {
+        position: relative;
         border-radius: 12px;
         overflow: hidden;
         border: 1px solid var(--line);
-        background: #000;
+        background: #1e2937;
         aspect-ratio: 3 / 4;
         max-height: 360px;
       }
@@ -171,10 +172,23 @@
         align-items: center;
         justify-content: center;
         height: 100%;
-        color: var(--muted);
+        color: #e2e8f0;
         font-size: 0.85rem;
         padding: 1rem;
         text-align: center;
+        line-height: 1.45;
+      }
+      .photo-wrap .photo-note {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(15, 23, 42, 0.82);
+        color: var(--warn);
+        font-size: 0.75rem;
+        padding: 0.4rem 0.5rem;
+        text-align: center;
+        line-height: 1.35;
       }
       .section-title {
         font-size: 0.78rem;
@@ -409,7 +423,7 @@
                 ? '<img src="' +
                   esc(e.photoUrl) +
                   '" alt="入金時写真" loading="lazy" />'
-                : '<div class="no-photo">写真なし</div>') +
+                : '<div class="no-photo">写真なし<br />カメラ未準備・未許可、または真っ黒のため保存していません</div>') +
               '</div><div><div class="section-title">入金に至る経緯</div>' +
               (Array.isArray(e.journeySteps) && e.journeySteps.length
                 ? '<ol class="steps journey">' +
@@ -474,6 +488,56 @@
             );
           })
           .join("");
+        enhancePaymentPhotos(host);
+      }
+
+      function paymentPhotoFrameIsMostlyBlack(imageData) {
+        if (!imageData || !imageData.data || !imageData.data.length) return true;
+        const data = imageData.data;
+        const n = data.length / 4;
+        if (n < 16) return true;
+        let dark = 0;
+        let sum = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          const y = (data[i] * 299 + data[i + 1] * 587 + data[i + 2] * 114) / 1000;
+          sum += y;
+          if (y < 18) dark++;
+        }
+        const avg = sum / n;
+        return avg < 14 && dark >= n * 0.92;
+      }
+
+      function enhancePaymentPhotos(root) {
+        root.querySelectorAll(".photo-wrap img").forEach((img) => {
+          const wrap = img.closest(".photo-wrap");
+          const markMissing = () => {
+            if (!wrap) return;
+            wrap.innerHTML = '<div class="no-photo">写真ファイルなし<br />保存先が見つかりません</div>';
+          };
+          const markBlack = () => {
+            if (!wrap) return;
+            try {
+              const probe = document.createElement("canvas");
+              probe.width = 32;
+              probe.height = 32;
+              const ctx = probe.getContext("2d");
+              if (!ctx) return;
+              ctx.drawImage(img, 0, 0, 32, 32);
+              if (!paymentPhotoFrameIsMostlyBlack(ctx.getImageData(0, 0, 32, 32))) return;
+              if (wrap.querySelector(".photo-note")) return;
+              const note = document.createElement("div");
+              note.className = "photo-note";
+              note.textContent = "ほぼ真っ黒です（撮影時にカメラが未準備だった可能性）";
+              wrap.appendChild(note);
+            } catch (_) {}
+          };
+          img.addEventListener("error", markMissing);
+          img.addEventListener("load", markBlack);
+          if (img.complete) {
+            if (img.naturalWidth === 0) markMissing();
+            else markBlack();
+          }
+        });
       }
 
       async function selectDay(ymd) {

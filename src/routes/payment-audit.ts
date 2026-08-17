@@ -481,7 +481,9 @@ export async function registerPaymentAudit(app: FastifyInstance): Promise<void> 
       if (p.photoUrl) {
         workSteps.push("入金と同時にカメラ写真をサーバーへ保存");
       } else {
-        workSteps.push("入金写真なし（レジアプリ外・カメラ未許可など）");
+        workSteps.push(
+          "入金写真なし（カメラ未許可・未準備、真っ黒フレームのため保存せず、またはレジアプリ外）",
+        );
       }
 
       return {

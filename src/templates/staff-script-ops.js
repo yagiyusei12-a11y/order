@@ -1229,19 +1229,55 @@ function uploadPaymentPhotoBase64(storeId, billId, paymentIds, b64, mime) {
   });
 }
 
+/** ほぼ真っ黒（露光前フレーム）なら true。暗い店内の人物写真は通す。 */
+function paymentPhotoFrameIsMostlyBlack(imageData) {
+  if (!imageData || !imageData.data || !imageData.data.length) return true;
+  var data = imageData.data;
+  var n = data.length / 4;
+  if (n < 16) return true;
+  var dark = 0;
+  var sum = 0;
+  for (var i = 0; i < data.length; i += 4) {
+    var y = (data[i] * 299 + data[i + 1] * 587 + data[i + 2] * 114) / 1000;
+    sum += y;
+    if (y < 18) dark++;
+  }
+  var avg = sum / n;
+  return avg < 14 && dark >= n * 0.92;
+}
+
+function probeVideoFrameIsMostlyBlack(video) {
+  var w = video.videoWidth || 0;
+  var h = video.videoHeight || 0;
+  if (w < 16 || h < 16) return true;
+  var probe = document.createElement("canvas");
+  probe.width = 32;
+  probe.height = 32;
+  var pctx = probe.getContext("2d");
+  if (!pctx) return true;
+  pctx.drawImage(video, 0, 0, 32, 32);
+  return paymentPhotoFrameIsMostlyBlack(pctx.getImageData(0, 0, 32, 32));
+}
+
 /**
  * ノートPCブラウザ向け：Webカメラ1枚撮影（失敗時は何もしない）
  * Flutter レジアプリがある場合は使わない。
+ * 露光前の黒フレームは捨てて撮り直す。最後まで黒ならアップロードしない。
  */
 function captureBrowserPaymentPhoto(storeId, billId, paymentIds) {
   if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") return;
   var stopped = false;
   var streamRef = null;
+  var videoRef = null;
+  var startedAt = Date.now();
   function cleanup() {
     if (stopped) return;
     stopped = true;
     try {
       if (streamRef) streamRef.getTracks().forEach(function (t) { t.stop(); });
+    } catch (_) {}
+    try {
+      if (videoRef && videoRef.parentNode) videoRef.parentNode.removeChild(videoRef);
     } catch (_) {}
   }
   navigator.mediaDevices
@@ -1256,14 +1292,22 @@ function captureBrowserPaymentPhoto(storeId, billId, paymentIds) {
     .then(function (stream) {
       streamRef = stream;
       var video = document.createElement("video");
+      videoRef = video;
       video.muted = true;
       video.playsInline = true;
+      video.setAttribute("playsinline", "true");
+      video.setAttribute("style", "position:fixed;left:-9999px;width:16px;height:16px;opacity:0;pointer-events:none");
       video.srcObject = stream;
+      try {
+        document.body.appendChild(video);
+      } catch (_) {}
       var captureOnce = function () {
         try {
+          if (stopped) return false;
           var w = video.videoWidth || 0;
           var h = video.videoHeight || 0;
           if (w < 16 || h < 16) return false;
+          if (probeVideoFrameIsMostlyBlack(video)) return false;
           var canvas = document.createElement("canvas");
           var maxW = 1280;
           var scale = w > maxW ? maxW / w : 1;
@@ -1282,27 +1326,35 @@ function captureBrowserPaymentPhoto(storeId, billId, paymentIds) {
         }
       };
       var tryCapture = function (attempt) {
+        if (stopped) return;
         if (captureOnce()) {
           cleanup();
           return;
         }
-        if (attempt >= 12) {
+        if (attempt >= 24 || Date.now() - startedAt > 7000) {
           cleanup();
           return;
         }
         setTimeout(function () {
           tryCapture(attempt + 1);
-        }, 120);
+        }, 180);
       };
-      var onReady = function () {
-        tryCapture(0);
+      var started = false;
+      var startTries = function () {
+        if (started || stopped) return;
+        started = true;
+        setTimeout(function () {
+          tryCapture(0);
+        }, 400);
       };
-      video.addEventListener("loadeddata", onReady, { once: true });
+      video.addEventListener("loadeddata", startTries, { once: true });
       var playP = video.play();
       if (playP && typeof playP.then === "function") {
-        playP.then(onReady).catch(function () {
+        playP.then(startTries).catch(function () {
           cleanup();
         });
+      } else {
+        startTries();
       }
       setTimeout(cleanup, 8000);
     })

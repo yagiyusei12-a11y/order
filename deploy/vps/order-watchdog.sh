@@ -178,9 +178,9 @@ if [[ ${#problems[@]} -eq 0 ]]; then
   exit 0
 fi
 
-msg="[morder VPS] problems: $(IFS='; echo "${problems[*]}")"
+msg="[morder VPS] problems: ${problems[*]}"
 if [[ ${#healed[@]} -gt 0 ]]; then
-  msg+=" | heal: $(IFS='; echo "${healed[*]}")"
+  msg+=" | heal: ${healed[*]}"
 fi
 log "$msg"
 host="$(hostname -f 2>/dev/null || hostname)"

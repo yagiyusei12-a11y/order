@@ -9,6 +9,7 @@ export type FloorWaitLevel = "normal" | "delay" | "prepare_seats";
  * キッチン遅延調査（注文→調理済）に基づく閾値。
  * 進行中＝店内（eatMode≠takeout）の queued/cooking 明細「本数」（個数合計ではない）。
  * テイクアウトは受取まで厨房に残るので席待ち判定から除外する。
+ * ドリンク調理場（settings.kitchenDrinkStationIds または名称に「ドリンク」）も除外する。
  * 未注文席は使わない（誤警報の主因だったため）。
  */
 export type FloorWaitThresholds = {
@@ -40,9 +41,9 @@ export type UpcomingNetReservation = {
 export type FloorWaitStatus = {
   level: FloorWaitLevel;
   labelJa: string;
-  /** 進行中明細の本数（queued+cooking） */
+  /** 進行中明細の本数（queued+cooking・ドリンク除外） */
   inFlightLineCount: number;
-  /** 互換・表示用: 進行中の数量合計 */
+  /** 互換・表示用: 進行中の数量合計（ドリンク除外） */
   orderQty: number;
   fryStationInFlight: number;
   grillStationInFlight: number;
@@ -73,6 +74,26 @@ export function isFryStationName(name: unknown): boolean {
 export function isGrillStationName(name: unknown): boolean {
   const n = normalizeKitchenStationName(name);
   return n === "焼き場" || n.includes("焼き");
+}
+
+/** ドリンク調理場名（フロア待ち・遅延告知の対象外） */
+export function isDrinkStationName(name: unknown): boolean {
+  const n = normalizeKitchenStationName(name);
+  if (!n) return false;
+  return n === "ドリンク" || n.includes("ドリンク") || n.toLowerCase().includes("drink");
+}
+
+/**
+ * フロア待ち集計から除外する調理場か。
+ * 店舗設定のドリンク調理場 ID、または名称のドリンク判定。
+ */
+export function isFloorWaitExcludedStation(
+  station: { id?: string | null; name?: string | null } | null | undefined,
+  drinkStationIds: ReadonlySet<string>,
+): boolean {
+  const id = station?.id != null ? String(station.id).trim() : "";
+  if (id && drinkStationIds.has(id)) return true;
+  return isDrinkStationName(station?.name);
 }
 
 /**
@@ -222,6 +243,10 @@ export async function loadFloorWaitStatus(storeId: string): Promise<FloorWaitSta
     };
   }
 
+  const drinkStationIds = new Set(
+    (st.kitchenDrinkStationIds ?? []).filter((x) => typeof x === "string" && x.trim()),
+  );
+
   const lines = await prisma.orderLine.findMany({
     where: {
       status: { in: ["queued", "cooking"] },
@@ -230,20 +255,23 @@ export async function loadFloorWaitStatus(storeId: string): Promise<FloorWaitSta
     },
     select: {
       qty: true,
-      menuItem: { select: { kitchenStation: { select: { name: true } } } },
+      menuItem: { select: { kitchenStation: { select: { id: true, name: true } } } },
     },
   });
 
   let orderQty = 0;
   let fryStationInFlight = 0;
   let grillStationInFlight = 0;
+  let inFlightLineCount = 0;
   for (const l of lines) {
+    const station = l.menuItem?.kitchenStation;
+    if (isFloorWaitExcludedStation(station, drinkStationIds)) continue;
+    inFlightLineCount += 1;
     orderQty += Math.max(1, Number(l.qty) || 1);
-    const stationName = l.menuItem?.kitchenStation?.name;
+    const stationName = station?.name;
     if (isFryStationName(stationName)) fryStationInFlight += 1;
     if (isGrillStationName(stationName)) grillStationInFlight += 1;
   }
-  const inFlightLineCount = lines.length;
 
   const resolved = resolveFloorWaitLevel({
     inFlightLineCount,

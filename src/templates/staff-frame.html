@@ -137,6 +137,18 @@
       stroke-linejoin: round;
     }
     .topbar .brand span { font-size: 0.72rem; color: var(--muted); }
+    .training-store-banner {
+      display: none;
+      flex-shrink: 0;
+      background: #1d4ed8;
+      color: #fff;
+      font-size: 0.82rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      text-align: center;
+      padding: 0.35rem 0.75rem;
+    }
+    .training-store-banner.is-on { display: block; }
     .topbar .actions { display: flex; align-items: center; gap: 0.5rem; }
     .topbar .pill {
       font-size: 0.72rem;
@@ -841,6 +853,9 @@
           <a href="#" class="logout" id="logout">ログアウト</a>
         </div>
       </header>
+      <div id="trainingStoreBanner" class="training-store-banner" role="status">
+        練習店舗です。注文・会計・印刷は本番には反映されません。
+      </div>
       <div class="scroll-main">
         __BODY__
       </div>
@@ -864,6 +879,18 @@
     const STORE = __STORE_ID_JS__;
     __TABLE_DISPLAY_CODE__
     document.getElementById("sid").textContent = STORE;
+    (function markTrainingStoreBanner() {
+      const el = document.getElementById("trainingStoreBanner");
+      if (!el) return;
+      if (String(STORE || "").indexOf("practice") !== -1) el.classList.add("is-on");
+      fetch("/stores/" + encodeURIComponent(STORE) + "/settings", { credentials: "include" })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) {
+          const st = d && d.store && d.store.settings;
+          if (st && st.isTrainingStore === true) el.classList.add("is-on");
+        })
+        .catch(function () {});
+    })();
 
     const api = (path, opt = {}) =>
       fetch(path, { ...opt, credentials: "include" }).then(async (r) => {

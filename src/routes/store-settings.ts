@@ -135,6 +135,7 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
       }
       const next = mergeStoreSettings({ ...cur, ...patch });
       next.smtpPass = nextPass;
+      if (cur.isTrainingStore) next.isTrainingStore = true;
       data.settings = next;
     }
 

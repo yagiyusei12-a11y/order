@@ -48,6 +48,7 @@ function resolveOutboundFromEnv(): ResolvedOutbound | null {
 
 /** 店舗設定を優先し、無ければ環境変数（どちらも無効なら null） */
 export function resolveMailOutbound(st?: StoreSettingsShape): ResolvedOutbound | null {
+  if (st?.isTrainingStore) return null;
   if (st) {
     const fromStore = resolveOutboundFromStore(st);
     if (fromStore) return fromStore;

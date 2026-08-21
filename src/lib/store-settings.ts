@@ -305,6 +305,11 @@ export type StoreSettingsShape = {
   gamesHubDeletedSlugs?: string[];
   /** ゲームハブのカテゴリ順・ラベル（JSON そのまま） */
   gamesHubCategories?: unknown;
+  /**
+   * 練習用テナント。印刷・SMTP など本番機器へ届く経路を無効化する。
+   * スタッフ画面に「練習店舗」バナーを出す。
+   */
+  isTrainingStore: boolean;
 };
 
 /** スタッフ向け API 用（パスワードを伏せる） */
@@ -526,6 +531,7 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
     mailFrom: "",
     staffNotificationCustomSounds: [],
     staffNotificationSounds: mergeStaffNotificationSounds(null, []),
+    isTrainingStore: false,
   };
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return d;
   const o = raw as Record<string, unknown>;
@@ -874,6 +880,19 @@ export function mergeStoreSettings(raw: unknown): StoreSettingsShape {
   }
   if (o.gamesHubCategories != null && typeof o.gamesHubCategories === "object" && !Array.isArray(o.gamesHubCategories)) {
     d.gamesHubCategories = o.gamesHubCategories;
+  }
+  if (typeof o.isTrainingStore === "boolean") {
+    d.isTrainingStore = o.isTrainingStore;
+  }
+  if (d.isTrainingStore) {
+    d.thermalReceiptPrinterIp = "";
+    d.thermalKitchenPrinterIp = "";
+    d.thermalKitchenAutoPrint = false;
+    d.smtpOutboundEnabled = false;
+    d.smtpHost = "";
+    d.smtpUser = "";
+    d.smtpPass = "";
+    d.mailFrom = "";
   }
   return d;
 }

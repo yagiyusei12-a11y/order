@@ -12,6 +12,7 @@
     "db:seed": "prisma db seed",
     "import:menu-csv": "tsx prisma/import-menu-csv.ts",
     "seed:harunoyukoto-tables": "tsx prisma/seed-harunoyukoto-tables.ts",
+    "clone:harunoyukoto-practice": "tsx prisma/clone-store-training.ts",
     "seed:harunoyukoto-games": "tsx prisma/seed-harunoyukoto-games.ts",
     "seed:harunoyukoto-games:upsert": "tsx prisma/upsert-harunoyukoto-games.ts",
     "seed:buzzer-quiz:harunoyukoto": "tsx prisma/seed-buzzer-quiz-harunoyukoto.ts",

@@ -108,6 +108,11 @@ export async function enqueuePrintJob(opts: {
 }): Promise<{ id: string } | null> {
   const lines = (opts.lines || []).map((l) => String(l ?? ""));
   if (lines.length === 0) return null;
+  const store = await prisma.store.findUnique({
+    where: { id: opts.storeId },
+    select: { settings: true },
+  });
+  if (!store || mergeStoreSettings(store.settings).isTrainingStore) return null;
   const job = await prisma.printJob.create({
     data: {
       storeId: opts.storeId,
@@ -134,7 +139,9 @@ export async function enqueueDrawerOpenJob(
     select: { id: true, settings: true },
   });
   if (!store) return null;
-  const tp = getThermalPrinterSettings(mergeStoreSettings(store.settings));
+  const st = mergeStoreSettings(store.settings);
+  if (st.isTrainingStore) return null;
+  const tp = getThermalPrinterSettings(st);
   if (!tp.receiptIp || !looksLikeIpv4(tp.receiptIp)) return null;
   const job = await prisma.printJob.create({
     data: {

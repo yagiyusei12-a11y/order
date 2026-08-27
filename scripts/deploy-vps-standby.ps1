@@ -44,7 +44,7 @@ if (-not (Test-Path $key)) {
   exit 1
 }
 
-$dirty = git status --porcelain 2>$null
+$dirty = git status --porcelain --untracked-files=no 2>$null
 if ($dirty -and -not $AllowDirty) {
   Write-Host "Working tree has uncommitted changes. Commit first, or pass -AllowDirty." -ForegroundColor Red
   git status -s

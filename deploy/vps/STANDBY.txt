@@ -1,0 +1,51 @@
+非常用VPS（order-app クローン）
+================================
+
+対象: 133.18.180.76（カゴヤ。daiko / 送迎は載せない）
+
+初回デプロイ（PC）
+----------------
+1. SSH できること（初期化完了後）
+   ssh -i <harunoyukoto2.key> ubuntu@133.18.180.76
+2. このリポジトリで
+   npm run deploy:vps:standby
+   （.env.deploy の ORDER_VPS_KEY を使う。ホスト既定は 133.18.180.76）
+3. ブラウザ
+   http://133.18.180.76/staff-app/setup
+   店舗ID: harunoyukoto
+   店長メールとパスワードを登録
+
+プリンタIPは設定 → 印刷 で入れる（店PCの印刷エージェントがジョブを取りに来る）。
+
+DNS
+---
+証明書用（任意・推奨）:
+  standby.morder.harunoyukoto.jp  A  133.18.180.76
+
+障害時の切替（いちばん手が少ない）:
+  morder.harunoyukoto.jp  の A レコードを 133.18.180.76 へ付ける。
+  タブレットも印刷エージェント（既定 https://morder.harunoyukoto.jp）も設定変更不要。
+  Caddy が証明書を取り直すまで数分かかることがある。
+
+付け替えたくない場合:
+  店PC %APPDATA%\morder-print-agent\config.json の baseUrl を
+    https://standby.morder.harunoyukoto.jp
+  にし、スタッフは standby の URL を開く。
+
+元VPSが直ったら:
+  1. 非常用の設定 → 会計 → 「精算済みをJSON書き出し」
+  2. 本番の同じ画面で JSON を取り込む（厨房へは再送信しない）
+  3. morder.harunoyukoto.jp の A レコードを元IP（133.18.141.239）へ戻す
+  4. 非常用箱は止めてよい（取り込みまでデータは残す）
+
+マスタの取り直し
+--------------
+本番DBが読めるとき（本番箱）:
+  npx tsx prisma/dump-standby-snapshot.ts
+  できた prisma/data/standby-snapshot.json を非常用へ置き、
+  npx tsx prisma/seed-standby-harunoyukoto.ts
+無いときは CSV + 席シード（bootstrap-standby が実行）。
+
+再デプロイ
+---------
+  npm run deploy:vps:standby

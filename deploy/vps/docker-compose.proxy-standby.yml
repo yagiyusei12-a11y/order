@@ -1,0 +1,19 @@
+# 非常用VPSの Caddy のみ（80/443）。アプリはホスト Node :3000。
+# 起動: bash deploy/vps/up-proxy-standby.sh
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile.standby:/etc/caddy/Caddyfile:ro
+      - caddy_standby_data:/data
+      - caddy_standby_config:/config
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  caddy_standby_data:
+  caddy_standby_config:

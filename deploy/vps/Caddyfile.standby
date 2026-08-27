@@ -1,0 +1,16 @@
+# 非常用VPS専用（order-app のみ。daiko / 送迎PHP / 他サイトは載せない）
+# DNS がこのサーバを向いてからホスト名の HTTPS が有効になる。
+# 初期化直後は http://133.18.180.76 でセットアップできる。
+
+http://133.18.180.76 {
+	reverse_proxy host.docker.internal:3000
+}
+
+standby.morder.harunoyukoto.jp {
+	reverse_proxy host.docker.internal:3000
+}
+
+# 障害時に本番ドメインの A レコードをこの VPS へ付け替えたとき用
+morder.harunoyukoto.jp {
+	reverse_proxy host.docker.internal:3000
+}

@@ -2970,4 +2970,63 @@ if (btnSaveOpsPrintLegal) {
 initSettingsTabs();
 const stBcEnabledEl = document.getElementById("stBcEnabled");
 if (stBcEnabledEl) stBcEnabledEl.addEventListener("change", syncBillCorrectionSubUi);
+
+function emergencySyncMsg(t) {
+  const el = document.getElementById("emergencySyncLog");
+  if (el) el.textContent = t || "";
+  log(t || "");
+}
+
+const btnEmergencyExport = document.getElementById("btnEmergencyExport");
+if (btnEmergencyExport) {
+  btnEmergencyExport.onclick = async () => {
+    if (!requireManagerForSettings()) return;
+    emergencySyncMsg("書き出し中…");
+    try {
+      const data = await api("/stores/" + encodeURIComponent(STORE) + "/emergency-export");
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      const day = new Date().toISOString().slice(0, 10);
+      a.href = URL.createObjectURL(blob);
+      a.download = "emergency-export-" + STORE + "-" + day + ".json";
+      a.click();
+      URL.revokeObjectURL(a.href);
+      const n = data && data.sessions ? data.sessions.length : 0;
+      emergencySyncMsg("書き出しました（精算済み " + n + " 件）");
+    } catch (e) {
+      emergencySyncMsg(String(e.message || e));
+    }
+  };
+}
+
+const emergencyImportFile = document.getElementById("emergencyImportFile");
+if (emergencyImportFile) {
+  emergencyImportFile.addEventListener("change", async () => {
+    if (!requireManagerForSettings()) return;
+    const file = emergencyImportFile.files && emergencyImportFile.files[0];
+    emergencyImportFile.value = "";
+    if (!file) return;
+    emergencySyncMsg("取り込み中…");
+    try {
+      const text = await file.text();
+      const payload = JSON.parse(text);
+      const res = await api("/stores/" + encodeURIComponent(STORE) + "/emergency-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      emergencySyncMsg(
+        "取り込み完了: 新規 " +
+          (res.imported || 0) +
+          " / 重複スキップ " +
+          (res.skippedDup || 0) +
+          " / 席なし " +
+          (res.skippedNoTable || 0),
+      );
+    } catch (e) {
+      emergencySyncMsg(String(e.message || e));
+    }
+  });
+}
+
 loadAll().catch((e) => log(String(e.message || e)));

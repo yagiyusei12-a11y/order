@@ -84,3 +84,9 @@ Caddy（プロキシ）でホスト名を増やしたとき
 - ログで `certificate obtained successfully` と対象ホスト名が出るか確認:
     docker compose -f docker-compose.proxy.yml logs caddy --tail 80
 - 外向き HTTPS 確認: curl -sS https://daiko.harunoyukoto.jp/health
+
+非常用VPS（別カゴヤ・order のみ）
+--------------------------------------
+- 手順の本体: deploy/vps/STANDBY.txt
+- PC から: npm run deploy:vps:standby
+- 既定ホスト: 133.18.180.76（ORDER_VPS_STANDBY_HOST）

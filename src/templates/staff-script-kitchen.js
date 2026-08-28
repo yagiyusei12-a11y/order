@@ -1994,8 +1994,8 @@ function renderKitList() {
     finishKitListRender();
     return;
   }
-  /** 通常表示: 調理済（done）は出さない（「調理済・提供」画面へ）。待ち・調理中のみ。 */
-  const linesNormal = lines.filter((ln) => ln.status !== "done");
+  /** 通常表示: 調理済・提供済みは出さない（提供画面へ）。待ち・調理中のみ。 */
+  const linesNormal = lines.filter((ln) => ln.status !== "done" && ln.status !== "served");
   if (linesNormal.length === 0) {
     box.className = "card";
     if (lastLines.length === 0) {

@@ -360,6 +360,8 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
           }
           if (hallWaitMode && rowStatus === "served") continue;
           if (servedListMode && rowStatus !== "served") continue;
+          // キッチン進行中: 提供済み構成は出さない（部分提供後に文字だけ戻るのを防ぐ）
+          if (!hallWaitMode && !servedListMode && rowStatus === "served") continue;
           outLines.push({
             id: `${l.id}::i${inst0}::${p.menuItemId}`,
             kitchenPatchLineId: l.id,

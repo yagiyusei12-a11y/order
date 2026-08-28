@@ -35,12 +35,14 @@ function isKitchenExcludedBillingLine(lineExtra: unknown): boolean {
 
 /** ホール提供待ち API（lineStatus=hall_wait）で明細行を出すか */
 function includeLineInHallWait(
-  dbStatus: string,
+  parentDbStatus: string,
   parentHallPrep: boolean,
   rowHallPrep: boolean,
+  componentRowStatus?: string,
 ): boolean {
-  if (dbStatus === "done") return true;
-  if (dbStatus !== "queued" && dbStatus !== "cooking") return false;
+  if (componentRowStatus === "done") return true;
+  if (parentDbStatus === "done") return true;
+  if (parentDbStatus !== "queued" && parentDbStatus !== "cooking") return false;
   return parentHallPrep || rowHallPrep;
 }
 
@@ -160,18 +162,8 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
               status: { in: ["queued", "cooking"] },
               OR: [
                 { menuItem: { hallPrepCheck: true } },
-                {
-                  menuItem: {
-                    sellKind: "set",
-                    setSteps: {
-                      some: {
-                        choices: {
-                          some: { componentMenuItem: { hallPrepCheck: true } },
-                        },
-                      },
-                    },
-                  },
-                },
+                // セットは構成単位で調理済になり得る（親は queued のまま）。後段で行を絞る
+                { menuItem: { sellKind: "set" } },
               ],
             },
           ],
@@ -350,9 +342,6 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
         for (const p of resolved) {
           const mi = compMenuById.get(p.menuItemId)!;
           const rowHallPrep = Boolean(mi.hallPrepCheck);
-          if (hallWaitMode && !includeLineInHallWait(l.status, parentHallPrep, rowHallPrep)) {
-            continue;
-          }
           const pickDisplay = formatSetComponentPickDisplayName(p.pickName, p.optionSubtext);
           const instLabel =
             setQty > 1 ? `${setTitle}（${instanceIndex}/${setQty}）` : setTitle;
@@ -363,6 +352,12 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
             instanceIndex,
             setQty,
           );
+          if (
+            hallWaitMode &&
+            !includeLineInHallWait(l.status, parentHallPrep, rowHallPrep, rowStatus)
+          ) {
+            continue;
+          }
           if (hallWaitMode && rowStatus === "served") continue;
           if (servedListMode && rowStatus !== "served") continue;
           outLines.push({
@@ -375,7 +370,7 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
             setComponentStepLabel: p.stepLabel ? p.stepLabel : null,
             setComponentPickName: pickDisplay,
             status: rowStatus,
-            dbStatus: l.status,
+            dbStatus: rowStatus,
             nameSnapshot: p.stepLabel
               ? `${instLabel} › ${p.stepLabel}: ${pickDisplay}`
               : `${instLabel} › ${pickDisplay}`,
@@ -542,10 +537,21 @@ export async function registerKitchen(app: FastifyInstance): Promise<void> {
             data.status = "served";
             data.servedAt = new Date();
           } else {
-            // 親は done のまま（他の構成は提供待ちに残す）
-            data.status = line.status === "served" ? "served" : "done";
-            data.readyAt = line.readyAt ?? new Date();
-            data.servedAt = null;
+            const doneTracked = new Set(readKitDonePartIds(line.lineExtra) ?? []);
+            const allCooked =
+              line.status === "done" ||
+              (allServedKeys.length > 0 &&
+                allServedKeys.every((k) => doneTracked.has(k) || idSet.has(k)));
+            if (allCooked) {
+              // 全構成が調理済み。未提供の構成は提供待ちに残す
+              data.status = "done";
+              data.readyAt = line.readyAt ?? new Date();
+              data.servedAt = null;
+            } else {
+              data.status = line.status === "cooking" ? "cooking" : "queued";
+              data.readyAt = null;
+              data.servedAt = null;
+            }
           }
         } else {
           // セット一括提供

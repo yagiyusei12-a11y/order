@@ -1,4 +1,4 @@
-# Caddy -> host.docker.internal:9083 -> PHP-FPM (sougei / zaiko)
+# Caddy -> host.docker.internal:9083 -> PHP-FPM (sougei のみ。zaiko なし)
 server {
     listen 127.0.0.1:9083;
     listen 172.17.0.1:9083;
@@ -9,16 +9,9 @@ server {
     index index.php index.html;
 
     location = /sougei { return 301 /sougei/; }
-    location = /zaiko { return 301 /zaiko/; }
-    location = /zaiko/ { rewrite ^ /zaiko/index.php last; }
     location = /sougei/ { rewrite ^ /sougei/menu.php last; }
 
-    # 秘匿ファイルは PHP 実行より先に拒否
     location ~ ^/sougei/(secrets\.php|secrets\.example\.php|error_log)$ {
-        deny all;
-        return 404;
-    }
-    location ~ ^/zaiko/(config\.php|error_log|inventory\.db|import_suppliers\.py|Book1\.xlsx|book1_data\.json)$ {
         deny all;
         return 404;
     }
@@ -26,17 +19,13 @@ server {
         deny all;
     }
 
-    location ~ ^/(sougei|zaiko)/.+\.php$ {
+    location ~ ^/sougei/.+\.php$ {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:/run/php/php8.3-fpm.sock;
         fastcgi_read_timeout 120s;
     }
 
     location /sougei/ {
-        try_files $uri $uri/ =404;
-    }
-
-    location /zaiko/ {
         try_files $uri $uri/ =404;
     }
 

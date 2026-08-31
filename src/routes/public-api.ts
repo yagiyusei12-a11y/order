@@ -3,6 +3,7 @@ import { prisma } from "../db.js";
 import { isCourseGuestVisibleNow } from "../lib/guest-course-hours.js";
 import { openOrReuseSessionForTable } from "../lib/open-table-session.js";
 import { displayTableCode, tableDisplayLabel } from "../lib/table-display-code.js";
+import { buildPublicMenuJson } from "../lib/public-menu.js";
 import { evaluatePublicOrderGate } from "../lib/store-order-gate.js";
 import { mergeStoreSettings } from "../lib/store-settings.js";
 
@@ -10,6 +11,14 @@ import { mergeStoreSettings } from "../lib/store-settings.js";
  * 認証不要の公開API（卓の固定QRから参照する想定）
  */
 export async function registerPublicApi(app: FastifyInstance): Promise<void> {
+  /** 店舗HP向けメニュー（はるのゆこと.com など） */
+  app.get<{ Params: { storeId: string } }>("/public/:storeId/menu", async (req, reply) => {
+    const payload = await buildPublicMenuJson(req.params.storeId);
+    if (!payload) return reply.code(404).send({ error: "store not found" });
+    reply.header("Cache-Control", "public, max-age=60, s-maxage=120");
+    return payload;
+  });
+
   app.get<{ Params: { storeId: string } }>("/public/stores/:storeId/order-gate", async (req, reply) => {
     const store = await prisma.store.findUnique({
       where: { id: req.params.storeId },

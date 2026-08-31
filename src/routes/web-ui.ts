@@ -12,6 +12,10 @@ import { verifyRecipeInputKey } from "../lib/recipe-input-auth.js";
 import { verifyPaymentAuditKey } from "../lib/payment-audit-auth.js";
 import { buildMenuPrintHtml } from "../lib/menu-print-html.js";
 import { buildTableQrPrintHtml } from "../lib/table-qr-print-html.js";
+import {
+  GUEST_NET_MAINTENANCE_MESSAGE,
+  isGuestNetMaintenance,
+} from "../lib/guest-net-maintenance.js";
 import { prisma } from "../db.js";
 import QRCode from "qrcode";
 
@@ -27,11 +31,20 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function guestNetMaintenancePage(reply: FastifyReply, pageTitle: string) {
+  const body = loadTemplate("guest-net-maintenance.html")
+    .replace(/__PAGE_TITLE__/g, escapeHtml(pageTitle))
+    .replace(/__MAINTENANCE_MESSAGE__/g, escapeHtml(GUEST_NET_MAINTENANCE_MESSAGE));
+  return reply.type("text/html; charset=utf-8").header("Cache-Control", "no-store").send(body);
+}
+
 /** 第5引数が文字列のときは従来どおりメインスクリプトの後に追記。オブジェクトのときは prepend / append を指定可能 */
 type StaffPageScriptBundle =
   | string
   | {
       prependFile?: string;
+      /** bill-register-shared など複数をこの順で先頭に連結 */
+      prependFiles?: string[];
       appendFile?: string;
     };
 
@@ -74,7 +87,10 @@ function assembleStaffPage(
   if (typeof scriptBundle === "string") {
     appendScript = scriptBundle ? loadTemplate(scriptBundle) : "";
   } else if (scriptBundle && typeof scriptBundle === "object") {
-    if (scriptBundle.prependFile) prependScript = loadTemplate(scriptBundle.prependFile) + "\n";
+    const prepends: string[] = [];
+    if (Array.isArray(scriptBundle.prependFiles)) prepends.push(...scriptBundle.prependFiles);
+    else if (scriptBundle.prependFile) prepends.push(scriptBundle.prependFile);
+    if (prepends.length) prependScript = prepends.map((f) => loadTemplate(f)).join("\n") + "\n";
     if (scriptBundle.appendFile) appendScript = "\n" + loadTemplate(scriptBundle.appendFile);
   }
   const script = loadTemplate(scriptFile);
@@ -360,6 +376,7 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
   );
 
   app.get<{ Params: { storeId: string } }>("/takeout/:storeId", async (req, reply) => {
+    if (isGuestNetMaintenance()) return guestNetMaintenancePage(reply, "テイクアウト予約");
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId }, select: { id: true, name: true } });
     if (!store) return reply.code(404).type("text/plain; charset=utf-8").send("store not found");
     const body = html("takeout-net.html").replace("__STORE_ID_JS__", JSON.stringify(store.id));
@@ -456,7 +473,7 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
       "オペレーション",
       "staff-body-ops.html",
       "staff-script-ops.js",
-      { prependFile: "staff-script-bill-register-shared.js" },
+      { prependFiles: ["staff-script-bill-register-shared.js", "staff-script-receipt-print.js"] },
       { __GUEST_DISPLAY_URL__: escapeHtml(guestUrl) },
     );
   });
@@ -516,6 +533,7 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
   });
 
   app.get<{ Params: { storeId: string } }>("/reserve-app/:storeId", async (req, reply) => {
+    if (isGuestNetMaintenance()) return guestNetMaintenancePage(reply, "ネット予約");
     const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
     if (!store) return reply.code(404).type("text/plain; charset=utf-8").send("store not found");
     const body = html("reserve-front.html").replace(/__STORE_ID_JS__/g, JSON.stringify(req.params.storeId));
@@ -608,7 +626,7 @@ export async function registerWebUi(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { storeId: string } }>("/staff-app/:storeId/reports", async (req, reply) => {
     if (!(await assertStaffStore(req, reply))) return;
     return staffHtml(reply, req.params.storeId, "レポート", "staff-body-reports.html", "staff-script-reports.js", {
-      prependFile: "staff-script-bill-register-shared.js",
+      prependFiles: ["staff-script-bill-register-shared.js", "staff-script-receipt-print.js"],
     });
   });
 

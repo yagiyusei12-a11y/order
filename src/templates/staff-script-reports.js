@@ -11,6 +11,53 @@ function escapeHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
+function reportDisplayTableCode(pc) {
+  if (typeof displayTableCode === "function") return displayTableCode(pc);
+  return String(pc || "");
+}
+
+function configureReportReceiptPrint(storeSettings, tables, storeDisplayName) {
+  if (typeof StaffReceiptPrint === "undefined") return false;
+  StaffReceiptPrint.configure({
+    getStoreSettings: () => storeSettings,
+    getStoreDisplayName: () => storeDisplayName,
+    getTables: () => tables || [],
+    storeId: STORE,
+    api,
+    log,
+    escapeHtml,
+    displayTableCode: reportDisplayTableCode,
+  });
+  return true;
+}
+
+function reportReceiptPrintHooks(detail, storeSettings, tables, storeDisplayName) {
+  if (!configureReportReceiptPrint(storeSettings, tables, storeDisplayName)) {
+    return {
+      printReceiptOrBrowser: async () => {
+        log("印刷モジュールを読み込めませんでした");
+      },
+      buildReceiptDoc() {
+        return "<html><body></body></html>";
+      },
+      buildReceiptPlainLines() {
+        return [];
+      },
+      openOpsInvoicePrintModal() {
+        log("印刷モジュールを読み込めませんでした");
+      },
+    };
+  }
+  const defaultChange = StaffReceiptPrint.changeAmountFromBillDetail(detail);
+  return {
+    printReceiptOrBrowser: (html, lines) => StaffReceiptPrint.printReceiptOrBrowser(html, lines),
+    buildReceiptDoc: (d) => StaffReceiptPrint.buildReceiptDoc(d),
+    buildReceiptPlainLines: (d) => StaffReceiptPrint.buildReceiptPlainLines(d),
+    openOpsInvoicePrintModal: (d, change) =>
+      StaffReceiptPrint.openOpsInvoicePrintModal(d, change != null ? change : defaultChange),
+  };
+}
+
 function pad2(n) {
   return String(n).padStart(2, "0");
 }
@@ -1343,6 +1390,7 @@ async function openBillModal(billId) {
     })),
   ]);
   const reportStoreSettings = (settingsRes.store && settingsRes.store.settings) || {};
+  const reportStoreDisplayName = (settingsRes.store && String(settingsRes.store.name || "").trim()) || "";
   const reportPaymentMethods = Array.isArray(pmRes) ? pmRes : [];
   const reportTables = tablesRes.tables || [];
   const reportCourses = coursesRes.courses || [];
@@ -1354,6 +1402,7 @@ async function openBillModal(billId) {
   panel.style.cssText =
     "background:#fafafa;color:var(--text);width:100%;max-width:min(960px,96vw);max-height:90vh;overflow:auto;border-radius:12px;border:1px solid var(--border);box-shadow:0 8px 32px rgba(0,0,0,.2);padding:1rem;";
   const showEditTab = reportsBillCorrection.enabled;
+  const canPrintReceipt = detail.status === "settled";
   panel.innerHTML =
     "<div class=\"row\" style=\"justify-content:space-between;align-items:center;gap:0.5rem\">" +
     "<strong>伝票 " +
@@ -1365,6 +1414,12 @@ async function openBillModal(billId) {
     " / 合計: " +
     Number(detail.totalAmount || 0).toLocaleString("ja-JP") +
     " 円</div>" +
+    (canPrintReceipt
+      ? "<div class=\"row\" style=\"gap:0.45rem;flex-wrap:wrap;margin-top:0.55rem;align-items:center\">" +
+        "<button type=\"button\" class=\"btn-ghost\" id=\"btnRepPrintReceipt\" style=\"width:auto;padding:0.35rem 0.65rem\">レシート印刷</button>" +
+        "<button type=\"button\" class=\"btn-ghost\" id=\"btnRepPrintInvoice\" style=\"width:auto;padding:0.35rem 0.65rem\">領収書印刷</button>" +
+        "<span class=\"muted\" style=\"font-size:0.72rem;line-height:1.4\">精算済み伝票の再印刷（宛名・但し書きは領収書で入力）</span></div>"
+      : "") +
     "<p class=\"muted\" style=\"font-size:0.72rem;margin-top:0.35rem;line-height:1.45\">卓の移動・合算・セッション終了は " +
     "<a href=\"/staff-app/" +
     encodeURIComponent(STORE) +
@@ -1852,18 +1907,7 @@ async function openBillModal(billId) {
         renderCashKeypad: BillRegisterShared.renderCashKeypad,
         bindCashKeypad: BillRegisterShared.bindCashKeypad,
         tryOpenDrawer() {},
-        printReceiptOrBrowser: async () => {
-          log("印刷はオペレーション画面の伝票から行えます");
-        },
-        buildReceiptDoc() {
-          return "<html><body></body></html>";
-        },
-        buildReceiptPlainLines() {
-          return [];
-        },
-        openOpsInvoicePrintModal() {
-          log("領収書はオペレーション画面の伝票から行えます");
-        },
+        ...reportReceiptPrintHooks(detail, mergeReportStoreSettings(), reportTables, reportStoreDisplayName),
         async afterGroupedQtyCommit() {
           await refreshBillInPlace();
         },
@@ -2077,6 +2121,28 @@ async function openBillModal(billId) {
     if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
   };
   panel.querySelector("#btnCloseBillModal").onclick = () => close();
+  if (canPrintReceipt) {
+    const printHooks = reportReceiptPrintHooks(detail, mergeReportStoreSettings(), reportTables, reportStoreDisplayName);
+    const btnRepReceipt = panel.querySelector("#btnRepPrintReceipt");
+    if (btnRepReceipt) {
+      btnRepReceipt.onclick = async () => {
+        try {
+          await printHooks.printReceiptOrBrowser(
+            printHooks.buildReceiptDoc(detail),
+            printHooks.buildReceiptPlainLines(detail),
+          );
+        } catch (e) {
+          log(String(e.message || e));
+        }
+      };
+    }
+    const btnRepInvoice = panel.querySelector("#btnRepPrintInvoice");
+    if (btnRepInvoice) {
+      btnRepInvoice.onclick = () => {
+        printHooks.openOpsInvoicePrintModal(detail);
+      };
+    }
+  }
   backdrop.addEventListener("click", (ev) => {
     if (ev.target === backdrop) close();
   });

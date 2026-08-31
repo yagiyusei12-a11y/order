@@ -92,7 +92,12 @@
       </label>
       <label for="stMailFrom">差出人（From）</label>
       <input id="stMailFrom" type="text" placeholder="例: info@example.com" maxlength="320" />
-      <button type="button" class="btn-primary" id="btnSaveSmtp" style="margin-top:0.75rem">メール（SMTP）設定を保存</button>
+      <label for="stSmtpTestTo" style="margin-top:0.65rem">テスト送信先（空なら差出人あて）</label>
+      <input id="stSmtpTestTo" type="email" placeholder="例: info@example.com" maxlength="320" autocomplete="off" />
+      <div class="row" style="gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem">
+        <button type="button" class="btn-primary" id="btnSaveSmtp">メール（SMTP）設定を保存</button>
+        <button type="button" class="btn-secondary" id="btnTestSmtp">テストメールを送る</button>
+      </div>
     </div>
 
     <div class="card" style="margin-top:1rem">

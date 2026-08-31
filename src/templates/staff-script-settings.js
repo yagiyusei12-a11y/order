@@ -2409,6 +2409,27 @@ if (btnSaveSmtp) {
   };
 }
 
+const btnTestSmtp = document.getElementById("btnTestSmtp");
+if (btnTestSmtp) {
+  btnTestSmtp.onclick = async () => {
+    log("");
+    if (!requireManagerForSettings()) return;
+    const toEl = document.getElementById("stSmtpTestTo");
+    const to = toEl && toEl.value ? toEl.value.trim() : "";
+    const body = to ? { to } : {};
+    try {
+      const r = await api("/stores/" + encodeURIComponent(STORE) + "/settings/test-mail", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      log("テストメールを送信しました → " + (r && r.to ? r.to : to || "差出人"));
+    } catch (e) {
+      log(String(e.message || e));
+    }
+  };
+}
+
 document.getElementById("btnSaveLastOrder").onclick = async () => {
   log("");
   if (!requireManagerForSettings()) return;

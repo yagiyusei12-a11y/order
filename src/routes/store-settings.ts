@@ -26,6 +26,7 @@ import {
   isGuestOperatingEffectiveOpen,
   staffFooterOrderGateState,
 } from "../lib/store-order-gate.js";
+import { isMailConfigured, sendMailSafe } from "../lib/mail.js";
 import { mergeStoreSettings, toStoreSettingsApi } from "../lib/store-settings.js";
 import { loadFloorWaitStatus } from "../lib/floor-wait-status.js";
 
@@ -155,6 +156,54 @@ export async function registerStoreSettings(app: FastifyInstance): Promise<void>
         settings: toStoreSettingsApi(mergeStoreSettings(updated.settings)),
       },
     };
+  });
+
+  /** 店舗 SMTP（または env フォールバック）でテストメールを送る */
+  app.post<{
+    Params: { storeId: string };
+    Body: { to?: string };
+  }>("/stores/:storeId/settings/test-mail", async (req, reply) => {
+    const store = await prisma.store.findUnique({ where: { id: req.params.storeId } });
+    if (!store) return reply.code(404).send({ error: "store not found" });
+    if (!assertManagerRole(reply, req.user)) return;
+
+    const st = mergeStoreSettings(store.settings);
+    if (!isMailConfigured(st)) {
+      return reply.code(400).send({
+        error:
+          "メール送信が未設定です。店舗 SMTP を有効にしてホスト・差出人を保存するか、サーバの SMTP_* を設定してください。",
+      });
+    }
+
+    const rawTo = typeof req.body?.to === "string" ? req.body.to.trim() : "";
+    const to = rawTo || st.mailFrom.trim();
+    if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+      return reply.code(400).send({ error: "有効な宛先メールアドレスを指定してください" });
+    }
+
+    const when = new Date().toLocaleString("ja-JP", { timeZone: st.timezone || "Asia/Tokyo" });
+    try {
+      await sendMailSafe(
+        {
+          to,
+          subject: `【テスト】${store.name} メール送信確認`,
+          text:
+            `これは注文システムからのテストメールです。\n` +
+            `店舗: ${store.name}（${store.id}）\n` +
+            `送信時刻: ${when}\n` +
+            `このメールが届いていれば、SMTP 設定は正常です。\n`,
+        },
+        { storeSettings: st },
+      );
+      await appendStaffAuditFromRequest(req, store.id, staffSubFromReq(req), "store_smtp_test_mail", {
+        to,
+      }).catch(() => {});
+      return { ok: true, to };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      req.log.warn({ err: e, storeId: store.id, to }, "test mail failed");
+      return reply.code(502).send({ error: `送信に失敗しました: ${msg}` });
+    }
   });
 
   /**
